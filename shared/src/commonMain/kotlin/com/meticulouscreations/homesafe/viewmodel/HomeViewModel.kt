@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.VideoFit
+import com.meticulouscreations.homesafe.domain.model.camerasWithNest
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -261,35 +262,34 @@ class HomeViewModel(
     private val nestFit: Flow<VideoFit> = observePlaybackPreferencesUseCase().map { it.nestFit }.onStart { emit(VideoFit.Fit) }.distinctUntilChanged()
 
     /**
-     * The Nest cameras, null until the server has said which there are (see
-     * [ObserveNestCamerasUseCase]). A Nest stream that a Frigate camera already plays is that
-     * camera, and is left out here. Shared, so the two lists built from it ask the server once.
+     * Every camera, Frigate's and Nest's, as one list ([camerasWithNest]): a Frigate camera
+     * reading a Nest stream takes that Nest camera's place. Null until both the Frigate camera
+     * cache and the device's record of the Nest cameras have been read (a few milliseconds
+     * each), so a Nest camera Frigate plays never shows in the wrong list on the way in. Shared,
+     * so the two lists built from it read them once.
      */
-    private val nestCameras: StateFlow<List<Camera>?> = combine(
-        observeNestCamerasUseCase(),
+    private val allCameras: StateFlow<List<Camera>?> = combine(
         observeCamerasUseCase(),
-    ) { nest, frigate ->
-        val frigateStreams = frigate.flatMapTo(HashSet()) { listOf(it.name, it.liveStreamName, it.gridStreamName) }
-        nest?.filterNot { it.name in frigateStreams }
+        observeNestCamerasUseCase(),
+    ) { frigate, nest ->
+        nest?.let { camerasWithNest(frigate, it) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
      * The outdoor cameras: Frigate's, then any Nest camera outside (a doorbell). Null until the
-     * first read of the local camera cache lands (a few milliseconds), so the screen can tell
-     * "not loaded yet" from "this server has no cameras" and never flashes the empty-state
-     * message on the way in. It doesn't wait for the Nest cameras: they join when the server
-     * answers. URLs are built here, not in the card, so a LAN/Tailscale route flip re-points
-     * every player at once.
+     * first reads land ([allCameras]), so the screen can tell "not loaded yet" from "this server
+     * has no cameras" and never flashes the empty-state message on the way in. URLs are built
+     * here, not in the card, so a LAN/Tailscale route flip re-points every player at once.
      */
     val cameras: StateFlow<List<CameraTile>?> = combine(
-        observeCamerasUseCase(),
-        nestCameras,
+        allCameras,
         observeCurrentServerUrlUseCase(),
         nestFit,
         arrangement,
-    ) { frigate, nest, serverUrl, fit, arrangement ->
-        val outdoor = frigate + nest.orEmpty().filter { it.placement == CameraPlacement.Outdoor }
-        arrangement.arranged(outdoor, CameraPlacement.Outdoor).map { camera -> tile(camera, serverUrl, fit, arrangement) }
+    ) { all, serverUrl, fit, arrangement ->
+        all?.filter { it.placement == CameraPlacement.Outdoor }
+            ?.let { arrangement.arranged(it, CameraPlacement.Outdoor) }
+            ?.map { camera -> tile(camera, serverUrl, fit, arrangement) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _placement = MutableStateFlow(CameraPlacement.Outdoor)
@@ -305,14 +305,14 @@ class HomeViewModel(
         _placement.value = placement
     }
 
-    /** The indoor (Nest) cameras' cards, null until the server has said which there are. */
+    /** The indoor (Nest) cameras' cards, Frigate's or not; null until [allCameras] has been read. */
     val indoorCameras: StateFlow<List<CameraTile>?> = combine(
-        nestCameras,
+        allCameras,
         observeCurrentServerUrlUseCase(),
         nestFit,
         arrangement,
-    ) { nest, serverUrl, fit, arrangement ->
-        nest?.filter { it.placement == CameraPlacement.Indoor }
+    ) { all, serverUrl, fit, arrangement ->
+        all?.filter { it.placement == CameraPlacement.Indoor }
             ?.let { arrangement.arranged(it, CameraPlacement.Indoor) }
             ?.map { camera -> tile(camera, serverUrl, fit, arrangement) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -381,8 +381,9 @@ class HomeViewModel(
     }
 
     private fun tile(camera: Camera, serverUrl: String?, nestFit: VideoFit, arrangement: Arrangement): CameraTile {
+        // A Nest camera Frigate plays has Frigate's live snapshot for a poster, and Frigate's page.
         val nest = camera.source == CameraSource.Nest
-        val videoFit = nestFit.takeIf { nest }
+        val videoFit = nestFit.takeIf { camera.fromNest }
         val orientation = arrangement.orientation(camera.name)
         val crop = arrangement.crop(camera.name)
         if (serverUrl == null || !camera.enabled) {

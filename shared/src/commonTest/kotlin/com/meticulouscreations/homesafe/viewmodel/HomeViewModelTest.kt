@@ -320,12 +320,36 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun aNestStreamThatAFrigateCameraPlaysStaysOutdoors() = runTest {
+    fun aFrigateCameraReadingANestStreamIsThatNestCameraWithFrigatesPoster() = runTest {
         val h = Harness(
-            cameras = listOf(Camera(name = "porch", enabled = true, gridStreamName = "porch_nest")),
-            indoorCameras = listOf(nest("porch_nest"), nest("nursery")),
+            cameras = listOf(
+                Camera(name = "front_door", enabled = true),
+                Camera(name = "living_room", enabled = true, liveStreamName = "living_room", gridStreamName = "living_room_sub"),
+            ),
+            indoorCameras = listOf(nest("living_room"), nest("nursery")),
         )
-        assertEquals(listOf("nursery"), indoorTiles(h.viewModel)?.map { it.camera.name })
+        assertEquals(listOf("front_door"), tiles(h.viewModel).map { it.camera.name }, "it leaves the outdoor list")
+        val indoor = assertNotNull(indoorTiles(h.viewModel))
+        assertEquals(listOf("living_room", "nursery"), indoor.map { it.camera.name }, "Frigate's, then the Nest cameras Frigate doesn't read")
+
+        val living = indoor.first()
+        assertEquals(CameraSource.Frigate, living.camera.source, "so it opens Frigate's page")
+        assertTrue(living.camera.fromNest)
+        assertEquals("http://frigate.test:8971/live/living_room_sub", living.streamUrl)
+        assertEquals("http://frigate.test:8971/snapshot/living_room?h=480", living.posterUrl, "Frigate's live snapshot, kept fresh")
+        assertFalse(living.posterIsLastSeen)
+        assertEquals(VideoFit.Fit, living.videoFit, "shown at the Nest picture's own shape, not stretched")
+    }
+
+    @Test
+    fun aFrigateCameraReadingAnOutdoorNestStreamStaysOutdoors() = runTest {
+        val h = Harness(
+            cameras = listOf(Camera(name = "outdoor_doorbell", enabled = true, gridStreamName = "outdoor_doorbell_sub")),
+            indoorCameras = listOf(nest("outdoor_doorbell", CameraPlacement.Outdoor)),
+        )
+        assertEquals(listOf("outdoor_doorbell"), tiles(h.viewModel).map { it.camera.name }, "once, as Frigate's")
+        assertEquals(CameraSource.Frigate, tiles(h.viewModel).single().camera.source)
+        assertEquals(emptyList(), indoorTiles(h.viewModel))
     }
 
     @Test
@@ -360,9 +384,16 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun theOutdoorListDoesNotWaitForTheNestCameras() = runTest {
-        val h = Harness(cameras = listOf(Camera(name = "front_door", enabled = true)), indoorCameras = null)
-        assertEquals(listOf("front_door"), tiles(h.viewModel).map { it.camera.name })
+    fun theOutdoorListWaitsForTheKeptNestCamerasSoNoneShowsInTheWrongList() = runTest {
+        val h = Harness(cameras = listOf(Camera(name = "living_room", enabled = true)), indoorCameras = null)
+        activate(h.viewModel.cameras)
+        advanceUntilIdle()
+        assertNull(h.viewModel.cameras.value, "the skeleton, for the moment the device's record takes to read")
+
+        h.indoorRepo.flow.value = listOf(nest("living_room"))
+        advanceUntilIdle()
+        assertEquals(emptyList(), h.viewModel.cameras.value)
+        assertEquals(listOf("living_room"), indoorTiles(h.viewModel)?.map { it.camera.name })
     }
 
     /**

@@ -20,6 +20,10 @@ no detections: the Nest cameras are not Frigate cameras.
   "Living Room", `outdoor_doorbell` as "Doorbell".
 - The cards and the live page play the stream with go2rtc's WebRTC, falling back to HLS, exactly
   like Frigate's cards (`frigateLiveStreamUrl`, `frigateWebRtcSignalingUrl`).
+- **As Frigate cameras** (see "Frigate cameras" under the box setup): a Frigate camera reading a
+  Nest stream takes the Nest camera's place in the lists (`camerasWithNest`), with Frigate's
+  live snapshot for a poster and Frigate's camera page; Frigate keeps its stream running, so the
+  card never waits on Google to start the camera.
 - **A smaller stream for the cards**, like the Frigate cameras' `_sub` streams: a go2rtc stream
   named `<camera>_sub` beside a Nest camera's is what its card (and the launch prefetch) plays;
   its page starts on that and moves up to the camera's own stream once it has a picture, the
@@ -173,7 +177,56 @@ first viewer of a stream nobody is watching still waits for Google to start the 
 `curl :1984/api/streams` lists it with an `ffmpeg:` source, so the app never takes it for a camera
 of its own. Pull to refresh on Home and the cards move to it.
 
-### 6. Check
+### 6. Frigate cameras (recommended): always ready
+
+A Nest stream exists only while someone watches it, so the first viewer after a quiet spell waits
+for Google to start the camera (1–11 s). Making each Nest camera a Frigate camera keeps its
+`_sub` stream running all the time, the way Frigate keeps the outdoor cameras' sub streams
+running, so every card joins a running stream that has a keyframe about every second. It also
+gives the cards Frigate's live snapshot as their poster, and the camera Frigate's page in the app
+(timeline, settings), with detection and recording off until you want them.
+
+The cost: every camera streams to Google and back all day, roughly 1–2 Mbps each over the home
+internet, and a camera with a "live" light keeps it on. Only for wired cameras; a battery one
+would be flat in days.
+
+Under `cameras:` in `config/config.yml`, one per Nest camera, reading its `_sub` stream from
+go2rtc (the name must be the Nest stream's, so the app knows which Nest camera it is):
+
+```yaml
+  living_room:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/living_room_sub
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: false   # no object detection ("AI") until switched on in the app's Settings
+      width: 640
+      height: 360
+      fps: 5
+    record:
+      enabled: false   # nothing saved: no recordings, no Moments
+    snapshots:
+      enabled: false
+    audio:
+      enabled: false
+    live:
+      streams:
+        Main: living_room
+        Sub: living_room_sub
+```
+
+The detect size is the `_sub` stream's: 640x360 for a 16:9 camera (living room, kids' room),
+640x480 for the 4:3 Hub Max (kitchen), 480x640 for the doorbell. `live.streams` is what tells the
+app which stream is the card's (`Sub`) and which the page's (`Main`). Restart Frigate.
+
+In the app, a Frigate camera reading a Nest stream is that Nest camera (`camerasWithNest`): it
+stays in the Indoor list (Outdoor for `outdoor_`), keeps the Nest picture's shape, opens
+Frigate's camera page, and its Nest entry is left out.
+
+### 7. Check
 
 ```bash
 curl -s http://127.0.0.1:1984/api/streams | python3 -c 'import json,sys; print([k for k,v in json.load(sys.stdin).items() if any((p.get("url") or "").startswith("nest:") for p in v.get("producers") or [])])'

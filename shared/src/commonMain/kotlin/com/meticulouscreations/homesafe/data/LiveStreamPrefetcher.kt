@@ -38,7 +38,8 @@ import kotlinx.coroutines.launch
  * For a returning user the expectation can arrive while the biometric prompt is still up — see
  * `ConnectionRepositoryImpl.anticipateSavedLogin`.
  *
- * The Nest cameras kept from last time ([CameraListDao]) are started too, indoor and outdoor, so
+ * The Nest cameras kept from last time ([CameraListDao]) are started too, indoor and outdoor
+ * (Frigate's own cameras reading a Nest stream among them, counted once), so
  * switching to Indoor finds their video already joining: a Nest stream is the slow one to start
  * (go2rtc has to ask Google, and Google has to wake the camera: 1 to 11 s measured). The same
  * moment, the server is asked again which Nest cameras it has ([NestCameraRepository.refresh]),
@@ -96,15 +97,23 @@ class LiveStreamPrefetcher(
             val webRtc = WebRtcEndpoint(mediaUrls.liveWebRtcSignalingUrl(activeUrl, streamName), audio = false)
             return LivePrefetch(playerKey = playerKey, source = VideoSource.Live(mediaUrls.liveStreamUrl(activeUrl, streamName), webRtc = webRtc))
         }
-        val frigate = cachedCameras(expected.serverUrl)
+        val nestKept = cameraListDao.observeNestCameras(expected.serverUrl).first()
+        val nestStreams = nestKept.mapTo(HashSet()) { it.name }
+        // A Frigate camera reading a Nest stream is that Nest camera (see camerasWithNest): it
+        // counts with the Nest ones, and the Nest entry it plays isn't started a second time.
+        val (fromNest, outdoor) = cachedCameras(expected.serverUrl)
             .filter { it.enabled }
+            .partition { camera -> listOf(camera.name, camera.liveStreamName, camera.gridStreamName).any { it in nestStreams } }
+        val frigate = outdoor
             .take(MAX_PREFETCHED)
             .map { camera -> live(camera.name, camera.gridStreamName) }
+        val played = fromNest.flatMapTo(HashSet()) { listOf(it.name, it.liveStreamName, it.gridStreamName) }
         // A Nest camera's card plays its grid stream, or the camera's own when the server has
         // none, under the camera's name (see NestCameraRepositoryImpl).
-        val nest = cameraListDao.observeNestCameras(expected.serverUrl).first()
-            .take(MAX_NEST_PREFETCHED)
-            .map { camera -> live(camera.name, camera.gridStreamName ?: camera.name) }
+        val nest = (
+            fromNest.map { camera -> live(camera.name, camera.gridStreamName) } +
+                nestKept.filterNot { it.name in played }.map { camera -> live(camera.name, camera.gridStreamName ?: camera.name) }
+            ).take(MAX_NEST_PREFETCHED)
         val streams = frigate + nest
         if (streams.isEmpty()) return false
         LiveStartupMilestones.mark("live.prefetch")

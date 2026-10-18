@@ -143,6 +143,26 @@ class LiveStreamPrefetcherTest {
     }
 
     @Test
+    fun aNestCameraFrigateReadsIsStartedOnceAndCountsWithTheNestOnes() = runTest {
+        val h = Harness(this)
+        h.cache(serverUrl, camera("driveway"), camera("living_room"))
+        h.cameraListDao.insertNestCameras(
+            listOf(NestCameraEntity(serverUrl, "living_room", gridStreamName = "living_room_sub"), NestCameraEntity(serverUrl, "kitchen")),
+        )
+        h.connection.expectedConnection.value = ActiveConnection(serverUrl, localUrl, ConnectionRoute.LOCAL_NETWORK)
+        settle()
+
+        val kitchen = LivePrefetch(
+            playerKey = "kitchen",
+            source = VideoSource.Live(
+                url = mediaUrls.liveStreamUrl(localUrl, "kitchen"),
+                webRtc = WebRtcEndpoint(mediaUrls.liveWebRtcSignalingUrl(localUrl, "kitchen"), audio = false),
+            ),
+        )
+        assertEquals(listOf(listOf(gridCard(localUrl, "driveway"), gridCard(localUrl, "living_room"), kitchen)), h.players.prefetched)
+    }
+
+    @Test
     fun findsCamerasFiledUnderTheOtherScheme() = runTest {
         val h = Harness(this)
         // The saved login says https; the server answered on http, and filed its cameras there.
