@@ -34,6 +34,7 @@ val NotificationGlyph.drawableRes: Int
         NotificationGlyph.CAR -> R.drawable.ic_notification_car
         NotificationGlyph.ANIMAL -> R.drawable.ic_notification_animal
         NotificationGlyph.AWAY -> R.drawable.ic_notification_away
+        NotificationGlyph.DOOR -> R.drawable.ic_notification_door
         NotificationGlyph.SUMMARY -> R.drawable.ic_notification_summary
         NotificationGlyph.BUDGET -> R.drawable.ic_notification_budget
         NotificationGlyph.DONE -> R.drawable.ic_notification_done

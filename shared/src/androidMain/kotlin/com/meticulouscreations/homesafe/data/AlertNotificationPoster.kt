@@ -202,13 +202,17 @@ object AlertNotificationPoster {
 
     /**
      * The icon in the status bar: what was seen, where the notification knows (a figure, a car,
-     * a paw), and the camera where it doesn't. Someone seen while nobody is home wears the shield
-     * whatever they are: that nobody is home is the news.
+     * a paw), and the camera where it doesn't; a door that opened wears the door. Someone seen,
+     * or a door opened, while nobody is home wears the shield whatever it was: that nobody is
+     * home is the news, and every alert on the loud away channel looks alike. The title says which
+     * door.
      */
     internal fun glyph(notification: AlertNotification): NotificationGlyph = when {
         notification.summary -> NotificationGlyph.SUMMARY
 
         notification.urgent -> NotificationGlyph.AWAY
+
+        notification.door != null -> NotificationGlyph.DOOR
 
         else -> when (notification.subject) {
             MomentCategory.PEOPLE -> NotificationGlyph.PERSON
@@ -274,15 +278,14 @@ object AlertNotificationPoster {
 
     /**
      * What a tap opens: the app's own activity — named explicitly, so no other app can answer it —
-     * with the detection as a `homesafe://moment` URI, which MainActivity hands to the shell. The
-     * URI also keeps each notification's PendingIntent distinct, so a later alert can't overwrite
-     * an earlier one's destination.
+     * with the detection as a `homesafe://moment` URI, or a door's as `homesafe://doors`, which
+     * MainActivity hands to the shell. The URI also keeps each notification's PendingIntent
+     * distinct, so a later alert can't overwrite an earlier one's destination.
      */
     private fun openIntent(context: Context, notification: AlertNotification): PendingIntent? {
         val launch = context.appLaunchIntent() ?: return null
-        val intent = notification.target?.let { target ->
-            Intent(Intent.ACTION_VIEW, target.toUri().toUri()).setComponent(launch.component)
-        } ?: launch
+        val uri = notification.target?.toUri() ?: notification.door?.toUri()
+        val intent = uri?.let { Intent(Intent.ACTION_VIEW, it.toUri()).setComponent(launch.component) } ?: launch
         return PendingIntent.getActivity(context, notification.id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
