@@ -23,16 +23,22 @@ no-argument `@Preview` composables that draw the stateless composable from fixtu
 ## 2. Render and look
 
 The app is Android and iOS only, so previews are drawn by Layoutlib (Compose Preview Screenshot Testing),
-as Android draws them. While iterating, draw only the previews you're working on: `--only` takes
-comma-separated words matched against each preview's module, function and name, and `--list` prints them all.
+as Android draws them. Iterate with the preview server, which keeps Layoutlib loaded: it takes comma-separated
+words matched against each preview's module, function and name, and prints the PNGs it drew.
 
 ```bash
-scripts/render-ui-previews.sh --list
-scripts/render-ui-previews.sh build/ui-previews/local --only BudgetOverview,finance_card
+scripts/preview --list
+scripts/preview BudgetOverview,FinanceBankSync     # PNGs in build/ui-previews/live/
+scripts/preview --all                              # everything, before you finish
 ```
 
-- **It works** (needs the Android SDK). Read `build/ui-previews/local/android/*.png`, fix, re-run. Before you
-  finish, draw everything once without `--only`, to catch a shared component you changed elsewhere.
+- **It works** (needs the Android SDK). Read the PNGs it prints, fix, re-run: about a second plus Gradle compiling
+  what you changed. The first call in a checkout starts the server (~10–20 s). Before you finish, run `--all`, to
+  catch a shared component you changed elsewhere.
+- **A preview that throws** prints its exception with your file and line; the script exits non-zero.
+- **If `scripts/preview` itself breaks** (it leans on screenshot-engine internals, so an AGP or engine upgrade can
+  do that), fall back to `scripts/render-ui-previews.sh build/ui-previews/local --only <words>`, ~15 s a round,
+  and say so. It's also what CI runs.
 - **Layoutlib draws one frame.** Animations show their first frame, and nothing is clicked or scrolled.
 - **Whole-app flows** have no screenshots any more (they came from the JVM journeys); the journeys run on CI's
   emulator, and a failing one prints the screen's semantics tree.
