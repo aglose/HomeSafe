@@ -50,7 +50,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The In View page, from a car's pill on Home: every household car standing in view of a camera,
- * grouped by the camera that sees it, with what Home's one line leaves out. A car opens its
+ * grouped by the camera that sees it, with what Home's pills leave out. A car opens its
  * camera ([onOpenCamera]); each camera's "Check and tag" opens its frame to put the cars right
  * ([onTagCars], see [CarTaggingScreen]).
  */

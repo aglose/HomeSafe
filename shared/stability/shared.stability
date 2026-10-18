@@ -1010,6 +1010,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.DoorHistoryRow(entry: co
     - entry: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.DoorPills(doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenDoors: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - doors: RUNTIME (requires runtime check)
+    - onOpenDoors: STABLE (function type)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.DoorsContent(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, onNotify: kotlin.Function2<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
@@ -1432,7 +1440,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.HomeFeedPreviewContent(e
     - doors: RUNTIME (requires runtime check)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.HomeGlanceRow(inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenInView: kotlin.Function0<kotlin.Unit>, onOpenDoors: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.HomeGlanceRows(inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenInView: kotlin.Function0<kotlin.Unit>, onOpenDoors: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1481,6 +1489,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.InViewContent(items: ko
     - items: RUNTIME (requires runtime check)
     - onOpenCamera: STABLE (function type)
     - onTagCars: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.InViewPills(inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, onOpenInView: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - inView: RUNTIME (requires runtime check)
+    - onOpenInView: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.InViewScreen(onBack: kotlin.Function0<kotlin.Unit>, onOpenCamera: kotlin.Function1<@[ParameterName(name = \, onTagCars: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -1838,6 +1854,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.PillIcon(icon: androidx.
   restartable: true
   params:
     - icon: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.PillRow(content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - content: STABLE (composable function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PlacementOption(label: org.jetbrains.compose.resources.StringResource, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit

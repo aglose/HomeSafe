@@ -152,11 +152,11 @@ Android plays HLS with ExoPlayer and iOS with AVFoundation; both play live over 
 
 ### The home screen's "In view now" pills
 
-Above the camera cards, the Home tab shows what is *standing* in view now, as one line of pills
-shared with the doors: "Sarah's Tesla · Driveway", with the crop Frigate cut of the car where it
-sits, then any door that is open or offline, then "3 doors closed". It is there so the question
-the app gets opened for — is her car home? is the back door shut? — is answered before the first
-stream has connected, in one line, so the cameras still start near the top. Tapping a car opens
+Above the camera cards, the Home tab shows what is *standing* in view now, as one row of pills:
+"Sarah's Tesla · Driveway", with the crop Frigate cut of the car where it sits. The doors get the
+row under it: any door that is open or offline, then "3 doors closed". It is there so the
+question the app gets opened for — is her car home? is the back door shut? — is answered before
+the first stream has connected, a line each, so the cameras still start near the top. Tapping a car opens
 the In View page: each car large, grouped by camera, with when it arrived, when it was last seen,
 and each camera's "Check and tag". Nothing parked and no doors means no row at all, rather than a
 row saying the driveway is empty.

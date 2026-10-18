@@ -258,12 +258,12 @@ internal fun homeArrangeAction(): ArrangeAction? {
  * state, so the skeleton and the real page are one layout by construction, and the real cards
  * fade in exactly onto their outlines rather than near them.
  *
- * At the top sits one row of pills ([HomeGlanceRow]) when there is anything to put in it: the
+ * At the top sit two rows of pills ([HomeGlanceRows]) when there is anything to put in them: the
  * vehicles standing in view of a camera right now ([inView]), and the doors ([doors]). It is
  * deliberately the first thing on the page — the question it answers ("is her car in the
- * driveway? is the back door shut?") is the one the app gets opened for — and it is one line, so
- * the cameras still start near the top. The details are a tap away: [onOpenInView], [onOpenDoors].
- * It disappears entirely when there are no cars and no doors, rather than spending a row to say so.
+ * driveway? is the back door shut?") is the one the app gets opened for — and each is one line,
+ * so the cameras still start near the top. The details are a tap away: [onOpenInView], [onOpenDoors].
+ * A row with nothing in it isn't drawn, rather than spending a row to say so.
  * It usually arrives a beat after the cameras (its cache is read, and its poll runs, apart from
  * theirs), so it fades in and the cards below slide down to make room rather than jumping by the
  * row's whole height.
@@ -399,7 +399,7 @@ internal fun HomeFeed(
 
                 if (inView.isNotEmpty() || doors.isNotEmpty()) {
                     item(key = "glance", span = { GridItemSpan(maxLineSpan) }) {
-                        HomeGlanceRow(inView = inView, doors = doors, onOpenInView = onOpenInView, onOpenDoors = onOpenDoors, modifier = Modifier.animateItem())
+                        HomeGlanceRows(inView = inView, doors = doors, onOpenInView = onOpenInView, onOpenDoors = onOpenDoors, modifier = Modifier.animateItem())
                     }
                 }
 

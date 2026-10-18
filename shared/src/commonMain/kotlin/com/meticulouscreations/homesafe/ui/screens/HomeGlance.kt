@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -56,30 +57,46 @@ import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * What's going on around the house, in one line at the top of Home: a pill per car parked in
- * view (its picture, name and where it is), a pill per door that needs a look (open, offline, or
- * not heard from yet), and one pill counting the doors that are simply closed. No headings: the
- * pills say what they are, so the cameras start as high up the screen as they can. It scrolls
- * sideways when there's more than fits.
+ * What's going on around the house, at the top of Home, as two rows of pills: the cars parked in
+ * view (each one's picture, name and where it is), then the doors (a pill per door that needs a
+ * look — open, offline, or not heard from yet — and one counting the doors that are simply
+ * closed). Either row is left out when it has nothing in it. No headings: the pills say what
+ * they are, so the cameras start as high up the screen as they can. Each row scrolls sideways
+ * when there's more than fits.
  *
  * The details live a tap away: a car opens the In View page ([onOpenInView]: its arrival, last
  * sighting and the way to check and tag the cars), a door the Doors page ([onOpenDoors]).
  */
 @Composable
-internal fun HomeGlanceRow(
+internal fun HomeGlanceRows(
     inView: List<InViewItem>,
     doors: List<Door>,
     onOpenInView: () -> Unit,
     onOpenDoors: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val glance = doorGlance(doors)
+    // The pills are laid out 48dp tall around a 40dp shape, so the rows already sit 8dp apart.
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (inView.isNotEmpty()) InViewPills(inView, onOpenInView)
+        if (doors.isNotEmpty()) DoorPills(doors, onOpenDoors)
+    }
+}
+
+@Composable
+private fun PillRow(content: @Composable () -> Unit) {
     Row(
-        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val openInView = stringResource(Res.string.home_glance_open_in_view)
+        content()
+    }
+}
+
+@Composable
+private fun InViewPills(inView: List<InViewItem>, onOpenInView: () -> Unit) {
+    val openInView = stringResource(Res.string.home_glance_open_in_view)
+    PillRow {
         inView.forEach { item ->
             GlancePill(
                 label = item.presentation.title.resolve(),
@@ -91,7 +108,14 @@ internal fun HomeGlanceRow(
                 leading = { CarThumbnail(item.thumbnailUrl) },
             )
         }
-        val openDoors = stringResource(Res.string.doors_home_open)
+    }
+}
+
+@Composable
+private fun DoorPills(doors: List<Door>, onOpenDoors: () -> Unit) {
+    val glance = doorGlance(doors)
+    val openDoors = stringResource(Res.string.doors_home_open)
+    PillRow {
         glance.shown.forEach { door ->
             val open = door.open == true
             val offline = door.online == false
@@ -201,11 +225,11 @@ private fun GlancePreviewFrame(content: @Composable () -> Unit) {
 }
 
 /** A car in the driveway, the back door open and the other three closed. */
-@Preview(name = "Home glance row", widthDp = 412)
+@Preview(name = "Home glance rows", widthDp = 412)
 @Composable
-private fun HomeGlanceRowPreview() {
+private fun HomeGlanceRowsPreview() {
     GlancePreviewFrame {
-        HomeGlanceRow(
+        HomeGlanceRows(
             inView = listOf(previewGlanceCar),
             doors = listOf(Door("0x01", "Back door", open = true), Door("0x02", "Front door", open = false), Door("0x03", "Garage door", open = false)),
             onOpenInView = {},
@@ -215,11 +239,11 @@ private fun HomeGlanceRowPreview() {
 }
 
 /** Nothing parked, every door shut, one sensor not heard from in a day. */
-@Preview(name = "Home glance row, doors only", widthDp = 412)
+@Preview(name = "Home glance rows, doors only", widthDp = 412)
 @Composable
-private fun HomeGlanceRowDoorsPreview() {
+private fun HomeGlanceRowsDoorsPreview() {
     GlancePreviewFrame {
-        HomeGlanceRow(
+        HomeGlanceRows(
             inView = emptyList(),
             doors = listOf(Door("0x01", "Back door", open = false), Door("0x02", "Front door", open = false), Door("0x03", "Garage door", open = false, online = false)),
             onOpenInView = {},
