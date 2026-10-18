@@ -72,6 +72,7 @@ import homesafe.shared.generated.resources.camera_sound_turn_off
 import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
 import org.jetbrains.compose.resources.stringResource
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /**
@@ -133,12 +134,22 @@ fun NestCameraScreen(
         }
     }
     // Moving up before the card's stream has a picture here would leave nothing to show while the
-    // full one starts; once it has one, the player keeps it up through the change.
-    var warmPlayed by rememberSaveable(streamName) { mutableStateOf(false) }
-    LaunchedEffect(status) { if (status == LiveStreamStatus.Live) warmPlayed = true }
+    // full one starts; once it has one, the player keeps it up through the change. The card's
+    // stream is given up on, too, when it hasn't played within WARM_SOURCE_GRACE_MS (it may never)
+    // or when the route has moved on (LAN to Tailscale): its address is the old route's.
+    var warmDone by rememberSaveable(streamName) { mutableStateOf(false) }
+    LaunchedEffect(status) {
+        if (status == LiveStreamStatus.Live) {
+            warmDone = true
+        } else {
+            delay(WARM_SOURCE_GRACE_MS)
+            warmDone = true
+        }
+    }
+    val warmOnRoute = warmSource != null && (liveSource == null || sameHost(warmSource.url, liveSource!!.url))
     val source = when {
         wantsSound -> liveSource
-        warmSource != null && !warmPlayed -> warmSource
+        warmOnRoute && !warmDone -> warmSource
         else -> liveSource ?: warmSource
     }
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
@@ -303,3 +314,9 @@ private fun SoundButton(soundOn: Boolean, onToggle: () -> Unit, tint: Color) {
         )
     }
 }
+
+/** How long the page waits for the card's stream to play before moving to the camera's own. */
+private const val WARM_SOURCE_GRACE_MS = 6_000L
+
+/** Whether two stream URLs are on the same host: the same route to the server. */
+private fun sameHost(a: String, b: String): Boolean = a.substringAfter("://").substringBefore('/') == b.substringAfter("://").substringBefore('/')
