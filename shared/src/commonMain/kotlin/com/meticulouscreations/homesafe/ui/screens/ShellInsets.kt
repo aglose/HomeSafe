@@ -144,15 +144,16 @@ internal fun contentGutter(maxWidth: Dp = READABLE_CONTENT_WIDTH, min: Dp = TAB_
  * Content padding for a tab's scrolling list. Applied as *content* padding (not a modifier on
  * the list) so items scroll under the top bar, the floating nav and the system bars rather than
  * being clipped at a hard edge. [top] is the gap between the top bar and the first item;
- * [maxWidth] is how wide the list's items get before the gutters take up the rest.
+ * [maxWidth] is how wide the list's items get before the gutters take up the rest; [bottom] is room
+ * kept clear above the nav for something else floating at the foot of the page.
  */
 @Composable
-internal fun tabContentPadding(top: Dp = 8.dp, maxWidth: Dp = READABLE_CONTENT_WIDTH): PaddingValues {
+internal fun tabContentPadding(top: Dp = 8.dp, maxWidth: Dp = READABLE_CONTENT_WIDTH, bottom: Dp = 0.dp): PaddingValues {
     val gutter = contentGutter(maxWidth)
     return PaddingValues(
         start = gutter,
         end = gutter,
         top = shellTopBarClearance() + top,
-        bottom = bottomNavClearance(),
+        bottom = bottomNavClearance() + bottom,
     )
 }

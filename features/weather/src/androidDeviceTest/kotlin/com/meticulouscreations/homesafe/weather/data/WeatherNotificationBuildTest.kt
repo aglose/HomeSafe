@@ -73,6 +73,8 @@ class WeatherNotificationBuildTest {
         assertEquals(R.drawable.ic_notification_weather_rain, built.smallIcon.resId)
         assertEquals(WeatherNoticeIcon.RAIN.look.tintArgb, built.color)
         assertEquals(CHANNEL_ID, built.channelId)
+        // Its own group, never Android's bundle of the app's notifications under the app icon.
+        assertEquals("weather", built.group)
         assertEquals("Rain starting in about 25 min", built.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
         assertEquals("Around 3:30 PM in Portland, for about 30 min", built.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         assertEquals("Portland", built.extras.getCharSequence(Notification.EXTRA_SUB_TEXT).toString())

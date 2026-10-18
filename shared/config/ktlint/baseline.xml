@@ -29,7 +29,7 @@
         <error line="486" column="5" source="compose:state-param-check" />
         <error line="489" column="5" source="compose:lambda-param-in-effect" />
         <error line="489" column="5" source="compose:parameter-naming" />
-        <error line="797" column="47" source="compose:lambda-param-in-effect" />
+        <error line="815" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
         <error line="142" column="5" source="compose:modifier-missing-check" />
@@ -48,7 +48,7 @@
         <error line="413" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
-        <error line="148" column="5" source="compose:modifier-missing-check" />
+        <error line="160" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
         <error line="142" column="5" source="compose:modifier-missing-check" />

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Draws the UI previews and gathers the PNGs in one place:
 #
-#   OUT_DIR/android/   Layoutlib, through Compose Preview Screenshot Testing: :androidApp's
-#                      @PreviewTest functions (src/screenshotTest), as Android draws them.
+#   OUT_DIR/android/   Layoutlib, through Compose Preview Screenshot Testing: every @Preview in
+#                      :shared, the features and :app, as Android draws them.
 #
 # (The JVM renderer, :shared:renderPreviews, and the journey screenshots went with the JVM target.)
 #
@@ -10,11 +10,28 @@
 # the merge base, to have something to compare with). Exits non-zero if Layoutlib failed, after
 # gathering whatever it drew. See docs/ui-previews.md.
 #
-# Usage: scripts/render-ui-previews.sh OUT_DIR [extra gradle flags]
+# Usage: scripts/render-ui-previews.sh OUT_DIR [--only WORDS] [extra gradle flags]
+#        scripts/render-ui-previews.sh --list
+#
+#   --only WORDS  draw only the previews whose module, function or name contains one of the
+#                 comma-separated WORDS (finance,HomeFeed). Much quicker than drawing them all.
+#   --list        print every preview (module, function, name) and draw nothing.
 set -uo pipefail
 
-out=${1:?usage: scripts/render-ui-previews.sh OUT_DIR [gradle flags]}
+if [ "${1:-}" = "--list" ]; then
+  ./gradlew -q :androidApp:generatePreviewTests || exit $?
+  cat androidApp/build/generated/previewTests/previews.txt
+  exit 0
+fi
+
+out=${1:?usage: scripts/render-ui-previews.sh OUT_DIR [--only WORDS] [gradle flags]}
 shift
+# An environment variable rather than -Ppreviews, so a new filter keeps the configuration cache.
+export PREVIEWS=
+if [ "${1:-}" = "--only" ]; then
+  PREVIEWS=${2:?--only needs WORDS}
+  shift 2
+fi
 # This run's images only: a preview or journey removed since the last run into OUT_DIR must not linger.
 rm -rf "$out/android" "$out/desktop" "$out/journeys"
 mkdir -p "$out/android"
