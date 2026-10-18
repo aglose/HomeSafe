@@ -107,6 +107,7 @@ class DoorsViewModelTest {
                     DoorEvent("0x01", open = true, atMillis = at(13, 8)),
                 ),
                 listening = true,
+                answered = true,
             ),
         )
         val state = collecting(viewModel(repo)).value
@@ -155,6 +156,13 @@ class DoorsViewModelTest {
         viewModel.setNotify("0x01", DoorNotify.NEVER)
         runCurrent()
         assertEquals(UiText.of(Res.string.doors_save_failed, "relay down"), state.value.error)
+    }
+
+    @Test
+    fun onceTheRelayHasAnsweredItsNotListeningIsShownEvenWithNoSensors() = runTest(dispatcher) {
+        val state = collecting(viewModel(FakeDoorRepository(DoorsSnapshot(listening = false, answered = true)))).value
+        assertTrue(state.loaded)
+        assertFalse(state.listening, "no broker yet is exactly when the warning matters")
     }
 
     @Test

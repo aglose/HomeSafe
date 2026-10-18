@@ -18,8 +18,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Mirrors the relay's doors. Like [PresenceRepositoryImpl], the poll runs only while [doors] has
@@ -41,9 +42,30 @@ class DoorRepositoryImpl(
     private val _doors = MutableStateFlow(DoorsSnapshot.EMPTY)
     override val doors: StateFlow<DoorsSnapshot> = _doors.asStateFlow()
 
+    /** The doors as the relay last said, before any setting still on its way is laid over them. */
+    private var fromRelay = DoorsSnapshot.EMPTY
+
+    /** Settings chosen here and not yet answered, by door: each with its number, so a later choice for the same door supersedes it. */
+    private val pending = mutableMapOf<String, Pair<Long, DoorNotify>>()
+    private var edits = 0L
+
+    /** Guards [fromRelay], [pending] and [edits]: polls and saves land on different coroutines. */
+    private val state = Mutex()
+
+    /** One save at a time, in the order they were chosen (a [Mutex] is fair), so the relay keeps the last one. */
+    private val writes = Mutex()
+
     init {
         appScope.launch {
-            connectionRepository.currentServerUrl.collect { url -> if (url == null) _doors.value = DoorsSnapshot.EMPTY }
+            connectionRepository.currentServerUrl.collect { url ->
+                if (url == null) {
+                    state.withLock {
+                        pending.clear()
+                        fromRelay = DoorsSnapshot.EMPTY
+                        publish()
+                    }
+                }
+            }
         }
         appScope.launch {
             combine(
@@ -66,18 +88,46 @@ class DoorRepositoryImpl(
         return fetch(url)
     }
 
+    /**
+     * Shows [notify] at once, then saves it. Saves go to the relay one at a time in the order they
+     * were chosen, so two quick taps end on the second. A save that fails takes back only its own
+     * door's setting, and only while it is still the latest choice for that door; everything else
+     * (other doors' choices, what a poll brought in meanwhile) stays.
+     */
     override suspend fun setNotify(doorId: String, notify: DoorNotify): Result<Unit> {
         val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
-        // Shown at once; the relay's answer then replaces it, or a failure puts the old one back.
-        val before = _doors.value
-        _doors.update { snapshot -> snapshot.copy(doors = snapshot.doors.map { if (it.id == doorId) it.copy(notify = notify) else it }) }
-        return relayApi.setDoorNotify(url, doorId, notify)
-            .map { _doors.value = it }
-            .onFailure { _doors.value = before }
+        val edit = state.withLock {
+            val edit = ++edits
+            pending[doorId] = edit to notify
+            publish()
+            edit
+        }
+        val answer = writes.withLock { relayApi.setDoorNotify(url, doorId, notify) }
+        state.withLock {
+            if (pending[doorId]?.first == edit) pending.remove(doorId)
+            // An answer from the server signed out of meanwhile is no one's doors now.
+            answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
+            publish()
+        }
+        return answer.map { }
     }
 
     private suspend fun fetch(url: String): Result<Unit> =
-        relayApi.getDoors(url, identity.deviceId(), identity.secret()).map { _doors.value = it }
+        relayApi.getDoors(url, identity.deviceId(), identity.secret()).map { snapshot ->
+            state.withLock {
+                fromRelay = snapshot
+                publish()
+            }
+        }
+
+    /** [fromRelay] with every setting still on its way laid over it. Called holding [state]. */
+    private fun publish() {
+        _doors.value = if (pending.isEmpty()) {
+            fromRelay
+        } else {
+            fromRelay.copy(doors = fromRelay.doors.map { door -> pending[door.id]?.let { door.copy(notify = it.second) } ?: door })
+        }
+    }
 
     private companion object {
         const val POLL_INTERVAL_MS = 15_000L

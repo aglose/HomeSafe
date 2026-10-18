@@ -30,9 +30,11 @@ services:
     depends_on:
       - mosquitto
     # ZIGBEE2MQTT_CONFIG_FRONTEND_AUTH_TOKEN, the pairing page's password, only on the box.
+    # Required: without it the pairing page (pairing, removing, renaming every device) would
+    # answer anyone who can reach the box with no password at all.
     env_file:
       - path: zigbee.env
-        required: false
+        required: true
     volumes:
       # configuration.yaml is seeded from the repo's copy once (see docs/doors.md); Zigbee2MQTT
       # then writes into it itself (the network key it generates, each device's name).

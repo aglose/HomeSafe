@@ -308,7 +308,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
                 asDevice(deviceId, secret)
                 parameter("days", days)
             }
-            if (response.status == HttpStatusCode.NotFound) return@runCatching DoorsSnapshot(supported = false)
+            if (response.status == HttpStatusCode.NotFound) return@runCatching DoorsSnapshot(supported = false, answered = true)
             if (!response.status.isSuccess()) throw relayRefused(response.status)
             response.body<RelayDoors>().toDomain()
         }.onFailure { if (it is CancellationException) throw it }
@@ -584,6 +584,7 @@ internal data class RelayDoors(
         doors = doors.map { it.toDomain() },
         events = events.map { DoorEvent(it.door, it.open, (it.at * 1000).toLong(), it.pushed) },
         listening = broker && bridge,
+        answered = true,
     )
 }
 

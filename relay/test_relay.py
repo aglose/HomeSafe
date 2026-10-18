@@ -6338,6 +6338,25 @@ class DoorsTest(_ScratchDb):
         self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 60 + relay.DOOR_QUIET_SECONDS + 1)
         self.assertEqual([None, "1", None], [data.get("silent") for _, _, data, _ in self.pushes])
 
+    def test_a_push_no_phone_got_is_not_counted(self):
+        """Quiet hours (or "only when away") kept an Always door's push from every phone."""
+        self.paired()
+        relay.set_door(FRONT, types.SimpleNamespace(notify="always"), types.SimpleNamespace(headers={}))
+        delivered = []
+
+        def nobody(title, body, data, away=False):
+            delivered.append(data)
+            return {"sent": 0, "skipped_quiet": 2} if not away else {"sent": 2}
+
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T)
+        change = relay.door_state("Front door", {"contact": False}, self.T + 5)
+        self.assertIsNone(relay.door_announce(change, self.T + 5, False, push=nobody))
+        self.assertIsNone(relay.doors_snapshot(self.T + 10)["events"][0]["pushed"])
+        relay.door_state("Front door", {"contact": True}, self.T + 20)
+        change = relay.door_state("Front door", {"contact": False}, self.T + 60)
+        self.assertEqual("away", relay.door_announce(change, self.T + 60, True, push=nobody))
+        self.assertNotIn("silent", delivered[-1], "nothing reached a phone before, so this one sounds")
+
     def test_a_renamed_sensor_keeps_its_setting_and_a_removed_one_is_hidden(self):
         self.paired()
         relay.set_door(FRONT, types.SimpleNamespace(notify="always"), types.SimpleNamespace(headers={}))
