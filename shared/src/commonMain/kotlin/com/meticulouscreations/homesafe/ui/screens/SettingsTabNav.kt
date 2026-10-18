@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.navigation.BackStackViewModelStores
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.text.resolve
@@ -60,10 +61,15 @@ data object DoorsRoute
  * alerts, away mode, a classifier's labelling screen, the face library, and the server's
  * diagnostics with its uptime record below them. [content] renders the settings page and
  * receives `open`, which pushes the route it is given.
+ *
+ * The pages with view models of their own get their own stores from [stores], cleared once they
+ * are popped. Alerts, away mode and the server's page share the settings page's view model, so
+ * they keep the surrounding store with it.
  */
 @Composable
 fun SettingsTabNav(
     backStack: SnapshotStateList<Any>,
+    stores: BackStackViewModelStores,
     content: @Composable (open: (Any) -> Unit) -> Unit,
 ) {
     NavDisplay(
@@ -77,15 +83,17 @@ fun SettingsTabNav(
             entry<AlertsRoute> { AlertsSettingsScreen(onBack = { backStack.removeLastOrNull() }) }
             entry<AwayRoute> { AwaySettingsScreen(onBack = { backStack.removeLastOrNull() }) }
             entry<ClassifierRoute> { route ->
-                ClassifierLabelingScreen(
-                    modelName = route.modelName,
-                    onBack = { backStack.removeLastOrNull() },
-                )
+                stores.Scoped(route) {
+                    ClassifierLabelingScreen(
+                        modelName = route.modelName,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
             }
-            entry<FacesRoute> { FaceLibraryScreen(onBack = { backStack.removeLastOrNull() }) }
+            entry<FacesRoute> { route -> stores.Scoped(route) { FaceLibraryScreen(onBack = { backStack.removeLastOrNull() }) } }
             entry<ServerRoute> { ServerSettingsScreen(onBack = { backStack.removeLastOrNull() }, onOpenUptime = { backStack.add(UptimeRoute) }) }
-            entry<UptimeRoute> { ServerUptimeScreen(onBack = { backStack.removeLastOrNull() }) }
-            entry<DoorsRoute> { DoorsScreen(onBack = { backStack.removeLastOrNull() }) }
+            entry<UptimeRoute> { route -> stores.Scoped(route) { ServerUptimeScreen(onBack = { backStack.removeLastOrNull() }) } }
+            entry<DoorsRoute> { route -> stores.Scoped(route) { DoorsScreen(onBack = { backStack.removeLastOrNull() }) } }
         },
     )
 }

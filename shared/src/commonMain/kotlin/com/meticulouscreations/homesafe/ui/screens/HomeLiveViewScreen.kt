@@ -102,6 +102,7 @@ import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.Door
+import com.meticulouscreations.homesafe.navigation.BackStackViewModelStores
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
@@ -252,7 +253,8 @@ internal data class ArrangeAction(val arranging: Boolean, val onToggle: () -> Un
  * Arrange mode's switch for the top bar's menu while the Home list has cameras to arrange, and
  * null while it has none, unless Arrange mode is on: the way out stays, even with the list
  * emptied under it. The shell draws the bar, so it reads Home's view model here: the same
- * instance [HomeTabContent] has, as the shell's back stacks don't scope view models per entry.
+ * instance [HomeTabContent] has, as the root of Home's stack keeps the shell's view-model store
+ * (only the pages pushed above it get their own: see [BackStackViewModelStores]).
  */
 @Composable
 internal fun homeArrangeAction(): ArrangeAction? {

@@ -46,6 +46,8 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,6 +57,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 
 /** The record a set just logged turned out to be, to be celebrated once. [token] tells one flash from the next. */
@@ -185,6 +190,11 @@ class FitnessViewModel(
     private val monitor: HeartRateMonitor,
     private val clock: Clock,
     private val preferences: FitnessPreferencesRepository,
+    /**
+     * Where the boards are built from the log, off the main thread: every set logged and every
+     * minute rebuilds all of them. A test hands in its own.
+     */
+    private val boardDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FitnessUiState(nowEpochSeconds = now()))
@@ -655,10 +665,19 @@ class FitnessViewModel(
         }
     }
 
-    private fun publish(loaded: Boolean? = null) {
+    /**
+     * One build at a time, in the order they were asked for: the log's own and the minute's tick
+     * could otherwise finish the wrong way round, and an older minute land over a newer one.
+     */
+    private val publishing = Mutex()
+
+    private suspend fun publish(loaded: Boolean? = null) = publishing.withLock {
+        val built = log
         val at = now()
         val offset = localUtcOffsetSeconds(at.toDouble())
-        val boards = FitnessBoardBuilder.build(log, at, offset, offsetAt = { localUtcOffsetSeconds(it.toDouble()) })
+        val boards = withContext(boardDispatcher) { FitnessBoardBuilder.build(built, at, offset, offsetAt = { localUtcOffsetSeconds(it.toDouble()) }) }
+        // A newer log came in while these were built (the minute's tick, overtaken): its own publish, waiting its turn, shows it.
+        if (built !== log) return@withLock
         _uiState.update { state ->
             state.copy(
                 loaded = loaded ?: state.loaded,

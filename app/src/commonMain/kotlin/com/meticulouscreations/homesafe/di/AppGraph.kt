@@ -62,6 +62,7 @@ import com.meticulouscreations.homesafe.network.createLocalNetworkAccess
 import com.meticulouscreations.homesafe.network.createNetworkMonitor
 import com.meticulouscreations.homesafe.network.createTailnetProbe
 import com.meticulouscreations.homesafe.network.createTailscaleApp
+import com.meticulouscreations.homesafe.network.jsonOffMain
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.ui.components.LivePlayerPrefetch
 import com.meticulouscreations.homesafe.ui.components.createLivePlayerPrefetch
@@ -84,7 +85,6 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
 import io.ktor.client.plugins.cookies.CookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -346,8 +346,9 @@ interface AppGraph :
     @SingleIn(AppScope::class)
     @Provides
     fun provideHttpClient(cookieStorage: CookiesStorage): HttpClient = HttpClient {
+        // Decoded off the main thread: most callers are view models (see jsonOffMain).
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+            jsonOffMain(Json { ignoreUnknownKeys = true })
         }
         install(HttpCookies) { storage = cookieStorage }
         install(HttpTimeout) {

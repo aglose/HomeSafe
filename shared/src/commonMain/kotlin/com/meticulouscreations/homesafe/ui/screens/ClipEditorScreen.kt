@@ -65,7 +65,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -92,10 +91,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.ClipLimits
@@ -192,68 +188,52 @@ fun ClipEditorScreen(
     val landed = navTransition.currentState == EnterExitState.Visible && navTransition.targetState == EnterExitState.Visible
     if (landed) ImmersiveSystemBars()
 
-    // The editor's view model lives exactly as long as this screen: its own store, cleared on the
-    // way out, so a closed editor stops watching the camera's moments and the next one starts
-    // fresh. (The activity-wide store would keep one per visit alive for the life of the app.)
-    val store = rememberScreenViewModelStore()
-    CompositionLocalProvider(LocalViewModelStoreOwner provides store) {
-        val viewModel = assistedMetroViewModel<ClipEditorViewModel, ClipEditorViewModel.Factory>(key = "clip-editor:$cameraName") {
-            create(cameraName, anchorEpochSeconds)
-        }
-        val state by viewModel.uiState.collectAsStateWithLifecycle()
-        // Once per editor, not per position tick: the controls below skip recomposing on it.
-        val trimmer = remember(viewModel) {
-            TrimmerActions(
-                onTrimStart = viewModel::beginTrim,
-                onTrim = viewModel::trimTo,
-                onTrimEnd = viewModel::endTrim,
-                onScrubStart = viewModel::beginScrub,
-                onScrub = viewModel::scrubTo,
-                onScrubEnd = viewModel::endScrub,
-                onTap = viewModel::tapAt,
-                onPan = viewModel::panWindow,
-                onZoom = viewModel::zoomWindow,
-            )
-        }
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                // First, so the water carries everything below it — the black included.
-                .splashReveal(progress = { splash.value }, originFraction = splashOrigin)
-                .background(EditorBackground),
-        ) {
-            ClipEditorContent(
-                cameraName = cameraName,
-                state = state,
-                splashProgress = { splash.value },
-                onClose = onClose,
-                onSave = viewModel::save,
-                onRetryLoad = viewModel::retry,
-                onDismissSaveError = viewModel::dismissSaveError,
-                onTogglePlay = viewModel::togglePlayPause,
-                onPlayerPosition = viewModel::onPlayerPositionChanged,
-                onBuffering = viewModel::onBufferingChanged,
-                onPlaybackEnd = viewModel::onPlaybackEnded,
-                onPlaybackError = viewModel::onPlaybackError,
-                snapshotUrl = viewModel::snapshotUrl,
-                trimmer = trimmer,
-                onSelectMoment = viewModel::selectMoment,
-                onSetLength = viewModel::setLength,
-            )
-        }
+    // The editor's view model is its route's own (see BackStackViewModelStores), cleared once it
+    // has closed, so a closed editor stops watching the camera's moments and the next one starts fresh.
+    val viewModel = assistedMetroViewModel<ClipEditorViewModel, ClipEditorViewModel.Factory>(key = "clip-editor:$cameraName") {
+        create(cameraName, anchorEpochSeconds)
     }
-}
-
-/** A [ViewModelStoreOwner] for one screen's time in the composition, cleared when it leaves. */
-@Composable
-private fun rememberScreenViewModelStore(): ViewModelStoreOwner {
-    val owner = remember {
-        object : ViewModelStoreOwner {
-            override val viewModelStore: ViewModelStore = ViewModelStore()
-        }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // Once per editor, not per position tick: the controls below skip recomposing on it.
+    val trimmer = remember(viewModel) {
+        TrimmerActions(
+            onTrimStart = viewModel::beginTrim,
+            onTrim = viewModel::trimTo,
+            onTrimEnd = viewModel::endTrim,
+            onScrubStart = viewModel::beginScrub,
+            onScrub = viewModel::scrubTo,
+            onScrubEnd = viewModel::endScrub,
+            onTap = viewModel::tapAt,
+            onPan = viewModel::panWindow,
+            onZoom = viewModel::zoomWindow,
+        )
     }
-    DisposableEffect(owner) { onDispose { owner.viewModelStore.clear() } }
-    return owner
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            // First, so the water carries everything below it — the black included.
+            .splashReveal(progress = { splash.value }, originFraction = splashOrigin)
+            .background(EditorBackground),
+    ) {
+        ClipEditorContent(
+            cameraName = cameraName,
+            state = state,
+            splashProgress = { splash.value },
+            onClose = onClose,
+            onSave = viewModel::save,
+            onRetryLoad = viewModel::retry,
+            onDismissSaveError = viewModel::dismissSaveError,
+            onTogglePlay = viewModel::togglePlayPause,
+            onPlayerPosition = viewModel::onPlayerPositionChanged,
+            onBuffering = viewModel::onBufferingChanged,
+            onPlaybackEnd = viewModel::onPlaybackEnded,
+            onPlaybackError = viewModel::onPlaybackError,
+            snapshotUrl = viewModel::snapshotUrl,
+            trimmer = trimmer,
+            onSelectMoment = viewModel::selectMoment,
+            onSetLength = viewModel::setLength,
+        )
+    }
 }
 
 /** Everything the filmstrip can ask of the editor, bundled so the layout below doesn't thread nine lambdas. */

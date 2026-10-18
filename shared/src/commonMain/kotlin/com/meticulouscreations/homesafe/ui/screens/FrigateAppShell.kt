@@ -89,6 +89,7 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
+import com.meticulouscreations.homesafe.navigation.BackStackViewModelStores
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
@@ -99,6 +100,7 @@ import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
+import com.meticulouscreations.homesafe.navigation.rememberBackStackViewModelStores
 import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
@@ -442,6 +444,7 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
 fun FrigateAppShell() {
     val viewModel: AppShellViewModel = metroViewModel()
     val nav = remember { ShellNavigation() }
+    val stores = rememberShellViewModelStores(nav)
     // The Home list's quick look at one camera. Its layer is drawn by the shell, over the bars,
     // so the zoomed picture gets the whole screen.
     val cardZoom = rememberCameraCardZoomState()
@@ -488,10 +491,10 @@ fun FrigateAppShell() {
                     // it. Clearing what it had drilled into once another tab has fully taken
                     // over means a predictive Back previews the camera list it will land on.
                     DisposableEffect(nav) { onDispose { nav.popToRoot(TopLevelRoute.Home) } }
-                    TabContent(TopLevelRoute.Home, nav, cardZoom)
+                    TabContent(TopLevelRoute.Home, nav, cardZoom, stores)
                 }
-                entry<TopLevelRoute.Moments> { TabContent(TopLevelRoute.Moments, nav, cardZoom) }
-                entry<TopLevelRoute.Settings> { TabContent(TopLevelRoute.Settings, nav, cardZoom) }
+                entry<TopLevelRoute.Moments> { TabContent(TopLevelRoute.Moments, nav, cardZoom, stores) }
+                entry<TopLevelRoute.Settings> { TabContent(TopLevelRoute.Settings, nav, cardZoom, stores) }
             },
         )
     }
@@ -507,6 +510,7 @@ fun FrigateAppShell() {
 @Composable
 fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     val viewModel: AppShellViewModel = metroViewModel()
+    val stores = rememberShellViewModelStores(nav)
     // Per tab, like the scaffold it lifts into: only Home ever opens it, and its layer covers
     // this tab's Compose view (the native bar beneath is the platform's to draw).
     val cardZoom = rememberCameraCardZoomState()
@@ -536,20 +540,35 @@ fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
         contentObscured = nav.drawerOpen || nav.appOpen,
         drawerPull = nav.drawerPullOn(tab),
     ) {
-        TabContent(tab, nav, cardZoom)
+        TabContent(tab, nav, cardZoom, stores)
     }
+}
+
+/**
+ * The view-model stores of the pages pushed on Home's and Settings' stacks (see
+ * [BackStackViewModelStores]). Made here, beside the stacks' state and outside the scaffold,
+ * which stops drawing the tabs while an app from the drawer covers them.
+ */
+@Stable
+private class ShellViewModelStores(val home: BackStackViewModelStores, val settings: BackStackViewModelStores)
+
+@Composable
+private fun rememberShellViewModelStores(nav: ShellNavigation): ShellViewModelStores {
+    val home = rememberBackStackViewModelStores(nav.homeBackStack, key = "home")
+    val settings = rememberBackStackViewModelStores(nav.settingsBackStack, key = "settings")
+    return remember(home, settings) { ShellViewModelStores(home, settings) }
 }
 
 /** What [tab] shows: its root screen, and the nested stack beyond it where the tab has one. */
 @Composable
-private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState, stores: ShellViewModelStores) {
     val scrollToTop = remember(nav, tab) { nav.reselections(tab) }
     when (tab) {
-        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom, scrollToTop)
+        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, stores.home, cardZoom, scrollToTop)
 
         TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection, scrollToTopRequests = scrollToTop)
 
-        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { open ->
+        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack, stores.settings) { open ->
             SettingsTabContent(onOpen = open, scrollToTopRequests = scrollToTop)
         }
     }
@@ -963,11 +982,18 @@ private data class ClipEditorRoute(
  * which is why they are attached to the detail entry rather than to the display.
  *
  * [backStack] is owned by [ShellNavigation] (see there for why) and starts at [CameraListRoute].
+ * Every page above the list has a view-model store of its own from [stores], cleared once it is
+ * popped; the list keeps the shell's, which the top bar's Arrange switch reads too.
  * [scrollToTop] are the bottom nav's re-taps on Home while the list is up.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, scrollToTop: ScrollToTopRequests) {
+private fun HomeTabNav(
+    backStack: SnapshotStateList<Any>,
+    stores: BackStackViewModelStores,
+    cardZoom: CameraCardZoomState,
+    scrollToTop: ScrollToTopRequests,
+) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -992,54 +1018,60 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         NavDisplay.popTransitionSpec { SharedElementPop } +
                         NavDisplay.predictivePopTransitionSpec { SharedElementPop },
                 ) { route ->
-                    NestCameraScreen(
-                        streamName = route.streamName,
-                        warmStreamUrl = route.warmStreamUrl,
-                        warmWebRtcSignalingUrl = route.warmWebRtcSignalingUrl,
-                        warmStillUrl = route.warmStillUrl,
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        onBack = { backStack.removeLastOrNull() },
-                    )
+                    stores.Scoped(route) {
+                        NestCameraScreen(
+                            streamName = route.streamName,
+                            warmStreamUrl = route.warmStreamUrl,
+                            warmWebRtcSignalingUrl = route.warmWebRtcSignalingUrl,
+                            warmStillUrl = route.warmStillUrl,
+                            sharedTransitionScope = this@SharedTransitionLayout,
+                            onBack = { backStack.removeLastOrNull() },
+                        )
+                    }
                 }
                 entry<CameraFramingRoute>(
                     metadata = NavDisplay.transitionSpec { SharedElementPush } +
                         NavDisplay.popTransitionSpec { SharedElementPop } +
                         NavDisplay.predictivePopTransitionSpec { SharedElementPop },
                 ) { route ->
-                    CameraFramingScreen(
-                        cameraName = route.cameraName,
-                        streamUrl = route.streamUrl,
-                        webRtcSignalingUrl = route.webRtcSignalingUrl,
-                        posterUrl = route.posterUrl,
-                        posterIsLastSeen = route.posterIsLastSeen,
-                        videoFit = route.videoFit,
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        onDone = { backStack.removeLastOrNull() },
-                    )
+                    stores.Scoped(route) {
+                        CameraFramingScreen(
+                            cameraName = route.cameraName,
+                            streamUrl = route.streamUrl,
+                            webRtcSignalingUrl = route.webRtcSignalingUrl,
+                            posterUrl = route.posterUrl,
+                            posterIsLastSeen = route.posterIsLastSeen,
+                            videoFit = route.videoFit,
+                            sharedTransitionScope = this@SharedTransitionLayout,
+                            onDone = { backStack.removeLastOrNull() },
+                        )
+                    }
                 }
                 entry<CameraDetailRoute>(
                     metadata = NavDisplay.transitionSpec { SharedElementPush } +
                         NavDisplay.popTransitionSpec { SharedElementPop } +
                         NavDisplay.predictivePopTransitionSpec { SharedElementPop },
                 ) { route ->
-                    CameraDetailScreen(
-                        cameraName = route.cameraName,
-                        warmStreamUrl = route.warmStreamUrl,
-                        warmPosterUrl = route.warmPosterUrl,
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        onBack = { backStack.removeLastOrNull() },
-                        onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
-                        onTagCars = { backStack.add(CarTaggingRoute(route.cameraName)) },
-                        onClip = { anchor, origin ->
-                            // A second tap while the splash is still landing is the same editor.
-                            if (backStack.lastOrNull() !is ClipEditorRoute) {
-                                backStack.add(ClipEditorRoute(route.cameraName, anchor, origin.x, origin.y))
-                            }
-                        },
-                        openAtEpochSeconds = route.openAtEpochSeconds,
-                        openedEventId = route.openedEventId,
-                        tagCarOnOpen = route.tagCarOnOpen,
-                    )
+                    stores.Scoped(route) {
+                        CameraDetailScreen(
+                            cameraName = route.cameraName,
+                            warmStreamUrl = route.warmStreamUrl,
+                            warmPosterUrl = route.warmPosterUrl,
+                            sharedTransitionScope = this@SharedTransitionLayout,
+                            onBack = { backStack.removeLastOrNull() },
+                            onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
+                            onTagCars = { backStack.add(CarTaggingRoute(route.cameraName)) },
+                            onClip = { anchor, origin ->
+                                // A second tap while the splash is still landing is the same editor.
+                                if (backStack.lastOrNull() !is ClipEditorRoute) {
+                                    backStack.add(ClipEditorRoute(route.cameraName, anchor, origin.x, origin.y))
+                                }
+                            },
+                            openAtEpochSeconds = route.openAtEpochSeconds,
+                            openedEventId = route.openedEventId,
+                            tagCarOnOpen = route.tagCarOnOpen,
+                        )
+                    }
                 }
                 // Splashes in from the scissors rather than sliding: see SplashPush / SplashPop,
                 // and ClipEditorScreen for the water itself.
@@ -1048,26 +1080,32 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         NavDisplay.popTransitionSpec { SplashPop } +
                         NavDisplay.predictivePopTransitionSpec { SplashPop },
                 ) { route ->
-                    ClipEditorScreen(
-                        cameraName = route.cameraName,
-                        anchorEpochSeconds = route.anchorEpochSeconds,
-                        splashOrigin = Offset(route.originX, route.originY),
-                        onClose = { backStack.removeLastOrNull() },
-                    )
+                    stores.Scoped(route) {
+                        ClipEditorScreen(
+                            cameraName = route.cameraName,
+                            anchorEpochSeconds = route.anchorEpochSeconds,
+                            splashOrigin = Offset(route.originX, route.originY),
+                            onClose = { backStack.removeLastOrNull() },
+                        )
+                    }
                 }
                 entry<DetectionZonesRoute> { route ->
-                    DetectionZonesScreen(
-                        cameraName = route.cameraName,
-                        onBack = { backStack.removeLastOrNull() },
-                    )
+                    stores.Scoped(route) {
+                        DetectionZonesScreen(
+                            cameraName = route.cameraName,
+                            onBack = { backStack.removeLastOrNull() },
+                        )
+                    }
                 }
                 entry<CarTaggingRoute> { route ->
-                    CarTaggingScreen(
-                        cameraName = route.cameraName,
-                        onBack = { backStack.removeLastOrNull() },
-                    )
+                    stores.Scoped(route) {
+                        CarTaggingScreen(
+                            cameraName = route.cameraName,
+                            onBack = { backStack.removeLastOrNull() },
+                        )
+                    }
                 }
-                entry<DoorsHomeRoute> { DoorsScreen(onBack = { backStack.removeLastOrNull() }) }
+                entry<DoorsHomeRoute> { route -> stores.Scoped(route) { DoorsScreen(onBack = { backStack.removeLastOrNull() }) } }
             },
         )
     }

@@ -60,7 +60,7 @@
         <error line="887" column="14" source="compose:param-order-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
-        <error line="99" column="5" source="compose:modifier-missing-check" />
+        <error line="107" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
         <error line="78" column="14" source="compose:compositionlocal-allowlist" />

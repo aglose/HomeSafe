@@ -62,9 +62,11 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.fail
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -191,6 +193,9 @@ class MomentsViewModelTest {
         val moments = FakeMoments(events)
         val cameraRepo = FakeCameras(cameras)
         val phantoms = FakePhantoms()
+
+        /** What the phone's clock says. */
+        var now: Instant = Instant.fromEpochSeconds(1_789_400_000)
         val viewModel = MomentsViewModel(
             observeMomentsUseCase = ObserveMomentsUseCase(moments),
             observeMomentsErrorUseCase = ObserveMomentsErrorUseCase(moments),
@@ -209,8 +214,9 @@ class MomentsViewModelTest {
             refreshPhantomSpotsUseCase = RefreshPhantomSpotsUseCase(phantoms),
             markNotAPersonUseCase = MarkNotAPersonUseCase(phantoms),
             undoNotAPersonUseCase = UndoNotAPersonUseCase(phantoms),
+            feedDispatcher = dispatcher,
             clock = object : Clock {
-                override fun now(): Instant = Instant.fromEpochSeconds(1_789_400_000)
+                override fun now(): Instant = this@Harness.now
             },
         )
     }
@@ -230,6 +236,24 @@ class MomentsViewModelTest {
         assertEquals(listOf(MomentCameraOption("front_door", "Front Door"), MomentCameraOption("backyard", "Backyard")), state.cameras)
         assertNull(state.selectedCamera)
         assertEquals(listOf("a", "b", "c", "d"), state.ids)
+    }
+
+    @Test
+    fun aFilterChangedAfterMidnightGroupsByTheNewDay() = runTest(dispatcher) {
+        // Nothing polls to say the day has changed (a past day's feed stops once it is fetched),
+        // but the filter is a rebuild, and that reads the day afresh.
+        val harness = Harness()
+        val before = state(harness.viewModel).groups.map { it.dateGroup }
+        harness.now += 1.days
+
+        harness.viewModel.selectCategory(MomentCategory.PEOPLE)
+        advanceUntilIdle()
+        harness.viewModel.selectCategory(MomentCategory.ALL)
+        advanceUntilIdle()
+
+        val after = harness.viewModel.uiState.value
+        assertEquals(listOf("a", "b", "c", "d"), after.ids)
+        assertNotEquals(before, after.groups.map { it.dateGroup })
     }
 
     @Test

@@ -25,6 +25,7 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -108,7 +110,7 @@ class WeatherRepositoryImpl(
         guard.withLock { reports[place.id]?.takeIf { sameSpot(it.place, place) }?.report }?.let { return it }
         val row = suspendRunCatching { dao.report(place.id) }.getOrNull() ?: return null
         if (abs(row.latitude - place.latitude) > SAME_SPOT_DEGREES || abs(row.longitude - place.longitude) > SAME_SPOT_DEGREES) return null
-        return runCatching { weatherJson.decodeFromString(WeatherReport.serializer(), row.json) }.getOrNull()
+        return withContext(Dispatchers.Default) { runCatching { weatherJson.decodeFromString(WeatherReport.serializer(), row.json) }.getOrNull() }
     }
 
     override suspend fun searchPlaces(query: String): Result<List<Place>> {

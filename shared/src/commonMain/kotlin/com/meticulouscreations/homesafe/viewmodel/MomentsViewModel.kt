@@ -45,6 +45,8 @@ import homesafe.shared.generated.resources.moments_clip_load_failed
 import homesafe.shared.generated.resources.moments_clip_play_failed
 import homesafe.shared.generated.resources.moments_not_a_person_mark_failed
 import homesafe.shared.generated.resources.moments_not_a_person_undo_failed
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -54,9 +56,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -172,6 +176,13 @@ data class DownloadUiState(
     val resultError: UiText? = null,
 )
 
+/**
+ * The feed as a poll found it, with what its cards' times and days are read against: [day]
+ * ("Today", "Yesterday") and the phone's [zone]. A new day or zone is a new feed to present, even
+ * when no moment has changed.
+ */
+private data class DatedFeed(val events: List<MomentEvent>, val day: LocalDate, val zone: TimeZone)
+
 @OptIn(ExperimentalTime::class)
 @Inject
 @ViewModelKey
@@ -195,6 +206,11 @@ class MomentsViewModel(
     private val markNotAPersonUseCase: MarkNotAPersonUseCase,
     private val undoNotAPersonUseCase: UndoNotAPersonUseCase,
     private val clock: Clock,
+    /**
+     * Where the feed is folded into visits, presented and grouped by day, off the main thread:
+     * a hundred moments and more, again whenever they or the filters change. A test hands in its own.
+     */
+    private val feedDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
@@ -219,8 +235,14 @@ class MomentsViewModel(
      * what the relay no longer pushes, the feed no longer shows, so one "Not a person" on a card
      * clears every re-detection of the same thing at the same spot.
      */
-    private val visibleEvents: Flow<List<MomentEvent>> =
-        combine(observeMomentsUseCase(), observePhantomSpotsUseCase()) { events, spots -> events.filterNot { it.isPhantom(spots) } }
+    private val visibleEvents: Flow<DatedFeed> =
+        combine(observeMomentsUseCase(), observePhantomSpotsUseCase()) { events, spots ->
+            DatedFeed(events.filterNot { it.isPhantom(spots) }, today(), TimeZone.currentSystemDefault())
+        }
+            // The repository hands the feed back after every poll, changed or not. Only a change
+            // (or midnight, or a new time zone, which move the days and times) is worth folding
+            // and grouping again.
+            .distinctUntilChanged()
 
     /**
      * What the feed is narrowed to. A picked camera the server no longer lists (a switch to
@@ -273,11 +295,13 @@ class MomentsViewModel(
         observeMomentsErrorUseCase(),
         observeMomentsPagingUseCase(),
         serverUrl,
-    ) { events, filters, error, paging, serverUrl ->
+    ) { polled, filters, error, paging, serverUrl ->
+        // Asked again rather than taken from the poll: a past day's feed stops polling once it
+        // has been fetched, and a filter changed after midnight should still group by the new day.
         val day = today()
         val category = filters.category
         val cameraName = filters.camera?.name
-        val items = events
+        val items = polled.events
             .filter { category == MomentCategory.ALL || it.category == category }
             // The server already narrowed the feed; this only hides the old camera's cards in the
             // moment between a pick and the repository starting over.
@@ -341,7 +365,7 @@ class MomentsViewModel(
             hasOlder = paging.hasOlder,
             loadingOlder = paging.loadingOlder,
         )
-    }
+    }.flowOn(feedDispatcher).conflate()
 
     val uiState: StateFlow<MomentsUiState> = combine(feed, _historyDay, _refreshing, _clip) { feed, historyDay, refreshing, clip ->
         feed.copy(
