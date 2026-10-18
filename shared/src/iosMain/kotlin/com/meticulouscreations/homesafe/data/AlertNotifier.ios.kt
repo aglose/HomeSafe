@@ -4,6 +4,8 @@ import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.navigation.DoorDeepLink
+import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
@@ -59,7 +61,9 @@ private const val THREAD_SUMMARY = "summary"
  * the first post of a detection asks for the banner and sound — a detection is worth seeing
  * whichever tab is open — and its updates (picture, clip) only refresh the entry in the list.
  *
- * A tap hands the detection to [MomentDeepLinks], which the shell opens full screen. iOS delivers
+ * A tap hands the detection to [MomentDeepLinks], which the shell opens full screen, and a door's
+ * push (the relay's `door` key, which FCM hands over as a top-level `userInfo` key) to
+ * [DoorDeepLinks], which opens the Doors page. iOS delivers
  * the tap that launches the app before `didFinishLaunching` returns, so this is installed from
  * `startIosApp` at launch, not when the notifier is first used.
  */
@@ -111,7 +115,12 @@ private class NotificationCenterDelegate :
             val link = WeatherDeepLink.from { key -> info[key] as? String }
             WeatherDeepLinks.open(if (didReceiveNotificationResponse.actionIdentifier == IosWeatherActions.RADAR) link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null) else link)
         } else {
-            MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
+            val door = DoorDeepLink.from { key -> info[key] as? String }
+            if (door != null) {
+                DoorDeepLinks.open(door)
+            } else {
+                MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
+            }
         }
         withCompletionHandler()
     }

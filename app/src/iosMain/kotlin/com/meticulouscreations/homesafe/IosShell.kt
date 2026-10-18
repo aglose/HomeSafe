@@ -72,6 +72,7 @@ class IosShell {
         // its tabs' compositions, so it drains notification taps itself, for its whole life.
         MainScope().launch { nav.openMomentsFromNotifications() }
         MainScope().launch { nav.openWeatherFromNotifications() }
+        MainScope().launch { nav.openDoorsFromNotifications() }
         MainScope().launch {
             snapshotFlow { nav.showsBottomNav(TopLevelRoute.Home) }
                 .distinctUntilChanged()
