@@ -54,7 +54,6 @@ import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
-import com.meticulouscreations.homesafe.ui.components.cropped
 import com.meticulouscreations.homesafe.ui.components.isOnItsSide
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
@@ -71,8 +70,8 @@ import homesafe.shared.generated.resources.camera_nest_live_only
 import homesafe.shared.generated.resources.camera_sound_turn_off
 import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
-import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
 /**
@@ -198,8 +197,9 @@ fun NestCameraScreen(
                 ShapedVideo(
                     streamUrl = request.source.url,
                     fit = fit,
-                    modifier = Modifier.fillMaxSize().pinchZoomContent(zoom).cropped(framing.crop),
+                    modifier = Modifier.fillMaxSize().pinchZoomContent(zoom),
                     turnDegrees = turnDegrees,
+                    crop = { framing.crop },
                 ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         request = request,

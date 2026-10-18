@@ -115,7 +115,6 @@ import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.SkeletonCameraCard
 import com.meticulouscreations.homesafe.ui.components.SkeletonCardCornerRadius
-import com.meticulouscreations.homesafe.ui.components.cropped
 import com.meticulouscreations.homesafe.ui.components.pinchGestures
 import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
@@ -788,8 +787,9 @@ internal fun CameraCard(
                 ShapedVideo(
                     streamUrl = streamUrl,
                     fit = tile.videoFit,
-                    modifier = Modifier.fillMaxSize().cropped(tile.crop),
+                    modifier = Modifier.fillMaxSize(),
                     turnDegrees = turnDegrees,
+                    crop = { tile.crop },
                 ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         streamUrl = streamUrl,

@@ -50,7 +50,6 @@ import androidx.compose.ui.util.lerp
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
-import com.meticulouscreations.homesafe.ui.components.cropped
 import com.meticulouscreations.homesafe.ui.components.detectHeldDrag
 import com.meticulouscreations.homesafe.ui.components.liveSurfaceIsExclusive
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
@@ -335,8 +334,9 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                     ShapedVideo(
                         streamUrl = streamUrl,
                         fit = tile.videoFit,
-                        modifier = Modifier.fillMaxSize().cropped(tile.crop),
+                        modifier = Modifier.fillMaxSize(),
                         turnDegrees = turnDegrees,
+                        crop = { tile.crop },
                     ) { videoModifier, onStreamStats ->
                         CameraStreamPlayer(
                             streamUrl = streamUrl,

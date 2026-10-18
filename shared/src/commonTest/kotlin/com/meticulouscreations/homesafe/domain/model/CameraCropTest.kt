@@ -54,4 +54,35 @@ class CameraCropTest {
         assertTrue(!CameraFraming(crop = CameraCrop(zoom = 1.2f)).isUntouched)
         assertTrue(!CameraFraming(orientation = CameraOrientation(tiltDegrees = 0.1f)).isUntouched)
     }
+
+    // A 4:3 picture shown whole in a 16:9 frame: the frame reaches 4/3 of the way across it.
+    private val letterboxed = 4f / 3f
+
+    @Test
+    fun aPictureNarrowerThanTheFrameStaysCentredUntilZoomedPastIt() {
+        val crop = CameraCrop(zoom = 1.2f, centerX = 0.3f, centerY = 0.5f).clamped(spanX = letterboxed, spanY = 1f)
+        assertNear(0.5f, crop.centerX, "at 1.2x the picture is still narrower than the frame")
+    }
+
+    @Test
+    fun panningALetterboxedPictureStopsAtItsEdgeNotTheFrames() {
+        // At 2x the frame shows 2/3 of the picture's width: its middle can go no nearer an edge than 1/3.
+        val crop = CameraCrop(zoom = 2f).transformed(factor = 1f, panX = 5f, spanX = letterboxed, spanY = 1f)
+        assertNear(1f / 3f, crop.centerX)
+    }
+
+    @Test
+    fun theSameCropIsTheSamePointOfThePictureInAnyFrame() {
+        // The crop is in fractions of the picture, so a page shaped like the picture centres where the 16:9 editor did.
+        val crop = CameraCrop(zoom = 2f, centerX = 0.6f, centerY = 0.5f)
+        assertNear(0.6f, crop.clamped(spanX = letterboxed, spanY = 1f).centerX)
+        assertNear(0.6f, crop.clamped().centerX)
+    }
+
+    @Test
+    fun zoomingAboutTheFingersInALetterboxedFrameKeepsThePictureUnderThem() {
+        // Fingers at 3/4 across the 16:9 frame are over the picture at 0.5 + 0.25 * 4/3 = 5/6 of its width.
+        val crop = CameraCrop.WHOLE.transformed(factor = 3f, focusX = 0.75f, spanX = letterboxed, spanY = 1f)
+        assertNear(5f / 6f, crop.centerX + (0.75f - 0.5f) * letterboxed / crop.zoom)
+    }
 }

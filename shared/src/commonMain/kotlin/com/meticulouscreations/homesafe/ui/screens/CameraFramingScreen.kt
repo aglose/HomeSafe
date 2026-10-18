@@ -96,8 +96,10 @@ import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
+import com.meticulouscreations.homesafe.ui.components.MeasuredVideoShapes
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
-import com.meticulouscreations.homesafe.ui.components.cropped
+import com.meticulouscreations.homesafe.ui.components.isOnItsSide
+import com.meticulouscreations.homesafe.ui.components.pictureBoxSize
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.viewmodel.CameraFramingViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
@@ -207,6 +209,11 @@ internal fun CameraFramingEditor(
     val shown = framing
     // Whether the angle is being worked on right now: the grid fills in to level it against.
     var straightening by remember { mutableStateOf(straighteningAtFirst) }
+    // How far the card-shaped frame reaches across the picture (see CameraCrop): a 4:3 Nest
+    // picture shown whole has bars beside it, and the crop is in fractions of the picture.
+    val aspect = streamUrl?.let { MeasuredVideoShapes[it] }.takeIf { videoFit != null }
+    val onItsSide = isOnItsSide(framing.orientation.degrees)
+    val spans = remember(aspect, videoFit, onItsSide) { frameSpans(aspect, videoFit, onItsSide) }
 
     val stage = @Composable { stageModifier: Modifier ->
         FramingStage(
@@ -218,6 +225,7 @@ internal fun CameraFramingEditor(
             videoFit = videoFit,
             framing = shown,
             latestFraming = latestFraming,
+            spans = spans,
             straightening = straightening,
             sharedTransitionScope = sharedTransitionScope,
             onChange = { changed, tilting ->
@@ -234,6 +242,7 @@ internal fun CameraFramingEditor(
     val controls = @Composable { controlsModifier: Modifier ->
         FramingControls(
             framing = shown,
+            spans = spans,
             onChange = { changed, tilting ->
                 straightening = tilting
                 onChange(changed)
@@ -305,6 +314,7 @@ private fun FramingStage(
     videoFit: VideoFit?,
     framing: CameraFraming,
     latestFraming: () -> CameraFraming,
+    spans: FrameSpans,
     straightening: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     onChange: (framing: CameraFraming, tilting: Boolean) -> Unit,
@@ -318,6 +328,7 @@ private fun FramingStage(
     var frame by remember { mutableStateOf(Rect.Zero) }
     val current by rememberUpdatedState(framing)
     val latest by rememberUpdatedState(latestFraming)
+    val currentSpans by rememberUpdatedState(spans)
     val currentOnChange by rememberUpdatedState(onChange)
     val currentOnLetGo by rememberUpdatedState(onLetGo)
     val turnDegrees = framing.orientation.degrees
@@ -337,6 +348,8 @@ private fun FramingStage(
                         focusY = (centroid.y - bounds.top) / bounds.height,
                         panX = pan.x / bounds.width,
                         panY = pan.y / bounds.height,
+                        spanX = currentSpans.x,
+                        spanY = currentSpans.y,
                     )
                     val orientation = if (rotation == 0f) before.orientation else before.orientation.tilted(before.orientation.tiltDegrees + rotation)
                     // A click as the picture comes level, so level can be found without looking.
@@ -374,8 +387,11 @@ private fun FramingStage(
                 ShapedVideo(
                     streamUrl = streamUrl,
                     fit = videoFit,
-                    modifier = Modifier.fillMaxSize().cropped { current.crop },
+                    modifier = Modifier.fillMaxSize(),
                     turnDegrees = turnDegrees,
+                    crop = { current.crop },
+                    // What the frame cuts off shows around it, dimmed by the overlay.
+                    clip = false,
                 ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         streamUrl = streamUrl,
@@ -450,6 +466,7 @@ private fun FrameOverlay(frame: () -> Rect, denseGrid: Boolean, modifier: Modifi
 @Composable
 private fun FramingControls(
     framing: CameraFraming,
+    spans: FrameSpans,
     onChange: (framing: CameraFraming, tilting: Boolean) -> Unit,
     onLetGo: () -> Unit,
     onSet: (CameraFraming) -> Unit,
@@ -483,13 +500,13 @@ private fun FramingControls(
             value = stringResource(Res.string.camera_frame_zoom_value, tenths(crop.zoom)),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onSet(framing.copy(crop = crop.zoomedTo(crop.zoom / ZOOM_STEP))) }, enabled = !crop.isWhole) {
+            IconButton(onClick = { onSet(framing.copy(crop = crop.zoomedTo(crop.zoom / ZOOM_STEP, spans.x, spans.y))) }, enabled = !crop.isWhole) {
                 Icon(Icons.Filled.ZoomOut, contentDescription = null, tint = Color.White)
             }
             val zoomLabel = stringResource(Res.string.camera_frame_zoom)
             Slider(
                 value = crop.zoom,
-                onValueChange = { zoom -> onChange(framing.copy(crop = crop.zoomedTo(zoom)), false) },
+                onValueChange = { zoom -> onChange(framing.copy(crop = crop.zoomedTo(zoom, spans.x, spans.y)), false) },
                 onValueChangeFinished = onLetGo,
                 valueRange = 1f..CameraCrop.MAX_ZOOM,
                 colors = SliderDefaults.colors(
@@ -499,7 +516,7 @@ private fun FramingControls(
                 ),
                 modifier = Modifier.weight(1f).semantics { contentDescription = zoomLabel },
             )
-            IconButton(onClick = { onSet(framing.copy(crop = crop.zoomedTo(crop.zoom * ZOOM_STEP))) }, enabled = crop.zoom < CameraCrop.MAX_ZOOM) {
+            IconButton(onClick = { onSet(framing.copy(crop = crop.zoomedTo(crop.zoom * ZOOM_STEP, spans.x, spans.y))) }, enabled = crop.zoom < CameraCrop.MAX_ZOOM) {
                 Icon(Icons.Filled.ZoomIn, contentDescription = null, tint = Color.White)
             }
         }
@@ -672,6 +689,17 @@ private fun Modifier.framingGestures(
         } while (event.changes.any { it.pressed })
         if (moved) onEnd()
     }
+}
+
+/** How far the editor's frame reaches across the picture at 1x, across and down (see CameraCrop). */
+internal data class FrameSpans(val x: Float, val y: Float)
+
+/** [FrameSpans] for the card-shaped frame and a picture of [aspect] (null: the frame's), sitting by [fit], maybe [onItsSide]. */
+internal fun frameSpans(aspect: Float?, fit: VideoFit?, onItsSide: Boolean): FrameSpans {
+    val frameWidth = 1600
+    val frameHeight = (frameWidth / VIDEO_ASPECT).roundToInt()
+    val picture = pictureBoxSize(frameWidth, frameHeight, aspect, fit, onItsSide)
+    return FrameSpans(frameWidth.toFloat() / picture.width, frameHeight.toFloat() / picture.height)
 }
 
 /** Whether a tilt going from [before] to [after] reaches or passes level, coming from either side. */

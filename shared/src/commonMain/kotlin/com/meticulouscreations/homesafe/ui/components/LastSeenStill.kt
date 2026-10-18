@@ -36,10 +36,12 @@ import kotlin.time.TimeSource
 data class LastSeenStill(val url: String)
 
 /**
- * Where a still is kept, in the disk and memory caches: the URL without its scheme and host, so
- * the LAN and Tailscale addresses of one server share their stills.
+ * Where a still is kept, in the disk and memory caches, and what its capture is throttled by: the
+ * whole URL but its scheme, host and stream name included. Two servers' cameras of the same name
+ * never share a still (one server's picture must never show on another's card). The price is
+ * that a server's LAN and Tailscale addresses keep a still each.
  */
-internal fun lastSeenStillKey(url: String): String = "last-seen:" + url.substringAfter("://").substringAfter('/')
+internal fun lastSeenStillKey(url: String): String = "last-seen:" + url.substringAfter("://")
 
 /** Reads a [LastSeenStill] from the disk cache, and nowhere else. Registered on the app's image loader. */
 class LastSeenStillFetcher(private val still: LastSeenStill, private val imageLoader: ImageLoader) : Fetcher {

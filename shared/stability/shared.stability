@@ -216,7 +216,7 @@ public fun com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen(p
     - predicate: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.ShapedVideo(streamUrl: kotlin.String?, fit: com.meticulouscreations.homesafe.domain.model.VideoFit?, modifier: androidx.compose.ui.Modifier, turnDegrees: kotlin.Float, player: @[Composable] androidx.compose.runtime.internal.ComposableFunction2<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.ShapedVideo(streamUrl: kotlin.String?, fit: com.meticulouscreations.homesafe.domain.model.VideoFit?, modifier: androidx.compose.ui.Modifier, turnDegrees: kotlin.Float, crop: kotlin.Function0<com.meticulouscreations.homesafe.domain.model.CameraCrop>, clip: kotlin.Boolean, player: @[Composable] androidx.compose.runtime.internal.ComposableFunction2<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -224,6 +224,8 @@ public fun com.meticulouscreations.homesafe.ui.components.ShapedVideo(streamUrl:
     - fit: STABLE (class with no mutable properties)
     - modifier: STABLE (marked @Stable or @Immutable)
     - turnDegrees: STABLE (primitive type)
+    - crop: STABLE (function type)
+    - clip: STABLE (primitive type)
     - player: STABLE (composable function type)
 
 @Composable
@@ -1174,18 +1176,19 @@ private fun com.meticulouscreations.homesafe.ui.screens.FramePreview(epochSecond
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.FramingControls(framing: com.meticulouscreations.homesafe.domain.model.CameraFraming, onChange: kotlin.Function2<@[ParameterName(name = \, onLetGo: kotlin.Function0<kotlin.Unit>, onSet: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CameraFraming, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.FramingControls(framing: com.meticulouscreations.homesafe.domain.model.CameraFraming, spans: com.meticulouscreations.homesafe.ui.screens.FrameSpans, onChange: kotlin.Function2<@[ParameterName(name = \, onLetGo: kotlin.Function0<kotlin.Unit>, onSet: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CameraFraming, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - framing: STABLE (class with no mutable properties)
+    - spans: STABLE (class with no mutable properties)
     - onChange: STABLE (function type)
     - onLetGo: STABLE (function type)
     - onSet: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.FramingStage(cameraName: kotlin.String, streamUrl: kotlin.String?, webRtcSignalingUrl: kotlin.String?, posterUrl: kotlin.String?, posterIsLastSeen: kotlin.Boolean, videoFit: com.meticulouscreations.homesafe.domain.model.VideoFit?, framing: com.meticulouscreations.homesafe.domain.model.CameraFraming, latestFraming: kotlin.Function0<com.meticulouscreations.homesafe.domain.model.CameraFraming>, straightening: kotlin.Boolean, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onChange: kotlin.Function2<@[ParameterName(name = \, onLetGo: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.FramingStage(cameraName: kotlin.String, streamUrl: kotlin.String?, webRtcSignalingUrl: kotlin.String?, posterUrl: kotlin.String?, posterIsLastSeen: kotlin.Boolean, videoFit: com.meticulouscreations.homesafe.domain.model.VideoFit?, framing: com.meticulouscreations.homesafe.domain.model.CameraFraming, latestFraming: kotlin.Function0<com.meticulouscreations.homesafe.domain.model.CameraFraming>, spans: com.meticulouscreations.homesafe.ui.screens.FrameSpans, straightening: kotlin.Boolean, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onChange: kotlin.Function2<@[ParameterName(name = \, onLetGo: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1197,6 +1200,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.FramingStage(cameraName:
     - videoFit: STABLE (class with no mutable properties)
     - framing: STABLE (class with no mutable properties)
     - latestFraming: STABLE (function type)
+    - spans: STABLE (class with no mutable properties)
     - straightening: STABLE (primitive type)
     - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
     - onChange: STABLE (function type)
@@ -1319,7 +1323,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: 
     - onArrangeToggle: STABLE (function type)
     - onMoveCamera: STABLE (function type)
     - onDrop: STABLE (function type)
-    - listTestTag: STABLE (String is immutable)
+    - listTestTag: STABLE (class with no mutable properties)
     - cameraCard: STABLE (composable function type)
 
 @Composable
