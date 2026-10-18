@@ -250,7 +250,8 @@ internal data class ArrangeAction(val arranging: Boolean, val onToggle: () -> Un
 
 /**
  * Arrange mode's switch for the top bar's menu while the Home list has cameras to arrange, and
- * null while it has none. The shell draws the bar, so it reads Home's view model here: the same
+ * null while it has none, unless Arrange mode is on: the way out stays, even with the list
+ * emptied under it. The shell draws the bar, so it reads Home's view model here: the same
  * instance [HomeTabContent] has, as the shell's back stacks don't scope view models per entry.
  */
 @Composable
@@ -261,7 +262,7 @@ internal fun homeArrangeAction(): ArrangeAction? {
     val placement by viewModel.placement.collectAsStateWithLifecycle()
     val arranging by viewModel.arranging.collectAsStateWithLifecycle()
     val shown = if (shownPlacement(placement, indoorCameras) == CameraPlacement.Indoor) indoorCameras else cameras
-    if (shown.isNullOrEmpty()) return null
+    if (shown.isNullOrEmpty() && !arranging) return null
     return ArrangeAction(arranging = arranging, onToggle = if (arranging) viewModel::finishArranging else viewModel::startArranging)
 }
 
@@ -372,6 +373,12 @@ internal fun HomeFeed(
     LaunchedEffect(placement) { switchShown = true }
     // Arrange mode's holds are drags: a swipe let go just before it mustn't switch lists under it.
     LaunchedEffect(arranging) { if (arranging) swipe.cancel() }
+    // Arrange mode starts from the top bar's menu, wherever the list is: with the list scrolled
+    // past where its header goes, the header would land above the screen, so the list moves to it.
+    val arrangeHeaderIndex = listOf(connectionProblem != null, everyoneAway, inView.isNotEmpty(), doors.isNotEmpty()).count { it }
+    LaunchedEffect(arranging) {
+        if (arranging && gridState.firstVisibleItemIndex >= arrangeHeaderIndex) gridState.animateScrollToItem(arrangeHeaderIndex)
+    }
     val arrangingNow by rememberUpdatedState(arranging)
     val swipeTo: (CameraPlacement) -> Unit = remember(onPlacementChange) { { target -> if (!arrangingNow) onPlacementChange(target) } }
 
@@ -419,7 +426,8 @@ internal fun HomeFeed(
                     }
                 }
 
-                if (arranging && !cameras.isNullOrEmpty()) {
+                // Whatever the list holds, so the way out stays if its cameras go while arranging.
+                if (arranging) {
                     item(key = "arrange-header", span = { GridItemSpan(maxLineSpan) }) {
                         ArrangeHeader(onDone = onFinishArranging, modifier = Modifier.animateItem())
                     }
