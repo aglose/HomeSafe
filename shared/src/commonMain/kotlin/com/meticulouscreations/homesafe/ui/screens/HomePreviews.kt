@@ -18,6 +18,7 @@ import com.meticulouscreations.homesafe.domain.model.CameraFraming
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
+import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
@@ -43,7 +44,7 @@ import kotlinx.datetime.TimeZone
 @Preview(name = "Home", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView, doors = previewDoors)
 }
 
 /** A server with Nest cameras too: the switch floats above the nav, on the outdoor ones as the page opens. */
@@ -127,6 +128,7 @@ private fun HomeFeedPreviewContent(
     connectionProblem: ConnectionProblem? = null,
     placement: CameraPlacement? = null,
     arranging: Boolean = false,
+    doors: List<Door> = emptyList(),
 ) {
     FrigatePreview {
         SharedTransitionPreview {
@@ -136,6 +138,7 @@ private fun HomeFeedPreviewContent(
                 cameras = cameras,
                 onAwayBack = {},
                 inView = inView,
+                doors = doors,
                 refreshing = refreshing,
                 // Only the refreshing preview is pullable, so the others draw exactly as their reference screenshots.
                 onRefresh = if (refreshing) ({}) else null,
@@ -185,6 +188,14 @@ private val previewInView = listOf(
         sinceIsKnown = true,
     ),
 ).map { subject -> InViewItem(subject = subject, presentation = subject.present(PREVIEW_TODAY, TimeZone.UTC), thumbnailUrl = null) }
+
+/** Four doors: the back one open, the other three closed, so the row shows one door and a count. */
+private val previewDoors = listOf(
+    Door("0x01", "Back door", open = true),
+    Door("0x02", "Front door", open = false),
+    Door("0x03", "Garage door", open = false),
+    Door("0x04", "Patio door", open = false),
+)
 
 /**
  * The framing editor, on a camera straightened a little and zoomed in, the straightening grid

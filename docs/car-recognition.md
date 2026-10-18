@@ -21,7 +21,7 @@ Where a car parks is the signal that can, which is why the app leans on the driv
 
 A vehicle's `sub_label` no longer exempts it from the zone filter (`MomentEvent.inZones`) unless
 it is parked (`isStill`). A named car that drove down the birds-only street is dropped like an
-unnamed one, from the feed, the "In view now" strip and the in-app alerts. A named car parked at
+unnamed one, from the feed, the "In view now" pills and page and the in-app alerts. A named car parked at
 the curb still shows, and so does any car in the driveway.
 
 ### Tagging an unnamed car

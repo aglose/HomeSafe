@@ -62,4 +62,19 @@ class DoorTextTest {
         assertNull(DoorAlert.from { (data + ("door_event" to "left_open"))[it] }, "an event this build can't word")
         assertEquals(false, DoorAlert.isDoor { mapOf("review_id" to "r1")[it] })
     }
+
+    @Test
+    fun homesGlanceShowsTheDoorsThatNeedALookAndCountsTheRest() {
+        val back = Door("0x01", "Back door", open = true)
+        val front = Door("0x02", "Front door", open = false)
+        val garage = Door("0x03", "Garage door", open = false, online = false)
+        val patio = Door("0x04", "Patio door", open = null)
+        val shed = Door("0x05", "Shed door", open = true, online = false)
+        val glance = doorGlance(listOf(front, garage, back, patio, shed))
+        assertEquals(listOf(back, garage, patio, shed), glance.shown, "open (and heard from) first, then the rest in order")
+        assertEquals(1, glance.closedCount)
+        assertEquals(false, glance.allClosed)
+        assertEquals(DoorGlance(emptyList(), closedCount = 2, allClosed = true), doorGlance(listOf(front, front.copy(id = "0x06"))))
+        assertEquals(DoorGlance(emptyList(), closedCount = 0, allClosed = false), doorGlance(emptyList()))
+    }
 }

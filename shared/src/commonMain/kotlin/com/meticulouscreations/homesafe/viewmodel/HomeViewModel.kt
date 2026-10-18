@@ -14,7 +14,6 @@ import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.model.camerasWithNest
-import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStillUrlUseCase
@@ -176,15 +175,7 @@ class HomeViewModel(
         observeStationaryObjectsUseCase(),
         observeCurrentServerUrlUseCase(),
     ) { subjects, serverUrl ->
-        val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-        subjects.map { subject ->
-            // Built here, not in the card, so a LAN/Tailscale route flip re-points every thumbnail at once.
-            InViewItem(
-                subject = subject,
-                presentation = subject.present(today),
-                thumbnailUrl = serverUrl?.let { getEventThumbnailUrlUseCase(it, subject.thumbnailEventId) },
-            )
-        }
+        inViewItems(subjects, serverUrl, clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date, getEventThumbnailUrlUseCase)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Away mode banner: true while the relay says nobody is home. Collecting it keeps presence polled. */
