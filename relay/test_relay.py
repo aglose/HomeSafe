@@ -6218,3 +6218,12 @@ class NestPrimerTest(unittest.TestCase):
 
     def test_a_stream_that_keeps_failing_is_asked_for_less_often(self):
         self.assertEqual([5, 5, 10, 20, 40, 80, 160, 300, 300], [relay.nest_primer_delay(n) for n in range(0, 9)])
+
+    def test_each_nest_camera_s_grid_stream_is_held_after_its_session(self):
+        streams = {
+            "living_room": {"producers": [{"url": "nest:?device_id=d1"}]},
+            "living_room_sub": {"producers": [{"url": "ffmpeg:living_room#video=h264#width=640"}]},
+            "kitchen": {"producers": [{"url": "nest:?device_id=d2"}]},
+            "hikvision_1_sub": {"producers": [{"url": "rtsp://x/102"}]},
+        }
+        self.assertEqual({"living_room_sub": "living_room"}, relay.nest_grid_streams(streams))
