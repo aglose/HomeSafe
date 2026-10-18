@@ -4,6 +4,10 @@ import com.meticulouscreations.homesafe.domain.model.CarCheck
 import com.meticulouscreations.homesafe.domain.model.CarProfile
 import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.DetectionBox
+import com.meticulouscreations.homesafe.domain.model.Door
+import com.meticulouscreations.homesafe.domain.model.DoorEvent
+import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
@@ -293,6 +297,32 @@ class PushRelayApi(private val httpClient: HttpClient) {
         if (it is CancellationException) throw it
     }
 
+    /**
+     * The door sensors and their openings and closings over the last [days] (the relay's
+     * `/doors`). Reads with the session cookie, or as this install ([deviceId], [secret]).
+     * [DoorsSnapshot.supported] is false from a relay that predates the door sensors (404).
+     */
+    suspend fun getDoors(serverUrl: String, deviceId: String? = null, secret: String? = null, days: Int = DOOR_HISTORY_DAYS): Result<DoorsSnapshot> =
+        runCatching {
+            val response = httpClient.get(relayUrl(serverUrl, "/doors")) {
+                asDevice(deviceId, secret)
+                parameter("days", days)
+            }
+            if (response.status == HttpStatusCode.NotFound) return@runCatching DoorsSnapshot(supported = false)
+            if (!response.status.isSuccess()) throw relayRefused(response.status)
+            response.body<RelayDoors>().toDomain()
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /** Sets when [doorId]'s openings push, for the whole household. A user action, so the session cookie. Answers the doors as they now stand. */
+    suspend fun setDoorNotify(serverUrl: String, doorId: String, notify: DoorNotify): Result<DoorsSnapshot> = runCatching {
+        val response = httpClient.put(relayUrl(serverUrl, "/doors/$doorId")) {
+            contentType(ContentType.Application.Json)
+            setBody(DoorNotifyUpdate(notify.wire))
+        }
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayDoors>().toDomain()
+    }
+
     /** The relay answered [status] instead of success; the message keeps the status for callers that look for a 401 or 403. */
     private fun relayRefused(status: HttpStatusCode) =
         FrigateResponseException(UiText.of(Res.string.error_relay_answered, status.toString()), technical = "Relay answered $status")
@@ -313,6 +343,9 @@ class PushRelayApi(private val httpClient: HttpClient) {
 
         /** The relay answers for at most 200 events a call (its `CAR_CHECKS_MAX`). */
         private const val CAR_CHECKS_PER_CALL = 200
+
+        /** How far back the door history goes in the app. */
+        const val DOOR_HISTORY_DAYS = 7
 
         /** Same host as Frigate, the relay's port, no query — works for both the LAN and Tailscale addresses. */
         fun relayUrl(serverUrl: String, path: String): String =
@@ -536,3 +569,50 @@ internal data class RelayUptimeDevice(
 
 @Serializable
 internal data class RelayUptimeOutage(val check: String, val start: Double, val end: Double? = null, val seconds: Long = 0)
+
+@Serializable
+internal data class DoorNotifyUpdate(val notify: String)
+
+@Serializable
+internal data class RelayDoors(
+    val doors: List<RelayDoor> = emptyList(),
+    val events: List<RelayDoorEvent> = emptyList(),
+    val broker: Boolean = false,
+    val bridge: Boolean = false,
+) {
+    fun toDomain() = DoorsSnapshot(
+        doors = doors.map { it.toDomain() },
+        events = events.map { DoorEvent(it.door, it.open, (it.at * 1000).toLong(), it.pushed) },
+        listening = broker && bridge,
+    )
+}
+
+@Serializable
+internal data class RelayDoor(
+    val id: String,
+    val name: String? = null,
+    val model: String? = null,
+    val open: Boolean? = null,
+    val changed: Double? = null,
+    val battery: Int? = null,
+    @SerialName("battery_low") val batteryLow: Boolean? = null,
+    val link: Int? = null,
+    val online: Boolean? = null,
+    val notify: String? = null,
+) {
+    fun toDomain() = Door(
+        id = id,
+        name = name?.ifBlank { null } ?: id,
+        open = open,
+        changedAtMillis = changed?.let { (it * 1000).toLong() },
+        battery = battery,
+        batteryLow = batteryLow == true,
+        linkQuality = link,
+        online = online,
+        notify = DoorNotify.fromWire(notify),
+        model = model,
+    )
+}
+
+@Serializable
+internal data class RelayDoorEvent(val door: String, val open: Boolean, val at: Double, val pushed: String? = null)

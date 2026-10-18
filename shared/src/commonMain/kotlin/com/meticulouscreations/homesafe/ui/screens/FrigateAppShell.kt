@@ -814,6 +814,7 @@ private fun cameraRoute(tile: CameraTile): Any = when (tile.camera.source) {
 
 private data class DetectionZonesRoute(val cameraName: String)
 private data class CarTaggingRoute(val cameraName: String)
+private data object DoorsHomeRoute
 
 /**
  * The full-screen clip editor for [cameraName], around [anchorEpochSeconds] (what the camera
@@ -858,6 +859,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         zoomState = cardZoom,
                         onCameraClick = { tile -> backStack.add(cameraRoute(tile)) },
                         onTagCars = { cameraName -> backStack.add(CarTaggingRoute(cameraName)) },
+                        onOpenDoors = { if (backStack.lastOrNull() != DoorsHomeRoute) backStack.add(DoorsHomeRoute) },
                         scrollToTopRequests = scrollToTop,
                     )
                 }
@@ -924,6 +926,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
+                entry<DoorsHomeRoute> { DoorsScreen(onBack = { backStack.removeLastOrNull() }) }
             },
         )
     }

@@ -6196,5 +6196,174 @@ class TimelinePull(_TimelineDb):
         self.assertFalse(relay.timeline_manifest(self.conn)["syncing"])
 
 
+# Zigbee2MQTT's device list as it reads with the coordinator, a ThirdReality contact sensor and a
+# smart plug paired (shapes from Zigbee2MQTT 2.x).
+Z2M_DEVICES = [
+    {"ieee_address": "0x00124b0000000000", "type": "Coordinator", "friendly_name": "Coordinator"},
+    {
+        "ieee_address": "0x282c02bfffe6aa01", "type": "EndDevice", "friendly_name": "Front door",
+        "definition": {"vendor": "Third Reality", "model": "3RDS17BZ", "exposes": [
+            {"type": "binary", "name": "contact", "property": "contact", "value_on": False, "value_off": True},
+            {"type": "numeric", "name": "battery", "property": "battery"},
+            {"type": "numeric", "name": "linkquality", "property": "linkquality"},
+        ]},
+    },
+    {
+        "ieee_address": "0x282c02bfffe6aa02", "type": "Router", "friendly_name": "Hall plug",
+        "definition": {"vendor": "Third Reality", "model": "3RSP02028BZ", "exposes": [
+            {"type": "switch", "features": [{"type": "binary", "name": "state", "property": "state"}]},
+        ]},
+    },
+]
+FRONT = "0x282c02bfffe6aa01"
+
+
+class DoorsTest(_ScratchDb):
+    """The door sensors: what Zigbee2MQTT says, what the relay keeps of it, and which openings push."""
+
+    NAMES = _ScratchDb.NAMES + ("away_since", "require_frigate_session")
+
+    def setUp(self):
+        super().setUp()
+        self.away = False
+        relay.away_since = lambda: 1.0 if self.away else None
+        relay.require_frigate_session = lambda request: "alex"
+        self.pushes = []
+        self.T = 1_800_000_000.0
+
+    def push(self, title, body, data, away=False):
+        self.pushes.append((title, body, data, away))
+        return {"sent": 1}
+
+    def receive(self, topic, payload, now):
+        raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        message = relay.door_message(topic, raw)
+        if message and message[0] == "state":
+            change = relay.door_state(message[1], message[2], now)
+            if change:
+                relay.door_announce(change, now, self.away, push=self.push)
+            return change
+        relay.door_receive(topic, raw, now)
+
+    def paired(self):
+        self.receive("zigbee2mqtt/bridge/devices", Z2M_DEVICES, self.T)
+
+    def door(self):
+        return relay.doors_snapshot(self.T + 10_000)["doors"][0]
+
+    def test_only_contact_sensors_are_doors(self):
+        self.assertEqual({FRONT: {"name": "Front door", "model": "Third Reality 3RDS17BZ"}}, relay.contact_sensors(Z2M_DEVICES))
+        self.assertEqual({}, relay.contact_sensors({"not": "a list"}))
+
+    def test_topics(self):
+        self.assertEqual(("state", "Front door", {"contact": False}), relay.door_message("zigbee2mqtt/Front door", b'{"contact": false}'))
+        self.assertEqual(("state", "Down/Back door", {"contact": True}), relay.door_message("zigbee2mqtt/Down/Back door", b'{"contact": true}'))
+        self.assertEqual(("availability", "Front door", "offline"), relay.door_message("zigbee2mqtt/Front door/availability", b'{"state": "offline"}'))
+        self.assertEqual(("availability", "Front door", "online"), relay.door_message("zigbee2mqtt/Front door/availability", b"online"))
+        self.assertEqual(("bridge", None, "online"), relay.door_message("zigbee2mqtt/bridge/state", b'{"state": "online"}'))
+        self.assertEqual("devices", relay.door_message("zigbee2mqtt/bridge/devices", json.dumps(Z2M_DEVICES).encode())[0])
+        self.assertIsNone(relay.door_message("zigbee2mqtt/bridge/logging", b'{"level": "info"}'))
+        self.assertIsNone(relay.door_message("frigate/events", b"{}"))
+        self.assertIsNone(relay.door_message("zigbee2mqtt/Front door", b"not json"))
+
+    def test_the_first_reading_is_where_a_door_starts_and_a_repeat_is_nothing(self):
+        self.paired()
+        self.assertIsNone(self.receive("zigbee2mqtt/Front door", {"contact": True, "battery": 97, "linkquality": 120}, self.T))
+        self.assertIsNone(self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T + 60))
+        door = self.door()
+        self.assertEqual((False, 97, 120, True), (door["open"], door["battery"], door["link"], door["online"]))
+        self.assertEqual([], relay.doors_snapshot(self.T + 100)["events"])
+
+    def test_an_opening_and_a_closing_are_kept(self):
+        self.paired()
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T)
+        change = self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 5)
+        self.assertEqual((FRONT, "Front door", True, "away"), (change["id"], change["name"], change["open"], change["notify"]))
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T + 30)
+        events = relay.doors_snapshot(self.T + 100)["events"]
+        self.assertEqual([(False, self.T + 30), (True, self.T + 5)], [(e["open"], e["at"]) for e in events])
+        self.assertEqual((False, self.T + 30), (self.door()["open"], self.door()["changed"]))
+
+    def test_when_an_opening_pushes(self):
+        self.assertEqual("away", relay.door_route("away", True))
+        self.assertIsNone(relay.door_route("away", False))
+        self.assertEqual("away", relay.door_route("always", True))
+        self.assertEqual("home", relay.door_route("always", False))
+        self.assertIsNone(relay.door_route("never", True))
+        self.assertIsNone(relay.door_route("never", False))
+
+    def test_by_default_a_door_pushes_only_while_everyone_is_away(self):
+        self.paired()
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T)
+        self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 5)
+        self.assertEqual([], self.pushes)
+        self.away = True
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T + 10)
+        self.assertEqual([], self.pushes, "a closing never pushes")
+        self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 500)
+        title, body, data, away = self.pushes[0]
+        self.assertTrue(away)
+        self.assertEqual("Away: Front door opened", title)
+        self.assertEqual({"door": FRONT, "door_name": "Front door", "door_event": "opened", "away": "1", "notif_id": f"door-{FRONT}"},
+                         {k: data[k] for k in ("door", "door_name", "door_event", "away", "notif_id")})
+        self.assertNotIn("silent", data)
+        self.assertEqual("away", relay.doors_snapshot(self.T + 600)["events"][0]["pushed"])
+
+    def test_a_door_set_to_always_pushes_while_someone_is_home_too(self):
+        self.paired()
+        relay.set_door(FRONT, types.SimpleNamespace(notify="always"), types.SimpleNamespace(headers={}))
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T)
+        self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 5)
+        title, _, data, away = self.pushes[0]
+        self.assertEqual(("Front door opened", False), (title, away))
+        self.assertNotIn("away", data)
+
+    def test_a_door_set_to_never_does_not_push_even_when_away(self):
+        self.paired()
+        relay.set_door(FRONT, types.SimpleNamespace(notify="never"), types.SimpleNamespace(headers={}))
+        self.away = True
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T)
+        self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 5)
+        self.assertEqual([], self.pushes)
+        self.assertEqual(1, len(relay.doors_snapshot(self.T + 10)["events"]))
+
+    def test_opened_again_soon_after_updates_the_notification_quietly(self):
+        self.paired()
+        self.away = True
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T)
+        self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 5)
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T + 20)
+        self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 60)
+        self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T + 70)
+        self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 60 + relay.DOOR_QUIET_SECONDS + 1)
+        self.assertEqual([None, "1", None], [data.get("silent") for _, _, data, _ in self.pushes])
+
+    def test_a_renamed_sensor_keeps_its_setting_and_a_removed_one_is_hidden(self):
+        self.paired()
+        relay.set_door(FRONT, types.SimpleNamespace(notify="always"), types.SimpleNamespace(headers={}))
+        renamed = [dict(d, friendly_name="Porch door") if d["ieee_address"] == FRONT else d for d in Z2M_DEVICES]
+        self.receive("zigbee2mqtt/bridge/devices", renamed, self.T)
+        self.assertEqual(("Porch door", "always"), (self.door()["name"], self.door()["notify"]))
+        self.assertIsNone(self.receive("zigbee2mqtt/Front door", {"contact": True}, self.T), "the old name is no one now")
+        self.receive("zigbee2mqtt/bridge/devices", [d for d in Z2M_DEVICES if d["ieee_address"] != FRONT], self.T)
+        self.assertEqual([], relay.doors_snapshot(self.T)["doors"])
+
+    def test_availability_marks_a_sensor_offline(self):
+        self.paired()
+        self.receive("zigbee2mqtt/Front door/availability", {"state": "offline"}, self.T)
+        self.assertFalse(self.door()["online"])
+
+    def test_setting_a_door_checks_the_mode_and_the_door(self):
+        self.paired()
+        request = types.SimpleNamespace(headers={})
+        with self.assertRaises(relay.HTTPException) as bad:
+            relay.set_door(FRONT, types.SimpleNamespace(notify="sometimes"), request)
+        self.assertEqual(400, bad.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as missing:
+            relay.set_door("0xnobody", types.SimpleNamespace(notify="always"), request)
+        self.assertEqual(404, missing.exception.status_code)
+        self.assertEqual("always", relay.set_door(FRONT, types.SimpleNamespace(notify="always"), request)["doors"][0]["notify"])
+
+
 if __name__ == "__main__":
     unittest.main()

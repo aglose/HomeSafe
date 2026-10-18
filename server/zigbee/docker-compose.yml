@@ -1,0 +1,48 @@
+# Door sensors: the Zigbee stick on the Frigate box, Zigbee2MQTT driving it, and the Mosquitto
+# broker it publishes to. The relay (relay/relay.py, "doors") subscribes to that broker on
+# 127.0.0.1:1883 and turns each door opening into state, history and pushes. See docs/doors.md.
+#
+# Host networking like the relay: the broker answers on 127.0.0.1 only, and Zigbee2MQTT's
+# pairing page on :8080, behind the token in zigbee.env.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: always
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+    network_mode: host
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto:/mosquitto/data
+
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    container_name: zigbee2mqtt
+    restart: always
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+    network_mode: host
+    depends_on:
+      - mosquitto
+    # ZIGBEE2MQTT_CONFIG_FRONTEND_AUTH_TOKEN, the pairing page's password, only on the box.
+    env_file:
+      - path: zigbee.env
+        required: false
+    volumes:
+      # configuration.yaml is seeded from the repo's copy once (see docs/doors.md); Zigbee2MQTT
+      # then writes into it itself (the network key it generates, each device's name).
+      - ./data:/app/data
+      - /run/udev:/run/udev:ro
+      - /etc/localtime:/etc/localtime:ro
+    devices:
+      # The stick by its stable name, from `ls /dev/serial/by-id` once it's plugged in, kept in
+      # .env next to this file as ZIGBEE_STICK=/dev/serial/by-id/usb-SONOFF_...
+      - ${ZIGBEE_STICK:?set ZIGBEE_STICK in .env}:/dev/zigbee
+
+volumes:
+  mosquitto:

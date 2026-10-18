@@ -7,9 +7,12 @@ import com.meticulouscreations.homesafe.fitness.ui.FitnessDoorOutlinesPreview
 import com.meticulouscreations.homesafe.ui.screens.AppIconOptionsPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarNarrowPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarPreview
+import com.meticulouscreations.homesafe.ui.screens.DoorsEmptyPreview
+import com.meticulouscreations.homesafe.ui.screens.DoorsPreview
 import com.meticulouscreations.homesafe.ui.screens.DrawerFinanceCardsPreview
 import com.meticulouscreations.homesafe.ui.screens.DrawerFitnessCardsPreview
 import com.meticulouscreations.homesafe.ui.screens.FinanceDrawerOptionsPreview
+import com.meticulouscreations.homesafe.ui.screens.HomeDoorsStripPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedArrangingPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedAwayPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedEmptyPreview
@@ -112,3 +115,18 @@ fun DrawerFinanceCards() = DrawerFinanceCardsPreview()
 @Preview(name = "Settings, Finance in the menu")
 @Composable
 fun FinanceDrawerOptions() = FinanceDrawerOptionsPreview()
+
+@PreviewTest
+@Preview(name = "Doors", widthDp = 412, heightDp = 1500)
+@Composable
+fun Doors() = DoorsPreview()
+
+@PreviewTest
+@Preview(name = "Doors, none paired yet", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun DoorsEmpty() = DoorsEmptyPreview()
+
+@PreviewTest
+@Preview(name = "Home doors strip", widthDp = PHONE_WIDTH_DP)
+@Composable
+fun HomeDoorsStrip() = HomeDoorsStripPreview()

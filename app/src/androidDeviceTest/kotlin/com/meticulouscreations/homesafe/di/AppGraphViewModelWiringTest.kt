@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
 import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
+import com.meticulouscreations.homesafe.viewmodel.DoorsViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.LandedPersonViewModel
@@ -60,6 +61,7 @@ class AppGraphViewModelWiringTest {
                 BankSyncViewModel::class,
                 BudgetViewModel::class,
                 ServerUptimeViewModel::class,
+                DoorsViewModel::class,
                 ConnectionNoticeViewModel::class,
                 WeatherViewModel::class,
                 FitnessViewModel::class,

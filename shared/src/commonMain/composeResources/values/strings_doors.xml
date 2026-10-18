@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The door sensors: the Doors strip on Home, the Doors page it opens (also from Settings), and each
+  door's alert setting. Keys: doors_*. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="doors_title">Doors</string>
+    <string name="doors_subtitle">Door sensors and their alerts</string>
+    <!-- The row on the Settings page that opens the Doors page. -->
+    <string name="doors_settings_summary">Door sensors, and when an opening notifies you</string>
+    <!-- What tapping the Home strip's heading does, for screen readers. -->
+    <string name="doors_home_open">Show the doors</string>
+
+    <!-- A door on the Home strip. -->
+    <string name="doors_chip_open">Open</string>
+    <string name="doors_chip_closed">Closed</string>
+    <string name="doors_chip_offline">Offline</string>
+    <string name="doors_chip_unknown">No reading</string>
+
+    <!-- How a door stands, under its name on the Doors page. -->
+    <string name="doors_state_open">Open</string>
+    <string name="doors_state_closed">Closed</string>
+    <string name="doors_state_unknown">Waiting for its first reading</string>
+    <string name="doors_state_opened_just_now">Opened just now</string>
+    <string name="doors_state_closed_just_now">Closed just now</string>
+    <plurals name="doors_state_open_minutes">
+        <item quantity="one">Open for %1$d min</item>
+        <item quantity="other">Open for %1$d min</item>
+    </plurals>
+    <plurals name="doors_state_closed_minutes">
+        <item quantity="one">Closed %1$d min ago</item>
+        <item quantity="other">Closed %1$d min ago</item>
+    </plurals>
+    <plurals name="doors_state_open_hours">
+        <item quantity="one">Open for %1$d hour</item>
+        <item quantity="other">Open for %1$d hours</item>
+    </plurals>
+    <plurals name="doors_state_closed_hours">
+        <item quantity="one">Closed for %1$d hour</item>
+        <item quantity="other">Closed for %1$d hours</item>
+    </plurals>
+    <plurals name="doors_state_open_days">
+        <item quantity="one">Open for %1$d day</item>
+        <item quantity="other">Open for %1$d days</item>
+    </plurals>
+    <plurals name="doors_state_closed_days">
+        <item quantity="one">Closed for %1$d day</item>
+        <item quantity="other">Closed for %1$d days</item>
+    </plurals>
+
+    <!-- The sensor's own health, after how the door stands. -->
+    <string name="doors_detail_battery">Battery %1$d%</string>
+    <string name="doors_detail_battery_low">Battery low</string>
+    <string name="doors_detail_weak_signal">Weak signal</string>
+    <string name="doors_detail_offline">Not heard from in a day</string>
+
+    <!-- Each door's alert setting. -->
+    <string name="doors_notify_title">Notify me</string>
+    <string name="doors_notify_away">When away</string>
+    <string name="doors_notify_always">Always</string>
+    <string name="doors_notify_never">Never</string>
+    <string name="doors_notify_caption">When away: only while everyone is away. Always: every time it opens, except in your quiet hours. The setting is shared by every phone.</string>
+
+    <!-- The history at the bottom of the page. -->
+    <string name="doors_history_title">Last 7 days</string>
+    <string name="doors_history_empty">No door has opened in the last week.</string>
+    <string name="doors_history_opened">%1$s opened</string>
+    <string name="doors_history_closed">%1$s closed</string>
+    <string name="doors_history_notified">Notified</string>
+    <string name="doors_day_today">Today</string>
+    <string name="doors_day_yesterday">Yesterday</string>
+    <plurals name="doors_day_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+
+    <!-- When there is nothing to show. -->
+    <string name="doors_none_title">No door sensors yet</string>
+    <string name="doors_none_body">Pair a sensor on the server's Zigbee2MQTT page and name it there. It shows up here within a few seconds.</string>
+    <string name="doors_not_listening">The server can't hear the door sensors right now. Zigbee2MQTT or its broker isn't running.</string>
+    <string name="doors_unsupported">This server's relay doesn't know about door sensors yet. Update it to use them.</string>
+    <string name="doors_load_failed">Couldn't load the doors: %1$s</string>
+    <string name="doors_save_failed">Couldn't change that door's alerts: %1$s</string>
+</resources>
