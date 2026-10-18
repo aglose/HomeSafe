@@ -41,8 +41,8 @@ class BackStackViewModelStoresUiTest {
     class Probe : ViewModel() {
         var cleared = false
 
-        init {
-            addCloseable { cleared = true }
+        override fun onCleared() {
+            cleared = true
         }
     }
 

@@ -57,6 +57,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 
@@ -663,13 +665,19 @@ class FitnessViewModel(
         }
     }
 
-    private suspend fun publish(loaded: Boolean? = null) {
+    /**
+     * One build at a time, in the order they were asked for: the log's own and the minute's tick
+     * could otherwise finish the wrong way round, and an older minute land over a newer one.
+     */
+    private val publishing = Mutex()
+
+    private suspend fun publish(loaded: Boolean? = null) = publishing.withLock {
         val built = log
         val at = now()
         val offset = localUtcOffsetSeconds(at.toDouble())
         val boards = withContext(boardDispatcher) { FitnessBoardBuilder.build(built, at, offset, offsetAt = { localUtcOffsetSeconds(it.toDouble()) }) }
-        // A newer log came in while these were built (the minute's tick, overtaken): its own publish shows it.
-        if (built !== log) return
+        // A newer log came in while these were built (the minute's tick, overtaken): its own publish, waiting its turn, shows it.
+        if (built !== log) return@withLock
         _uiState.update { state ->
             state.copy(
                 loaded = loaded ?: state.loaded,

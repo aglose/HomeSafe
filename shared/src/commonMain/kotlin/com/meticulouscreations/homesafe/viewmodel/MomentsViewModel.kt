@@ -176,8 +176,12 @@ data class DownloadUiState(
     val resultError: UiText? = null,
 )
 
-/** The feed as it stood on [day], the day its cards are grouped from ("Today", "Yesterday"). */
-private data class DatedFeed(val events: List<MomentEvent>, val day: LocalDate)
+/**
+ * The feed as a poll found it, with what its cards' times and days are read against: [day]
+ * ("Today", "Yesterday") and the phone's [zone]. A new day or zone is a new feed to present, even
+ * when no moment has changed.
+ */
+private data class DatedFeed(val events: List<MomentEvent>, val day: LocalDate, val zone: TimeZone)
 
 @OptIn(ExperimentalTime::class)
 @Inject
@@ -232,9 +236,12 @@ class MomentsViewModel(
      * clears every re-detection of the same thing at the same spot.
      */
     private val visibleEvents: Flow<DatedFeed> =
-        combine(observeMomentsUseCase(), observePhantomSpotsUseCase()) { events, spots -> DatedFeed(events.filterNot { it.isPhantom(spots) }, today()) }
+        combine(observeMomentsUseCase(), observePhantomSpotsUseCase()) { events, spots ->
+            DatedFeed(events.filterNot { it.isPhantom(spots) }, today(), TimeZone.currentSystemDefault())
+        }
             // The repository hands the feed back after every poll, changed or not. Only a change
-            // (or midnight, which moves "Today") is worth folding and grouping again.
+            // (or midnight, or a new time zone, which move the days and times) is worth folding
+            // and grouping again.
             .distinctUntilChanged()
 
     /**
@@ -288,10 +295,13 @@ class MomentsViewModel(
         observeMomentsErrorUseCase(),
         observeMomentsPagingUseCase(),
         serverUrl,
-    ) { (events, day), filters, error, paging, serverUrl ->
+    ) { polled, filters, error, paging, serverUrl ->
+        // Asked again rather than taken from the poll: a past day's feed stops polling once it
+        // has been fetched, and a filter changed after midnight should still group by the new day.
+        val day = today()
         val category = filters.category
         val cameraName = filters.camera?.name
-        val items = events
+        val items = polled.events
             .filter { category == MomentCategory.ALL || it.category == category }
             // The server already narrowed the feed; this only hides the old camera's cards in the
             // moment between a pick and the repository starting over.

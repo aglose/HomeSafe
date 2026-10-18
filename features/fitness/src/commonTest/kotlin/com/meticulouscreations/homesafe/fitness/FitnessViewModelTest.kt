@@ -35,6 +35,7 @@ import com.meticulouscreations.homesafe.weather.data.MutableClock
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -43,6 +44,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -71,7 +73,8 @@ class FitnessViewModelTest {
 
         private val made = mutableListOf<FitnessViewModel>()
 
-        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences, boardDispatcher = dispatcher).also { made += it }
+        fun viewModel(boards: CoroutineDispatcher = dispatcher) =
+            FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences, boardDispatcher = boards).also { made += it }
 
         /** Stops the view models' minute tick, which would otherwise keep a finished test's clock turning for ever. */
         fun stop() = made.forEach { it.setActive(false) }
@@ -152,6 +155,38 @@ class FitnessViewModelTest {
         runCurrent()
         assertEquals(NOW + DAY, vm.uiState.value.nowEpochSeconds)
         assertEquals(1, vm.uiState.value.days.single { it.focus == WorkoutFocus.CHEST }.daysAgo)
+    }
+
+    /** Holds the builds dispatched to it until the test lets them run, in whatever order it picks. */
+    private class HeldDispatcher : CoroutineDispatcher() {
+        val held = mutableListOf<Runnable>()
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            held += block
+        }
+    }
+
+    @Test
+    fun aBuildThatFinishesLateNeverPutsBackAnOlderMinute() = runFitnessTest { h ->
+        h.repository.saveExercises(listOf(exercise()))
+        val boards = HeldDispatcher()
+        val vm = h.viewModel(boards)
+        vm.setActive(true)
+        runCurrent()
+        // The log's build is still running when the minute ticks over, the next day.
+        h.clock.seconds = NOW + DAY
+        advanceTimeBy(60_000)
+        runCurrent()
+
+        // Whatever is running finishes newest first.
+        while (boards.held.isNotEmpty()) {
+            boards.held.removeAt(boards.held.lastIndex).run()
+            runCurrent()
+        }
+
+        assertTrue(vm.uiState.value.loaded)
+        assertEquals(NOW + DAY, vm.uiState.value.nowEpochSeconds)
+        assertEquals(listOf(benchId), vm.uiState.value.boards.map { it.exercise.id })
     }
 
     @Test
