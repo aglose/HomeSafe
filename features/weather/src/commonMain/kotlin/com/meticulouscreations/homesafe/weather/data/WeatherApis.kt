@@ -41,6 +41,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -83,9 +85,13 @@ internal val weatherJson = Json {
 
 /**
  * Reads the body as JSON whatever the server called it: these are public files and feeds, and
- * some are served as plain text.
+ * some are served as plain text. Off the main thread, where the screens' view models would
+ * otherwise parse eleven days of hourly forecast.
  */
-private suspend inline fun <reified T> HttpResponse.decode(): T = weatherJson.decodeFromString(bodyAsText())
+private suspend inline fun <reified T> HttpResponse.decode(): T {
+    val text = bodyAsText()
+    return withContext(Dispatchers.Default) { weatherJson.decodeFromString(text) }
+}
 
 /**
  * A coordinate as the weather services are given it: to the hundredth of a degree, about a
@@ -124,7 +130,8 @@ class OpenMeteoApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
             parameter("timeformat", "unixtime")
         }
         if (!response.status.isSuccess()) throw forecastFailed(response.status)
-        response.decode<ForecastDto>().toReport(nowEpochSeconds)
+        val forecast = response.decode<ForecastDto>()
+        withContext(Dispatchers.Default) { forecast.toReport(nowEpochSeconds) }
             ?: throw WeatherServiceException(UiText.of(Res.string.weather_error_no_forecast), response.status.value)
     }
 

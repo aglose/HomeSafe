@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.network.FrigateResponseException
+import com.meticulouscreations.homesafe.network.jsonOffMain
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
@@ -31,7 +32,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -48,7 +50,7 @@ interface FinanceDataProviders {
     @SingleIn(AppScope::class)
     @Provides
     fun providePublicDataHttpClient(): HttpClient = HttpClient {
-        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        install(ContentNegotiation) { jsonOffMain(Json { ignoreUnknownKeys = true }) }
         install(HttpTimeout) {
             requestTimeoutMillis = 20_000
             connectTimeoutMillis = 10_000
@@ -149,7 +151,9 @@ class FredApi(@Named(PUBLIC_DATA_CLIENT) private val httpClient: HttpClient) {
         if (!response.status.isSuccess()) {
             throw FrigateResponseException(UiText.of(Res.string.fin_data_error_fred_answered, response.status.toString(), seriesId), "FRED answered ${response.status} for $seriesId")
         }
-        parseCsv(response.bodyAsText())
+        val csv = response.bodyAsText()
+        // A series is decades of daily lines, each a date to parse: not on the main thread.
+        withContext(Dispatchers.Default) { parseCsv(csv) }
     }
 
     companion object {

@@ -5,6 +5,22 @@
 //   ./gradlew :shared:stabilityDump
 
 @Composable
+public fun com.meticulouscreations.homesafe.navigation.BackStackViewModelStores.Scoped(route: kotlin.Any, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - route: UNSTABLE (cross-module type without @Stable/@Immutable)
+    - content: STABLE (composable function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.navigation.rememberBackStackViewModelStores(backStack: kotlin.collections.List<kotlin.Any>, key: kotlin.String): com.meticulouscreations.homesafe.navigation.BackStackViewModelStores
+  skippable: false
+  restartable: false
+  params:
+    - backStack: RUNTIME (requires runtime check)
+    - key: STABLE (String is immutable)
+
+@Composable
 public fun com.meticulouscreations.homesafe.text.resolve(): kotlin.String
   skippable: false
   restartable: false
@@ -1417,11 +1433,12 @@ public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTran
     - scrollToTopRequests: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.HomeTabNav(backStack: androidx.compose.runtime.snapshots.SnapshotStateList<kotlin.Any>, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, scrollToTop: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.HomeTabNav(backStack: androidx.compose.runtime.snapshots.SnapshotStateList<kotlin.Any>, stores: com.meticulouscreations.homesafe.navigation.BackStackViewModelStores, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, scrollToTop: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - backStack: STABLE (marked @Stable or @Immutable)
+    - stores: STABLE (marked @Stable or @Immutable)
     - cardZoom: STABLE (marked @Stable or @Immutable)
     - scrollToTop: STABLE (marked @Stable or @Immutable)
 
@@ -2223,11 +2240,12 @@ public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabContent(onOpen
     - scrollToTopRequests: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabNav(backStack: androidx.compose.runtime.snapshots.SnapshotStateList<kotlin.Any>, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabNav(backStack: androidx.compose.runtime.snapshots.SnapshotStateList<kotlin.Any>, stores: com.meticulouscreations.homesafe.navigation.BackStackViewModelStores, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - backStack: STABLE (marked @Stable or @Immutable)
+    - stores: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 
 @Composable
@@ -2412,13 +2430,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.StreamStatsPanel(stats:
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.TabContent(tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.TabContent(tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, stores: com.meticulouscreations.homesafe.ui.screens.ShellViewModelStores): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - nav: STABLE (marked @Stable or @Immutable)
     - cardZoom: STABLE (marked @Stable or @Immutable)
+    - stores: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.TagCarButton(onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -2719,10 +2738,11 @@ internal fun com.meticulouscreations.homesafe.ui.screens.rememberPlacementSwipe(
   params:
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.rememberScreenViewModelStore(): androidx.lifecycle.ViewModelStoreOwner
+private fun com.meticulouscreations.homesafe.ui.screens.rememberShellViewModelStores(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation): com.meticulouscreations.homesafe.ui.screens.ShellViewModelStores
   skippable: false
   restartable: false
   params:
+    - nav: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.retentionOrDefault(days: kotlin.Double?): kotlin.String

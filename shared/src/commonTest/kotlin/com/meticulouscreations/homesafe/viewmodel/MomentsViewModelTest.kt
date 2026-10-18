@@ -209,6 +209,7 @@ class MomentsViewModelTest {
             refreshPhantomSpotsUseCase = RefreshPhantomSpotsUseCase(phantoms),
             markNotAPersonUseCase = MarkNotAPersonUseCase(phantoms),
             undoNotAPersonUseCase = UndoNotAPersonUseCase(phantoms),
+            feedDispatcher = dispatcher,
             clock = object : Clock {
                 override fun now(): Instant = Instant.fromEpochSeconds(1_789_400_000)
             },

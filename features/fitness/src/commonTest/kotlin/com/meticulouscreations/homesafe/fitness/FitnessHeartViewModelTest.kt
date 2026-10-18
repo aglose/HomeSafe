@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.fitness.domain.SetDraft
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.domain.ZoneTracker
 import com.meticulouscreations.homesafe.weather.data.MutableClock
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -48,12 +49,12 @@ class FitnessHeartViewModelTest {
 
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
-    private class Harness(supported: Boolean = true) {
+    private class Harness(dispatcher: CoroutineDispatcher, supported: Boolean = true) {
         private val dao = InMemoryFitnessDao()
         val repository = FitnessRepositoryImpl(dao)
         val monitor = FakeHeartRateMonitor(supported)
         val clock = MutableClock(NOW)
-        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao))
+        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao), boardDispatcher = dispatcher)
 
         /** The time of the last reading, moved on by each one. */
         var at = NOW * 1000
@@ -68,7 +69,7 @@ class FitnessHeartViewModelTest {
     }
 
     private fun runHeartTest(supported: Boolean = true, body: suspend TestScope.(Harness) -> Unit) = runTest(dispatcher) {
-        val h = Harness(supported)
+        val h = Harness(dispatcher, supported)
         try {
             body(h)
         } finally {

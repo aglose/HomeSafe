@@ -32,6 +32,7 @@ import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.data.MutableClock
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -62,7 +63,7 @@ class FitnessViewModelTest {
 
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
-    private class Harness {
+    private class Harness(private val dispatcher: CoroutineDispatcher) {
         private val dao = InMemoryFitnessDao()
         val repository = FitnessRepositoryImpl(dao)
         val preferences = FitnessPreferencesRepositoryImpl(dao)
@@ -70,14 +71,14 @@ class FitnessViewModelTest {
 
         private val made = mutableListOf<FitnessViewModel>()
 
-        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences).also { made += it }
+        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences, boardDispatcher = dispatcher).also { made += it }
 
         /** Stops the view models' minute tick, which would otherwise keep a finished test's clock turning for ever. */
         fun stop() = made.forEach { it.setActive(false) }
     }
 
     private fun runFitnessTest(body: suspend TestScope.(Harness) -> Unit) = runTest(dispatcher) {
-        val h = Harness()
+        val h = Harness(dispatcher)
         try {
             body(h)
         } finally {
