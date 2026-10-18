@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.integration.testPlatformContext
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
+import com.meticulouscreations.homesafe.viewmodel.CameraFramingViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
@@ -70,6 +71,7 @@ class AppGraphViewModelWiringTest {
         assertEquals(
             setOf(
                 CameraDetailViewModel.Factory::class,
+                CameraFramingViewModel.Factory::class,
                 DetectionZonesViewModel.Factory::class,
                 ClassifierLabelingViewModel.Factory::class,
                 LiveLabelingViewModel.Factory::class,
