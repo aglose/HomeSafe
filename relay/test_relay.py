@@ -6367,3 +6367,32 @@ class DoorsTest(_ScratchDb):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NestPrimerTest(unittest.TestCase):
+    def test_only_streams_pulling_a_nest_camera_are_held(self):
+        streams = {
+            "hikvision_1_sub": {"producers": [{"url": "ffmpeg:rtsp://x/102#video=copy"}]},
+            "living_room": {"producers": [{"url": "nest:?client_id=a&device_id=d1"}]},
+            "living_room_sub": {"producers": [{"url": "ffmpeg:living_room#video=h264#width=640"}]},
+            "kitchen": {"producers": [{"id": 3, "url": "nest:?device_id=d2", "medias": ["video"]}]},
+            "empty": {"producers": None},
+            "odd": None,
+        }
+        self.assertEqual(["kitchen", "living_room"], relay.nest_stream_names(streams))
+
+    def test_no_streams_no_nest_cameras(self):
+        self.assertEqual([], relay.nest_stream_names({}))
+        self.assertEqual([], relay.nest_stream_names(None))
+
+    def test_a_stream_that_keeps_failing_is_asked_for_less_often(self):
+        self.assertEqual([5, 5, 10, 20, 40, 80, 160, 300, 300], [relay.nest_primer_delay(n) for n in range(0, 9)])
+
+    def test_each_nest_camera_s_grid_stream_is_held_after_its_session(self):
+        streams = {
+            "living_room": {"producers": [{"url": "nest:?device_id=d1"}]},
+            "living_room_sub": {"producers": [{"url": "ffmpeg:living_room#video=h264#width=640"}]},
+            "kitchen": {"producers": [{"url": "nest:?device_id=d2"}]},
+            "hikvision_1_sub": {"producers": [{"url": "rtsp://x/102"}]},
+        }
+        self.assertEqual({"living_room_sub": "living_room"}, relay.nest_grid_streams(streams))

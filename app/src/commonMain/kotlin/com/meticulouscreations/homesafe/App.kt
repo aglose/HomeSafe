@@ -18,6 +18,7 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.components.LastSeenStillFetcher
 import com.meticulouscreations.homesafe.ui.components.warmUpLivePlayback
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
@@ -97,7 +98,11 @@ internal fun startAppServices(appGraph: AppGraph) {
     // API port; with Coil's own cookie-less default client they 401 and never render.
     SingletonImageLoader.setSafe { context ->
         ImageLoader.Builder(context)
-            .components { add(KtorNetworkFetcherFactory(appGraph.httpClient)) }
+            .components {
+                add(KtorNetworkFetcherFactory(appGraph.httpClient))
+                // A Nest card's poster: only what this device kept, never a request (see LastSeenStill).
+                add(LastSeenStillFetcher.Factory())
+            }
             .build()
     }
     // Idle until the user turns notifications on in Settings; started here so it outlives any tab.

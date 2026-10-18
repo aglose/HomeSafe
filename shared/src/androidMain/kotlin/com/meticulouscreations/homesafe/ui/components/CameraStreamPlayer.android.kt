@@ -179,7 +179,12 @@ actual fun CameraStreamPlayer(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (posterVisible && posterUrl != null) {
-                VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize())
+                VideoPosterLayer(
+                    posterUrl = posterUrl,
+                    refresh = source is VideoSource.Live,
+                    modifier = Modifier.fillMaxSize(),
+                    lastSeen = (source as? VideoSource.Live)?.lastSeenPoster == true,
+                )
             }
         }
     }

@@ -37,13 +37,16 @@ sealed interface VideoSource {
      * `LiveTransportMemory`); the others ignore it. While no video frame has been decoded yet
      * (cold start, or a reconnect after an error), platforms that support it show [posterUrl] —
      * Frigate's latest-snapshot endpoint, fetched fresh and refreshed once a second by
-     * [VideoPosterLayer] — instead of a black box or a stale picture.
+     * [VideoPosterLayer] — instead of a black box or a stale picture. With [lastSeenPoster] it
+     * is a still only ever read from this device ([LastSeenStill]): a Nest camera's, which the
+     * server can't hand out quickly.
      */
     @Immutable
     data class Live(
         override val url: String,
         override val posterUrl: String? = null,
         val webRtc: WebRtcEndpoint? = null,
+        val lastSeenPoster: Boolean = false,
     ) : VideoSource {
         override val headers: Map<String, String> get() = emptyMap()
     }
@@ -197,10 +200,11 @@ fun CameraStreamPlayer(
     reconnectRequests: Int = 0,
     onStreamStats: ((stats: LiveStreamStats?) -> Unit)? = null,
     turnDegrees: Float = 0f,
+    lastSeenPoster: Boolean = false,
 ) {
-    val request = remember(streamUrl, posterUrl, webRtcSignalingUrl) {
+    val request = remember(streamUrl, posterUrl, webRtcSignalingUrl, lastSeenPoster) {
         val webRtc = webRtcSignalingUrl?.let { WebRtcEndpoint(it, audio = false) }
-        PlayerRequest(VideoSource.Live(streamUrl, posterUrl, webRtc))
+        PlayerRequest(VideoSource.Live(streamUrl, posterUrl, webRtc, lastSeenPoster))
     }
     CameraStreamPlayer(
         request = request,

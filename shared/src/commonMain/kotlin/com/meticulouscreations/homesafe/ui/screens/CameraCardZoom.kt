@@ -330,7 +330,14 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                 val streamUrl = tile.streamUrl
                 if (streamUrl != null) {
                     val turnDegrees = tile.orientation.degrees
-                    ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { videoModifier, onStreamStats ->
+                    // Framed as its card is, so the picture lifts out exactly as it was; the look's own zoom is on top.
+                    ShapedVideo(
+                        streamUrl = streamUrl,
+                        fit = tile.videoFit,
+                        modifier = Modifier.fillMaxSize(),
+                        turnDegrees = turnDegrees,
+                        crop = { tile.crop },
+                    ) { videoModifier, onStreamStats ->
                         CameraStreamPlayer(
                             streamUrl = streamUrl,
                             modifier = videoModifier,
@@ -339,6 +346,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                             playerKey = tile.camera.name,
                             onStreamStats = onStreamStats,
                             turnDegrees = turnDegrees,
+                            lastSeenPoster = tile.posterIsLastSeen,
                         )
                     }
                 } else {

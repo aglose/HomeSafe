@@ -1,6 +1,3 @@
-// Public on purpose: :androidApp's screenshot tests call these from another module (see HomePreviews.kt).
-@file:Suppress("ktlint:compose:preview-public-check")
-
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.foundation.layout.padding
@@ -53,21 +50,21 @@ private fun DoorsPagePreviewContent(state: DoorsUiState) {
 /** Three doors: the back one open and set to always notify, the garage's sensor low on battery and far from the stick. */
 @Preview(name = "Doors", widthDp = 412, heightDp = 1500)
 @Composable
-fun DoorsPreview() {
+private fun DoorsPreview() {
     DoorsPagePreviewContent(DoorsUiState(doors = previewDoors, history = previewHistory, nowMillis = PREVIEW_NOW, loaded = true))
 }
 
 /** No sensor paired yet, and the server not hearing the Zigbee network either. */
 @Preview(name = "Doors, none paired yet", widthDp = 412, heightDp = 915)
 @Composable
-fun DoorsEmptyPreview() {
+private fun DoorsEmptyPreview() {
     DoorsPagePreviewContent(DoorsUiState(nowMillis = PREVIEW_NOW, loaded = true, listening = false))
 }
 
 /** The strip on Home: one door open, one closed, one whose sensor has gone quiet. */
 @Preview(name = "Home doors strip", widthDp = 412)
 @Composable
-fun HomeDoorsStripPreview() {
+private fun HomeDoorsStripPreview() {
     FrigateTheme {
         Surface {
             HomeDoorsStrip(

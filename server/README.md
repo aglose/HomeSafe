@@ -74,3 +74,13 @@ ssh frigate 'sudo journalctl -t homesafe-relay --since "1 hour ago" | grep "upti
 ```
 
 prints each minute something was down, as the relay logged it.
+
+## Deploying the relay
+
+`relay/deploy.sh --check` says what would go out; `relay/deploy.sh` deploys this checkout's HEAD.
+Deploys go out in order: it refuses one that doesn't contain `origin/main` and the commit the box
+runs (recorded in `~/surveillance/relay/DEPLOYED`), one that isn't pushed, or one over relay files
+edited on the box. It takes a lock, backs the files up under `~/surveillance/relay/deploys/`,
+rebuilds only the relay container, waits for `/health`, and rolls back if the relay doesn't come
+up. `~/surveillance/relay/deploys/log` is the history. A change deployed from a branch has to be
+merged into the next one deployed, so nothing that is on the box is ever dropped.

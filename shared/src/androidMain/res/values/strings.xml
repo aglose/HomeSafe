@@ -23,6 +23,11 @@
     <string name="notif_door_opened_away_title">Away: %1$s opened</string>
     <string name="notif_door_body">Door sensor</string>
     <string name="notif_door_away_body">Door sensor · nobody home</string>
+    <!-- The name beside the app's in the header over each kind's notifications in the shade. -->
+    <string name="notif_group_cameras">Cameras</string>
+    <string name="notif_group_summaries">Camera summaries</string>
+    <string name="notif_group_weather">Weather</string>
+    <string name="notif_group_budget">Budget</string>
     <string name="notif_budget_close_title">Close to the month\'s budget</string>
     <string name="notif_budget_over_title">Over the month\'s budget</string>
     <string name="notif_budget_savings_title">Dipping into savings</string>

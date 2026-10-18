@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.domain.model.CameraFraming
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
@@ -26,8 +27,8 @@ import kotlinx.coroutines.launch
 
 /**
  * A Google Nest camera's live view. There is nothing to load: the card already had the video
- * playing, and the screen carries on with that. All this adds is sound, which the card's
- * stream doesn't ask go2rtc for.
+ * playing, and the screen carries on with that, moving up to the camera's own stream (the card
+ * may play a smaller one) and adding sound, which the card's stream doesn't ask go2rtc for.
  */
 @Inject
 @ViewModelKey
@@ -41,8 +42,8 @@ class NestCameraViewModel(
     private val observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
 ) : ViewModel() {
 
-    /** Which way up [streamName]'s picture is shown, in degrees clockwise: as turned in the Home page's Arrange mode. */
-    fun turnDegrees(streamName: String): Flow<Float> = observeCameraLayoutsUseCase().map { it[streamName]?.orientation?.degrees ?: 0f }
+    /** How [streamName]'s picture is framed: as turned and cropped from the Home page's Arrange mode. */
+    fun framing(streamName: String): Flow<CameraFraming> = observeCameraLayoutsUseCase().map { it[streamName]?.framing ?: CameraFraming.UNTOUCHED }
 
     /** How the Nest cameras' pictures sit in their boxes: saved for every Nest camera, cards included. */
     val fit: StateFlow<VideoFit> = observePlaybackPreferencesUseCase()
@@ -76,16 +77,18 @@ class NestCameraViewModel(
 
     /**
      * [streamName] over whichever route is in use, following it when it changes; null while
-     * signed out. Silent, it is exactly what the card was playing (so the hand-over doesn't
-     * reconnect); [withSound] adds the audio track. Either way it is the same go2rtc stream, so
-     * switching between them doesn't make go2rtc dial Google again.
+     * signed out. [withSound] adds the audio track; with or without, it is the same go2rtc
+     * stream, so switching between them doesn't make go2rtc dial Google again. [stillUrl] is the
+     * card's last-seen still (see `LastSeenStill`), shown until the video has a frame.
      */
-    fun liveSource(streamName: String, withSound: Boolean): Flow<VideoSource.Live?> =
+    fun liveSource(streamName: String, withSound: Boolean, stillUrl: String? = null): Flow<VideoSource.Live?> =
         observeCurrentServerUrlUseCase().map { serverUrl ->
             serverUrl?.let {
                 VideoSource.Live(
                     url = getLiveStreamUrlUseCase(it, streamName, audioCodecs = if (withSound) liveAudioCodecs else emptyList()),
+                    posterUrl = stillUrl,
                     webRtc = WebRtcEndpoint(getLiveWebRtcSignalingUrlUseCase(it, streamName), audio = withSound),
+                    lastSeenPoster = stillUrl != null,
                 )
             }
         }

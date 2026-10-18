@@ -17,6 +17,7 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +72,11 @@ class AtlasViewModel(
     private val clock: Clock,
     /** The base map's tiles, shared with the weather radar's. */
     val tiles: MapTileStore,
+    /**
+     * Where the history is worked out, off the main thread. A test hands in its own, so no
+     * analysis can come back to a main dispatcher that test has already put away.
+     */
+    private val analysisDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AtlasUiState(today = today(), nowEpochSeconds = clock.now().epochSeconds))
@@ -110,7 +116,7 @@ class AtlasViewModel(
                     _uiState.update { it.copy(loaded = true, history = history, analyzing = !history.isEmpty, paths = it.paths.takeIf { pathsOf === history }) }
                     // Beside the working out, not after it: the map's glow has nothing to wait for in the analysis.
                     if (wantPaths) loadPaths(history)
-                    val analysis = withContext(Dispatchers.Default) { AtlasAnalyzer.analyze(history) }
+                    val analysis = withContext(analysisDispatcher) { AtlasAnalyzer.analyze(history) }
                     _uiState.update { it.copy(analysis = analysis, analyzing = false) }
                 }
             }

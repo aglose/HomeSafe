@@ -26,7 +26,9 @@ import kotlinx.coroutines.launch
 
 /**
  * The Nest cameras, found in the server's go2rtc: every stream there with a `nest:` source is
- * one (see `nestStreamNames`), indoors unless its name starts with [OUTDOOR_STREAM_PREFIX].
+ * one (see `nestStreams`), indoors unless its name starts with [OUTDOOR_STREAM_PREFIX]. A
+ * `<name>_sub` stream beside it is what its card plays, as a Frigate camera's card plays its sub
+ * stream.
  *
  * What the server last said is kept on the device ([CameraListDao]), so the Home page has the
  * cameras the moment it opens, Indoor switch and all, rather than once go2rtc has answered. The
@@ -71,7 +73,7 @@ class NestCameraRepositoryImpl(
                             connectionRepository.activeConnection.value?.takeIf { it.serverUrl == identity }?.let { launch { refresh(it) } }
                         }
                         dao.observeNestCameras(identity)
-                            .map { rows -> rows.map { nestCamera(it.name) }.sortedBy { it.name } }
+                            .map { rows -> rows.map(::nestCamera).sortedBy { it.name } }
                             .distinctUntilChanged()
                             .collect { send(it) }
                     }
@@ -89,19 +91,21 @@ class NestCameraRepositoryImpl(
      */
     override suspend fun refresh(connection: ActiveConnection) {
         val identity = connection.serverUrl
-        apiClient.getNestStreamNames(connection.activeUrl)
-            .onSuccess { names ->
-                dao.insertNestCameras(names.map { NestCameraEntity(serverUrl = identity, name = it) })
-                dao.deleteOtherNestCameras(identity, names)
+        apiClient.getNestStreams(connection.activeUrl)
+            .onSuccess { streams ->
+                dao.insertNestCameras(streams.map { NestCameraEntity(serverUrl = identity, name = it.name, gridStreamName = it.gridStreamName) })
+                dao.deleteOtherNestCameras(identity, streams.map { it.name })
                 askedThisSession.update { it + identity }
             }
             .onFailure { error -> if (error is CancellationException) throw error }
     }
 
-    private fun nestCamera(streamName: String) = Camera(
-        name = streamName,
+    /** A Nest camera: its card plays the grid stream when the server has one, its page the camera's own. */
+    private fun nestCamera(row: NestCameraEntity) = Camera(
+        name = row.name,
         enabled = true,
-        placement = if (streamName.startsWith(OUTDOOR_STREAM_PREFIX)) CameraPlacement.Outdoor else CameraPlacement.Indoor,
+        gridStreamName = row.gridStreamName ?: row.name,
+        placement = if (row.name.startsWith(OUTDOOR_STREAM_PREFIX)) CameraPlacement.Outdoor else CameraPlacement.Indoor,
         source = CameraSource.Nest,
     )
 }

@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Draws @Preview functions through tools/preview-server, a Layoutlib that stays loaded: after an
+# edit, a preview costs the Gradle build of what changed plus about a second, instead of a new JVM
+# and Layoutlib each time (scripts/render-ui-previews.sh). See docs/ui-previews.md.
+#
+# Usage: scripts/preview WORDS [OUT_DIR]   draw the previews whose module, function or name
+#                                          contains one of the comma-separated WORDS; prints the
+#                                          PNGs (default OUT_DIR build/ui-previews/live)
+#        scripts/preview --all [OUT_DIR]   draw every preview
+#        scripts/preview --list            every preview's id and name
+#        scripts/preview --stop            stop the server (it also stops after 30 idle minutes)
+#
+# The first call in a checkout starts the server (Layoutlib and a first draw, ~10 s). It restarts
+# by itself when a dependency changes. The log is androidApp/build/preview-server/server.log.
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+dir=androidApp/build/preview-server
+launch=$dir/launch.properties
+port_file=$dir/port
+# Written by the screenshot suite when it runs (AGP has no task for it on its own).
+engine_input=androidApp/build/intermediates/debug/updateDebugScreenshotTestDefaultTestSuite/junit_inputs.txt
+unset PREVIEWS
+
+port() { cat "$port_file" 2>/dev/null; }
+up() { [ -s "$port_file" ] && curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$(port)/list"; }
+stop() {
+  if up; then curl -sf --max-time 5 "http://127.0.0.1:$(port)/stop" >/dev/null || true; fi
+  rm -f "$port_file"
+}
+
+case "${1:-}" in
+  --stop) stop; exit 0 ;;
+  ""|-h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+esac
+
+now() { perl -MTime::HiRes=time -e 'printf "%.1f", time'; }
+started=$(now)
+
+# 1. Build what changed: the modules' classes and R classes, the resources, the preview catalogue.
+./gradlew -q --console=plain :androidApp:previewServerPrepare
+built=$(now)
+
+# 2. The engine input file names the same classpath as the launch file. When the launch file is
+#    newer (a dependency changed), or there is none yet, let the suite write it again: one preview.
+if [ ! -f "$engine_input" ] || [ "$launch" -nt "$engine_input" ]; then
+  echo "Writing the screenshot suite's inputs (one Layoutlib run)..." >&2
+  PREVIEWS=StatusBadgePreview ./gradlew -q --console=plain :androidApp:updateDebugScreenshotTestDefaultTestSuite >&2
+  stop
+fi
+
+# 3. Start the server unless it's running on this launch file and this server source.
+if ! up || [ "$launch" -nt "$port_file" ] || [ tools/preview-server/PreviewServer.java -nt "$port_file" ]; then
+  stop
+  java=$(sed -n 's/^java=//p' "$launch")
+  classpath=$(sed -n 's/^classpath=//p' "$launch")
+  catalogue=$(sed -n 's/^catalogue=//p' "$launch")
+  echo "Starting the preview server..." >&2
+  # exec, with every standard stream redirected: no shell is left waiting on the server, and nothing
+  # holds the caller's stdout open (a caller piping this script would otherwise wait for good).
+  (
+    cd androidApp || exit 1
+    exec env "com.android.junit.engine.input.parameters=$root/$engine_input" \
+      nohup "$java" -Xmx3g -Djava.awt.headless=true -Dlayoutlib.thread.timeout=60000 \
+      "-Dpreview.root=$root" "-Dpreview.catalogue=$catalogue" "-Dpreview.portFile=$root/$port_file" \
+      -cp "$classpath" "$root/tools/preview-server/PreviewServer.java" \
+      < /dev/null > "$root/$dir/server.log" 2>&1
+  ) &
+  disown
+  for _ in $(seq 1 300); do
+    [ -s "$port_file" ] && break
+    if ! pgrep -f "preview.portFile=$root/$port_file" >/dev/null; then
+      echo "The preview server didn't start:" >&2
+      tail -n 30 "$dir/server.log" >&2
+      exit 1
+    fi
+    sleep 0.2
+  done
+  [ -s "$port_file" ] || { echo "The preview server took too long to start; see $dir/server.log" >&2; exit 1; }
+fi
+
+if [ "${1:-}" = "--list" ]; then
+  curl -sf "http://127.0.0.1:$(port)/list"
+  exit 0
+fi
+
+# 4. Draw.
+only=$1
+[ "$only" = "--all" ] && only='*'
+out=${2:-build/ui-previews/live}
+case "$out" in /*) ;; *) out="$root/$out" ;; esac
+status=0
+curl -s --fail-with-body --get --data-urlencode "only=$only" --data-urlencode "out=$out" "http://127.0.0.1:$(port)/render" || status=$?
+echo "Built in $(perl -e "printf '%.1f', $built - $started") s, drew in $(perl -e "printf '%.1f', $(now) - $built") s." >&2
+exit "$status"

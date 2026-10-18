@@ -5,12 +5,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
 import com.meticulouscreations.homesafe.domain.model.RecordingHistory
 import com.meticulouscreations.homesafe.domain.model.RecordingPlaylist
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
+import com.meticulouscreations.homesafe.domain.model.VideoFit
+import com.meticulouscreations.homesafe.domain.model.camerasWithNest
 import com.meticulouscreations.homesafe.domain.model.isGenericCar
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
@@ -23,6 +26,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveRecentCameraMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
@@ -231,6 +235,7 @@ class CameraDetailViewModel(
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     private val getRecordingSnapshotUrlUseCase: GetRecordingSnapshotUrlUseCase,
     observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
+    observeNestCamerasUseCase: ObserveNestCamerasUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -351,6 +356,26 @@ class CameraDetailViewModel(
     val turnDegrees: StateFlow<Float> = observeCameraLayoutsUseCase()
         .map { it[cameraName]?.orientation?.degrees ?: 0f }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0f)
+
+    /** How much of the picture is shown: as the camera was cropped in the Home page's framing editor. */
+    val crop: StateFlow<CameraCrop> = observeCameraLayoutsUseCase()
+        .map { it[cameraName]?.crop ?: CameraCrop.WHOLE }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CameraCrop.WHOLE)
+
+    /**
+     * How the picture sits in its box: null stretches it, as every camera Frigate reads from its
+     * own sub stream wants; a Nest camera's picture (Frigate reading a Nest stream, see
+     * [camerasWithNest]) is whatever shape the model makes it, and sits as the Nest cameras' saved
+     * choice says, whole or filling.
+     */
+    val videoFit: StateFlow<VideoFit?> = combine(
+        observeCamerasUseCase(),
+        observeNestCamerasUseCase(),
+        observePlaybackPreferencesUseCase(),
+    ) { frigate, nest, preferences ->
+        val camera = camerasWithNest(frigate, nest.orEmpty()).firstOrNull { it.name == cameraName }
+        preferences.nestFit.takeIf { camera?.fromNest == true }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _streamStats = MutableStateFlow<LiveStreamStats?>(null)
 

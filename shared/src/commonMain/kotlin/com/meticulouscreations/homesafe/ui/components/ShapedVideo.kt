@@ -8,6 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import kotlin.math.roundToInt
 
@@ -28,6 +30,11 @@ import kotlin.math.roundToInt
  * the camera's page all agree, and only the first of them ever waits. A null [streamUrl] measures
  * nothing: a picture that is only ever stretched (and maybe turned) needs no shape.
  *
+ * [crop] is how much of the picture shows (see [CameraCrop]), in fractions of the picture's box,
+ * so it frames this box and any other alike; read while placing, so a moving crop doesn't
+ * recompose. [clip] false lets a cropped picture spill past this box (the framing editor shows
+ * what its frame cuts off).
+ *
  * [turnDegrees] is the turn the player draws the picture at (pass the same to it). A quarter turn
  * stands the picture on its side, so its box takes the inverse shape: a 16:9 camera turned
  * upright fits its card as 9:16, with bars, even a Frigate one (see [pictureBox]).
@@ -38,6 +45,8 @@ fun ShapedVideo(
     fit: VideoFit?,
     modifier: Modifier = Modifier,
     turnDegrees: Float = 0f,
+    crop: () -> CameraCrop = { CameraCrop.WHOLE },
+    clip: Boolean = true,
     player: @Composable (modifier: Modifier, onStreamStats: ((LiveStreamStats?) -> Unit)?) -> Unit,
 ) {
     val aspect = streamUrl?.let { MeasuredVideoShapes[it] }
@@ -47,8 +56,27 @@ fun ShapedVideo(
         null
     }
     val onItsSide = isOnItsSide(turnDegrees)
-    Box(modifier = modifier.clipToBounds(), contentAlignment = Alignment.Center) {
-        player(Modifier.pictureBox(aspect.takeIf { fit != null }, fit, onItsSide), measure)
+    Box(modifier = if (clip) modifier.clipToBounds() else modifier, contentAlignment = Alignment.Center) {
+        player(Modifier.pictureBox(aspect.takeIf { fit != null }, fit, onItsSide, crop), measure)
+    }
+}
+
+/**
+ * The size of the picture's box in a [boxWidth] x [boxHeight] box (see [pictureBox]): [aspect] is
+ * the picture's own shape (null: the box's), [fit] how it sits (null: stretched), stood
+ * [onItsSide] by a quarter turn.
+ */
+fun pictureBoxSize(boxWidth: Int, boxHeight: Int, aspect: Float?, fit: VideoFit?, onItsSide: Boolean): IntSize {
+    val picture = aspect ?: (boxWidth.toFloat() / boxHeight)
+    val shown = if (onItsSide) 1f / picture else picture
+    val wider = boxWidth.toFloat() / boxHeight > shown
+    return when {
+        fit == null && !onItsSide -> IntSize(boxWidth, boxHeight)
+
+        // Whole: limited by the box's tighter side. Filling: by its looser one, spilling over the other.
+        (fit == VideoFit.Fill) == wider -> IntSize(boxWidth, (boxWidth / shown).roundToInt())
+
+        else -> IntSize((boxHeight * shown).roundToInt(), boxHeight)
     }
 }
 
@@ -60,22 +88,25 @@ fun ShapedVideo(
  * the stretch: this whole box, unless the picture is on its side, when it fits like [VideoFit.Fit],
  * as a 16:9 camera turned upright can't fill a 16:9 card without being squashed.
  */
-private fun Modifier.pictureBox(aspect: Float?, fit: VideoFit?, onItsSide: Boolean): Modifier = layout { measurable, constraints ->
+private fun Modifier.pictureBox(aspect: Float?, fit: VideoFit?, onItsSide: Boolean, crop: () -> CameraCrop): Modifier = layout { measurable, constraints ->
     val boxWidth = constraints.maxWidth
     val boxHeight = constraints.maxHeight
-    val picture = aspect ?: (boxWidth.toFloat() / boxHeight)
-    val shown = if (onItsSide) 1f / picture else picture
-    val wider = boxWidth.toFloat() / boxHeight > shown
-    val (width, height) = when {
-        fit == null && !onItsSide -> boxWidth to boxHeight
-
-        // Whole: limited by the box's tighter side. Filling: by its looser one, spilling over the other.
-        (fit == VideoFit.Fill) == wider -> boxWidth to (boxWidth / shown).roundToInt()
-
-        else -> (boxHeight * shown).roundToInt() to boxHeight
-    }
+    val (width, height) = pictureBoxSize(boxWidth, boxHeight, aspect, fit, onItsSide)
     val placeable = measurable.measure(Constraints.fixed(width, height))
-    layout(boxWidth, boxHeight) { placeable.place((boxWidth - width) / 2, (boxHeight - height) / 2) }
+    layout(boxWidth, boxHeight) {
+        // The crop, read here so that a finger moving it only places the picture again. Kept
+        // within this box's reach of the picture (see CameraCrop's spans): no bar beyond what
+        // fitting the picture shows.
+        placeable.placeWithLayer((boxWidth - width) / 2, (boxHeight - height) / 2) {
+            val shown = crop().clamped(boxWidth.toFloat() / width, boxHeight.toFloat() / height)
+            if (!shown.isWhole) {
+                scaleX = shown.zoom
+                scaleY = shown.zoom
+                translationX = (0.5f - shown.centerX) * shown.zoom * width
+                translationY = (0.5f - shown.centerY) * shown.zoom * height
+            }
+        }
+    }
 }
 
 /**
@@ -83,9 +114,11 @@ private fun Modifier.pictureBox(aspect: Float?, fit: VideoFit?, onItsSide: Boole
  * process. Snapshot state, so everything showing a stream reshapes as soon as any of them learns it.
  *
  * Kept by the stream itself: its go2rtc address and name, the live URL up to its first `&`
- * (`http://<host>:1984/api/stream.m3u8?src=<name>`), so asking for sound doesn't change it. A
- * camera of the same name on another server is another stream, and a different shape; moving
- * between the LAN and Tailscale measures again once.
+ * (`http://<host>:1984/api/stream.m3u8?src=<name>`), so asking for sound doesn't change it, and
+ * without a `_sub` at the end: a Nest camera's smaller stream for the cards is the same picture
+ * scaled down (see `nestStreams`), so the camera's page knows the shape before its own stream
+ * has a frame. A camera of the same name on another server is another stream, and a different
+ * shape; moving between the LAN and Tailscale measures again once.
  */
 object MeasuredVideoShapes {
     private val aspects = mutableStateMapOf<String, Float>()
@@ -97,5 +130,5 @@ object MeasuredVideoShapes {
         aspects[key(streamUrl)] = width.toFloat() / height
     }
 
-    private fun key(streamUrl: String) = streamUrl.substringBefore('&')
+    private fun key(streamUrl: String) = streamUrl.substringBefore('&').removeSuffix("_sub")
 }

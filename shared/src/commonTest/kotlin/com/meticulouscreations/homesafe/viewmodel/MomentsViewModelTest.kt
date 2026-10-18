@@ -123,6 +123,7 @@ class MomentsViewModelTest {
     private object FakeMediaUrls : MediaUrlRepository {
         override fun liveStreamUrl(serverUrl: String, streamName: String, audioCodecs: List<String>) = fail("unused")
         override fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String) = fail("unused")
+        override fun liveStillUrl(serverUrl: String, streamName: String) = "$serverUrl/still/$streamName"
         override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?) = fail("unused")
         override fun eventThumbnailUrl(serverUrl: String, eventId: String) = "$serverUrl/thumb/$eventId"
         override fun recordingSnapshotUrl(serverUrl: String, cameraName: String, epochSeconds: Double, height: Int?) = fail("unused")

@@ -66,6 +66,14 @@ object AlertNotificationPoster {
     const val ACCENT_COLOR = 0xFFE8663D.toInt()
     private const val AWAY_COLOR = 0xFFE5484D.toInt()
 
+    /**
+     * The shade's groups: the cameras' alerts (away alerts and "Not a person" confirmations
+     * among them) under the camera, the relay's quiet summaries under their own list icon. Two
+     * groups because they sit in different sections of the shade, one loud and one silent.
+     */
+    private val alertGroup = NotificationGroupSummary("detections", CHANNEL_ID, R.string.notif_group_cameras)
+    private val summaryGroup = NotificationGroupSummary("summaries", SUMMARY_CHANNEL_ID, R.string.notif_group_summaries)
+
     /** What the relay joins a summary's cameras with (`digest_text` in relay.py). */
     private const val SUMMARY_SEPARATOR = " · "
 
@@ -173,6 +181,7 @@ object AlertNotificationPoster {
         if (frames.size < 2) {
             if (isUpdate && isMarkedNotAPerson(notification.id)) return@withContext // marked while its picture decoded
             notify(context, notification.id, build(context, notification, postedAt, picture = frames.firstOrNull() ?: thumbnail, largeIcon = thumbnail))
+            postGroupSummary(context, notification)
             return@withContext
         }
         animating.withLock {
@@ -213,6 +222,8 @@ object AlertNotificationPoster {
         NotificationCompat.Builder(context, if (notification.urgent) AWAY_CHANNEL_ID else CHANNEL_ID)
             .setSmallIcon(glyph(notification).drawableRes)
             .setColor(if (notification.urgent) AWAY_COLOR else ACCENT_COLOR)
+            .setGroup(alertGroup.group)
+            .setDeleteIntent(alertGroup.removalIntent(context, notification.id, NOTIFICATION_ID))
             .setContentTitle(notification.title)
             .setContentText(notification.body)
             .setTicker(notification.title)
@@ -246,6 +257,8 @@ object AlertNotificationPoster {
         NotificationCompat.Builder(context, SUMMARY_CHANNEL_ID)
             .setSmallIcon(glyph(notification).drawableRes)
             .setColor(ACCENT_COLOR)
+            .setGroup(summaryGroup.group)
+            .setDeleteIntent(summaryGroup.removalIntent(context, notification.id, NOTIFICATION_ID))
             .setContentTitle(notification.title)
             .setContentText(notification.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(notification.body.replace(SUMMARY_SEPARATOR, "\n")))
@@ -337,7 +350,10 @@ object AlertNotificationPoster {
         )
 
     /** Undo landed: nothing left to say. */
-    fun clearNotAPerson(context: Context, id: String) = cancel(context, confirmTag(id))
+    fun clearNotAPerson(context: Context, id: String) {
+        cancel(context, confirmTag(id))
+        alertGroup.tidy(context, confirmTag(id), NOTIFICATION_ID)
+    }
 
     /** Undo didn't reach the relay: the mark stands, and the button is still there. */
     fun showUndoFailed(context: Context, id: String, target: MomentDeepLink, reason: String) =
@@ -349,6 +365,8 @@ object AlertNotificationPoster {
             // A tick once the mark is in (it offers Undo); the camera while it is on its way, or didn't arrive.
             .setSmallIcon((if (action?.second == NotAPersonReceiver.ACTION_UNDO) NotificationGlyph.DONE else NotificationGlyph.CAMERA).drawableRes)
             .setColor(ACCENT_COLOR)
+            .setGroup(alertGroup.group)
+            .setDeleteIntent(alertGroup.removalIntent(context, confirmTag(id), NOTIFICATION_ID))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -362,6 +380,7 @@ object AlertNotificationPoster {
             }
             .build()
         notify(context, confirmTag(id), notification)
+        alertGroup.post(context, NotificationGlyph.CAMERA, ACCENT_COLOR, CONFIRM_TIMEOUT_MS)
     }
 
     private fun isMarkedNotAPerson(id: String) = synchronized(markedNotAPerson) { id in markedNotAPerson }
@@ -371,6 +390,19 @@ object AlertNotificationPoster {
     /** Tagged by the detection's id, so each detection has its own notification and every stage replaces the last. */
     private fun notify(context: Context, id: String, notification: Notification) {
         context.getSystemService(NotificationManager::class.java).notify(id, NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * Puts up (or refreshes) the summary of [notification]'s group (see [NotificationGroupSummary]).
+     * Not for a clip's frames: each would be a second update, and Android sheds a package's
+     * updates beyond about five a second.
+     */
+    private fun postGroupSummary(context: Context, notification: AlertNotification) {
+        if (notification.summary) {
+            summaryGroup.post(context, NotificationGlyph.SUMMARY, ACCENT_COLOR)
+        } else {
+            alertGroup.post(context, NotificationGlyph.CAMERA, ACCENT_COLOR, channel = if (notification.urgent) AWAY_CHANNEL_ID else CHANNEL_ID)
+        }
     }
 
     private fun cancel(context: Context, id: String) {
