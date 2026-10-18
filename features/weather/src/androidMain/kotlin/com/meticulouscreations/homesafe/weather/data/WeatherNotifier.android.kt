@@ -25,6 +25,7 @@ import androidx.work.WorkerParameters
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.appicon.appLaunchIntent
 import com.meticulouscreations.homesafe.data.BackgroundGraph
+import com.meticulouscreations.homesafe.data.NotificationGroupSummary
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import com.meticulouscreations.homesafe.ui.notification.drawableRes
@@ -48,8 +49,11 @@ internal const val CHANNEL_ID = "weather"
 /** Government warnings, on a channel of their own so they can be let through when the rest are silenced. */
 internal const val SEVERE_CHANNEL_ID = "weather_severe"
 
-/** One group for the weather's notifications, so Android never bundles a shower in with the cameras' alerts. */
-private const val GROUP = "weather"
+/**
+ * One group for the weather's notifications, so Android never bundles a shower in with the
+ * cameras' alerts. Its header wears the newest one's icon and colour.
+ */
+private val group = NotificationGroupSummary("weather", CHANNEL_ID, R.string.notif_group_weather)
 
 /** The widest a card is painted: a phone's screen across. Wider than this is only a larger bitmap to hand the system. */
 internal const val MAX_CARD_WIDTH_PX = 1080
@@ -93,7 +97,11 @@ private class AndroidWeatherNotifier(private val context: Context) : WeatherNoti
         if (!allowed()) return@withContext false
         ensureChannels()
         val posted = buildWeatherNotification(context, notification, System.currentTimeMillis())
-        runCatching { manager.notify(notification.id, NOTIFICATION_ID, posted) }
+        runCatching {
+            manager.notify(notification.id, NOTIFICATION_ID, posted)
+            val look = notification.art.icon.look
+            group.post(context, look.glyph, look.tintArgb, posted.timeoutAfter.takeIf { it > 0 }, posted.channelId)
+        }
             .onFailure { Log.w(TAG, "couldn't post ${notification.id}: ${it.message}") }
             .isSuccess
     }
@@ -143,7 +151,7 @@ internal fun buildWeatherNotification(context: Context, notification: WeatherNot
         .setPriority(if (notification.urgent) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
         // The weather is nobody's secret: shown in full on the lock screen.
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-        .setGroup(GROUP)
+        .setGroup(group.group)
         // When it happens, not when it was posted: Android writes a time still to come as "in 25 min".
         .setWhen(notification.eventEpochSeconds?.times(1000) ?: nowMillis)
         .setShowWhen(true)
