@@ -20,7 +20,7 @@ import com.meticulouscreations.homesafe.ui.screens.HOME_FEED_TEST_TAG
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * The Home tab's camera list: the "In view now" strip at the top and a card per
+ * The Home tab's camera list: the pills for the cars in view and the doors at the top, and a card per
  * camera. The list is lazy and a card is most of a screen tall, so a card further down isn't in
  * the tree at all until the list is scrolled to it — see [scrollToCamera].
  */

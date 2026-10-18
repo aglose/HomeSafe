@@ -15,9 +15,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -30,26 +28,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -80,7 +73,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -89,7 +81,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Density
@@ -98,12 +89,10 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
-import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.navigation.BackStackViewModelStores
-import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
@@ -128,7 +117,6 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.camera_frame_click_label
 import homesafe.shared.generated.resources.camera_move_earlier
 import homesafe.shared.generated.resources.camera_move_later
-import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.home_arrange_done
 import homesafe.shared.generated.resources.home_arrange_hint
 import homesafe.shared.generated.resources.home_away_back
@@ -143,8 +131,6 @@ import homesafe.shared.generated.resources.home_connection_tailscale_off_body
 import homesafe.shared.generated.resources.home_connection_tailscale_off_title
 import homesafe.shared.generated.resources.home_connection_unreachable_body
 import homesafe.shared.generated.resources.home_connection_unreachable_title
-import homesafe.shared.generated.resources.home_in_view_check
-import homesafe.shared.generated.resources.home_in_view_title
 import homesafe.shared.generated.resources.home_no_cameras
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
@@ -165,7 +151,7 @@ fun HomeTabContent(
     zoomState: CameraCardZoomState,
     onCameraClick: (CameraTile) -> Unit = {},
     onFrameCamera: (CameraTile) -> Unit = {},
-    onTagCars: (cameraName: String) -> Unit = {},
+    onOpenInView: () -> Unit = {},
     onOpenDoors: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
@@ -200,10 +186,7 @@ fun HomeTabContent(
         onDrop = { viewModel.saveOrder(shownPlacement) },
         onAwayBack = viewModel::markBack,
         inView = inView,
-        // A parked car's card opens the camera watching it — where its own card would have gone.
-        onInViewClick = { item -> cameras?.firstOrNull { it.camera.name == item.subject.cameraName }?.let(onCameraClick) },
-        // The camera the strip's first car is on: the frame to check the strip against.
-        onInViewCheck = { inView.firstOrNull()?.subject?.cameraName?.let(onTagCars) },
+        onOpenInView = onOpenInView,
         doors = doors,
         onOpenDoors = onOpenDoors,
         listTestTag = HOME_FEED_TEST_TAG,
@@ -269,22 +252,21 @@ internal fun homeArrangeAction(): ArrangeAction? {
 }
 
 /**
- * The home page's list: the cars in view and one card per camera — or, while [cameras] is still null
+ * The home page's list: the cars in view and the doors, and one card per camera — or, while [cameras] is still null
  * (the first cache read in flight), the loading skeleton: outlined cards where the cameras will
  * land, with a runner going round each. The sign-in screen draws this same list in its loading
  * state, so the skeleton and the real page are one layout by construction, and the real cards
  * fade in exactly onto their outlines rather than near them.
  *
- * Under it, [doors] when there are door sensors: each door and whether it's open, opening the
- * Doors page ([onOpenDoors]).
- *
- * At the top sits [inView] when there is anything in it: the vehicles standing in view of a
- * camera right now. It is deliberately the first thing on the page — the question it answers
- * ("is her car in the driveway?") is the one the app gets opened for — and it disappears entirely
- * when nothing is parked, rather than spending a row to say so.
+ * At the top sit two rows of pills ([HomeGlanceRows]) when there is anything to put in them: the
+ * vehicles standing in view of a camera right now ([inView]), and the doors ([doors]). It is
+ * deliberately the first thing on the page — the question it answers ("is her car in the
+ * driveway? is the back door shut?") is the one the app gets opened for — and each is one line,
+ * so the cameras still start near the top. The details are a tap away: [onOpenInView], [onOpenDoors].
+ * A row with nothing in it isn't drawn, rather than spending a row to say so.
  * It usually arrives a beat after the cameras (its cache is read, and its poll runs, apart from
  * theirs), so it fades in and the cards below slide down to make room rather than jumping by the
- * strip's whole height.
+ * row's whole height.
  *
  * With a [placement], the [CameraPlacementSwitch] floats just above the nav, where a thumb reaches
  * it (tucked away while the list is scrolled down), and [cameras] are the ones of that placement;
@@ -318,8 +300,7 @@ internal fun HomeFeed(
     onAwayBack: () -> Unit,
     modifier: Modifier = Modifier,
     inView: List<InViewItem> = emptyList(),
-    onInViewClick: (InViewItem) -> Unit = {},
-    onInViewCheck: () -> Unit = {},
+    onOpenInView: () -> Unit = {},
     doors: List<Door> = emptyList(),
     onOpenDoors: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
@@ -377,7 +358,7 @@ internal fun HomeFeed(
     LaunchedEffect(arranging) { if (arranging) swipe.cancel() }
     // Arrange mode starts from the top bar's menu, wherever the list is: with the list scrolled
     // past where its header goes, the header would land above the screen, so the list moves to it.
-    val arrangeHeaderIndex = listOf(connectionProblem != null, everyoneAway, inView.isNotEmpty(), doors.isNotEmpty()).count { it }
+    val arrangeHeaderIndex = listOf(connectionProblem != null, everyoneAway, inView.isNotEmpty() || doors.isNotEmpty()).count { it }
     LaunchedEffect(arranging) {
         if (arranging && gridState.firstVisibleItemIndex >= arrangeHeaderIndex) gridState.animateScrollToItem(arrangeHeaderIndex)
     }
@@ -416,15 +397,9 @@ internal fun HomeFeed(
                     item(key = "away-banner", span = { GridItemSpan(maxLineSpan) }) { AwayBanner(onBack = onAwayBack) }
                 }
 
-                if (inView.isNotEmpty()) {
-                    item(key = "in-view", span = { GridItemSpan(maxLineSpan) }) {
-                        InViewNowSection(items = inView, onClick = onInViewClick, onCheck = onInViewCheck, modifier = Modifier.animateItem())
-                    }
-                }
-
-                if (doors.isNotEmpty()) {
-                    item(key = "doors", span = { GridItemSpan(maxLineSpan) }) {
-                        HomeDoorsStrip(doors = doors, onOpen = onOpenDoors, modifier = Modifier.animateItem())
+                if (inView.isNotEmpty() || doors.isNotEmpty()) {
+                    item(key = "glance", span = { GridItemSpan(maxLineSpan) }) {
+                        HomeGlanceRows(inView = inView, doors = doors, onOpenInView = onOpenInView, onOpenDoors = onOpenDoors, modifier = Modifier.animateItem())
                     }
                 }
 
@@ -547,123 +522,6 @@ private fun PullToRefreshUnderTopBar(refreshing: Boolean, onRefresh: (() -> Unit
         content()
     } else {
         ApertureRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize(), bandTop = shellTopBarClearance(), content = content)
-    }
-}
-
-/**
- * "In view now": what is standing in the yard, as a strip of cards across the top of the home
- * page. Usually one or two cars, which is why this is a plain [Row] that scrolls sideways rather
- * than a lazy one — there is never enough here for laziness to pay for itself, and a Row measures
- * its children in one pass.
- *
- * It is headed by a small caption rather than a heading, so the cameras start as high up the
- * screen as they can; the caption and its info mark are [onCheck]: the camera's frame, to see whether the strip is right and put
- * it right by tagging the cars actually there (see [CarTaggingScreen]).
- */
-@Composable
-private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        // A 48dp target, as the IconButton it replaced was, with the caption centred in it: the
-        // space below the text is the gap to the cards. heightIn, not
-        // minimumInteractiveComponentSize, so the button itself is 48dp tall and not just the room around it.
-        Row(
-            modifier = Modifier
-                .heightIn(min = 48.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClickLabel = stringResource(Res.string.home_in_view_check), role = Role.Button, onClick = onCheck)
-                .testTag(IN_VIEW_CHECK_TEST_TAG),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = stringResource(Res.string.home_in_view_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items.forEach { item -> InViewCard(item = item, onClick = { onClick(item) }) }
-        }
-    }
-}
-
-/**
- * One parked vehicle: the crop Frigate cut of its most recent sighting, what the classifier calls
- * it, and where it is. The second line is where and since when ("Driveway · since 8:12 AM"); the
- * arrival is left off when the app only ever saw the car already parked, rather than guessing one.
- * A third line appears only once the sighting has gone stale, because a card that says nothing
- * about time is claiming the camera can see the car right now.
- */
-@Composable
-private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
-    val extraColors = LocalFrigateExtraColors.current
-    val presentation = item.presentation
-    val shape = RoundedCornerShape(16.dp)
-    Row(
-        modifier = Modifier
-            .width(IN_VIEW_CARD_WIDTH)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center,
-        ) {
-            // Coil rides the app's authenticated Ktor client, which is what lets this hit Frigate's thumbnail endpoint.
-            if (item.thumbnailUrl != null) {
-                AsyncImage(
-                    model = item.thumbnailUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.DirectionsCar,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = presentation.title.resolve(),
-                style = MaterialTheme.typography.labelLarge,
-                color = extraColors.textPrimary,
-                maxLines = 1,
-            )
-            Text(
-                text = listOfNotNull(presentation.placeLabel, presentation.sinceLabel?.resolve()).joinToString(stringResource(Res.string.common_dot_separator)),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-            presentation.lastSeenLabel?.let { lastSeen ->
-                Text(
-                    text = lastSeen.resolve(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    maxLines = 1,
-                )
-            }
-        }
     }
 }
 
@@ -962,12 +820,6 @@ const val HOME_ARRANGE_MENU_ITEM_TEST_TAG = "home_arrange_menu_item"
 
 /** Arrange mode's Done, heading the cameras while the mode is on. */
 const val HOME_ARRANGE_DONE_TEST_TAG = "home_arrange_done"
-
-/** The "In view now" caption, which opens the car-tagging screen. */
-internal const val IN_VIEW_CHECK_TEST_TAG = "in_view_check"
-
-/** Wide enough for "Ron and Judy's Mercedes" on one line, narrow enough that a second card shows it scrolls. */
-private val IN_VIEW_CARD_WIDTH: Dp = 232.dp
 
 /** Outlined placeholder cards shown until the camera cache answers — about a phone screen's worth. */
 private const val SKELETON_CARD_COUNT = 3

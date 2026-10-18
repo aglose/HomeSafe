@@ -1,15 +1,10 @@
 package com.meticulouscreations.homesafe.ui.screens
 
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
-import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryDay
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryEntry
 import com.meticulouscreations.homesafe.viewmodel.DoorsUiState
@@ -59,23 +54,4 @@ private fun DoorsPreview() {
 @Composable
 private fun DoorsEmptyPreview() {
     DoorsPagePreviewContent(DoorsUiState(nowMillis = PREVIEW_NOW, loaded = true, listening = false))
-}
-
-/** The strip on Home: one door open, one closed, one whose sensor has gone quiet. */
-@Preview(name = "Home doors strip", widthDp = 412)
-@Composable
-private fun HomeDoorsStripPreview() {
-    FrigateTheme {
-        Surface {
-            HomeDoorsStrip(
-                doors = listOf(
-                    Door("0x01", "Back door", open = true),
-                    Door("0x02", "Front door", open = false),
-                    Door("0x03", "Garage door", open = false, online = false),
-                ),
-                onOpen = {},
-                modifier = Modifier.padding(16.dp),
-            )
-        }
-    }
 }

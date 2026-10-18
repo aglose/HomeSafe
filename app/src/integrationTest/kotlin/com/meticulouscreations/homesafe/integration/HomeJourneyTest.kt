@@ -46,14 +46,19 @@ class HomeJourneyTest {
     }
 
     @Test
-    fun theParkedCarInViewOpensTheCameraWatchingIt() = runAppJourney {
+    fun theParkedCarInViewOpensItsPageAndThenTheCameraWatchingIt() = runAppJourney {
         val camera = CameraRobot(this)
         signIn.signInAs()
 
-        // Sarah's Tesla stopped in the driveway's parking zone twenty minutes ago and is still there.
+        // Sarah's Tesla stopped in the driveway's parking zone twenty minutes ago and is still there:
+        // a pill at the top of Home, its details on the In View page.
+        awaitText("Sarah's Tesla")
+        // Let the row finish fading in before aiming a tap at it.
+        settle()
+        tapText("Sarah's Tesla")
+
         awaitText("In view now")
         awaitText("Sarah's Tesla")
-        // Let the strip finish fading in before aiming a tap at it.
         settle()
         tapText("Sarah's Tesla")
 

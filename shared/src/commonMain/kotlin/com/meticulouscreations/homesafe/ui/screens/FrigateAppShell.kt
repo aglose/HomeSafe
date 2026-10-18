@@ -958,6 +958,9 @@ private data class CarTaggingRoute(val cameraName: String)
 /** The Doors page on the Home tab, from Home's doors card or a door notification's tap ([ShellNavigation.openDoors]). */
 internal data object DoorsHomeRoute
 
+/** The In View page: the cars parked in view, from a car's pill on Home. */
+private data object InViewRoute
+
 /**
  * The full-screen clip editor for [cameraName], around [anchorEpochSeconds] (what the camera
  * page was showing, or "now" at the live edge). [originX] / [originY] are where the scissors
@@ -1008,7 +1011,7 @@ private fun HomeTabNav(
                         zoomState = cardZoom,
                         onCameraClick = { tile -> backStack.add(cameraRoute(tile)) },
                         onFrameCamera = { tile -> if (backStack.lastOrNull() !is CameraFramingRoute) backStack.add(CameraFramingRoute(tile)) },
-                        onTagCars = { cameraName -> backStack.add(CarTaggingRoute(cameraName)) },
+                        onOpenInView = { if (backStack.lastOrNull() != InViewRoute) backStack.add(InViewRoute) },
                         onOpenDoors = { if (backStack.lastOrNull() != DoorsHomeRoute) backStack.add(DoorsHomeRoute) },
                         scrollToTopRequests = scrollToTop,
                     )
@@ -1106,6 +1109,16 @@ private fun HomeTabNav(
                     }
                 }
                 entry<DoorsHomeRoute> { route -> stores.Scoped(route) { DoorsScreen(onBack = { backStack.removeLastOrNull() }) } }
+                entry<InViewRoute> { route ->
+                    stores.Scoped(route) {
+                        InViewScreen(
+                            onBack = { backStack.removeLastOrNull() },
+                            // No warm stream to hand over from here: the camera's page joins its own.
+                            onOpenCamera = { cameraName -> backStack.add(CameraDetailRoute(cameraName, warmStreamUrl = null, warmPosterUrl = null)) },
+                            onTagCars = { cameraName -> backStack.add(CarTaggingRoute(cameraName)) },
+                        )
+                    }
+                }
             },
         )
     }

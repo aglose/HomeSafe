@@ -15,7 +15,7 @@ sensor ──Zigbee──▶ USB stick ──▶ Zigbee2MQTT ──MQTT──▶
 | Sensors | ThirdReality Zigbee Contact Sensor (3RDS17BZ), two AAA cells each |
 | Zigbee2MQTT, Mosquitto | `server/zigbee/docker-compose.yml`, both `restart: always`, host networking. The broker listens on 127.0.0.1 only. |
 | Relay | `relay/relay.py`, "doors": keeps each door's state and 90 days of openings and closings in `relay.db`, answers `GET /doors`, and pushes |
-| App | A Doors strip on Home (each door, open or closed) opening the Doors page, also at Settings › Doors: each sensor's battery and signal, its push setting, and the last 7 days |
+| App | Pills at the top of Home (each open or offline door, and a count of the closed ones) opening the Doors page, also at Settings › Doors: each sensor's battery and signal, its push setting, and the last 7 days |
 
 ## What pushes
 
