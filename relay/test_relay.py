@@ -6215,3 +6215,6 @@ class NestPrimerTest(unittest.TestCase):
     def test_no_streams_no_nest_cameras(self):
         self.assertEqual([], relay.nest_stream_names({}))
         self.assertEqual([], relay.nest_stream_names(None))
+
+    def test_a_stream_that_keeps_failing_is_asked_for_less_often(self):
+        self.assertEqual([5, 5, 10, 20, 40, 80, 160, 300, 300], [relay.nest_primer_delay(n) for n in range(0, 9)])

@@ -5061,8 +5061,12 @@ def test_push(request: Request) -> dict[str, Any]:
 NEST_PRIMER = os.environ.get("NEST_PRIMER", "1") == "1"
 # How often go2rtc's stream list is read again for Nest streams added since.
 NEST_PRIMER_SCAN_SECONDS = 60
-# The pause before holding a stream again after go2rtc closed it (a restart, Google ending the session).
+# The pause before holding a stream again after go2rtc closed it (a restart, Google ending the
+# session), doubling up to the longest for a stream that keeps failing at once.
 NEST_PRIMER_RETRY_SECONDS = 5
+NEST_PRIMER_MAX_RETRY_SECONDS = 300
+# A hold this long was a working stream, whatever ended it: the next wait starts short again.
+NEST_PRIMER_HELD_SECONDS = 60
 
 
 def nest_stream_names(streams: dict[str, Any]) -> list[str]:
@@ -5081,14 +5085,24 @@ def nest_primer_hold(name: str) -> None:
             pass
 
 
+def nest_primer_delay(failures: int) -> float:
+    """The wait before holding a stream again after [failures] short holds in a row: 5 s, doubling to 5 minutes."""
+    return min(NEST_PRIMER_MAX_RETRY_SECONDS, NEST_PRIMER_RETRY_SECONDS * 2 ** max(0, failures - 1))
+
+
 def nest_primer_stream(name: str) -> None:
+    # Holds that end quickly in a row (Google refusing the camera, say) back off, so a stream that
+    # won't start isn't asked of Google every few seconds; one that held for a while starts over.
+    failures = 0
     while True:
+        started = time.monotonic()
         try:
             nest_primer_hold(name)
             log.info("nest primer: %s closed; holding it again", name)
-        except Exception as e:  # noqa: BLE001 - go2rtc restarting, or not up yet
-            log.info("nest primer: %s not held (%s); trying again", name, e)
-        time.sleep(NEST_PRIMER_RETRY_SECONDS)
+        except Exception as e:  # noqa: BLE001 - go2rtc restarting, Google refusing the camera
+            log.info("nest primer: %s not held (%s)", name, e)
+        failures = failures + 1 if time.monotonic() - started < NEST_PRIMER_HELD_SECONDS else 1
+        time.sleep(nest_primer_delay(failures))
 
 
 def nest_primer_forever() -> None:
