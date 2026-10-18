@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -38,6 +40,9 @@ import kotlin.math.abs
 @Stable
 internal class PlacementSwipe(private val scope: CoroutineScope) {
     private val offset = Animatable(0f)
+
+    /** The settle under way after the finger came up, which may still switch lists at its end. */
+    private var settling: Job? = null
 
     /** Pushes the cards sideways and fades them as they go; a graphicsLayer block, so the swipe never recomposes them. */
     fun drawCards(layer: GraphicsLayerScope) {
@@ -58,7 +63,8 @@ internal class PlacementSwipe(private val scope: CoroutineScope) {
         val along = (velocity ?: 0f) * direction
         val far = offset.value * direction > width * SWIPE_COMMIT_FRACTION
         val switch = velocity != null && (along > fling || (far && along > -fling))
-        scope.launch {
+        settling?.cancel()
+        settling = scope.launch {
             if (!switch) {
                 offset.animateTo(0f, spring())
                 return@launch
@@ -68,6 +74,16 @@ internal class PlacementSwipe(private val scope: CoroutineScope) {
             offset.snapTo(-direction * width * SWIPE_ENTRY_FRACTION)
             offset.animateTo(0f, tween(SWIPE_IN_MS, easing = LinearOutSlowInEasing))
         }
+    }
+
+    /**
+     * Drops a swipe still on its way to switching lists, and puts the cards back at rest: for when
+     * the swipe stops applying (Arrange mode started), so a switch let go just before can't land after.
+     */
+    fun cancel() {
+        settling?.cancel()
+        settling = null
+        scope.launch { offset.snapTo(0f) }
     }
 }
 
@@ -112,6 +128,9 @@ internal fun Modifier.placementSwipe(
                     swipe.dragBy(change.positionChange().x, width, direction)
                     change.consume()
                 }
+                // The finger-up isn't handed to the callback; without it a quick drag held still
+                // before letting go would keep its earlier speed and switch anyway.
+                if (lifted) currentEvent.changes.firstOrNull { it.changedToUpIgnoreConsumed() }?.let(velocity::addPointerInputChange)
             } finally {
                 // Also when the gesture is cut short: the cards never stay pushed half out.
                 swipe.letGo(if (lifted) velocity.calculateVelocity().x else null, width, direction, fling) { onSwitch(target) }

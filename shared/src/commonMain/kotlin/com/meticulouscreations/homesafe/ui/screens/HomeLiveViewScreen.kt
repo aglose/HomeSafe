@@ -64,6 +64,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +87,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.Ref
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -307,13 +309,19 @@ internal fun HomeFeed(
 
     val swipe = rememberPlacementSwipe()
     // The floating switch tucks away while the list is scrolled down and comes back as it is scrolled up.
+    // Travel is added up one way at a time, so a slow scroll counts as much as a quick one.
     var switchShown by remember { mutableStateOf(true) }
-    val scrollWatch = remember {
+    val switchTravel = with(LocalDensity.current) { FLOATING_SWITCH_SCROLL_TRAVEL.toPx() }
+    val scrollWatch = remember(switchTravel) {
         object : NestedScrollConnection {
+            private var travel = 0f
+
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (consumed.y < -FLOATING_SWITCH_SCROLL_SLOP) {
+                if (consumed.y == 0f) return Offset.Zero
+                travel = if (travel * consumed.y < 0f) consumed.y else travel + consumed.y
+                if (travel < -switchTravel) {
                     switchShown = false
-                } else if (consumed.y > FLOATING_SWITCH_SCROLL_SLOP) {
+                } else if (travel > switchTravel) {
                     switchShown = true
                 }
                 return Offset.Zero
@@ -321,6 +329,10 @@ internal fun HomeFeed(
         }
     }
     LaunchedEffect(placement) { switchShown = true }
+    // Arrange mode's holds are drags: a swipe let go just before it mustn't switch lists under it.
+    LaunchedEffect(arranging) { if (arranging) swipe.cancel() }
+    val arrangingNow by rememberUpdatedState(arranging)
+    val swipeTo: (CameraPlacement) -> Unit = remember(onPlacementChange) { { target -> if (!arrangingNow) onPlacementChange(target) } }
 
     Box(modifier = modifier.fillMaxSize().nestedScroll(scrollWatch)) {
         PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
@@ -330,7 +342,7 @@ internal fun HomeFeed(
                 modifier = Modifier
                     .fillMaxSize()
                     .then(if (listTestTag != null) Modifier.testTag(listTestTag) else Modifier)
-                    .placementSwipe(swipe, placement.takeIf { !arranging }, onPlacementChange),
+                    .placementSwipe(swipe, placement.takeIf { !arranging }, swipeTo),
                 contentPadding = tabContentPadding(
                     maxWidth = HOME_GRID_MAX_WIDTH,
                     bottom = if (placement != null) FLOATING_SWITCH_ROOM else 0.dp,
@@ -449,8 +461,8 @@ private fun FloatingPlacementSwitch(
 /** Room under the last card for the floating switch (its height and a gap), so the list can scroll clear of it. */
 private val FLOATING_SWITCH_ROOM = 64.dp
 
-/** How far one scroll step has to move the list before it hides or brings back the floating switch, in pixels. */
-private const val FLOATING_SWITCH_SCROLL_SLOP = 2f
+/** How far the list has to scroll one way, however slowly, before that hides or brings back the floating switch. */
+private val FLOATING_SWITCH_SCROLL_TRAVEL = 16.dp
 
 private const val FLOATING_SWITCH_MS = 200
 
