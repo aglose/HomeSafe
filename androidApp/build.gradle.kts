@@ -504,6 +504,13 @@ val generatePreviewTests = tasks.register<GeneratePreviewTests>("generatePreview
     outputDirectory = layout.buildDirectory.dir("generated/previewTests")
 }
 
+// Layoutlib gives each render step 10 s (layoutlib.thread.timeout, in ms) and fails the preview
+// after three slow tries. The heaviest previews (Fitness's stone workout figure) take longer than
+// that on CI's Linux runners, though not here, so allow a minute: still a failure when one hangs.
+tasks.withType<Test>().matching { it.name.contains("ScreenshotTest") }.configureEach {
+    systemProperty("layoutlib.thread.timeout", "60000")
+}
+
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.suites["screenshotTest"]?.sources?.filterIsInstance<com.android.build.api.variant.TestSuiteSourceSet.HostJar>()?.forEach {
