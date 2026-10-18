@@ -275,7 +275,7 @@ browser. In the app, pull to refresh on Home: the switch appears above the camer
   AAC, so on iOS sound relies on WebRTC (see [go2rtc HLS audio](webrtc-live.md)).
 - **Token expiry**: if the cameras stop after a week, the OAuth app is still in *Testing*.
   Publish it (step 1.2), run the script again, and replace the refresh token in `frigate.env`.
-- **The doorbell (2026-10-17)**: Google answers every stream request for it with "The camera is not
-  available for streaming", even a standard offer the kitchen accepts, so it is off or offline on
-  Google's side (Google Home: camera off, a home/away schedule, video turned off). Its Frigate
-  camera block is left out of the config until it streams; the relay's primer backs off asking.
+- **The doorbell**: on 2026-10-17 Google answered every stream request for it with "The camera is
+  not available for streaming" (it had been turned off in Google Home), while the relay's primer
+  backed off asking. Turned back on 2026-10-18, it streams and is a Frigate camera like the others
+  (480x640, portrait); its card joins in 0.5–0.9 s.
