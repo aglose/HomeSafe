@@ -25,16 +25,13 @@ final class WebRtcPeerBridgeFactory: NSObject, IosWebRtcPeerFactory {
 
     private lazy var factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
-        // Playback only. libwebrtc's default session is play-and-record for voice calls, which
-        // routes to the earpiece and would ask for the microphone; nothing here ever records.
-        let audio = RTCAudioSessionConfiguration.webRTC()
-        audio.category = AVAudioSession.Category.playback.rawValue
-        audio.mode = AVAudioSession.Mode.moviePlayback.rawValue
-        audio.categoryOptions = []
-        RTCAudioSessionConfiguration.setWebRTC(audio)
+        // Playback only, through our own audio device. libwebrtc's default device is built for
+        // calls and opens the microphone as soon as a stream with sound plays, which iOS kills
+        // the app for (it has no microphone usage description; nothing here ever records).
         return RTCPeerConnectionFactory(
             encoderFactory: RTCDefaultVideoEncoderFactory(),
-            decoderFactory: RTCDefaultVideoDecoderFactory()
+            decoderFactory: RTCDefaultVideoDecoderFactory(),
+            audioDevice: PlaybackOnlyAudioDevice()
         )
     }()
 
