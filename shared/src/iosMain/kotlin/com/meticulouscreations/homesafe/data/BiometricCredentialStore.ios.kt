@@ -54,6 +54,7 @@ import platform.Security.SecAccessControlCreateWithFlags
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
+import platform.Security.errSecInteractionNotAllowed
 import platform.Security.errSecSuccess
 import platform.Security.kSecAccessControlBiometryCurrentSet
 import platform.Security.kSecAttrAccessControl
@@ -115,20 +116,31 @@ private class IosBiometricCredentialStore : BiometricCredentialStore {
         }
     }
 
+    /**
+     * Whether the item exists, asked without a Face ID prompt. A context that may not interact
+     * makes the Keychain answer at once: a phone's Secure Enclave refuses the protected item with
+     * `errSecInteractionNotAllowed`, which still means it is there. Only "not found" means no
+     * saved login. (The simulator has no Secure Enclave and answers success, which is why a check
+     * for success alone worked there and found nothing on a phone.)
+     */
     override fun hasSavedCredentials(): Boolean {
         val service = CFBridgingRetain(SERVICE_NAME)
         val account = CFBridgingRetain(ACCOUNT_NAME)
+        val authContext = CFBridgingRetain(LAContext().apply { interactionNotAllowed = true })
         try {
             val query = buildQuery(
                 kSecClass to kSecClassGenericPassword,
                 kSecAttrService to service,
                 kSecAttrAccount to account,
                 kSecReturnData to kCFBooleanFalse,
+                kSecUseAuthenticationContext to authContext,
             )
-            return SecItemCopyMatching(query, null) == errSecSuccess
+            val status = SecItemCopyMatching(query, null)
+            return status == errSecSuccess || status == errSecInteractionNotAllowed
         } finally {
             CFBridgingRelease(service)
             CFBridgingRelease(account)
+            CFBridgingRelease(authContext)
         }
     }
 
@@ -233,10 +245,13 @@ private class IosBiometricCredentialStore : BiometricCredentialStore {
 
     /** Plain Face ID/Touch ID confirmation, shown before enrolling a new saved credential (see class doc). */
     private suspend fun confirmBiometric(reason: String): Boolean = suspendCancellableCoroutine { continuation ->
-        LAContext().evaluatePolicy(
+        // Held until the reply: a context freed while its prompt is up cancels the prompt.
+        val context = LAContext()
+        context.evaluatePolicy(
             policy = LAPolicyDeviceOwnerAuthenticationWithBiometrics,
             localizedReason = reason,
         ) { success, _ ->
+            context.invalidate()
             if (continuation.isActive) continuation.resume(success)
         }
     }
