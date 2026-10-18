@@ -59,12 +59,14 @@ class PushRelayApiDoorsTest {
         assertEquals(listOf(DoorEvent("0x282c02bfffe6aa01", open = true, atMillis = 1_792_301_831_340, pushed = "away")), snapshot.events)
         assertTrue(snapshot.listening)
         assertTrue(snapshot.supported)
+        assertTrue(snapshot.answered)
     }
 
     @Test
     fun aRelayFromBeforeDoorSensorsAnswers404() = runTest {
         val snapshot = api(status = HttpStatusCode.NotFound, respondWith = """{"detail": "Not Found"}""").getDoors("http://192.168.68.65:8971").getOrThrow()
         assertFalse(snapshot.supported)
+        assertTrue(snapshot.answered)
     }
 
     @Test

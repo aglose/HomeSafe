@@ -13,6 +13,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.content.TextContent
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -55,23 +56,35 @@ class DoorRepositoryImplTest {
         override fun onAppVisibilityChanged(visible: Boolean) = Unit
     }
 
-    /** A relay with one door; a PUT waits on [putGate] and then answers [putStatus]. */
+    /**
+     * A relay with two doors. Each PUT takes the next of [putGates] (when there is one) to wait on
+     * and the next of [putStatuses] (OK when there are none left), and keeps what it was sent.
+     */
     private class Harness(scope: TestScope, connection: ConnectionRepository) {
-        var notify = "away"
-        var putStatus = HttpStatusCode.OK
-        var putGate: CompletableDeferred<Unit>? = null
+        val notify = mutableMapOf("0x01" to "away", "0x02" to "away")
+        val putStatuses = ArrayDeque<HttpStatusCode>()
+        val putGates = ArrayDeque<CompletableDeferred<Unit>>()
         val requests = mutableListOf<String>()
-        private fun doors() = """{"doors":[{"id":"0x01","name":"Front door","open":false,"notify":"$notify"}],"events":[],"broker":true,"bridge":true}"""
+        private fun doors() = notify.entries.joinToString(",", """{"doors":[""", """],"events":[],"broker":true,"bridge":true}""") { (id, mode) ->
+            """{"id":"$id","name":"Door $id","open":false,"notify":"$mode"}"""
+        }
         private val engine = MockEngine { req ->
-            requests += "${req.method.value} ${req.url.encodedPath}"
-            when {
-                req.method == HttpMethod.Put -> {
-                    putGate?.await()
-                    if (putStatus == HttpStatusCode.OK) notify = "always"
-                    respond(if (putStatus == HttpStatusCode.OK) doors() else "{}", putStatus, headersOf(HttpHeaders.ContentType, "application/json"))
+            when (req.method) {
+                HttpMethod.Put -> {
+                    val gate = putGates.removeFirstOrNull()
+                    val status = putStatuses.removeFirstOrNull() ?: HttpStatusCode.OK
+                    val id = req.url.encodedPath.removePrefix("/doors/")
+                    val mode = (req.body as TextContent).text.substringAfter("\"notify\":\"").substringBefore("\"")
+                    requests += "PUT $id $mode"
+                    gate?.await()
+                    if (status == HttpStatusCode.OK) notify[id] = mode
+                    respond(if (status == HttpStatusCode.OK) doors() else "{}", status, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
-                else -> respond(doors(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                else -> {
+                    requests += "GET ${req.url.encodedPath}"
+                    respond(doors(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                }
             }
         }
         val repository = DoorRepositoryImpl(
@@ -98,21 +111,48 @@ class DoorRepositoryImplTest {
         advanceUntilIdle()
         assertTrue(h.requests.isEmpty())
         backgroundScope.launch { h.repository.doors.collect {} }
-        eventually("the first read") { h.repository.doors.value.doors.size == 1 }
+        eventually("the first read") { h.repository.doors.value.doors.size == 2 }
         assertEquals("GET /doors", h.requests.first())
     }
 
+    private fun Harness.shown(id: String) = repository.doors.value.doors.single { it.id == id }.notify
+
     @Test
-    fun aSettingShowsAtOnceAndAFailureTakesItBack() = runTest {
+    fun aSettingShowsAtOnceAndAFailureTakesBackOnlyThatDoor() = runTest {
         val h = Harness(this, FakeConnection("http://192.168.68.65:8971"))
         h.repository.refresh().getOrThrow()
-        h.putGate = CompletableDeferred()
-        h.putStatus = HttpStatusCode.BadGateway
-        val saving = async { h.repository.setNotify("0x01", DoorNotify.ALWAYS) }
-        eventually("the setting shown before the relay answers") { h.repository.doors.value.doors.single().notify == DoorNotify.ALWAYS }
-        h.putGate?.complete(Unit)
-        assertTrue(saving.await().isFailure)
-        assertEquals(DoorNotify.AWAY, h.repository.doors.value.doors.single().notify)
+        val gate = CompletableDeferred<Unit>()
+        h.putGates += gate
+        h.putStatuses += HttpStatusCode.BadGateway
+        val failing = async { h.repository.setNotify("0x01", DoorNotify.ALWAYS) }
+        eventually("the setting shown before the relay answers") { h.shown("0x01") == DoorNotify.ALWAYS }
+        val other = async { h.repository.setNotify("0x02", DoorNotify.NEVER) }
+        eventually("the other door's choice shown too") { h.shown("0x02") == DoorNotify.NEVER }
+        gate.complete(Unit)
+        assertTrue(failing.await().isFailure)
+        assertTrue(other.await().isSuccess)
+        assertEquals(DoorNotify.AWAY, h.shown("0x01"), "the failed choice is taken back")
+        assertEquals(DoorNotify.NEVER, h.shown("0x02"), "and only that one")
+    }
+
+    @Test
+    fun twoQuickChoicesReachTheRelayInOrderAndTheLastOneStays() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.65:8971"))
+        h.repository.refresh().getOrThrow()
+        val gate = CompletableDeferred<Unit>()
+        h.putGates += gate
+        h.putStatuses += HttpStatusCode.BadGateway
+        val first = async { h.repository.setNotify("0x01", DoorNotify.ALWAYS) }
+        eventually("the first save on its way") { h.requests.lastOrNull() == "PUT 0x01 always" }
+        val second = async { h.repository.setNotify("0x01", DoorNotify.NEVER) }
+        eventually("the second choice shown") { h.shown("0x01") == DoorNotify.NEVER }
+        assertEquals("PUT 0x01 always", h.requests.last(), "the second save waits for the first")
+        gate.complete(Unit)
+        assertTrue(first.await().isFailure)
+        assertTrue(second.await().isSuccess)
+        assertEquals(listOf("PUT 0x01 always", "PUT 0x01 never"), h.requests.filter { it.startsWith("PUT") })
+        assertEquals(DoorNotify.NEVER, h.shown("0x01"), "a superseded choice failing takes nothing back")
+        assertEquals("never", h.notify["0x01"])
     }
 
     @Test

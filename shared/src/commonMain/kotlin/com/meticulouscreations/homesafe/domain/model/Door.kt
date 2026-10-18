@@ -66,6 +66,8 @@ data class DoorsSnapshot(
     val listening: Boolean = false,
     /** False for a relay without door sensors at all (one from before them, which answers 404). */
     val supported: Boolean = true,
+    /** Whether this is what the relay said, rather than the placeholder before it has answered. */
+    val answered: Boolean = false,
 ) {
     companion object {
         val EMPTY = DoorsSnapshot()

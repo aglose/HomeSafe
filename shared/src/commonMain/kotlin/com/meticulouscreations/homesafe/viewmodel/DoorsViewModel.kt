@@ -87,9 +87,9 @@ class DoorsViewModel(
             doors = snapshot.doors,
             history = history(snapshot, now),
             nowMillis = now,
-            loaded = local.refreshed || snapshot != DoorsSnapshot.EMPTY,
-            // Until the relay has answered, nothing says it can't hear them.
-            listening = snapshot.listening || snapshot == DoorsSnapshot.EMPTY,
+            loaded = local.refreshed || snapshot.answered,
+            // Until the relay has answered, nothing says it can't hear them; once it has, it says.
+            listening = snapshot.listening || !snapshot.answered,
             supported = snapshot.supported,
             error = local.error,
         )

@@ -5216,7 +5216,7 @@ def door_text(name: str, away: bool) -> tuple[str, str]:
 
 
 def door_announce(change: dict[str, Any], now: float, away: bool, push: Callable[..., dict[str, int]] | None = None) -> str | None:
-    """Pushes one door opening, if its door's `notify` says to now; answers the route it went out by. `push` stands in for `broadcast` in tests."""
+    """Pushes one door opening, if its door's `notify` says to now; answers the route it reached a phone by. `push` stands in for `broadcast` in tests."""
     if not change["open"]:
         return None
     route = door_route(change["notify"], away)
@@ -5230,12 +5230,16 @@ def door_announce(change: dict[str, Any], now: float, away: bool, push: Callable
     if quiet:
         data["silent"] = "1"
     result = (push or broadcast)(title, body, data, away=route == "away")
+    log.info("door %s opened -> %s push%s: %s", change["name"], route, " (quiet)" if quiet else "", result)
+    # Only a push some phone got counts: one that quiet hours or "only when away" kept from every
+    # phone isn't a notification the next opening could quietly update, nor one the history shows.
+    if not result.get("sent"):
+        return None
     with_db(lambda c: (
         c.execute("UPDATE doors SET last_push=? WHERE id=?", (now, change["id"])),
         c.execute("UPDATE door_events SET pushed=? WHERE id=?", (route, change["event"])),
         c.commit(),
     ))
-    log.info("door %s opened -> %s push%s: %s", change["name"], route, " (quiet)" if quiet else "", result)
     return route
 
 
