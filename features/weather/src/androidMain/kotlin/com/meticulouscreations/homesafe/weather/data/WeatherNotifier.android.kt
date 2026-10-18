@@ -55,6 +55,9 @@ internal const val SEVERE_CHANNEL_ID = "weather_severe"
  */
 private val group = NotificationGroupSummary("weather", CHANNEL_ID, R.string.notif_group_weather)
 
+/** The id beside each notification's tag ([WeatherNotification.id]). */
+private const val NOTIFICATION_ID = 2
+
 /** The widest a card is painted: a phone's screen across. Wider than this is only a larger bitmap to hand the system. */
 internal const val MAX_CARD_WIDTH_PX = 1080
 
@@ -118,10 +121,6 @@ private class AndroidWeatherNotifier(private val context: Context) : WeatherNoti
             },
         )
     }
-
-    private companion object {
-        const val NOTIFICATION_ID = 2
-    }
 }
 
 /** [notification] as Android shows it, at [nowMillis]: see [AndroidWeatherNotifier] for what each part is for. */
@@ -152,6 +151,7 @@ internal fun buildWeatherNotification(context: Context, notification: WeatherNot
         // The weather is nobody's secret: shown in full on the lock screen.
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setGroup(group.group)
+        .setDeleteIntent(group.removalIntent(context, notification.id, NOTIFICATION_ID))
         // When it happens, not when it was posted: Android writes a time still to come as "in 25 min".
         .setWhen(notification.eventEpochSeconds?.times(1000) ?: nowMillis)
         .setShowWhen(true)

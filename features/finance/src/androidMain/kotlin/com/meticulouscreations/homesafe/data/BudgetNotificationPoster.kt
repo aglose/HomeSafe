@@ -79,6 +79,7 @@ object BudgetNotificationPoster {
             .setColor(color)
             .setTicker(title)
             .setGroup(group.group)
+            .setDeleteIntent(group.removalIntent(context, id, NOTIFICATION_ID))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

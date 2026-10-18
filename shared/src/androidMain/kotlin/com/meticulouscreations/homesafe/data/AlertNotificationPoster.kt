@@ -223,6 +223,7 @@ object AlertNotificationPoster {
             .setSmallIcon(glyph(notification).drawableRes)
             .setColor(if (notification.urgent) AWAY_COLOR else ACCENT_COLOR)
             .setGroup(alertGroup.group)
+            .setDeleteIntent(alertGroup.removalIntent(context, notification.id, NOTIFICATION_ID))
             .setContentTitle(notification.title)
             .setContentText(notification.body)
             .setTicker(notification.title)
@@ -257,6 +258,7 @@ object AlertNotificationPoster {
             .setSmallIcon(glyph(notification).drawableRes)
             .setColor(ACCENT_COLOR)
             .setGroup(summaryGroup.group)
+            .setDeleteIntent(summaryGroup.removalIntent(context, notification.id, NOTIFICATION_ID))
             .setContentTitle(notification.title)
             .setContentText(notification.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(notification.body.replace(SUMMARY_SEPARATOR, "\n")))
@@ -350,7 +352,7 @@ object AlertNotificationPoster {
     /** Undo landed: nothing left to say. */
     fun clearNotAPerson(context: Context, id: String) {
         cancel(context, confirmTag(id))
-        alertGroup.tidy(context)
+        alertGroup.tidy(context, confirmTag(id), NOTIFICATION_ID)
     }
 
     /** Undo didn't reach the relay: the mark stands, and the button is still there. */
@@ -364,6 +366,7 @@ object AlertNotificationPoster {
             .setSmallIcon((if (action?.second == NotAPersonReceiver.ACTION_UNDO) NotificationGlyph.DONE else NotificationGlyph.CAMERA).drawableRes)
             .setColor(ACCENT_COLOR)
             .setGroup(alertGroup.group)
+            .setDeleteIntent(alertGroup.removalIntent(context, confirmTag(id), NOTIFICATION_ID))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
