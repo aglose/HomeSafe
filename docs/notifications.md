@@ -81,6 +81,15 @@ someone who may see the finances, and on Android they have a **Budget** channel 
 (`budget=1` in the push's data, `notif_id=budget-<month>-<line>`). Quiet hours hold them back;
 "only when everyone's away" and "only strangers" don't apply to them.
 
+## Not the cameras: door sensors
+
+A door opening is pushed by the relay's "doors" section, not by this policy (see
+[doors.md](doors.md)). Each door chooses for itself: **only when away** (the default) pushes as an
+away alert, loud and to every phone; **always** also pushes while someone is home, as an ordinary
+alert that quiet hours and "only when everyone's away" hold back; **never** doesn't push. The push
+is `door=<id>`, `notif_id=door-<id>`, worded on the phone; a door opened again within 2 minutes
+updates its notification quietly.
+
 ## Icons
 
 On Android each notification says what it is from the status bar, before the shade is opened:

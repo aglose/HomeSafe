@@ -4,10 +4,12 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.meticulouscreations.homesafe.data.AlertNotificationPoster
 import com.meticulouscreations.homesafe.data.BudgetNotificationPoster
+import com.meticulouscreations.homesafe.domain.model.DoorAlert
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlert
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.shared.R
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -19,6 +21,7 @@ import kotlinx.coroutines.runBlocking
  * to arrive, longer than this callback may run, and a process with nothing running is frozen.
  * A summary (`summary=1`) is text only: it posts on the quiet "Summaries" channel and gets no media.
  * A budget alert (`budget=1`) is no detection at all: it goes to [BudgetNotificationPoster].
+ * A door opening (`door=<id>`) is worded here and posted like an alert, with no picture to fetch.
  */
 class HomeSafeMessagingService : FirebaseMessagingService() {
 
@@ -28,6 +31,7 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         if (BudgetAlert.isBudget { message.data[it] }) return showBudgetAlert(message)
+        if (DoorAlert.isDoor { message.data[it] }) return showDoorAlert(message)
         val title = message.data["title"] ?: message.notification?.title ?: return
         val body = message.data["body"] ?: message.notification?.body ?: ""
         val target = MomentDeepLink.from { message.data[it] }
@@ -76,5 +80,25 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         val (title, body) = alert?.let { BudgetNotificationPoster.text(this, it) }
             ?: ((message.data["title"] ?: return) to message.data["body"].orEmpty())
         BudgetNotificationPoster.show(applicationContext, alert?.id ?: message.data[BudgetAlert.KEY_ID] ?: message.messageId ?: title, title, body, alert?.kind)
+    }
+
+    /**
+     * A door opened (see docs/doors.md). Worded here from the door's name; the relay's English
+     * only for an event this build doesn't know. A tap opens the app, where Home shows the doors.
+     */
+    private fun showDoorAlert(message: RemoteMessage) {
+        val alert = DoorAlert.from { message.data[it] }
+        val title = alert?.let { getString(if (it.away) R.string.notif_door_opened_away_title else R.string.notif_door_opened_title, it.doorName) }
+            ?: message.data["title"] ?: return
+        val body = alert?.let { getString(if (it.away) R.string.notif_door_away_body else R.string.notif_door_body) } ?: message.data["body"].orEmpty()
+        val notification = AlertNotification(
+            id = alert?.id ?: message.data[DoorAlert.KEY_ID] ?: message.messageId ?: title,
+            title = title,
+            body = body,
+            urgent = message.data["away"] == "1",
+            silent = message.data["silent"] == "1",
+        )
+        AlertNotificationPoster.ensureChannels(this)
+        runBlocking { AlertNotificationPoster.show(applicationContext, notification) }
     }
 }

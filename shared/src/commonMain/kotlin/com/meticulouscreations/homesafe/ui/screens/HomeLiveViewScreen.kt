@@ -103,6 +103,7 @@ import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
+import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
@@ -167,6 +168,7 @@ fun HomeTabContent(
     onCameraClick: (CameraTile) -> Unit = {},
     onFrameCamera: (CameraTile) -> Unit = {},
     onTagCars: (cameraName: String) -> Unit = {},
+    onOpenDoors: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
     val viewModel: HomeViewModel = metroViewModel()
@@ -176,6 +178,7 @@ fun HomeTabContent(
     val arranging by viewModel.arranging.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
     val inView by viewModel.inView.collectAsStateWithLifecycle()
+    val doors by viewModel.doors.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val reconnectRequests by viewModel.reconnectRequests.collectAsStateWithLifecycle()
     val connectionNotice: ConnectionNoticeViewModel = metroViewModel()
@@ -203,6 +206,8 @@ fun HomeTabContent(
         onInViewClick = { item -> cameras?.firstOrNull { it.camera.name == item.subject.cameraName }?.let(onCameraClick) },
         // The camera the strip's first car is on: the frame to check the strip against.
         onInViewCheck = { inView.firstOrNull()?.subject?.cameraName?.let(onTagCars) },
+        doors = doors,
+        onOpenDoors = onOpenDoors,
         listTestTag = HOME_FEED_TEST_TAG,
         scrollToTopRequests = scrollToTopRequests,
         refreshing = refreshing,
@@ -242,6 +247,9 @@ fun HomeTabContent(
  * state, so the skeleton and the real page are one layout by construction, and the real cards
  * fade in exactly onto their outlines rather than near them.
  *
+ * Under it, [doors] when there are door sensors: each door and whether it's open, opening the
+ * Doors page ([onOpenDoors]).
+ *
  * At the top sits [inView] when there is anything in it: the vehicles standing in view of a
  * camera right now. It is deliberately the first thing on the page — the question it answers
  * ("is her car in the driveway?") is the one the app gets opened for — and it disappears entirely
@@ -280,6 +288,8 @@ internal fun HomeFeed(
     inView: List<InViewItem> = emptyList(),
     onInViewClick: (InViewItem) -> Unit = {},
     onInViewCheck: () -> Unit = {},
+    doors: List<Door> = emptyList(),
+    onOpenDoors: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
@@ -371,6 +381,12 @@ internal fun HomeFeed(
                 if (inView.isNotEmpty()) {
                     item(key = "in-view", span = { GridItemSpan(maxLineSpan) }) {
                         InViewNowSection(items = inView, onClick = onInViewClick, onCheck = onInViewCheck, modifier = Modifier.animateItem())
+                    }
+                }
+
+                if (doors.isNotEmpty()) {
+                    item(key = "doors", span = { GridItemSpan(maxLineSpan) }) {
+                        HomeDoorsStrip(doors = doors, onOpen = onOpenDoors, modifier = Modifier.animateItem())
                     }
                 }
 

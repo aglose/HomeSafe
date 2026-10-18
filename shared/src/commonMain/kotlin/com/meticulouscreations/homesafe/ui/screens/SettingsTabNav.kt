@@ -52,6 +52,9 @@ data object ServerRoute
 /** The server's uptime record, one tap below its diagnostics. */
 data object UptimeRoute
 
+/** The door sensors and when each one's openings notify (also opened from Home). */
+data object DoorsRoute
+
 /**
  * The Settings tab's own nested navigation: the settings page, and the pages its rows open —
  * alerts, away mode, a classifier's labelling screen, the face library, and the server's
@@ -82,6 +85,7 @@ fun SettingsTabNav(
             entry<FacesRoute> { FaceLibraryScreen(onBack = { backStack.removeLastOrNull() }) }
             entry<ServerRoute> { ServerSettingsScreen(onBack = { backStack.removeLastOrNull() }, onOpenUptime = { backStack.add(UptimeRoute) }) }
             entry<UptimeRoute> { ServerUptimeScreen(onBack = { backStack.removeLastOrNull() }) }
+            entry<DoorsRoute> { DoorsScreen(onBack = { backStack.removeLastOrNull() }) }
         },
     )
 }
