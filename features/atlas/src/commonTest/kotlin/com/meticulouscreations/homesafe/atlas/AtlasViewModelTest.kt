@@ -61,7 +61,10 @@ class AtlasViewModelTest {
 
     private val clock = MutableClock(1_751_100_000)
 
-    private fun viewModel(repository: AtlasRepository) = AtlasViewModel(repository, clock, MapTileStore(FakeWeb().client, InMemoryWeatherDao(), clock))
+    // The analysis on the test's own dispatcher: on Dispatchers.Default it could finish after a
+    // test had reset Main, and its way back crashed the next test.
+    private fun viewModel(repository: AtlasRepository) =
+        AtlasViewModel(repository, clock, MapTileStore(FakeWeb().client, InMemoryWeatherDao(), clock), analysisDispatcher = dispatcher)
 
     /** The history is worked out on another thread: steps the main one until [done], for a few seconds at most. */
     private suspend fun TestScope.until(done: () -> Boolean) {
