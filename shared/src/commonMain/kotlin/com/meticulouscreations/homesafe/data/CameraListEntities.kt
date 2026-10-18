@@ -11,19 +11,22 @@ import kotlinx.coroutines.flow.Flow
 /**
  * A Google Nest camera the server's go2rtc relays, as it last said ([serverUrl] is the server's
  * identity, as for [CameraEntity]). Kept so the Home page has them the moment it opens, before
- * go2rtc has been asked again. Added in schema 26.
+ * go2rtc has been asked again. Added in schema 26; [gridStreamName], its smaller stream for the
+ * cards when the server has one (`<name>_sub`, as the Frigate cameras have), in schema 27.
  */
 @Entity(primaryKeys = ["serverUrl", "name"])
 data class NestCameraEntity(
     val serverUrl: String,
     val name: String,
+    val gridStreamName: String? = null,
 )
 
 /**
  * How one camera sits on the Home page, on this device: where it comes in its list ([position],
- * null until the list has been arranged) and which way up its picture is ([quarterTurns]
- * clockwise, then [tiltDegrees] more, positive clockwise). Any camera, Frigate's or Nest's, by
- * its name on [serverUrl]. Added in schema 26.
+ * null until the list has been arranged), which way up its picture is ([quarterTurns]
+ * clockwise, then [tiltDegrees] more, positive clockwise), and how much of it shows ([cropZoom]
+ * times about [cropCenterX], [cropCenterY]; see `CameraCrop`). Any camera, Frigate's or Nest's,
+ * by its name on [serverUrl]. Added in schema 26; the crop in schema 27.
  */
 @Entity(primaryKeys = ["serverUrl", "name"])
 data class CameraLayoutEntity(
@@ -32,6 +35,9 @@ data class CameraLayoutEntity(
     val position: Int? = null,
     @ColumnInfo(defaultValue = "0") val quarterTurns: Int = 0,
     @ColumnInfo(defaultValue = "0") val tiltDegrees: Float = 0f,
+    @ColumnInfo(defaultValue = "1") val cropZoom: Float = 1f,
+    @ColumnInfo(defaultValue = "0.5") val cropCenterX: Float = 0.5f,
+    @ColumnInfo(defaultValue = "0.5") val cropCenterY: Float = 0.5f,
 )
 
 /** The Home page's own record of its cameras: the Nest ones the server last listed, and how each camera is laid out. */

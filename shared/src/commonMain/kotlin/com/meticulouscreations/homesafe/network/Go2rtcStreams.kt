@@ -34,3 +34,21 @@ internal fun nestStreamNames(streams: Map<String, Go2rtcStream>): List<String> =
         .sorted()
 
 private const val NEST_SCHEME = "nest:"
+
+/**
+ * A Nest camera as go2rtc has it: [name], the stream that pulls it from Google, and
+ * [gridStreamName], its smaller copy for the cards when the server has one.
+ */
+internal data class NestStream(val name: String, val gridStreamName: String? = null)
+
+/**
+ * The Nest cameras ([nestStreamNames]), each with its grid stream: the stream named like it plus
+ * [GRID_STREAM_SUFFIX] (`living_room_sub`), the way the Frigate cameras' smaller streams are
+ * named (`hikvision_1_sub`). It is whatever the server makes of the camera, typically
+ * `ffmpeg:living_room#video=h264#width=640`, which go2rtc keeps cheap to join (see
+ * docs/nest-cameras.md); its source isn't `nest:`, so it is never a camera of its own.
+ */
+internal fun nestStreams(streams: Map<String, Go2rtcStream>): List<NestStream> =
+    nestStreamNames(streams).map { name -> NestStream(name, (name + GRID_STREAM_SUFFIX).takeIf { it in streams }) }
+
+private const val GRID_STREAM_SUFFIX = "_sub"

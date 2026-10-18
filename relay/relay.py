@@ -4454,6 +4454,8 @@ def startup() -> None:
     threading.Thread(target=uptime_forever, name="uptime", daemon=True).start()
     threading.Thread(target=bank_forever, name="bank-sync", daemon=True).start()
     threading.Thread(target=timeline_forever, name="timeline", daemon=True).start()
+    if NEST_PRIMER:
+        threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
 
@@ -5041,6 +5043,114 @@ def test_push(request: Request) -> dict[str, Any]:
     result = broadcast("Front Yard", "Test: Sarah's Tesla in the driveway", {"review_id": f"test-{int(time.time())}", "camera": "hikvision_1", "test": "1"}, test=True)
     log.info("test push by %s: %s", user, result)
     return {"ok": True, **result}
+
+
+# ---------------------------------------------------------------- Nest primer
+
+# Holds every Google Nest stream in go2rtc open, and is the viewer that starts each one.
+#
+# go2rtc (1.9.10, and as of 1.9.14) binds the viewer that starts a Nest session to the first H.264
+# payload type in Google's answer while Google sends on another, so that viewer never gets a frame;
+# every viewer joining after it does (measured 2026-10-17: the first of two `stream.mp4` reads got
+# 0 bytes in 15 s, the second 1.7 MB). Left alone, whoever came first lost: the app's first join,
+# and every Frigate reader of a Nest camera's `_sub` stream, which would never start at all.
+# Started from here, the session's dead binding is the relay's, and Frigate, the app and the
+# Google displays all join a running stream. Each camera's `<name>_sub` (HomeSafe's card stream, a
+# GPU transcode) is held too, once its Nest session is flowing: the transcoder can only start at
+# Google's next keyframe, seconds away, which is longer than Frigate waits for it, so a transcoder
+# started for each of Frigate's retries never caught one. Holding it also keeps each camera streaming through
+# Google all day: the always-ready Nest cameras asked for (docs/nest-cameras.md). NEST_PRIMER=0
+# turns it off.
+NEST_PRIMER = os.environ.get("NEST_PRIMER", "1") == "1"
+# How often go2rtc's stream list is read again for Nest streams added since.
+NEST_PRIMER_SCAN_SECONDS = 60
+# The pause before holding a stream again after go2rtc closed it (a restart, Google ending the
+# session), doubling up to the longest for a stream that keeps failing at once.
+NEST_PRIMER_RETRY_SECONDS = 5
+NEST_PRIMER_MAX_RETRY_SECONDS = 300
+# A hold this long was a working stream, whatever ended it: the next wait starts short again.
+NEST_PRIMER_HELD_SECONDS = 60
+
+
+def nest_stream_names(streams: dict[str, Any]) -> list[str]:
+    """The streams in go2rtc's `GET /api/streams` that pull a Nest camera: a producer with a `nest:` source."""
+    return sorted(
+        name
+        for name, stream in (streams or {}).items()
+        if any(str((producer or {}).get("url") or "").startswith("nest:") for producer in (stream or {}).get("producers") or [])
+    )
+
+
+def nest_grid_streams(streams: dict[str, Any]) -> dict[str, str]:
+    """Each Nest camera's grid stream (`<name>_sub`, HomeSafe's card stream) that go2rtc has, by the Nest stream it transcodes."""
+    return {f"{name}_sub": name for name in nest_stream_names(streams) if f"{name}_sub" in (streams or {})}
+
+
+def nest_session_flowing(name: str) -> bool:
+    """Whether [name]'s Nest session is up and its video arriving: some video receiver has bytes."""
+    stream = requests.get(f"{GO2RTC}/api/streams", params={"src": name}, timeout=5).json() or {}
+    return any(
+        (receiver.get("bytes") or 0) > 0
+        for producer in stream.get("producers") or []
+        for receiver in producer.get("receivers") or []
+        if (receiver.get("codec") or {}).get("codec_type") == "video"
+    )
+
+
+def nest_primer_hold(name: str) -> None:
+    """Holds [name] as one viewer for as long as go2rtc keeps the connection, its bytes read and dropped."""
+    with requests.get(f"{GO2RTC}/api/stream.mp4", params={"src": name}, stream=True, timeout=(5, None)) as response:
+        for _ in response.iter_content(chunk_size=64 * 1024):
+            pass
+
+
+def nest_primer_delay(failures: int) -> float:
+    """The wait before holding a stream again after [failures] short holds in a row: 5 s, doubling to 5 minutes."""
+    return min(NEST_PRIMER_MAX_RETRY_SECONDS, NEST_PRIMER_RETRY_SECONDS * 2 ** max(0, failures - 1))
+
+
+def nest_primer_stream(name: str, after: str | None = None) -> None:
+    """
+    Holds [name] for good. With [after] (the Nest stream a grid stream transcodes), only once
+    [after]'s session is flowing: the transcoder must join that session, not start it, or it
+    takes the dead binding itself.
+    """
+    # Holds that end quickly in a row (Google refusing the camera, say) back off, so a stream that
+    # won't start isn't asked of Google every few seconds; one that held for a while starts over.
+    failures = 0
+    while True:
+        if after is not None:
+            try:
+                while not nest_session_flowing(after):
+                    time.sleep(NEST_PRIMER_RETRY_SECONDS)
+            except Exception as e:  # noqa: BLE001 - go2rtc restarting
+                log.info("nest primer: %s not read (%s)", after, e)
+                time.sleep(NEST_PRIMER_RETRY_SECONDS)
+                continue
+        started = time.monotonic()
+        try:
+            nest_primer_hold(name)
+            log.info("nest primer: %s closed; holding it again", name)
+        except Exception as e:  # noqa: BLE001 - go2rtc restarting, Google refusing the camera
+            log.info("nest primer: %s not held (%s)", name, e)
+        failures = failures + 1 if time.monotonic() - started < NEST_PRIMER_HELD_SECONDS else 1
+        time.sleep(nest_primer_delay(failures))
+
+
+def nest_primer_forever() -> None:
+    held: dict[str, threading.Thread] = {}
+    while True:
+        try:
+            streams = requests.get(f"{GO2RTC}/api/streams", timeout=10).json()
+            wanted = {name: None for name in nest_stream_names(streams)} | nest_grid_streams(streams)
+            for name, after in wanted.items():
+                if name not in held:
+                    held[name] = threading.Thread(target=nest_primer_stream, args=(name, after), name=f"nest-primer-{name}", daemon=True)
+                    held[name].start()
+                    log.info("nest primer: holding %s%s", name, f" once {after} is flowing" if after else "")
+        except Exception as e:  # noqa: BLE001 - go2rtc not up yet
+            log.info("nest primer: go2rtc's streams not read (%s)", e)
+        time.sleep(NEST_PRIMER_SCAN_SECONDS)
 
 
 # ---------------------------------------------------------------- Google Home

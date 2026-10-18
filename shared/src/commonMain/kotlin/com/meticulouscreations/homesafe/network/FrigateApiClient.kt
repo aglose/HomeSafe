@@ -135,14 +135,14 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
     }
 
     /**
-     * The go2rtc stream names of the Google Nest cameras on [serverUrl]'s go2rtc — see
-     * [nestStreamNames]. Read as text and decoded here rather than by content negotiation, so the
-     * answer is understood whatever content type go2rtc labels it with.
+     * The Google Nest cameras on [serverUrl]'s go2rtc, by stream, each with its grid stream if
+     * it has one — see [nestStreams]. Read as text and decoded here rather than by content
+     * negotiation, so the answer is understood whatever content type go2rtc labels it with.
      */
-    suspend fun getNestStreamNames(serverUrl: String): Result<List<String>> = runCatching {
+    internal suspend fun getNestStreams(serverUrl: String): Result<List<NestStream>> = runCatching {
         val response = cookielessClient.get(frigateGo2rtcStreamsUrl(serverUrl))
         response.requireSuccess(Res.string.error_load_indoor_cameras)
-        nestStreamNames(parseGo2rtcStreams(response.bodyAsText()))
+        nestStreams(parseGo2rtcStreams(response.bodyAsText()))
     }
 
     /**

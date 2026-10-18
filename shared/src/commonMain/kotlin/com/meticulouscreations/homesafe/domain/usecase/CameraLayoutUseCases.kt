@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.domain.usecase
 
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.repository.CameraLayoutRepository
@@ -22,4 +23,11 @@ class SaveCameraOrderUseCase(private val repository: CameraLayoutRepository) {
 @Inject
 class SetCameraOrientationUseCase(private val repository: CameraLayoutRepository) {
     suspend operator fun invoke(cameraName: String, orientation: CameraOrientation) = repository.setOrientation(cameraName, orientation)
+}
+
+/** See [CameraLayoutRepository.setFraming]: a camera's picture turned and cropped in the framing editor. */
+@Inject
+class SetCameraFramingUseCase(private val repository: CameraLayoutRepository) {
+    suspend operator fun invoke(cameraName: String, orientation: CameraOrientation, crop: CameraCrop) =
+        repository.setFraming(cameraName, orientation, crop)
 }

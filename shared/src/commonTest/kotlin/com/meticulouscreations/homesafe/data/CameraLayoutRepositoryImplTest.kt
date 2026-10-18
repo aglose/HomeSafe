@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
@@ -56,6 +57,21 @@ class CameraLayoutRepositoryImplTest {
                 "kids_room" to CameraLayout(position = 1, orientation = CameraOrientation(quarterTurns = 1, tiltDegrees = -8f)),
             ),
             repository.observeLayouts().first(),
+        )
+    }
+
+    @Test
+    fun aFramingIsSavedWholeAndAnOrderOrATurnKeepsTheCrop() = runTest {
+        val repository = CameraLayoutRepositoryImpl(InMemoryCameraListDao(), FakeConnection(server))
+        val crop = CameraCrop(zoom = 2.5f, centerX = 0.3f, centerY = 0.7f)
+
+        repository.setFraming("kitchen", CameraOrientation(quarterTurns = 1, tiltDegrees = 3.4f), crop)
+        repository.saveOrder(listOf("kitchen"))
+        repository.setOrientation("kitchen", CameraOrientation(quarterTurns = 2, tiltDegrees = 3.4f))
+
+        assertEquals(
+            CameraLayout(position = 0, orientation = CameraOrientation(quarterTurns = 2, tiltDegrees = 3.4f), crop = crop),
+            repository.observeLayouts().first()["kitchen"],
         )
     }
 

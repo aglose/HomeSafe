@@ -499,6 +499,12 @@ private fun PlayerSurface(
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val statsShown by viewModel.statsShown.collectAsStateWithLifecycle()
     val turnDegrees by viewModel.turnDegrees.collectAsStateWithLifecycle()
+    val crop by viewModel.crop.collectAsStateWithLifecycle()
+    val videoFit by viewModel.videoFit.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // The live stream the picture's shape is known by (see MeasuredVideoShapes), recordings and
+    // all: only a Nest camera's ([videoFit]) is measured, and its recordings are the same picture.
+    val shapeUrl = (uiState as? CameraDetailUiState.Found)?.streamUrl ?: warmStreamUrl
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
     val haptic = LocalHapticFeedback.current
@@ -622,9 +628,10 @@ private fun PlayerSurface(
                 }
                 val shownRequest = request ?: warmRequest
                 if (shownRequest != null) {
-                    // Turned the way the camera was set in Arrange mode; on its side, it fits the
-                    // 16:9 box at the inverse shape (see ShapedVideo), recordings as well as live.
-                    ShapedVideo(streamUrl = null, fit = null, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { pictureModifier, _ ->
+                    // Framed the way the camera was in Arrange mode: turned (on its side, it fits the
+                    // 16:9 box at the inverse shape, see ShapedVideo) and cropped, recordings as well as live.
+                    // A Nest camera's picture shows at its own shape ([videoFit]); every other camera's is stretched to the box.
+                    ShapedVideo(streamUrl = shapeUrl, fit = videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees, crop = { crop }) { pictureModifier, measure ->
                         // Same playerKey as the grid card: this binds to the player the card was already
                         // running, so live video is on screen before the shared-element transition ends.
                         CameraStreamPlayer(
@@ -637,8 +644,20 @@ private fun PlayerSurface(
                             onPlaybackEnded = viewModel::onPlaybackEnded,
                             onPlaybackError = viewModel::onPlaybackError,
                             onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
-                            // The player measures the stream only while the panel is up to show it.
-                            onStreamStats = if (statsShown) viewModel::onStreamStats else null,
+                            // The player measures the stream only while the panel is up to show it, or
+                            // while ShapedVideo still needs the picture's shape.
+                            onStreamStats = when {
+                                measure != null && statsShown -> { stats ->
+                                    measure(stats)
+                                    viewModel.onStreamStats(stats)
+                                }
+
+                                measure != null -> measure
+
+                                statsShown -> viewModel::onStreamStats
+
+                                else -> null
+                            },
                             turnDegrees = turnDegrees,
                         )
                     }
@@ -656,7 +675,7 @@ private fun PlayerSurface(
                 // pre-seek frame lingering while the new position buffers.
                 val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
                 if (previewEpoch != null) {
-                    ShapedVideo(streamUrl = null, fit = null, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { pictureModifier, _ ->
+                    ShapedVideo(streamUrl = shapeUrl, fit = videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees, crop = { crop }) { pictureModifier, _ ->
                         Box(modifier = pictureModifier.clipToBounds()) {
                             SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize().turned(turnDegrees))
                         }

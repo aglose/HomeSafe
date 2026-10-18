@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
 import com.meticulouscreations.homesafe.network.frigateEventThumbnailUrl
+import com.meticulouscreations.homesafe.network.frigateLiveStillUrl
 import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
 import com.meticulouscreations.homesafe.network.frigateRecordingSnapshotUrl
 import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
@@ -20,6 +21,8 @@ class FrigateMediaUrlRepository : MediaUrlRepository {
 
     override fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String): String =
         frigateWebRtcSignalingUrl(serverUrl, streamName)
+
+    override fun liveStillUrl(serverUrl: String, streamName: String): String = frigateLiveStillUrl(serverUrl, streamName)
 
     override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?): String {
         val url = frigateSnapshotUrl(serverUrl, cameraName, height)

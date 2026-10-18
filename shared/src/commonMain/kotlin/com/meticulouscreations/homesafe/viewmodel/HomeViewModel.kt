@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
@@ -11,9 +12,11 @@ import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.VideoFit
+import com.meticulouscreations.homesafe.domain.model.camerasWithNest
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveStillUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
@@ -59,8 +62,9 @@ import kotlin.time.ExperimentalTime
 /**
  * A camera plus what its grid card needs to play it. [streamUrl] and [posterUrl] are null while
  * disconnected or while the camera is disabled on the server — the card shows a placeholder then.
- * A Nest camera never has a [posterUrl]: there is no Frigate snapshot of it, and a still from
- * go2rtc would mean dialling the camera through Google just for a poster.
+ * A Nest camera's [posterUrl] is a still of its card's stream, shown only from what this device
+ * kept ([posterIsLastSeen], see `LastSeenStill`): asking go2rtc for one as the card appears would
+ * mean waiting on Google for it, as long as for the video.
  */
 @Immutable
 data class CameraTile(
@@ -73,6 +77,10 @@ data class CameraTile(
     val videoFit: VideoFit? = null,
     /** Which way up to draw the picture: upright for a camera mounted level. */
     val orientation: CameraOrientation = CameraOrientation.UPRIGHT,
+    /** How much of the picture to show: the whole of it until the camera has been framed. */
+    val crop: CameraCrop = CameraCrop.WHOLE,
+    /** [posterUrl] is a last-seen still, taken by the card once its video plays, rather than Frigate's live snapshot. */
+    val posterIsLastSeen: Boolean = false,
 )
 
 /** Whether these camera names, in this order, are the positions [layouts] has saved for them. */
@@ -116,6 +124,7 @@ class HomeViewModel(
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
+    private val getLiveStillUrlUseCase: GetLiveStillUrlUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     observeStationaryObjectsUseCase: ObserveStationaryObjectsUseCase,
@@ -225,7 +234,7 @@ class HomeViewModel(
     /** Arrange mode's moves not yet saved, by list: the order being dragged into. */
     private val orderDrafts = MutableStateFlow<Map<CameraPlacement, List<String>>>(emptyMap())
 
-    /** Turns and tilts under way and not yet saved, by camera, so the slider moves the picture under the finger. */
+    /** Quarter turns asked for and not yet read back, by camera, so the picture turns the moment the button is pressed. */
     private val orientationDrafts = MutableStateFlow<Map<String, CameraOrientation>>(emptyMap())
 
     /**
@@ -253,35 +262,34 @@ class HomeViewModel(
     private val nestFit: Flow<VideoFit> = observePlaybackPreferencesUseCase().map { it.nestFit }.onStart { emit(VideoFit.Fit) }.distinctUntilChanged()
 
     /**
-     * The Nest cameras, null until the server has said which there are (see
-     * [ObserveNestCamerasUseCase]). A Nest stream that a Frigate camera already plays is that
-     * camera, and is left out here. Shared, so the two lists built from it ask the server once.
+     * Every camera, Frigate's and Nest's, as one list ([camerasWithNest]): a Frigate camera
+     * reading a Nest stream takes that Nest camera's place. Null until both the Frigate camera
+     * cache and the device's record of the Nest cameras have been read (a few milliseconds
+     * each), so a Nest camera Frigate plays never shows in the wrong list on the way in. Shared,
+     * so the two lists built from it read them once.
      */
-    private val nestCameras: StateFlow<List<Camera>?> = combine(
-        observeNestCamerasUseCase(),
+    private val allCameras: StateFlow<List<Camera>?> = combine(
         observeCamerasUseCase(),
-    ) { nest, frigate ->
-        val frigateStreams = frigate.flatMapTo(HashSet()) { listOf(it.name, it.liveStreamName, it.gridStreamName) }
-        nest?.filterNot { it.name in frigateStreams }
+        observeNestCamerasUseCase(),
+    ) { frigate, nest ->
+        nest?.let { camerasWithNest(frigate, it) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
      * The outdoor cameras: Frigate's, then any Nest camera outside (a doorbell). Null until the
-     * first read of the local camera cache lands (a few milliseconds), so the screen can tell
-     * "not loaded yet" from "this server has no cameras" and never flashes the empty-state
-     * message on the way in. It doesn't wait for the Nest cameras: they join when the server
-     * answers. URLs are built here, not in the card, so a LAN/Tailscale route flip re-points
-     * every player at once.
+     * first reads land ([allCameras]), so the screen can tell "not loaded yet" from "this server
+     * has no cameras" and never flashes the empty-state message on the way in. URLs are built
+     * here, not in the card, so a LAN/Tailscale route flip re-points every player at once.
      */
     val cameras: StateFlow<List<CameraTile>?> = combine(
-        observeCamerasUseCase(),
-        nestCameras,
+        allCameras,
         observeCurrentServerUrlUseCase(),
         nestFit,
         arrangement,
-    ) { frigate, nest, serverUrl, fit, arrangement ->
-        val outdoor = frigate + nest.orEmpty().filter { it.placement == CameraPlacement.Outdoor }
-        arrangement.arranged(outdoor, CameraPlacement.Outdoor).map { camera -> tile(camera, serverUrl, fit, arrangement) }
+    ) { all, serverUrl, fit, arrangement ->
+        all?.filter { it.placement == CameraPlacement.Outdoor }
+            ?.let { arrangement.arranged(it, CameraPlacement.Outdoor) }
+            ?.map { camera -> tile(camera, serverUrl, fit, arrangement) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _placement = MutableStateFlow(CameraPlacement.Outdoor)
@@ -297,14 +305,14 @@ class HomeViewModel(
         _placement.value = placement
     }
 
-    /** The indoor (Nest) cameras' cards, null until the server has said which there are. */
+    /** The indoor (Nest) cameras' cards, Frigate's or not; null until [allCameras] has been read. */
     val indoorCameras: StateFlow<List<CameraTile>?> = combine(
-        nestCameras,
+        allCameras,
         observeCurrentServerUrlUseCase(),
         nestFit,
         arrangement,
-    ) { nest, serverUrl, fit, arrangement ->
-        nest?.filter { it.placement == CameraPlacement.Indoor }
+    ) { all, serverUrl, fit, arrangement ->
+        all?.filter { it.placement == CameraPlacement.Indoor }
             ?.let { arrangement.arranged(it, CameraPlacement.Indoor) }
             ?.map { camera -> tile(camera, serverUrl, fit, arrangement) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -312,8 +320,9 @@ class HomeViewModel(
     private val _arranging = MutableStateFlow(false)
 
     /**
-     * Arrange mode: the cards can be dragged into a new order and turned the right way up. Saved
-     * as it goes (each drop, each turn, each tilt let go), so leaving it any way loses nothing.
+     * Arrange mode: the cards can be dragged into a new order and turned the right way up, and a
+     * tap opens a card's framing editor (`CameraFramingViewModel`). Saved as it goes (each drop,
+     * each turn), so leaving it any way loses nothing.
      */
     val arranging: StateFlow<Boolean> = _arranging.asStateFlow()
 
@@ -348,15 +357,6 @@ class HomeViewModel(
         saveOrientation(cameraName, arrangement.value.orientation(cameraName).turned(clockwise))
     }
 
-    /** The tilt slider moving: shown at once, saved when it is let go ([saveTilt]). */
-    fun tiltCamera(cameraName: String, degrees: Float) {
-        orientationDrafts.update { it + (cameraName to arrangement.value.orientation(cameraName).tilted(degrees)) }
-    }
-
-    fun saveTilt(cameraName: String) {
-        orientationDrafts.value[cameraName]?.let { saveOrientation(cameraName, it) }
-    }
-
     private fun saveOrientation(cameraName: String, orientation: CameraOrientation) {
         orientationDrafts.update { it + (cameraName to orientation) }
         // The draft stays until the saved turn is read back (see savedLayouts).
@@ -376,24 +376,34 @@ class HomeViewModel(
 
         fun orientation(cameraName: String): CameraOrientation =
             orientations[cameraName] ?: layouts[cameraName]?.orientation ?: CameraOrientation.UPRIGHT
+
+        fun crop(cameraName: String): CameraCrop = layouts[cameraName]?.crop ?: CameraCrop.WHOLE
     }
 
     private fun tile(camera: Camera, serverUrl: String?, nestFit: VideoFit, arrangement: Arrangement): CameraTile {
-        val videoFit = nestFit.takeIf { camera.source == CameraSource.Nest }
+        // A Nest camera Frigate plays has Frigate's live snapshot for a poster, and Frigate's page.
+        val nest = camera.source == CameraSource.Nest
+        val videoFit = nestFit.takeIf { camera.fromNest }
         val orientation = arrangement.orientation(camera.name)
+        val crop = arrangement.crop(camera.name)
         if (serverUrl == null || !camera.enabled) {
-            return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit, orientation = orientation)
+            return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit, orientation = orientation, crop = crop)
         }
         // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
         // reserved for the single-camera detail view.
         return CameraTile(
             camera = camera,
             streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
-            posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT)
-                .takeIf { camera.source == CameraSource.Frigate },
+            posterUrl = if (nest) {
+                getLiveStillUrlUseCase(serverUrl, camera.gridStreamName)
+            } else {
+                getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT)
+            },
             webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
             videoFit = videoFit,
             orientation = orientation,
+            crop = crop,
+            posterIsLastSeen = nest,
         )
     }
 

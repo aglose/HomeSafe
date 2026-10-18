@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.data.InMemorySettingsDao
 import com.meticulouscreations.homesafe.data.PlaybackPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
@@ -32,6 +33,7 @@ import com.meticulouscreations.homesafe.domain.repository.NestCameraRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveStillUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
@@ -119,6 +121,7 @@ class HomeViewModelTest {
         override fun liveStreamUrl(serverUrl: String, streamName: String, audioCodecs: List<String>) =
             "$serverUrl/live/$streamName"
         override fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String) = "$serverUrl/webrtc/$streamName"
+        override fun liveStillUrl(serverUrl: String, streamName: String) = "$serverUrl/still/$streamName"
         override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?) =
             "$serverUrl/snapshot/$cameraName?h=$height"
         override fun eventThumbnailUrl(serverUrl: String, eventId: String) = "$serverUrl/thumb/$eventId"
@@ -218,6 +221,7 @@ class HomeViewModelTest {
             getLiveStreamUrlUseCase = GetLiveStreamUrlUseCase(FakeMediaUrls),
             getLiveWebRtcSignalingUrlUseCase = GetLiveWebRtcSignalingUrlUseCase(FakeMediaUrls),
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
+            getLiveStillUrlUseCase = GetLiveStillUrlUseCase(FakeMediaUrls),
             getEventThumbnailUrlUseCase = GetEventThumbnailUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
             observeStationaryObjectsUseCase = ObserveStationaryObjectsUseCase(moments),
@@ -288,14 +292,25 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun anIndoorCameraPlaysItsStreamWithoutAPoster() = runTest {
+    fun anIndoorCameraPlaysItsStreamOverItsLastSeenStill() = runTest {
         val h = Harness(indoorCameras = listOf(nest("living_room")))
         val tile = assertNotNull(indoorTiles(h.viewModel)).single()
 
         assertEquals("http://frigate.test:8971/live/living_room", tile.streamUrl)
         assertEquals("http://frigate.test:8971/webrtc/living_room", tile.webRtcSignalingUrl)
-        assertNull(tile.posterUrl, "Frigate has no snapshot of a Nest camera, and go2rtc's would dial Google for a still")
+        assertEquals("http://frigate.test:8971/still/living_room", tile.posterUrl, "a still of its own stream, not a Frigate snapshot")
+        assertTrue(tile.posterIsLastSeen, "shown only from what the device kept: asking go2rtc for one would wait on Google")
         assertEquals(CameraPlacement.Indoor, tile.camera.placement)
+    }
+
+    @Test
+    fun aNestCameraWithAGridStreamPlaysItOnItsCard() = runTest {
+        val h = Harness(indoorCameras = listOf(nest("living_room").copy(gridStreamName = "living_room_sub")))
+        val tile = assertNotNull(indoorTiles(h.viewModel)).single()
+
+        assertEquals("http://frigate.test:8971/live/living_room_sub", tile.streamUrl, "the smaller stream, as a Frigate card plays its sub stream")
+        assertEquals("http://frigate.test:8971/webrtc/living_room_sub", tile.webRtcSignalingUrl)
+        assertEquals("http://frigate.test:8971/still/living_room_sub", tile.posterUrl, "and its still is of what the card plays")
     }
 
     @Test
@@ -305,16 +320,40 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun aNestStreamThatAFrigateCameraPlaysStaysOutdoors() = runTest {
+    fun aFrigateCameraReadingANestStreamIsThatNestCameraWithFrigatesPoster() = runTest {
         val h = Harness(
-            cameras = listOf(Camera(name = "porch", enabled = true, gridStreamName = "porch_nest")),
-            indoorCameras = listOf(nest("porch_nest"), nest("nursery")),
+            cameras = listOf(
+                Camera(name = "front_door", enabled = true),
+                Camera(name = "living_room", enabled = true, liveStreamName = "living_room", gridStreamName = "living_room_sub"),
+            ),
+            indoorCameras = listOf(nest("living_room"), nest("nursery")),
         )
-        assertEquals(listOf("nursery"), indoorTiles(h.viewModel)?.map { it.camera.name })
+        assertEquals(listOf("front_door"), tiles(h.viewModel).map { it.camera.name }, "it leaves the outdoor list")
+        val indoor = assertNotNull(indoorTiles(h.viewModel))
+        assertEquals(listOf("living_room", "nursery"), indoor.map { it.camera.name }, "Frigate's, then the Nest cameras Frigate doesn't read")
+
+        val living = indoor.first()
+        assertEquals(CameraSource.Frigate, living.camera.source, "so it opens Frigate's page")
+        assertTrue(living.camera.fromNest)
+        assertEquals("http://frigate.test:8971/live/living_room_sub", living.streamUrl)
+        assertEquals("http://frigate.test:8971/snapshot/living_room?h=480", living.posterUrl, "Frigate's live snapshot, kept fresh")
+        assertFalse(living.posterIsLastSeen)
+        assertEquals(VideoFit.Fit, living.videoFit, "shown at the Nest picture's own shape, not stretched")
     }
 
     @Test
-    fun anOutdoorNestCameraJoinsTheFrigateOnesWithoutAPoster() = runTest {
+    fun aFrigateCameraReadingAnOutdoorNestStreamStaysOutdoors() = runTest {
+        val h = Harness(
+            cameras = listOf(Camera(name = "outdoor_doorbell", enabled = true, gridStreamName = "outdoor_doorbell_sub")),
+            indoorCameras = listOf(nest("outdoor_doorbell", CameraPlacement.Outdoor)),
+        )
+        assertEquals(listOf("outdoor_doorbell"), tiles(h.viewModel).map { it.camera.name }, "once, as Frigate's")
+        assertEquals(CameraSource.Frigate, tiles(h.viewModel).single().camera.source)
+        assertEquals(emptyList(), indoorTiles(h.viewModel))
+    }
+
+    @Test
+    fun anOutdoorNestCameraJoinsTheFrigateOnes() = runTest {
         val h = Harness(
             cameras = listOf(Camera(name = "front_door", enabled = true)),
             indoorCameras = listOf(nest("outdoor_doorbell", CameraPlacement.Outdoor), nest("kitchen")),
@@ -322,7 +361,9 @@ class HomeViewModelTest {
         val outdoor = tiles(h.viewModel)
         assertEquals(listOf("front_door", "outdoor_doorbell"), outdoor.map { it.camera.name }, "Frigate's first, then the Nest camera outside")
         assertEquals("http://frigate.test:8971/snapshot/front_door?h=480", outdoor[0].posterUrl)
-        assertNull(outdoor[1].posterUrl, "a Nest camera has no Frigate snapshot, wherever it is")
+        assertEquals("http://frigate.test:8971/still/outdoor_doorbell", outdoor[1].posterUrl, "a Nest camera's poster is its last-seen still, wherever it is")
+        assertTrue(outdoor[1].posterIsLastSeen)
+        assertFalse(outdoor[0].posterIsLastSeen)
         assertEquals("http://frigate.test:8971/live/outdoor_doorbell", outdoor[1].streamUrl)
         assertEquals(listOf("kitchen"), indoorTiles(h.viewModel)?.map { it.camera.name })
     }
@@ -343,9 +384,16 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun theOutdoorListDoesNotWaitForTheNestCameras() = runTest {
-        val h = Harness(cameras = listOf(Camera(name = "front_door", enabled = true)), indoorCameras = null)
-        assertEquals(listOf("front_door"), tiles(h.viewModel).map { it.camera.name })
+    fun theOutdoorListWaitsForTheKeptNestCamerasSoNoneShowsInTheWrongList() = runTest {
+        val h = Harness(cameras = listOf(Camera(name = "living_room", enabled = true)), indoorCameras = null)
+        activate(h.viewModel.cameras)
+        advanceUntilIdle()
+        assertNull(h.viewModel.cameras.value, "the skeleton, for the moment the device's record takes to read")
+
+        h.indoorRepo.flow.value = listOf(nest("living_room"))
+        advanceUntilIdle()
+        assertEquals(emptyList(), h.viewModel.cameras.value)
+        assertEquals(listOf("living_room"), indoorTiles(h.viewModel)?.map { it.camera.name })
     }
 
     /**
@@ -361,6 +409,9 @@ class HomeViewModelTest {
         }
         override suspend fun setOrientation(cameraName: String, orientation: CameraOrientation) {
             saved[cameraName] = (saved[cameraName] ?: CameraLayout()).copy(orientation = orientation)
+        }
+        override suspend fun setFraming(cameraName: String, orientation: CameraOrientation, crop: CameraCrop) {
+            saved[cameraName] = (saved[cameraName] ?: CameraLayout()).copy(orientation = orientation, crop = crop)
         }
         fun deliver() {
             observed.value = saved.toMap()
@@ -427,22 +478,30 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun aQuarterTurnIsShownAndSavedAndTheTiltIsSavedOnlyWhenLetGo() = runTest {
+    fun aQuarterTurnIsShownAndSaved() = runTest {
         val h = Harness(cameras = three)
         tiles(h.viewModel)
 
         h.viewModel.turnCamera("backyard", clockwise = false)
         advanceUntilIdle()
         assertEquals(CameraOrientation(quarterTurns = 3), h.viewModel.cameras.value?.first { it.camera.name == "backyard" }?.orientation)
+        assertEquals(CameraOrientation(quarterTurns = 3), h.layouts.observeLayouts().first()["backyard"]?.orientation)
+    }
 
-        h.viewModel.tiltCamera("backyard", 12f)
+    @Test
+    fun aQuarterTurnKeepsTheCropAndTheTiltTheEditorSaved() = runTest {
+        val h = Harness(cameras = three)
+        val crop = CameraCrop(zoom = 2f, centerX = 0.3f, centerY = 0.6f)
+        h.layouts.setFraming("backyard", CameraOrientation(0, 2.5f), crop)
+        tiles(h.viewModel)
         advanceUntilIdle()
-        assertEquals(CameraOrientation(3, 12f), h.viewModel.cameras.value?.first { it.camera.name == "backyard" }?.orientation, "the picture follows the slider")
-        assertEquals(CameraOrientation(3, 0f), h.layouts.observeLayouts().first()["backyard"]?.orientation, "but nothing is saved mid-drag")
+        assertEquals(crop, h.viewModel.cameras.value?.first { it.camera.name == "backyard" }?.crop, "the card shows the crop")
 
-        h.viewModel.saveTilt("backyard")
+        h.viewModel.turnCamera("backyard", clockwise = true)
         advanceUntilIdle()
-        assertEquals(CameraOrientation(3, 12f), h.layouts.observeLayouts().first()["backyard"]?.orientation)
+        val saved = h.layouts.observeLayouts().first()["backyard"]
+        assertEquals(CameraOrientation(1, 2.5f), saved?.orientation)
+        assertEquals(crop, saved?.crop)
     }
 
     @Test

@@ -10,6 +10,12 @@ data class Camera(
     val gridStreamName: String = name,
     val placement: CameraPlacement = CameraPlacement.Outdoor,
     val source: CameraSource = CameraSource.Frigate,
+    /**
+     * The picture is a Google Nest camera's, whoever plays it: a [CameraSource.Nest] camera, or a
+     * Frigate camera reading a Nest stream (see [camerasWithNest]). Its shape is whatever the
+     * model makes it (a doorbell's is tall), so it is shown at that shape rather than stretched.
+     */
+    val fromNest: Boolean = source == CameraSource.Nest,
 ) {
     /** What the UI calls this camera — see [cameraDisplayName]. */
     val displayName: String get() = cameraDisplayName(name)
@@ -24,3 +30,25 @@ enum class CameraPlacement { Outdoor, Indoor }
  * from Google only while someone is watching, so it is live video and nothing else.
  */
 enum class CameraSource { Frigate, Nest }
+
+/**
+ * Frigate's [frigate] cameras and the [nest] cameras as one list. A Frigate camera reading one
+ * of the Nest streams (by its own name or either stream it plays) is that Nest camera, with
+ * Frigate's recordings, snapshots and settings behind it: it takes the Nest camera's place
+ * (indoors, or outdoors for an `outdoor_` stream) and is marked [Camera.fromNest], and the Nest
+ * entry itself is left out. The rest of the Nest cameras follow Frigate's.
+ */
+fun camerasWithNest(frigate: List<Camera>, nest: List<Camera>): List<Camera> {
+    val nestByStream = nest.associateBy { it.name }
+    val played = HashSet<String>()
+    val merged = frigate.map { camera ->
+        val stream = listOf(camera.name, camera.liveStreamName, camera.gridStreamName).firstNotNullOfOrNull { nestByStream[it] }
+        if (stream == null) {
+            camera
+        } else {
+            played += stream.name
+            camera.copy(placement = stream.placement, fromNest = true)
+        }
+    }
+    return merged + nest.filterNot { it.name in played }
+}

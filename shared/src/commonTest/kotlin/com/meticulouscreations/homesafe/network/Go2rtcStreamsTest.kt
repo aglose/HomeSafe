@@ -29,6 +29,27 @@ class Go2rtcStreamsTest {
     }
 
     @Test
+    fun aNestCameraHasTheSubStreamBesideItAsItsGridStream() {
+        val streams = parseGo2rtcStreams(
+            """{
+              "living_room":{"producers":[{"url":"nest:?device_id=d1"}]},
+              "living_room_sub":{"producers":[{"url":"ffmpeg:living_room#video=h264#width=640#hardware=cuda"}]},
+              "kitchen":{"producers":[{"url":"nest:?device_id=d2"}]}
+            }""",
+        )
+        assertEquals(
+            listOf(NestStream("kitchen"), NestStream("living_room", gridStreamName = "living_room_sub")),
+            nestStreams(streams),
+            "the sub stream is the camera's card stream, never a camera of its own",
+        )
+    }
+
+    @Test
+    fun aStillIsGo2rtcsFrameOfTheStream() {
+        assertEquals("http://100.99.163.71:1984/api/frame.jpeg?src=living_room_sub", frigateLiveStillUrl("https://100.99.163.71:8971", "living_room_sub"))
+    }
+
+    @Test
     fun theStreamsListIsOnGo2rtcsPortOnFrigatesHost() {
         assertEquals("http://100.99.163.71:1984/api/streams", frigateGo2rtcStreamsUrl("https://100.99.163.71:8971"))
         assertEquals("http://frigate.lan:1984/api/streams", frigateGo2rtcStreamsUrl("http://frigate.lan/"))

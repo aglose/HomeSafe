@@ -107,6 +107,7 @@ import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
+import com.meticulouscreations.homesafe.ui.components.CaptureLastSeenStill
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.components.PinchGestureListener
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -124,6 +125,7 @@ import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.camera_frame_click_label
 import homesafe.shared.generated.resources.camera_move_earlier
 import homesafe.shared.generated.resources.camera_move_later
 import homesafe.shared.generated.resources.common_dot_separator
@@ -163,6 +165,7 @@ fun HomeTabContent(
     sharedTransitionScope: SharedTransitionScope,
     zoomState: CameraCardZoomState,
     onCameraClick: (CameraTile) -> Unit = {},
+    onFrameCamera: (CameraTile) -> Unit = {},
     onTagCars: (cameraName: String) -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
@@ -225,8 +228,7 @@ fun HomeTabContent(
             reconnectRequests = reconnectRequests,
             arranging = arranging,
             onTurn = { clockwise -> viewModel.turnCamera(name, clockwise) },
-            onTilt = { degrees -> viewModel.tiltCamera(name, degrees) },
-            onTiltRelease = { viewModel.saveTilt(name) },
+            onFrame = { onFrameCamera(tile) },
             onMoveEarlier = names.getOrNull(index - 1)?.let { earlier -> { move(earlier) } },
             onMoveLater = names.getOrNull(index + 1)?.let { later -> { move(later) } },
         )
@@ -660,10 +662,13 @@ private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
 }
 
 /**
- * One camera's card: its live video, name and status. A tap is [onClick] (the camera's own
- * screen); spreading two fingers on it, or holding one, lifts the video into [zoomState]'s
- * quick-look layer — the pinch, or the held finger's drag, continuing there without a lift of
- * the fingers.
+ * One camera's card: its live video, framed as the camera has been ([CameraTile.orientation],
+ * [CameraTile.crop]), with its name and status. A tap is [onClick] (the camera's own screen);
+ * spreading two fingers on it, or holding one, lifts the video into [zoomState]'s quick-look
+ * layer — the pinch, or the held finger's drag, continuing there without a lift of the fingers.
+ *
+ * In Arrange mode a tap is [onFrame] instead (the framing editor), and the card carries quick
+ * quarter turns ([onTurn]) and the editor's button along its bottom.
  */
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -676,8 +681,7 @@ internal fun CameraCard(
     reconnectRequests: Int = 0,
     arranging: Boolean = false,
     onTurn: (clockwise: Boolean) -> Unit = {},
-    onTilt: (degrees: Float) -> Unit = {},
-    onTiltRelease: () -> Unit = {},
+    onFrame: () -> Unit = {},
     onMoveEarlier: (() -> Unit)? = null,
     onMoveLater: (() -> Unit)? = null,
 ) {
@@ -731,16 +735,19 @@ internal fun CameraCard(
             .onGloballyPositioned { coordinates.value = it }
             .then(if (arranging) Modifier.arrangeActions(onMoveEarlier, onMoveLater) else Modifier)
             .combinedClickable(
-                // In Arrange mode a hold is the drag (see HomeFeed), and a tap goes nowhere.
-                enabled = !arranging,
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
-                onLongClick = {
-                    val bounds = coordinates.value?.boundsInRoot() ?: return@combinedClickable
-                    val press = lastPress.value ?: Offset(bounds.width / 2f, bounds.height / 2f)
-                    zoomState.openByLongPress(tile, bounds, press)
+                onClickLabel = if (arranging) stringResource(Res.string.camera_frame_click_label) else null,
+                // In Arrange mode a hold is the drag (see HomeFeed), and a tap frames the picture.
+                onLongClick = if (arranging) {
+                    null
+                } else {
+                    {
+                        val bounds = coordinates.value?.boundsInRoot()
+                        if (bounds != null) zoomState.openByLongPress(tile, bounds, lastPress.value ?: Offset(bounds.width / 2f, bounds.height / 2f))
+                    }
                 },
-                onClick = onClick,
+                onClick = if (arranging) onFrame else onClick,
             )
             .quickLookHeldDrag(zoomState, camera.name)
             .then(if (arranging) Modifier else Modifier.pinchGestures(pinchListener)),
@@ -777,7 +784,13 @@ internal fun CameraCard(
                 // — still warm — on the way out. The quick-look layer borrows it the same way,
                 // and while it has it this card draws nothing (see CameraCardZoomState).
                 val turnDegrees = tile.orientation.degrees
-                ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { videoModifier, onStreamStats ->
+                ShapedVideo(
+                    streamUrl = streamUrl,
+                    fit = tile.videoFit,
+                    modifier = Modifier.fillMaxSize(),
+                    turnDegrees = turnDegrees,
+                    crop = { tile.crop },
+                ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         streamUrl = streamUrl,
                         modifier = videoModifier,
@@ -788,9 +801,12 @@ internal fun CameraCard(
                         reconnectRequests = reconnectRequests,
                         onStreamStats = onStreamStats,
                         turnDegrees = turnDegrees,
+                        lastSeenPoster = tile.posterIsLastSeen,
                     )
                 }
             }
+            // The still a Nest card opens on next time, taken once its video is playing.
+            CaptureLastSeenStill(stillUrl = tile.posterUrl.takeIf { tile.posterIsLastSeen }, live = streamStatus == LiveStreamStatus.Live)
         }
 
         // The name at one end and the badge at the other, on one line where both fit. On a
@@ -820,10 +836,8 @@ internal fun CameraCard(
 
         if (arranging) {
             CameraArrangeControls(
-                orientation = tile.orientation,
                 onTurn = onTurn,
-                onTilt = onTilt,
-                onTiltRelease = onTiltRelease,
+                onFrame = onFrame,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
