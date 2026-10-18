@@ -39,7 +39,12 @@ import org.jetbrains.compose.resources.stringResource
  * list under it.
  */
 @Composable
-internal fun CameraPlacementSwitch(selected: CameraPlacement, onSelect: (CameraPlacement) -> Unit, modifier: Modifier = Modifier) {
+internal fun CameraPlacementSwitch(
+    selected: CameraPlacement,
+    onSelect: (CameraPlacement) -> Unit,
+    modifier: Modifier = Modifier,
+    testTag: String = CAMERA_PLACEMENT_SWITCH_TEST_TAG,
+) {
     Row(
         modifier = modifier
             .clip(CircleShape)
@@ -47,7 +52,7 @@ internal fun CameraPlacementSwitch(selected: CameraPlacement, onSelect: (CameraP
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
             .padding(4.dp)
             .selectableGroup()
-            .testTag(CAMERA_PLACEMENT_SWITCH_TEST_TAG),
+            .testTag(testTag),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         CameraPlacement.entries.forEach { placement ->
@@ -98,3 +103,6 @@ private val CameraPlacement.icon: ImageVector
     }
 
 internal const val CAMERA_PLACEMENT_SWITCH_TEST_TAG = "home-camera-placement-switch"
+
+/** The same switch floating at the foot of the Home page, within reach of the thumb. */
+internal const val FLOATING_PLACEMENT_SWITCH_TEST_TAG = "home-floating-placement-switch"

@@ -8,6 +8,11 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,10 +46,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -54,10 +64,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -65,12 +77,17 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.Ref
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -183,7 +200,7 @@ fun HomeTabContent(
         onInViewClick = { item -> cameras?.firstOrNull { it.camera.name == item.subject.cameraName }?.let(onCameraClick) },
         // The camera the strip's first car is on: the frame to check the strip against.
         onInViewCheck = { inView.firstOrNull()?.subject?.cameraName?.let(onTagCars) },
-        modifier = Modifier.testTag(HOME_FEED_TEST_TAG),
+        listTestTag = HOME_FEED_TEST_TAG,
         scrollToTopRequests = scrollToTopRequests,
         refreshing = refreshing,
         onRefresh = viewModel::refresh,
@@ -232,7 +249,10 @@ fun HomeTabContent(
  * strip's whole height.
  *
  * With a [placement], the [CameraPlacementSwitch] heads the cameras, and [cameras] are the ones
- * of that placement; null leaves it out (a server with no indoor cameras, and the skeleton).
+ * of that placement; null leaves it out (a server with no indoor cameras, and the skeleton). For
+ * a phone held in one hand, the same switch also floats just above the nav (tucked away while the
+ * list is scrolled down), and a swipe sideways across the list switches too ([placementSwipe]).
+ * [listTestTag] goes on the scrolling list itself, where a test can scroll it.
  *
  * Pulling the list down from the top refreshes the page — [onRefresh], with the band open while
  * [refreshing] (see [ApertureRefreshBox]); the band opens below the shell's floating top bar,
@@ -271,6 +291,7 @@ internal fun HomeFeed(
     onArrangeToggle: (() -> Unit)? = null,
     onMoveCamera: (from: String, to: String) -> Unit = { _, _ -> },
     onDrop: () -> Unit = {},
+    listTestTag: String? = null,
     cameraCard: @Composable LazyGridItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
@@ -286,82 +307,164 @@ internal fun HomeFeed(
         if (fromName != null && toName != null) onMoveCamera(fromName, toName)
     }
 
-    PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
-        LazyVerticalGrid(
-            columns = columns,
-            state = gridState,
-            modifier = modifier.fillMaxSize(),
-            contentPadding = tabContentPadding(maxWidth = HOME_GRID_MAX_WIDTH),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-            horizontalArrangement = Arrangement.spacedBy(CAMERA_CARD_COLUMN_GAP),
-        ) {
-            // First on the page: with no server, everything below it is what the device kept.
-            if (connectionProblem != null) {
-                item(key = "connection-notice", span = { GridItemSpan(maxLineSpan) }) {
-                    ConnectionProblemNotice(
-                        problem = connectionProblem,
-                        retrying = connectionRetrying,
-                        onRetry = onConnectionRetry,
-                        modifier = Modifier.animateItem(),
-                        onOpenTailscale = onOpenTailscale,
-                    )
-                }
-            }
-            if (everyoneAway) {
-                item(key = "away-banner", span = { GridItemSpan(maxLineSpan) }) { AwayBanner(onBack = onAwayBack) }
-            }
+    val swipe = rememberPlacementSwipe()
+    // The floating switch tucks away while the list is scrolled down and comes back as it is scrolled up.
+    // Travel is added up one way at a time, so a slow scroll counts as much as a quick one.
+    var switchShown by remember { mutableStateOf(true) }
+    val switchTravel = with(LocalDensity.current) { FLOATING_SWITCH_SCROLL_TRAVEL.toPx() }
+    val scrollWatch = remember(switchTravel) {
+        object : NestedScrollConnection {
+            private var travel = 0f
 
-            if (inView.isNotEmpty()) {
-                item(key = "in-view", span = { GridItemSpan(maxLineSpan) }) {
-                    InViewNowSection(items = inView, onClick = onInViewClick, onCheck = onInViewCheck, modifier = Modifier.animateItem())
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (consumed.y == 0f) return Offset.Zero
+                travel = if (travel * consumed.y < 0f) consumed.y else travel + consumed.y
+                if (travel < -switchTravel) {
+                    switchShown = false
+                } else if (travel > switchTravel) {
+                    switchShown = true
                 }
+                return Offset.Zero
             }
+        }
+    }
+    LaunchedEffect(placement) { switchShown = true }
+    // Arrange mode's holds are drags: a swipe let go just before it mustn't switch lists under it.
+    LaunchedEffect(arranging) { if (arranging) swipe.cancel() }
+    val arrangingNow by rememberUpdatedState(arranging)
+    val swipeTo: (CameraPlacement) -> Unit = remember(onPlacementChange) { { target -> if (!arrangingNow) onPlacementChange(target) } }
 
-            val canArrange = onArrangeToggle != null && !cameras.isNullOrEmpty()
-            if (placement != null || canArrange) {
-                item(key = "camera-header", span = { GridItemSpan(maxLineSpan) }) {
-                    CamerasHeader(
-                        placement = placement,
-                        onPlacementChange = onPlacementChange,
-                        arranging = arranging,
-                        onArrangeToggle = onArrangeToggle.takeIf { canArrange },
-                        modifier = Modifier.animateItem(),
-                    )
+    Box(modifier = modifier.fillMaxSize().nestedScroll(scrollWatch)) {
+        PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
+            LazyVerticalGrid(
+                columns = columns,
+                state = gridState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (listTestTag != null) Modifier.testTag(listTestTag) else Modifier)
+                    .placementSwipe(swipe, placement.takeIf { !arranging }, swipeTo),
+                contentPadding = tabContentPadding(
+                    maxWidth = HOME_GRID_MAX_WIDTH,
+                    bottom = if (placement != null) FLOATING_SWITCH_ROOM else 0.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(CAMERA_CARD_COLUMN_GAP),
+            ) {
+                // First on the page: with no server, everything below it is what the device kept.
+                if (connectionProblem != null) {
+                    item(key = "connection-notice", span = { GridItemSpan(maxLineSpan) }) {
+                        ConnectionProblemNotice(
+                            problem = connectionProblem,
+                            retrying = connectionRetrying,
+                            onRetry = onConnectionRetry,
+                            modifier = Modifier.animateItem(),
+                            onOpenTailscale = onOpenTailscale,
+                        )
+                    }
                 }
-            }
+                if (everyoneAway) {
+                    item(key = "away-banner", span = { GridItemSpan(maxLineSpan) }) { AwayBanner(onBack = onAwayBack) }
+                }
 
-            val loadedCameras = cameras
-            if (loadedCameras == null) {
-                items(SKELETON_CARD_COUNT, key = { "camera-skeleton-$it" }) { index ->
-                    SkeletonCameraCard(
-                        phase = { loadingPhase?.value ?: 0f },
-                        phaseOffset = index / SKELETON_CARD_COUNT.toFloat(),
-                        modifier = Modifier.animateItem(),
-                    )
+                if (inView.isNotEmpty()) {
+                    item(key = "in-view", span = { GridItemSpan(maxLineSpan) }) {
+                        InViewNowSection(items = inView, onClick = onInViewClick, onCheck = onInViewCheck, modifier = Modifier.animateItem())
+                    }
                 }
-            } else if (loadedCameras.isEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
-                        text = stringResource(Res.string.home_no_cameras),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+
+                val canArrange = onArrangeToggle != null && !cameras.isNullOrEmpty()
+                if (placement != null || canArrange) {
+                    item(key = "camera-header", span = { GridItemSpan(maxLineSpan) }) {
+                        CamerasHeader(
+                            placement = placement,
+                            onPlacementChange = onPlacementChange,
+                            arranging = arranging,
+                            onArrangeToggle = onArrangeToggle.takeIf { canArrange },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
                 }
-            } else {
-                items(loadedCameras, key = { it.camera.name }) { tile ->
-                    val itemScope = this
-                    // Always a ReorderableItem, draggable only in Arrange mode, so entering it never
-                    // recomposes the card into a different structure (and its player stays bound).
-                    ReorderableItem(reorderState, key = tile.camera.name, enabled = arranging) {
-                        Box(modifier = Modifier.longPressDraggableHandle(enabled = arranging, onDragStopped = onDrop)) {
-                            itemScope.cameraCard(tile)
+
+                val loadedCameras = cameras
+                if (loadedCameras == null) {
+                    items(SKELETON_CARD_COUNT, key = { "camera-skeleton-$it" }) { index ->
+                        SkeletonCameraCard(
+                            phase = { loadingPhase?.value ?: 0f },
+                            phaseOffset = index / SKELETON_CARD_COUNT.toFloat(),
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                } else if (loadedCameras.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            text = stringResource(Res.string.home_no_cameras),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    items(loadedCameras, key = { it.camera.name }) { tile ->
+                        val itemScope = this
+                        // Always a ReorderableItem, draggable only in Arrange mode, so entering it never
+                        // recomposes the card into a different structure (and its player stays bound).
+                        ReorderableItem(reorderState, key = tile.camera.name, enabled = arranging) {
+                            Box(
+                                modifier = Modifier
+                                    .graphicsLayer { swipe.drawCards(this) }
+                                    .longPressDraggableHandle(enabled = arranging, onDragStopped = onDrop),
+                            ) {
+                                itemScope.cameraCard(tile)
+                            }
                         }
                     }
                 }
             }
         }
+        if (placement != null) {
+            FloatingPlacementSwitch(
+                selected = placement,
+                onSelect = onPlacementChange,
+                shown = { !arranging && (switchShown || !gridState.canScrollBackward) },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
     }
 }
+
+/**
+ * The Outdoor | Indoor switch again, floating just above the nav where a thumb reaches it: the
+ * one heading the list is at the top of a tall phone. Out of the way while [shown] says so (a
+ * lambda, so the scroll that decides it recomposes only this).
+ */
+@Composable
+private fun FloatingPlacementSwitch(
+    selected: CameraPlacement,
+    onSelect: (CameraPlacement) -> Unit,
+    shown: () -> Boolean,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = shown(),
+        modifier = modifier.padding(bottom = bottomNavClearance()),
+        enter = fadeIn(tween(FLOATING_SWITCH_MS)) + slideInVertically(tween(FLOATING_SWITCH_MS)) { it },
+        exit = fadeOut(tween(FLOATING_SWITCH_MS)) + slideOutVertically(tween(FLOATING_SWITCH_MS)) { it },
+    ) {
+        CameraPlacementSwitch(
+            selected = selected,
+            onSelect = onSelect,
+            modifier = Modifier.shadow(6.dp, CircleShape),
+            testTag = FLOATING_PLACEMENT_SWITCH_TEST_TAG,
+        )
+    }
+}
+
+/** Room under the last card for the floating switch (its height and a gap), so the list can scroll clear of it. */
+private val FLOATING_SWITCH_ROOM = 64.dp
+
+/** How far the list has to scroll one way, however slowly, before that hides or brings back the floating switch. */
+private val FLOATING_SWITCH_SCROLL_TRAVEL = 16.dp
+
+private const val FLOATING_SWITCH_MS = 200
 
 /**
  * What heads the cameras: the Outdoor | Indoor switch when there is anything indoors, and the way
@@ -380,9 +483,7 @@ private fun CamerasHeader(
             if (placement != null) CameraPlacementSwitch(selected = placement, onSelect = onPlacementChange)
             Spacer(modifier = Modifier.weight(1f))
             if (onArrangeToggle != null) {
-                TextButton(onClick = onArrangeToggle, modifier = Modifier.testTag(HOME_ARRANGE_BUTTON_TEST_TAG)) {
-                    Text(stringResource(if (arranging) Res.string.home_arrange_done else Res.string.home_arrange))
-                }
+                ArrangeButton(arranging = arranging, onClick = onArrangeToggle)
             }
         }
         AnimatedVisibility(visible = arranging) {
@@ -391,6 +492,39 @@ private fun CamerasHeader(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * The way into Arrange mode, a pill in the same surface and edge as the Outdoor | Indoor switch
+ * beside it, and out of it again: Done, filled in the primary colour while the mode is on, so the
+ * way out is the loudest thing on the page.
+ */
+@Composable
+private fun ArrangeButton(arranging: Boolean, onClick: () -> Unit) {
+    val modifier = Modifier.testTag(HOME_ARRANGE_BUTTON_TEST_TAG)
+    val padding = ButtonDefaults.ButtonWithIconContentPadding
+    if (arranging) {
+        Button(onClick = onClick, modifier = modifier, contentPadding = padding) {
+            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Text(stringResource(Res.string.home_arrange_done))
+        }
+    } else {
+        FilledTonalButton(
+            onClick = onClick,
+            modifier = modifier,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+            contentPadding = padding,
+        ) {
+            Icon(Icons.Filled.SwapVert, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Text(stringResource(Res.string.home_arrange))
         }
     }
 }
