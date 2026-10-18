@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
 import com.meticulouscreations.homesafe.domain.model.RecordingHistory
@@ -351,6 +352,11 @@ class CameraDetailViewModel(
     val turnDegrees: StateFlow<Float> = observeCameraLayoutsUseCase()
         .map { it[cameraName]?.orientation?.degrees ?: 0f }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0f)
+
+    /** How much of the picture is shown: as the camera was cropped in the Home page's framing editor. */
+    val crop: StateFlow<CameraCrop> = observeCameraLayoutsUseCase()
+        .map { it[cameraName]?.crop ?: CameraCrop.WHOLE }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CameraCrop.WHOLE)
 
     private val _streamStats = MutableStateFlow<LiveStreamStats?>(null)
 

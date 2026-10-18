@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
@@ -14,6 +15,7 @@ import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveStillUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
@@ -59,8 +61,9 @@ import kotlin.time.ExperimentalTime
 /**
  * A camera plus what its grid card needs to play it. [streamUrl] and [posterUrl] are null while
  * disconnected or while the camera is disabled on the server — the card shows a placeholder then.
- * A Nest camera never has a [posterUrl]: there is no Frigate snapshot of it, and a still from
- * go2rtc would mean dialling the camera through Google just for a poster.
+ * A Nest camera's [posterUrl] is a still of its card's stream, shown only from what this device
+ * kept ([posterIsLastSeen], see `LastSeenStill`): asking go2rtc for one as the card appears would
+ * mean waiting on Google for it, as long as for the video.
  */
 @Immutable
 data class CameraTile(
@@ -73,6 +76,10 @@ data class CameraTile(
     val videoFit: VideoFit? = null,
     /** Which way up to draw the picture: upright for a camera mounted level. */
     val orientation: CameraOrientation = CameraOrientation.UPRIGHT,
+    /** How much of the picture to show: the whole of it until the camera has been framed. */
+    val crop: CameraCrop = CameraCrop.WHOLE,
+    /** [posterUrl] is a last-seen still, taken by the card once its video plays, rather than Frigate's live snapshot. */
+    val posterIsLastSeen: Boolean = false,
 )
 
 /** Whether these camera names, in this order, are the positions [layouts] has saved for them. */
@@ -116,6 +123,7 @@ class HomeViewModel(
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
+    private val getLiveStillUrlUseCase: GetLiveStillUrlUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     observeStationaryObjectsUseCase: ObserveStationaryObjectsUseCase,
@@ -225,7 +233,7 @@ class HomeViewModel(
     /** Arrange mode's moves not yet saved, by list: the order being dragged into. */
     private val orderDrafts = MutableStateFlow<Map<CameraPlacement, List<String>>>(emptyMap())
 
-    /** Turns and tilts under way and not yet saved, by camera, so the slider moves the picture under the finger. */
+    /** Quarter turns asked for and not yet read back, by camera, so the picture turns the moment the button is pressed. */
     private val orientationDrafts = MutableStateFlow<Map<String, CameraOrientation>>(emptyMap())
 
     /**
@@ -312,8 +320,9 @@ class HomeViewModel(
     private val _arranging = MutableStateFlow(false)
 
     /**
-     * Arrange mode: the cards can be dragged into a new order and turned the right way up. Saved
-     * as it goes (each drop, each turn, each tilt let go), so leaving it any way loses nothing.
+     * Arrange mode: the cards can be dragged into a new order and turned the right way up, and a
+     * tap opens a card's framing editor (`CameraFramingViewModel`). Saved as it goes (each drop,
+     * each turn), so leaving it any way loses nothing.
      */
     val arranging: StateFlow<Boolean> = _arranging.asStateFlow()
 
@@ -348,15 +357,6 @@ class HomeViewModel(
         saveOrientation(cameraName, arrangement.value.orientation(cameraName).turned(clockwise))
     }
 
-    /** The tilt slider moving: shown at once, saved when it is let go ([saveTilt]). */
-    fun tiltCamera(cameraName: String, degrees: Float) {
-        orientationDrafts.update { it + (cameraName to arrangement.value.orientation(cameraName).tilted(degrees)) }
-    }
-
-    fun saveTilt(cameraName: String) {
-        orientationDrafts.value[cameraName]?.let { saveOrientation(cameraName, it) }
-    }
-
     private fun saveOrientation(cameraName: String, orientation: CameraOrientation) {
         orientationDrafts.update { it + (cameraName to orientation) }
         // The draft stays until the saved turn is read back (see savedLayouts).
@@ -376,24 +376,33 @@ class HomeViewModel(
 
         fun orientation(cameraName: String): CameraOrientation =
             orientations[cameraName] ?: layouts[cameraName]?.orientation ?: CameraOrientation.UPRIGHT
+
+        fun crop(cameraName: String): CameraCrop = layouts[cameraName]?.crop ?: CameraCrop.WHOLE
     }
 
     private fun tile(camera: Camera, serverUrl: String?, nestFit: VideoFit, arrangement: Arrangement): CameraTile {
-        val videoFit = nestFit.takeIf { camera.source == CameraSource.Nest }
+        val nest = camera.source == CameraSource.Nest
+        val videoFit = nestFit.takeIf { nest }
         val orientation = arrangement.orientation(camera.name)
+        val crop = arrangement.crop(camera.name)
         if (serverUrl == null || !camera.enabled) {
-            return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit, orientation = orientation)
+            return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit, orientation = orientation, crop = crop)
         }
         // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
         // reserved for the single-camera detail view.
         return CameraTile(
             camera = camera,
             streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
-            posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT)
-                .takeIf { camera.source == CameraSource.Frigate },
+            posterUrl = if (nest) {
+                getLiveStillUrlUseCase(serverUrl, camera.gridStreamName)
+            } else {
+                getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT)
+            },
             webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
             videoFit = videoFit,
             orientation = orientation,
+            crop = crop,
+            posterIsLastSeen = nest,
         )
     }
 

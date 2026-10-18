@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarPreview
 import com.meticulouscreations.homesafe.ui.screens.DrawerFinanceCardsPreview
 import com.meticulouscreations.homesafe.ui.screens.DrawerFitnessCardsPreview
 import com.meticulouscreations.homesafe.ui.screens.FinanceDrawerOptionsPreview
+import com.meticulouscreations.homesafe.ui.screens.CameraFramingEditorPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedArrangingPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedAwayPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedEmptyPreview
@@ -57,6 +58,11 @@ fun HomeFeedIndoor() = HomeFeedIndoorPreview()
 @Preview(name = "Home, arranging", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedArranging() = HomeFeedArrangingPreview()
+
+@PreviewTest
+@Preview(name = "Camera framing editor", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun CameraFramingEditor() = CameraFramingEditorPreview()
 
 @PreviewTest
 @Preview(name = "Home, loading", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)

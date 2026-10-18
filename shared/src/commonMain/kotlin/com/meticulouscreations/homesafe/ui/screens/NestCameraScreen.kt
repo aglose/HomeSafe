@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import com.meticulouscreations.homesafe.domain.model.CameraFraming
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
@@ -52,6 +54,7 @@ import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
+import com.meticulouscreations.homesafe.ui.components.cropped
 import com.meticulouscreations.homesafe.ui.components.isOnItsSide
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
@@ -80,8 +83,13 @@ import kotlin.math.abs
  *
  * [warmStreamUrl] / [warmWebRtcSignalingUrl] are what the tapped card was playing. The screen
  * binds the same pooled player (keyed by [streamName], as the card is) and carries on with that
- * silent stream, over the current route from then on; the speaker being on (saved, or turned on
+ * silent stream until it has a picture here, then moves to the camera's own stream over the
+ * current route: the card may have been playing a smaller copy (`<name>_sub`), and the player
+ * keeps showing it until the full one has a frame. The speaker being on (saved, or turned on
  * here) moves it to the one with sound, which go2rtc serves from the same connection to Google.
+ * [warmStillUrl] is the card's last-seen still, for the moments before any frame.
+ *
+ * The picture is framed as the camera has been in Arrange mode: turned, and cropped.
  *
  * Turned on its side the video takes the whole window, with the way back and the speaker over it.
  *
@@ -100,6 +108,7 @@ fun NestCameraScreen(
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    warmStillUrl: String? = null,
 ) {
     val viewModel: NestCameraViewModel = metroViewModel()
     val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
@@ -108,17 +117,33 @@ fun NestCameraScreen(
     // it is, it stays: muting again is the player's job, not another reconnect.
     var wantedSound by rememberSaveable(streamName) { mutableStateOf(false) }
     val wantsSound = wantedSound || soundOn
-    val liveSource by remember(streamName, wantsSound) { viewModel.liveSource(streamName, withSound = wantsSound) }
+    val liveSource by remember(streamName, wantsSound, warmStillUrl) { viewModel.liveSource(streamName, withSound = wantsSound, stillUrl = warmStillUrl) }
         .collectAsStateWithLifecycle(null)
     var status by remember(streamName) { mutableStateOf(LiveStreamStatus.Connecting) }
-    // Only for the first frames, until the route's own source arrives: that is the same stream
-    // while the route hasn't moved, and follows it (LAN to Tailscale) when it does.
-    val warmSource = remember(warmStreamUrl, warmWebRtcSignalingUrl) {
-        warmStreamUrl?.let { VideoSource.Live(it, webRtc = warmWebRtcSignalingUrl?.let { url -> WebRtcEndpoint(url, audio = false) }) }
+    // Only for the first frames, until the card's stream is playing here: then the route's own
+    // source takes over, the camera's full stream, which follows the route (LAN to Tailscale).
+    val warmSource = remember(warmStreamUrl, warmWebRtcSignalingUrl, warmStillUrl) {
+        warmStreamUrl?.let {
+            VideoSource.Live(
+                url = it,
+                posterUrl = warmStillUrl,
+                webRtc = warmWebRtcSignalingUrl?.let { url -> WebRtcEndpoint(url, audio = false) },
+                lastSeenPoster = warmStillUrl != null,
+            )
+        }
     }
-    val source = liveSource ?: warmSource.takeIf { !wantsSound }
+    // Moving up before the card's stream has a picture here would leave nothing to show while the
+    // full one starts; once it has one, the player keeps it up through the change.
+    var warmPlayed by rememberSaveable(streamName) { mutableStateOf(false) }
+    LaunchedEffect(status) { if (status == LiveStreamStatus.Live) warmPlayed = true }
+    val source = when {
+        wantsSound -> liveSource
+        warmSource != null && !warmPlayed -> warmSource
+        else -> liveSource ?: warmSource
+    }
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
-    val turnDegrees by remember(streamName) { viewModel.turnDegrees(streamName) }.collectAsStateWithLifecycle(0f)
+    val framing by remember(streamName) { viewModel.framing(streamName) }.collectAsStateWithLifecycle(CameraFraming.UNTOUCHED)
+    val turnDegrees = framing.orientation.degrees
     // The picture's shape as it is shown: stood on its side by a quarter turn, its inverse.
     val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }?.let { if (isOnItsSide(turnDegrees)) 1f / it else it }
     val toggleSound = {
@@ -162,7 +187,7 @@ fun NestCameraScreen(
                 ShapedVideo(
                     streamUrl = request.source.url,
                     fit = fit,
-                    modifier = Modifier.fillMaxSize().pinchZoomContent(zoom),
+                    modifier = Modifier.fillMaxSize().pinchZoomContent(zoom).cropped(framing.crop),
                     turnDegrees = turnDegrees,
                 ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(

@@ -83,6 +83,7 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
@@ -268,7 +269,7 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
         !appOpen &&
             !drawerOpen &&
             !showsFullScreenVideo(tab) &&
-            !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
+            !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute || it is CameraFramingRoute })
 
     /**
      * A tap on [tab] in the bottom nav, which follows Material's bottom navigation behaviour on
@@ -798,18 +799,35 @@ private data class CameraDetailRoute(
 
 /**
  * A Nest camera's live-only page, for [streamName], its go2rtc stream. The warm URLs
- * are what its card was playing, as for [CameraDetailRoute].
+ * are what its card was playing, as for [CameraDetailRoute], and the still its card shows
+ * before the video has a frame (see `LastSeenStill`).
  */
 private data class NestCameraRoute(
     val streamName: String,
     val warmStreamUrl: String?,
     val warmWebRtcSignalingUrl: String?,
+    val warmStillUrl: String?,
 )
 
 /** Where a camera card (or its quick look) opens: a Frigate camera's own page, or a Nest camera's live view. */
 private fun cameraRoute(tile: CameraTile): Any = when (tile.camera.source) {
     CameraSource.Frigate -> CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl)
-    CameraSource.Nest -> NestCameraRoute(tile.camera.name, tile.streamUrl, tile.webRtcSignalingUrl)
+    CameraSource.Nest -> NestCameraRoute(tile.camera.name, tile.streamUrl, tile.webRtcSignalingUrl, tile.posterUrl)
+}
+
+/**
+ * The framing editor for [cameraName], from its card in Arrange mode. The rest is what the card
+ * was playing and how it fits its picture, so the editor carries on with the same video.
+ */
+private data class CameraFramingRoute(
+    val cameraName: String,
+    val streamUrl: String?,
+    val webRtcSignalingUrl: String?,
+    val posterUrl: String?,
+    val posterIsLastSeen: Boolean,
+    val videoFit: VideoFit?,
+) {
+    constructor(tile: CameraTile) : this(tile.camera.name, tile.streamUrl, tile.webRtcSignalingUrl, tile.posterUrl, tile.posterIsLastSeen, tile.videoFit)
 }
 
 private data class DetectionZonesRoute(val cameraName: String)
@@ -857,6 +875,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         sharedTransitionScope = this@SharedTransitionLayout,
                         zoomState = cardZoom,
                         onCameraClick = { tile -> backStack.add(cameraRoute(tile)) },
+                        onFrameCamera = { tile -> if (backStack.lastOrNull() !is CameraFramingRoute) backStack.add(CameraFramingRoute(tile)) },
                         onTagCars = { cameraName -> backStack.add(CarTaggingRoute(cameraName)) },
                         scrollToTopRequests = scrollToTop,
                     )
@@ -870,8 +889,25 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         streamName = route.streamName,
                         warmStreamUrl = route.warmStreamUrl,
                         warmWebRtcSignalingUrl = route.warmWebRtcSignalingUrl,
+                        warmStillUrl = route.warmStillUrl,
                         sharedTransitionScope = this@SharedTransitionLayout,
                         onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<CameraFramingRoute>(
+                    metadata = NavDisplay.transitionSpec { SharedElementPush } +
+                        NavDisplay.popTransitionSpec { SharedElementPop } +
+                        NavDisplay.predictivePopTransitionSpec { SharedElementPop },
+                ) { route ->
+                    CameraFramingScreen(
+                        cameraName = route.cameraName,
+                        streamUrl = route.streamUrl,
+                        webRtcSignalingUrl = route.webRtcSignalingUrl,
+                        posterUrl = route.posterUrl,
+                        posterIsLastSeen = route.posterIsLastSeen,
+                        videoFit = route.videoFit,
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        onDone = { backStack.removeLastOrNull() },
                     )
                 }
                 entry<CameraDetailRoute>(

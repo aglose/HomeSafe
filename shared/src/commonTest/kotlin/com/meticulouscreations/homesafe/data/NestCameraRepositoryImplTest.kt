@@ -30,6 +30,7 @@ class NestCameraRepositoryImplTest {
     private val nestStreams = """{
       "living_room":{"producers":[{"url":"nest:?client_id=id&client_secret=s&refresh_token=t&project_id=p&device_id=d1"}]},
       "outdoor_doorbell":{"producers":[{"url":"nest:?client_id=id&client_secret=s&refresh_token=t&project_id=p&device_id=d2"}]},
+      "living_room_sub":{"producers":[{"url":"ffmpeg:living_room#video=h264#width=640"}]},
       "front_door":{"producers":[{"url":"rtsp://cam/1"}]}
     }"""
 
@@ -76,6 +77,19 @@ class NestCameraRepositoryImplTest {
             cameras.map { it.name to it.placement },
         )
         assertEquals(setOf(CameraSource.Nest), cameras.map { it.source }.toSet())
+    }
+
+    @Test
+    fun aCameraWithASubStreamPlaysItOnItsCardAndKeepsItForNextTime() = runTest {
+        val dao = InMemoryCameraListDao()
+        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl), dao = dao).observeNestCameras().first { !it.isNullOrEmpty() }.orEmpty()
+        assertEquals(
+            listOf("living_room" to "living_room_sub", "outdoor_doorbell" to "outdoor_doorbell"),
+            cameras.map { it.name to it.gridStreamName },
+            "the page still plays the camera's own stream",
+        )
+        assertEquals(listOf("living_room", "living_room"), cameras.first().let { listOf(it.name, it.liveStreamName) })
+        assertEquals("living_room_sub", dao.observeNestCameras(onTheLan.serverUrl).first().single { it.name == "living_room" }.gridStreamName)
     }
 
     @Test

@@ -19,8 +19,20 @@ no detections: the Nest cameras are not Frigate cameras.
 - The stream name is the camera's name in the app, less any `outdoor_`: `living_room` shows as
   "Living Room", `outdoor_doorbell` as "Doorbell".
 - The cards and the live page play the stream with go2rtc's WebRTC, falling back to HLS, exactly
-  like Frigate's cards (`frigateLiveStreamUrl`, `frigateWebRtcSignalingUrl`). Nest cards have no
-  poster: Frigate has no snapshot of them, and a go2rtc still would dial Google just for a poster.
+  like Frigate's cards (`frigateLiveStreamUrl`, `frigateWebRtcSignalingUrl`).
+- **A smaller stream for the cards**, like the Frigate cameras' `_sub` streams: a go2rtc stream
+  named `<camera>_sub` beside a Nest camera's is what its card (and the launch prefetch) plays;
+  its page starts on that and moves up to the camera's own stream once it has a picture, the
+  player keeping the smaller one up until the full one has a frame. Without one the card plays the
+  camera's own stream, as before. See "Grid streams" under the box setup for why they are worth
+  adding.
+- **Posters are last-seen stills** (`LastSeenStill`). Frigate has no snapshot of a Nest camera,
+  and go2rtc's `frame.jpeg` waits for the stream's next keyframe (7–10 s on the living room's
+  running stream, measured 2026-10-17), so asking for one as the card appears would be no quicker
+  than the video. Instead the card takes one from go2rtc a couple of seconds after its video is
+  playing (at most every 10 minutes per stream), keeps it in Coil's disk cache, and shows it from
+  there next time, on the first frame, even on a cold start. A camera never watched on this device
+  shows nothing until its video comes, as before.
 
 - **Pictures come in several shapes**: on the box, the living room and kids' room cameras send
   1920x1080 (16:9), the kitchen Hub Max 1152x864 (4:3) and the doorbell 960x1280 (portrait).
@@ -39,27 +51,44 @@ no detections: the Nest cameras are not Frigate cameras.
   to Indoor within about a minute of opening the app finds video already flowing. This wakes
   each camera through Google on every launch, and most Nest cameras show their light while watched.
 
-## Arranging the cameras
+## Arranging and framing the cameras
 
 **Arrange** above the camera list (beside the Outdoor | Indoor switch) puts Home into Arrange mode:
 
 - **Order**: hold a card and drag it (the `sh.calvin.reorderable` library on the lazy grid). Each
   list has its own order. A screen reader gets "Move earlier" and "Move later" actions on each
   card instead. Saved on every drop, by camera name, per server (`CameraLayoutEntity.position`).
-- **Orientation**: each card shows a quarter turn either way and a fine tilt slider (±45°) along
-  its bottom, and the live picture turns as they move. Turns save at once; the tilt saves when the
-  slider is let go (`CameraLayoutEntity.quarterTurns` / `tiltDegrees`). A tilted picture is drawn
-  just large enough to cover its box (`turnedPictureSize`), so no corner shows. On its side, a
-  picture shows at the inverse shape, with bars. The turn applies wherever the camera's video
-  plays: cards, quick look, the Nest page, and a Frigate camera's page (live, recordings and the
-  scrub preview). Moments thumbnails and clips are not turned.
-- On Android the players' TextureViews turn with Compose (`Modifier.turned`). On iOS the player
-  turns its AVPlayer and WebRTC layers natively in `layoutSubviews`, from the same size, because
-  Compose can't transform a UIKit view.
+- **Quick turns**: each card has a quarter turn either way along its bottom, saved at once.
+- **Framing**: tapping a card (or its **Frame** button) opens the framing editor
+  (`CameraFramingScreen`) for any camera, Frigate's or Nest's. The card's video travels into a
+  frame of the card's shape, playing on the same pooled player. In it:
+  - one finger drags the picture, two pinch it (1x to 5x) and twist it straight; a twist counts
+    only past 4°, so a pinch doesn't knock the picture crooked;
+  - zoomed in, what the frame cuts off still shows around it, dimmed, so the crop is chosen
+    against the whole view; a grid of thirds sits over the frame, filling in to sixths while
+    straightening;
+  - the **Straighten** ruler slides under a fixed pointer, a tenth of a degree at a time (16dp of
+    finger per degree), with a haptic tick each degree and a firmer one at level, settling on level
+    when let go within 0.3°; the arrows either side nudge a tenth of a degree, and a tap on the
+    angle levels it. ±44° within each quarter turn;
+  - a zoom slider and buttons, the quarter turns, and **Reset** (whole and upright).
+  Every change is saved as it is let go (`CameraLayoutEntity.quarterTurns` / `tiltDegrees`, and
+  `cropZoom` / `cropCenterX` / `cropCenterY` since schema 27), so Done and Back keep it; Cancel
+  puts back the framing the editor opened on.
+- **Where it applies**: the turn and the crop apply wherever the camera's video plays: cards,
+  quick look, the Nest page, and a Frigate camera's page (live, recordings and the scrub preview).
+  Pinch zoom on those pages works on top of the crop. Moments thumbnails and clips are not framed.
+- The crop is kept as a zoom and the point of the picture in the middle of the frame, as
+  fractions (`CameraCrop`), so it frames any box alike. It is drawn with Compose's layer transform
+  outside the turn (`Modifier.cropped`), on both platforms. The turn is drawn as before: on
+  Android the players' TextureViews turn with Compose (`Modifier.turned`); on iOS the player turns
+  its AVPlayer and WebRTC layers natively in `layoutSubviews`, because Compose can't rotate a
+  UIKit view. A tilted picture is drawn just large enough to cover its box (`turnedPictureSize`),
+  so no corner shows; on its side, a picture shows at the inverse shape, with bars.
 
-Code: `NestCameraRepositoryImpl` and `CameraLayoutRepositoryImpl` (data), `nestStreamNames` in `network/Go2rtcStreams.kt`,
-`OUTDOOR_STREAM_PREFIX`, `HomeViewModel.cameras` / `indoorCameras` / `placement`,
-`CameraPlacementSwitch`, `NestCameraScreen`.
+Code: `NestCameraRepositoryImpl` and `CameraLayoutRepositoryImpl` (data), `nestStreams` in
+`network/Go2rtcStreams.kt`, `OUTDOOR_STREAM_PREFIX`, `HomeViewModel.cameras` / `indoorCameras` /
+`placement`, `CameraPlacementSwitch`, `NestCameraScreen`, `LastSeenStill`, `CameraFramingScreen`.
 
 ## One-time setup
 
@@ -126,7 +155,25 @@ All in Frigate's directory on the box (`~/surveillance/frigate`):
 4. Recreate the container so it picks up the env file, the config and the mount:
    `docker compose up -d frigate`.
 
-### 5. Check
+### 5. Grid streams (recommended)
+
+Each Nest camera gets a smaller stream for the cards, as the Frigate cameras have their `_sub`
+streams. Under `go2rtc:` → `streams:` in Frigate's `config/config.yml`, beside each Nest stream:
+
+```yaml
+    living_room_sub: "ffmpeg:living_room#video=h264#width=640#hardware=cuda"
+```
+
+go2rtc re-encodes the camera on the GPU at 640 wide (the height follows the picture's shape), and
+the box's `go2rtc.ffmpeg.h264/cuda` template already gives it a keyframe every 25 frames. That is
+the point: Google sends a Nest camera's keyframes seconds apart (7–10 s measured), and a viewer
+joining a running stream sees nothing until the next one, while a viewer joining `_sub` waits about
+a second. The cards also decode a quarter of the pixels and use far less data over Tailscale. The
+first viewer of a stream nobody is watching still waits for Google to start the camera.
+`curl :1984/api/streams` lists it with an `ffmpeg:` source, so the app never takes it for a camera
+of its own. Pull to refresh on Home and the cards move to it.
+
+### 6. Check
 
 ```bash
 curl -s http://127.0.0.1:1984/api/streams | python3 -c 'import json,sys; print([k for k,v in json.load(sys.stdin).items() if any((p.get("url") or "").startswith("nest:") for p in v.get("producers") or [])])'
@@ -138,7 +185,8 @@ browser. In the app, pull to refresh on Home: the switch appears above the camer
 ## Notes
 
 - **First picture takes a few seconds**: go2rtc has to ask Google for a stream and Google has to
-  wake the camera. Later viewers join the running stream.
+  wake the camera. Later viewers join the running stream, at its next keyframe (see "Grid
+  streams"). The card shows its last-seen still meanwhile.
 - **Security**: go2rtc's API on port 1984 has no login and answers anyone on the tailnet, and its
   stream list shows each source with the variables filled in, so the Nest refresh token is
   readable there. The camera RTSP passwords already are, the same way. Revoke the app's access

@@ -83,9 +83,11 @@ private fun Modifier.pictureBox(aspect: Float?, fit: VideoFit?, onItsSide: Boole
  * process. Snapshot state, so everything showing a stream reshapes as soon as any of them learns it.
  *
  * Kept by the stream itself: its go2rtc address and name, the live URL up to its first `&`
- * (`http://<host>:1984/api/stream.m3u8?src=<name>`), so asking for sound doesn't change it. A
- * camera of the same name on another server is another stream, and a different shape; moving
- * between the LAN and Tailscale measures again once.
+ * (`http://<host>:1984/api/stream.m3u8?src=<name>`), so asking for sound doesn't change it, and
+ * without a `_sub` at the end: a Nest camera's smaller stream for the cards is the same picture
+ * scaled down (see `nestStreams`), so the camera's page knows the shape before its own stream
+ * has a frame. A camera of the same name on another server is another stream, and a different
+ * shape; moving between the LAN and Tailscale measures again once.
  */
 object MeasuredVideoShapes {
     private val aspects = mutableStateMapOf<String, Float>()
@@ -97,5 +99,5 @@ object MeasuredVideoShapes {
         aspects[key(streamUrl)] = width.toFloat() / height
     }
 
-    private fun key(streamUrl: String) = streamUrl.substringBefore('&')
+    private fun key(streamUrl: String) = streamUrl.substringBefore('&').removeSuffix("_sub")
 }

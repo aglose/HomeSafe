@@ -21,6 +21,12 @@ interface MediaUrlRepository {
     fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String): String
 
     /**
+     * A still of one of a camera's live streams as it is right now: worth asking only of a
+     * stream already playing, since it waits for the stream (see `LastSeenStill`).
+     */
+    fun liveStillUrl(serverUrl: String, streamName: String): String
+
+    /**
      * The camera's most recent frame, optionally scaled server-side to [height]. A non-null
      * [cacheBuster] is appended so the image is fetched afresh rather than served from a cache.
      */

@@ -293,7 +293,12 @@ actual fun CameraStreamPlayer(
         val posterUrl = source.posterUrl
         if (posterVisible && posterUrl != null) {
             Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
-                VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize().turned(turnDegrees))
+                VideoPosterLayer(
+                    posterUrl = posterUrl,
+                    refresh = source is VideoSource.Live,
+                    modifier = Modifier.fillMaxSize().turned(turnDegrees),
+                    lastSeen = (source as? VideoSource.Live)?.lastSeenPoster == true,
+                )
             }
         }
     }

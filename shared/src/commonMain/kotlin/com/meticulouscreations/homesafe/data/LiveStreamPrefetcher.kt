@@ -100,10 +100,11 @@ class LiveStreamPrefetcher(
             .filter { it.enabled }
             .take(MAX_PREFETCHED)
             .map { camera -> live(camera.name, camera.gridStreamName) }
-        // A Nest camera's card plays its stream under the stream's own name (see NestCameraRepositoryImpl).
+        // A Nest camera's card plays its grid stream, or the camera's own when the server has
+        // none, under the camera's name (see NestCameraRepositoryImpl).
         val nest = cameraListDao.observeNestCameras(expected.serverUrl).first()
             .take(MAX_NEST_PREFETCHED)
-            .map { camera -> live(camera.name, camera.name) }
+            .map { camera -> live(camera.name, camera.gridStreamName ?: camera.name) }
         val streams = frigate + nest
         if (streams.isEmpty()) return false
         LiveStartupMilestones.mark("live.prefetch")

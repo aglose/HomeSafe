@@ -119,21 +119,26 @@ class LiveStreamPrefetcherTest {
     fun startsTheNestCamerasKeptFromLastTimeAfterFrigatesAndAsksForTheListAgain() = runTest {
         val h = Harness(this)
         h.cache(serverUrl, camera("driveway"))
-        h.cameraListDao.insertNestCameras(listOf("living_room", "outdoor_doorbell").map { NestCameraEntity(serverUrl, it) })
+        h.cameraListDao.insertNestCameras(
+            listOf(NestCameraEntity(serverUrl, "living_room", gridStreamName = "living_room_sub"), NestCameraEntity(serverUrl, "outdoor_doorbell")),
+        )
         val expected = ActiveConnection(serverUrl, localUrl, ConnectionRoute.LOCAL_NETWORK)
 
         h.connection.expectedConnection.value = expected
         settle()
 
-        // A Nest card plays its own stream under the stream's name, silent, as HomeViewModel.tile builds it.
-        fun nestCard(name: String) = LivePrefetch(
+        // A Nest card plays its grid stream (or its own) under the camera's name, silent, as HomeViewModel.tile builds it.
+        fun nestCard(name: String, stream: String = name) = LivePrefetch(
             playerKey = name,
             source = VideoSource.Live(
-                url = mediaUrls.liveStreamUrl(localUrl, name),
-                webRtc = WebRtcEndpoint(mediaUrls.liveWebRtcSignalingUrl(localUrl, name), audio = false),
+                url = mediaUrls.liveStreamUrl(localUrl, stream),
+                webRtc = WebRtcEndpoint(mediaUrls.liveWebRtcSignalingUrl(localUrl, stream), audio = false),
             ),
         )
-        assertEquals(listOf(listOf(gridCard(localUrl, "driveway"), nestCard("living_room"), nestCard("outdoor_doorbell"))), h.players.prefetched)
+        assertEquals(
+            listOf(listOf(gridCard(localUrl, "driveway"), nestCard("living_room", "living_room_sub"), nestCard("outdoor_doorbell"))),
+            h.players.prefetched,
+        )
         assertEquals(listOf(expected), h.nestCameras.askedFor, "so a Nest camera added since last time is there too")
     }
 

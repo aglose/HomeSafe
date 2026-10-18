@@ -1,9 +1,11 @@
 package com.meticulouscreations.homesafe.ui.components
 
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -59,3 +61,24 @@ fun Modifier.turned(degrees: Float): Modifier =
             layout(boxWidth, boxHeight) { placeable.place((boxWidth - placeable.width) / 2, (boxHeight - placeable.height) / 2) }
         }.graphicsLayer { rotationZ = degrees }
     }
+
+/**
+ * Draws this content cropped to [crop]: magnified about the crop's middle, and moved so that
+ * point sits in the middle of the box. Whoever holds it clips what spills over. Nothing changes
+ * for the whole picture.
+ *
+ * Outside the turn ([turned], or the iOS player's own): the crop is of the picture as it is shown,
+ * the right way up. Compose's transform on both platforms, as for the camera pages' pinch zoom,
+ * which moves and scales the iOS player's UIKit view with it; only a rotation can't reach that.
+ */
+fun Modifier.cropped(crop: CameraCrop): Modifier = if (crop.isWhole) this else graphicsLayer { crop(crop) }
+
+/** [cropped] for a crop that changes every frame (a finger moving it): read while drawing, so only the drawing follows it. */
+fun Modifier.cropped(crop: () -> CameraCrop): Modifier = graphicsLayer { crop(crop()) }
+
+private fun GraphicsLayerScope.crop(crop: CameraCrop) {
+    scaleX = crop.zoom
+    scaleY = crop.zoom
+    translationX = (0.5f - crop.centerX) * crop.zoom * size.width
+    translationY = (0.5f - crop.centerY) * crop.zoom * size.height
+}

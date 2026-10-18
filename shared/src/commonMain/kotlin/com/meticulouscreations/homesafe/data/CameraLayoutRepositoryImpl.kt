@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.repository.CameraLayoutRepository
@@ -47,7 +48,13 @@ class CameraLayoutRepositoryImpl(
                     flowOf(emptyMap())
                 } else {
                     dao.observeLayouts(identity).map { rows ->
-                        rows.associate { it.name to CameraLayout(it.position, CameraOrientation(it.quarterTurns, it.tiltDegrees)) }
+                        rows.associate { row ->
+                            row.name to CameraLayout(
+                                position = row.position,
+                                orientation = CameraOrientation(row.quarterTurns, row.tiltDegrees),
+                                crop = CameraCrop(row.cropZoom, row.cropCenterX, row.cropCenterY),
+                            )
+                        }
                     }
                 }
             }
@@ -62,11 +69,24 @@ class CameraLayoutRepositoryImpl(
         )
     }
 
-    override suspend fun setOrientation(cameraName: String, orientation: CameraOrientation) = writing.withLock {
+    override suspend fun setOrientation(cameraName: String, orientation: CameraOrientation) = update(cameraName) { row ->
+        row.copy(quarterTurns = orientation.quarterTurns, tiltDegrees = orientation.tiltDegrees)
+    }
+
+    override suspend fun setFraming(cameraName: String, orientation: CameraOrientation, crop: CameraCrop) = update(cameraName) { row ->
+        row.copy(
+            quarterTurns = orientation.quarterTurns,
+            tiltDegrees = orientation.tiltDegrees,
+            cropZoom = crop.zoom,
+            cropCenterX = crop.centerX,
+            cropCenterY = crop.centerY,
+        )
+    }
+
+    /** [cameraName]'s row, or a new one, changed by [change]: everything else in it is kept as it was. */
+    private suspend fun update(cameraName: String, change: (CameraLayoutEntity) -> CameraLayoutEntity) = writing.withLock {
         val identity = connectionRepository.activeConnection.value?.serverUrl ?: return@withLock
         val current = dao.observeLayouts(identity).first().firstOrNull { it.name == cameraName }
-        val row = (current ?: CameraLayoutEntity(serverUrl = identity, name = cameraName))
-            .copy(quarterTurns = orientation.quarterTurns, tiltDegrees = orientation.tiltDegrees)
-        dao.upsertLayouts(listOf(row))
+        dao.upsertLayouts(listOf(change(current ?: CameraLayoutEntity(serverUrl = identity, name = cameraName))))
     }
 }

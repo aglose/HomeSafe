@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
+import com.meticulouscreations.homesafe.domain.model.CameraFraming
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
@@ -184,3 +186,35 @@ private val previewInView = listOf(
         sinceIsKnown = true,
     ),
 ).map { subject -> InViewItem(subject = subject, presentation = subject.present(PREVIEW_TODAY, TimeZone.UTC), thumbnailUrl = null) }
+
+/**
+ * The framing editor, on a camera straightened a little and zoomed in, the straightening grid
+ * up. No stream, so the frame shows its placeholder; the controls are what this is for.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Preview(name = "Camera framing editor", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun CameraFramingEditorPreview() {
+    val framing = CameraFraming(CameraOrientation(tiltDegrees = -2.4f), CameraCrop(zoom = 1.8f, centerX = 0.4f, centerY = 0.55f))
+    FrigateTheme {
+        SharedTransitionPreview {
+            CameraFramingEditor(
+                cameraName = "living_room",
+                streamUrl = null,
+                webRtcSignalingUrl = null,
+                posterUrl = null,
+                posterIsLastSeen = false,
+                videoFit = null,
+                framing = framing,
+                latestFraming = { framing },
+                sharedTransitionScope = this,
+                onChange = {},
+                onSave = {},
+                onSet = {},
+                onCancel = {},
+                onDone = {},
+                straighteningAtFirst = true,
+            )
+        }
+    }
+}

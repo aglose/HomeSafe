@@ -17,14 +17,33 @@
     <!-- Arrange mode: the cameras dragged into order and turned the right way up. -->
     <string name="home_arrange">Arrange</string>
     <string name="home_arrange_done">Done</string>
-    <string name="home_arrange_hint">Hold a camera to drag it. Turn or tilt its picture with the controls along its bottom.</string>
+    <string name="home_arrange_hint">Hold a camera to drag it. Tap it to straighten, zoom or crop its picture.</string>
     <string name="camera_move_earlier">Move earlier</string>
     <string name="camera_move_later">Move later</string>
     <string name="camera_turn_left">Turn left</string>
     <string name="camera_turn_right">Turn right</string>
-    <string name="camera_tilt">Tilt</string>
-    <!-- The tilt in whole degrees, signed: "-12°", "0°", "7°". -->
-    <string name="camera_tilt_value">%1$d°</string>
+    <!-- On a camera card in Arrange mode: opens the framing editor. Short: it sits between the two turn buttons. -->
+    <string name="camera_frame_button">Frame</string>
+    <!-- Accessibility label for tapping a camera card in Arrange mode, which opens the framing editor. -->
+    <string name="camera_frame_click_label">Frame the picture</string>
+    <!-- The framing editor: a camera's picture straightened, zoomed and cropped. %1$s is the camera's name, e.g. "Frame Living Room". -->
+    <string name="camera_frame_title">Frame %1$s</string>
+    <string name="camera_frame_done">Done</string>
+    <string name="camera_frame_hint">Drag to move the picture, pinch to zoom, twist to straighten. Only what's inside the frame shows.</string>
+    <!-- The fine rotation of the picture, as in a photo editor. -->
+    <string name="camera_frame_straighten">Straighten</string>
+    <!-- The straightening angle; %1$s is the signed number with one decimal place, e.g. "+2.4" or "-0.5". -->
+    <string name="camera_frame_straighten_value">%1$s°</string>
+    <!-- Accessibility label for tapping the angle, which sets it back to level. -->
+    <string name="camera_frame_level">Level</string>
+    <!-- The arrows either side of the straighten ruler: a tenth of a degree each tap. -->
+    <string name="camera_frame_nudge_left">Straighten a tenth of a degree left</string>
+    <string name="camera_frame_nudge_right">Straighten a tenth of a degree right</string>
+    <string name="camera_frame_zoom">Zoom</string>
+    <!-- The magnification; %1$s is the number with one decimal place, e.g. "1.8". -->
+    <string name="camera_frame_zoom_value">%1$s×</string>
+    <!-- Back to the whole picture, upright. -->
+    <string name="camera_frame_reset">Reset</string>
     <string name="home_away_banner">Away mode · nobody home · alerts escalated</string>
     <string name="home_away_back">I'm back</string>
     <!-- The notice at the top of Home while the app is signed in but can't reach the server. -->

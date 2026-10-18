@@ -75,7 +75,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         AtlasYearEntity::class,
         AtlasStateEntity::class,
     ],
-    version = 26,
+    version = 27,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -139,6 +139,10 @@ class PropertyPlanDropped : AutoMigrationSpec
         // ([NestCameraEntity]) and each camera's place and orientation ([CameraLayoutEntity]),
         // both new tables. Nothing already there is touched.
         AutoMigration(from = 25, to = 26),
+        // 26 -> 27: each camera's crop (CameraLayoutEntity.cropZoom / cropCenterX / cropCenterY,
+        // default the whole picture) and a Nest camera's smaller stream for the cards
+        // (NestCameraEntity.gridStreamName, default none).
+        AutoMigration(from = 26, to = 27),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
