@@ -25,7 +25,7 @@ set -euo pipefail
 
 BOX=${HOMESAFE_BOX:-andrew@100.99.163.71}
 DIR=surveillance/relay
-FILES=(relay.py requirements.txt Dockerfile docker-compose.yml)
+FILES=(relay.py floorplan_editor.html requirements.txt Dockerfile docker-compose.yml)
 CHECK=0
 for arg in "$@"; do
   case $arg in

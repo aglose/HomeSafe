@@ -129,8 +129,21 @@ on the plan yet is picked for the next tap. The spot is kept with the door in `r
 (`PUT /doors/{id}/spot`, `DELETE` to take it off), so every phone sees it and a sensor renamed
 on the pairing page keeps its spot.
 
-**Changing the plan:** edit the file on the box and pull to refresh on the Doors page; the app
-reads the plan once per server and again on a refresh. No restart needed.
+**Changing the plan:** open the editor the relay serves, `http://192.168.68.65:8787/floorplan/edit`
+at home or `http://100.99.163.71:8787/floorplan/edit` over Tailscale, signed in to Frigate (port
+8971) in the same browser, like `/status`.
+
+- **Move** drags walls, corners, room names and stairs. A wall's end snaps to any corner or wall
+  end it's dropped near, else to the half-foot grid; dragging a joint moves every wall that meets
+  there, and dragging a whole wall stretches the walls attached to it (never the outside ones).
+- **Add wall** draws by dragging; **Add room name** and **Add stairs** place with a click.
+- Double-click an outside wall to add a corner there, a corner to remove it, a room name to
+  rename it. Arrow keys nudge the selection (Shift for a tenth of a foot); Delete deletes it;
+  Ctrl/Cmd+Z undoes. The side panel takes exact numbers.
+- The doors placed in the app show as dots for reference.
+- **Save** writes the plan (`PUT /floorplan`, checked and rounded) and keeps the one it replaced
+  in `relay/data/floorplan-history/` (the newest 30). Pull to refresh on the Doors page to see it:
+  the app reads the plan once per server and again on a refresh. No restart needed.
 
 ## Range
 

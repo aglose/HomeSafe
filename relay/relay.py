@@ -5413,6 +5413,110 @@ def get_floorplan(request: Request, device: str | None = None) -> dict[str, Any]
     return plan
 
 
+# Each plan the editor replaces is kept here, newest FLOORPLAN_HISTORY of them, so a bad edit can
+# be put back by copying one over floorplan.json.
+FLOORPLAN_HISTORY = 30
+
+
+def clean_floorplan(plan: Any) -> dict[str, Any]:
+    """
+    [plan] as the editor sent it, checked and tidied into the file's shape (numbers rounded to a
+    hundredth of a foot); raises ValueError saying what's wrong with it.
+    """
+    def number(value: Any) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError("Every position must be a number of feet")
+        return round(float(value), 2)
+
+    def point(value: Any) -> list[float]:
+        if not isinstance(value, list) or len(value) != 2:
+            raise ValueError("A point must be [x, y]")
+        return [number(value[0]), number(value[1])]
+
+    floors = plan.get("floors") if isinstance(plan, dict) else None
+    if not isinstance(floors, list) or not floors:
+        raise ValueError("The plan needs at least one floor")
+    seen: set[str] = set()
+    cleaned = []
+    for floor in floors:
+        if not isinstance(floor, dict):
+            raise ValueError("A floor must be an object")
+        floor_id = floor.get("id")
+        if not isinstance(floor_id, str) or not floor_id.strip() or floor_id in seen:
+            raise ValueError("Every floor needs its own id")
+        seen.add(floor_id)
+        outline = [point(p) for p in floor.get("outline") or []]
+        if len(outline) < 3:
+            raise ValueError(f"{floor_id}: the outline needs at least three corners")
+        rooms = []
+        for room in floor.get("rooms") or []:
+            if not isinstance(room, dict) or not isinstance(room.get("name"), str) or not room["name"].strip():
+                raise ValueError(f"{floor_id}: every room needs a name")
+            rooms.append({"name": room["name"].strip()[:60], "x": number(room.get("x")), "y": number(room.get("y"))})
+        walls = []
+        for wall in floor.get("walls") or []:
+            if not isinstance(wall, list) or len(wall) != 4:
+                raise ValueError(f"{floor_id}: a wall must be [x1, y1, x2, y2]")
+            walls.append([number(v) for v in wall])
+        name = floor.get("name")
+        cleaned.append({
+            "id": floor_id,
+            "name": name.strip()[:60] if isinstance(name, str) and name.strip() else floor_id,
+            "outline": outline,
+            "rooms": rooms,
+            "stairs": [point(p) for p in floor.get("stairs") or []],
+            "walls": walls,
+        })
+    return {"floors": cleaned}
+
+
+def save_floorplan(plan: dict[str, Any], now: float) -> None:
+    """Writes [plan] as the floor plan, keeping the one it replaces in floorplan-history/."""
+    folder = os.path.dirname(FLOORPLAN_FILE) or "."
+    if os.path.exists(FLOORPLAN_FILE):
+        history = os.path.join(folder, "floorplan-history")
+        os.makedirs(history, exist_ok=True)
+        stamp = datetime.fromtimestamp(now, timezone.utc).strftime("%Y%m%d-%H%M%S")
+        with open(FLOORPLAN_FILE, "rb") as old, open(os.path.join(history, f"floorplan-{stamp}.json"), "wb") as kept:
+            kept.write(old.read())
+        for stale in sorted(os.listdir(history))[:-FLOORPLAN_HISTORY]:
+            os.remove(os.path.join(history, stale))
+    temporary = FLOORPLAN_FILE + ".tmp"
+    with open(temporary, "w") as f:
+        json.dump(plan, f, indent=1)
+    os.replace(temporary, FLOORPLAN_FILE)
+
+
+@app.put("/floorplan")
+def put_floorplan(plan: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Replaces the floor plan with the editor's (see "floor plan editor"). A signed-in user."""
+    user = require_frigate_session(request)
+    try:
+        cleaned = clean_floorplan(plan)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    save_floorplan(cleaned, time.time())
+    log.info("floor plan: %s saved %s", user, ", ".join(f"{f['id']} ({len(f['walls'])} walls, {len(f['rooms'])} rooms)" for f in cleaned["floors"]))
+    return cleaned
+
+
+# The floor plan editor: a page served from the box, at http://<box>:8787/floorplan/edit on the home
+# network or the tailnet, to draw the plan's inside walls and room names over the outline and Save
+# it straight into FLOORPLAN_FILE. Like /status, the page holds nothing: the plan rides on the
+# Frigate session cookie. Kept as its own file beside this one (floorplan_editor.html).
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "floorplan_editor.html")) as _editor:
+        FLOORPLAN_EDITOR_PAGE = _editor.read()
+except OSError:
+    FLOORPLAN_EDITOR_PAGE = "<!doctype html><p>The floor plan editor isn't installed with this relay.</p>"
+
+
+@app.get("/floorplan/edit")
+def floorplan_editor() -> Response:
+    """The floor plan editor (see "floor plan editor"). The page holds nothing: its plan rides on the Frigate session cookie."""
+    return Response(content=FLOORPLAN_EDITOR_PAGE, media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
 @app.put("/doors/{door_id}/spot")
 def set_door_spot(door_id: str, spot: DoorSpot, request: Request) -> dict[str, Any]:
     """Places one door on the floor plan. A signed-in user."""

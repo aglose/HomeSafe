@@ -6398,6 +6398,49 @@ class DoorsTest(_ScratchDb):
         self.write_plan(self.PLAN)
         self.assertEqual(self.PLAN, relay.get_floorplan(request))
 
+    def test_the_editor_saves_a_tidied_plan_and_keeps_the_one_it_replaced(self):
+        self.write_plan(self.PLAN)
+        edited = {"floors": [{"id": "ground", "name": "  Ground floor ", "outline": [[0, 0], [30.004, 0], [30, 40], [0, 40]],
+                              "rooms": [{"name": "Kitchen", "x": 8, "y": 10}], "walls": [[0, 13, 14, 13]], "extra": "dropped"}]}
+        saved = relay.put_floorplan(edited, types.SimpleNamespace(headers={}))
+        self.assertEqual({"id": "ground", "name": "Ground floor", "outline": [[0.0, 0.0], [30.0, 0.0], [30.0, 40.0], [0.0, 40.0]],
+                          "rooms": [{"name": "Kitchen", "x": 8.0, "y": 10.0}], "stairs": [], "walls": [[0.0, 13.0, 14.0, 13.0]]}, saved["floors"][0])
+        self.assertEqual(saved, relay.floorplan())
+        history = os.path.join(self._dir.name, "floorplan-history")
+        kept = os.listdir(history)
+        self.assertEqual(1, len(kept))
+        with open(os.path.join(history, kept[0])) as f:
+            self.assertEqual(self.PLAN, json.load(f))
+
+    def test_a_plan_the_editor_got_wrong_is_refused(self):
+        request = types.SimpleNamespace(headers={})
+        bad = [
+            {},
+            {"floors": []},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, 1]]}, {"id": "a", "outline": [[0, 0], [1, 0], [1, 1]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, "x"]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, 1]], "walls": [[0, 0, 1]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, 1]], "rooms": [{"name": " ", "x": 0, "y": 0}]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, float("inf")]]}]},
+        ]
+        for plan in bad:
+            with self.assertRaises(relay.HTTPException, msg=str(plan)) as refused:
+                relay.put_floorplan(plan, request)
+            self.assertEqual(400, refused.exception.status_code)
+        self.assertFalse(os.path.exists(relay.FLOORPLAN_FILE), "nothing written")
+
+    def test_only_the_newest_replaced_plans_are_kept(self):
+        self.write_plan(self.PLAN)
+        for n in range(relay.FLOORPLAN_HISTORY + 5):
+            relay.save_floorplan(self.PLAN, 1_800_000_000 + n)
+        self.assertEqual(relay.FLOORPLAN_HISTORY, len(os.listdir(os.path.join(self._dir.name, "floorplan-history"))))
+
+    def test_the_editor_page_is_served(self):
+        page = relay.floorplan_editor()
+        self.assertIn("Floor plan editor", page.body)
+        self.assertEqual("text/html", page.media_type)
+
     def test_a_door_is_placed_on_a_floor_and_taken_off_again(self):
         self.paired()
         self.write_plan(self.PLAN)
