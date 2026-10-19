@@ -1,6 +1,5 @@
 package com.meticulouscreations.homesafe.finance.ui.components
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -8,7 +7,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -55,8 +53,8 @@ fun GroupedBarChart(
     onSelect: (Int?) -> Unit = {},
 ) {
     val groups = labels.size
-    val grow = remember { Animatable(0f) }
-    LaunchedEffect(groups, series.size) {
+    val grow = rememberEntrance(1f)
+    EntranceEffect(groups to series.size) {
         grow.snapTo(0f)
         grow.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }

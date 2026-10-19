@@ -331,7 +331,43 @@ internal val previewPadding = PaddingValues(top = 24.dp, bottom = 24.dp)
 @Preview(widthDp = 412, heightDp = 1800)
 @Composable
 private fun FinanceWalletPreview() {
-    FinanceStage { WalletScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, {}, {}) }
+    FinanceStage { WalletScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, onRetrySheet = {}, budget = BudgetFixtures.month()) }
+}
+
+@Preview(widthDp = 412, heightDp = 1900)
+@Composable
+private fun FinanceWalletAccountsPagePreview() {
+    FinanceStage { WalletTopicScreen(WalletTopic.ACCOUNTS, focus = null, FinanceFixtures.state, previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 1000)
+@Composable
+private fun FinanceWalletCashFlowPagePreview() {
+    FinanceStage { WalletTopicScreen(WalletTopic.CASH_FLOW, focus = null, FinanceFixtures.state, previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 900)
+@Composable
+private fun FinanceWalletDebtPagePreview() {
+    FinanceStage { WalletTopicScreen(WalletTopic.DEBT, focus = null, FinanceFixtures.state, previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun FinanceWalletHomePagePreview() {
+    FinanceStage { WalletTopicScreen(WalletTopic.HOME, focus = null, FinanceFixtures.state, previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 1300)
+@Composable
+private fun FinanceWalletVestingTaxesPagePreview() {
+    FinanceStage { WalletTopicScreen(WalletTopic.VESTING_TAXES, focus = null, FinanceFixtures.state, previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 2700)
+@Composable
+private fun FinanceWalletSheetChartsPagePreview() {
+    FinanceStage { WalletTopicScreen(WalletTopic.SHEET_CHARTS, focus = null, FinanceFixtures.state, previewPadding) }
 }
 
 @Preview(widthDp = 412, heightDp = 3100)
@@ -446,8 +482,7 @@ private fun FinanceSheetSetupPreview() {
             FinanceFixtures.state.copy(finance = null, sheetIssue = SheetIssue(SheetProblem.NOT_SHARED, UiText.Empty, "relay@example.iam.gserviceaccount.com", null)),
             rememberLazyListState(),
             previewPadding,
-            {},
-            {},
+            onRetrySheet = {},
         )
     }
 }
@@ -500,12 +535,14 @@ internal val strugglingFinance: PersonalFinance = FinanceFixtures.finance.let { 
     )
 }
 
-@Preview(widthDp = 412, heightDp = 1100)
+@Preview(widthDp = 412, heightDp = 1500)
 @Composable
 private fun FinanceCheckupPreview() {
     FinanceStage {
         Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             MoneyCheckup(moneyCheckup(strugglingFinance, 4.33), {})
+            MoneyCheckup(moneyCheckup(strugglingFinance, 4.33), {}, compact = true)
+            MoneyCheckup(moneyCheckup(FinanceFixtures.finance, 4.33), {}, compact = true)
         }
     }
 }

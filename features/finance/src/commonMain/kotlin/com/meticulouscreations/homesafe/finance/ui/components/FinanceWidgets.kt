@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.finance.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -30,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -64,6 +67,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
+import kotlinx.coroutines.CoroutineScope
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -150,8 +154,8 @@ private fun DigitWheel(digit: Int, rising: Boolean, style: TextStyle, color: Col
 /** A small up/down line for a list row: today's path against its baseline, drawn on once. */
 @Composable
 fun Sparkline(series: Series, color: Color, modifier: Modifier = Modifier, baseline: Double? = null) {
-    val reveal = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { reveal.animateTo(1f, tween(650, easing = FastOutSlowInEasing)) }
+    val reveal = rememberEntrance(1f)
+    EntranceEffect(Unit) { reveal.animateTo(1f, tween(650, easing = FastOutSlowInEasing)) }
     val dotColor = FinanceTheme.colors.textTertiary
     Canvas(modifier) {
         if (series.size < 2) return@Canvas
@@ -261,8 +265,8 @@ data class DonutSlice(val label: String, val value: Double, val color: Color)
  */
 @Composable
 fun DonutChart(slices: List<DonutSlice>, modifier: Modifier = Modifier, highlighted: Int? = null, thickness: Dp = 22.dp) {
-    val sweep = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { sweep.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }
+    val sweep = rememberEntrance(1f)
+    EntranceEffect(Unit) { sweep.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }
     val total = slices.sumOf { max(it.value, 0.0) }.takeIf { it > 0 } ?: return
     val track = FinanceTheme.colors.hairline
     val lift = slices.indices.map { i -> animateFloatAsState(if (highlighted == i) 1f else 0f, spring(stiffness = Spring.StiffnessMediumLow), label = "slice$i") }
@@ -302,8 +306,8 @@ data class Bar(val label: String, val value: Double, val color: Color, val secon
  */
 @Composable
 fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = null, onSelect: (Int) -> Unit = {}) {
-    val grow = remember { Animatable(0f) }
-    LaunchedEffect(bars.size) {
+    val grow = rememberEntrance(1f)
+    EntranceEffect(bars.size) {
         grow.snapTo(0f)
         grow.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
@@ -367,8 +371,8 @@ fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = nu
 /** A horizontal meter that fills to [fraction] when it appears. */
 @Composable
 fun Meter(fraction: Float, color: Color, modifier: Modifier = Modifier, height: Dp = 6.dp, delayMillis: Int = 0) {
-    val fill = remember { Animatable(0f) }
-    LaunchedEffect(fraction) { fill.animateTo(fraction.coerceIn(0f, 1f), tween(800, delayMillis = delayMillis, easing = FastOutSlowInEasing)) }
+    val fill = rememberEntrance(fraction.coerceIn(0f, 1f))
+    EntranceEffect(fraction) { fill.animateTo(fraction.coerceIn(0f, 1f), tween(800, delayMillis = delayMillis, easing = FastOutSlowInEasing)) }
     val track = FinanceTheme.colors.hairline
     Canvas(modifier.fillMaxWidth().height(height)) {
         val r = CornerRadius(size.height / 2)
@@ -397,8 +401,8 @@ fun Shimmer(modifier: Modifier = Modifier, corner: Dp = 10.dp) {
  */
 @Composable
 fun CascadeIn(index: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val p = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { p.animateTo(1f, tween(520, delayMillis = (index * 55).coerceAtMost(440), easing = FastOutSlowInEasing)) }
+    val p = rememberEntrance(1f)
+    EntranceEffect(Unit) { p.animateTo(1f, tween(520, delayMillis = (index * 55).coerceAtMost(440), easing = FastOutSlowInEasing)) }
     Box(
         modifier.graphicsLayer {
             alpha = p.value
@@ -408,4 +412,21 @@ fun CascadeIn(index: Int, modifier: Modifier = Modifier, content: @Composable ()
             scaleY = s
         },
     ) { content() }
+}
+
+/**
+ * An entrance animation's value, from 0 on screen; [EntranceEffect] runs it. A preview draws a
+ * single frame, so there it starts at [settled] and the effect never runs.
+ */
+@Composable
+fun rememberEntrance(settled: Float): Animatable<Float, AnimationVector1D> {
+    val still = LocalInspectionMode.current
+    return remember { Animatable(if (still) settled else 0f) }
+}
+
+/** A [LaunchedEffect] that plays an entrance on screen and is skipped in a preview (see [rememberEntrance]). */
+@Composable
+@NonRestartableComposable
+fun EntranceEffect(key: Any?, block: suspend CoroutineScope.() -> Unit) {
+    if (!LocalInspectionMode.current) LaunchedEffect(key, block = block)
 }

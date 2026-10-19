@@ -87,7 +87,32 @@
     <string name="finance_wallet_chart_description">%1$s history</string>
     <string name="finance_wallet_not_enough_history">Not enough history in this range</string>
     <string name="finance_wallet_hero_how_to_read">Each point is a check-in recorded in your budget sheet, joined into a line, with today's figure at the end. Drag along it to see any check-in, pick a range above, and switch between total assets, debt and monthly profit with the buttons.</string>
-    <string name="finance_wallet_watchlist_title">Your watchlist</string>
+    <!-- The Wallet's list of topic rows, each opening a page. -->
+    <string name="finance_wallet_your_money">Your money</string>
+    <string name="finance_wallet_topic_cash_flow">Cash flow</string>
+    <string name="finance_wallet_topic_vesting_taxes">Vesting &amp; taxes</string>
+    <!-- The Accounts row: how many accounts and how much of them is invested, e.g. "10 accounts · $793K invested". -->
+    <plurals name="finance_wallet_topic_accounts_note">
+        <item quantity="one">%1$d account · %2$s invested</item>
+        <item quantity="other">%1$d accounts · %2$s invested</item>
+    </plurals>
+    <!-- The Cash flow row: the savings rate, e.g. "20% of take-home left over". -->
+    <string name="finance_wallet_topic_flow_note">%1$s of take-home left over</string>
+    <!-- The Debt row: loans other than the mortgage still being paid, e.g. "2 open loans". -->
+    <plurals name="finance_wallet_topic_debt_note">
+        <item quantity="one">%1$d open loan</item>
+        <item quantity="other">%1$d open loans</item>
+    </plurals>
+    <!-- The Debt row: the mortgage, listed but not counted in the row's figure, e.g. "$642K mortgage". -->
+    <string name="finance_wallet_topic_mortgage_note">%1$s mortgage</string>
+    <!-- The Vesting row: the next vest's kind and when, e.g. "Next RSU in 33 days". -->
+    <string name="finance_wallet_topic_vest_note">Next %1$s %2$s</string>
+    <!-- The Vesting row: the last tax year's effective rate, e.g. "2025: 27% effective". -->
+    <string name="finance_wallet_topic_tax_note">%1$s: %2$s effective</string>
+    <plurals name="finance_wallet_topic_charts_note">
+        <item quantity="one">%1$d chart from the sheet</item>
+        <item quantity="other">%1$d charts from the sheet</item>
+    </plurals>
     <string name="finance_wallet_charts_title">Sheet charts</string>
     <!-- %1$s is the budget sheet's title. -->
     <string name="finance_wallet_charts_subtitle">The charts in “%1$s”, live from the sheet</string>

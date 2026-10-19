@@ -21,7 +21,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.AccountRow(account: com.
     - index: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.AccountsBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.AccountsBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -69,7 +69,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.AlertSwitches(alerts: co
     - onChange: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.AllocationBlock(accounts: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.Account>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.AllocationBlock(accounts: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.Account>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -236,7 +236,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.CardHolders(card: com.m
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.CashFlowBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.CashFlowBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -353,7 +353,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.ConnectionsScreen(state
     - contentPadding: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.DebtBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.DebtBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -607,12 +607,19 @@ internal fun com.meticulouscreations.homesafe.finance.ui.FinePrint(text: kotlin.
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.Flashable(lit: kotlin.Boolean, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.Flashable(lit: kotlin.Boolean, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - lit: STABLE (primitive type)
     - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.FlowHistoryBlock(flowHistory: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.Snapshot>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - flowHistory: RUNTIME (requires runtime check)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.FlowLine(color: androidx.compose.ui.graphics.Color, label: kotlin.String, value: kotlin.String, dot: kotlin.Boolean, strong: kotlin.Boolean): kotlin.Unit
@@ -677,7 +684,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.HoldingsCard(holdings: 
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.HomeBlock(home: com.meticulouscreations.homesafe.finance.domain.HomeEquity, mortgage: kotlin.Double): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.HomeBlock(home: com.meticulouscreations.homesafe.finance.domain.HomeEquity, mortgage: kotlin.Double): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -891,13 +898,14 @@ private fun com.meticulouscreations.homesafe.finance.ui.MessageCard(title: kotli
     - onRetry: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.MoneyCheckup(checkup: com.meticulouscreations.homesafe.finance.ui.Checkup, onOpen: kotlin.Function1<com.meticulouscreations.homesafe.finance.ui.CheckKind?, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.MoneyCheckup(checkup: com.meticulouscreations.homesafe.finance.ui.Checkup, onOpen: kotlin.Function1<com.meticulouscreations.homesafe.finance.ui.CheckKind?, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, compact: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - checkup: STABLE (marked @Stable or @Immutable)
     - onOpen: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - compact: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.MonthsBlock(budget: com.meticulouscreations.homesafe.finance.domain.Budget, onShowMonth: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
@@ -908,7 +916,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.MonthsBlock(budget: com.
     - onShowMonth: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.MortgagePlanner(plan: com.meticulouscreations.homesafe.finance.domain.MortgagePlan, marketRate: kotlin.Double?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.MortgagePlanner(plan: com.meticulouscreations.homesafe.finance.domain.MortgagePlan, marketRate: kotlin.Double?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -916,7 +924,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.MortgagePlanner(plan: co
     - marketRate: STABLE (class with no mutable properties)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.NetWorthHero(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.NetWorthHero(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1078,7 +1086,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.PurchaseRow(purchase: co
     - onClick: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.QuickStats(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.QuickStats(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1305,11 +1313,20 @@ private fun com.meticulouscreations.homesafe.finance.ui.SortRow(purchase: com.me
     - onOpen: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.SourceFooter(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.SourceFooter(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - finance: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.SplitBar(parts: kotlin.collections.List<kotlin.Pair<kotlin.Double, androidx.compose.ui.graphics.Color>>, modifier: androidx.compose.ui.Modifier, height: androidx.compose.ui.unit.Dp): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - parts: RUNTIME (requires runtime check)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - height: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.StartHere(check: com.meticulouscreations.homesafe.finance.ui.Check, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -1436,7 +1453,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.TakeHomeFlow(budget: com
     - pace: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.TaxBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.TaxBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1458,6 +1475,28 @@ private fun com.meticulouscreations.homesafe.finance.ui.TickerTape(quotes: kotli
   params:
     - quotes: RUNTIME (requires runtime check)
     - onOpen: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.TopicRow(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance, topic: com.meticulouscreations.homesafe.finance.ui.WalletTopic, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - finance: STABLE (marked @Stable or @Immutable)
+    - topic: STABLE (class with no mutable properties)
+    - onClick: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.TopicRowLayout(icon: androidx.compose.ui.graphics.vector.ImageVector, topic: com.meticulouscreations.homesafe.finance.ui.WalletTopic, figure: kotlin.String?, note: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, figureColor: androidx.compose.ui.graphics.Color, picture: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - topic: STABLE (class with no mutable properties)
+    - figure: STABLE (class with no mutable properties)
+    - note: STABLE (class with no mutable properties)
+    - onClick: STABLE (function type)
+    - figureColor: STABLE (marked @Stable or @Immutable)
+    - picture: STABLE (composable function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.TourCaption(link: com.meticulouscreations.homesafe.finance.ui.EconLink, step: kotlin.Int): kotlin.Unit
@@ -1493,32 +1532,53 @@ internal fun com.meticulouscreations.homesafe.finance.ui.VerdictText(reading: co
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.VestingBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.VestingBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - finance: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.WalletScreen(state: com.meticulouscreations.homesafe.finance.FinanceUiState, listState: androidx.compose.foundation.lazy.LazyListState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onOpenQuote: kotlin.Function1<kotlin.String, kotlin.Unit>, onRetrySheet: kotlin.Function0<kotlin.Unit>, onOpenSync: kotlin.Function0<kotlin.Unit>, onAddSymbol: kotlin.Function0<kotlin.Unit>?, budget: com.meticulouscreations.homesafe.finance.domain.Budget?, onOpenBudget: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.WalletHub(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance, topics: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.WalletTopic>, onOpen: kotlin.Function1<com.meticulouscreations.homesafe.finance.ui.WalletTopic, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - finance: STABLE (marked @Stable or @Immutable)
+    - topics: RUNTIME (requires runtime check)
+    - onOpen: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.WalletScreen(state: com.meticulouscreations.homesafe.finance.FinanceUiState, listState: androidx.compose.foundation.lazy.LazyListState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onRetrySheet: kotlin.Function0<kotlin.Unit>, onOpenSync: kotlin.Function0<kotlin.Unit>, onOpenTopic: kotlin.Function2<com.meticulouscreations.homesafe.finance.ui.WalletTopic, com.meticulouscreations.homesafe.finance.ui.WalletSection?, kotlin.Unit>, budget: com.meticulouscreations.homesafe.finance.domain.Budget?, onOpenBudget: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - listState: STABLE (marked @Stable or @Immutable)
     - contentPadding: STABLE (marked @Stable or @Immutable)
-    - onOpenQuote: STABLE (function type)
     - onRetrySheet: STABLE (function type)
     - onOpenSync: STABLE (function type)
-    - onAddSymbol: STABLE (function type)
+    - onOpenTopic: STABLE (function type)
     - budget: STABLE (marked @Stable or @Immutable)
     - onOpenBudget: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.WalletSkeleton(): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.WalletSkeleton(): kotlin.Unit
   skippable: true
   restartable: true
   params:
+
+@Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.WalletTopicScreen(topic: com.meticulouscreations.homesafe.finance.ui.WalletTopic, focus: com.meticulouscreations.homesafe.finance.ui.WalletSection?, state: com.meticulouscreations.homesafe.finance.FinanceUiState, contentPadding: androidx.compose.foundation.layout.PaddingValues, modifier: androidx.compose.ui.Modifier, listState: androidx.compose.foundation.lazy.LazyListState): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - topic: STABLE (class with no mutable properties)
+    - focus: STABLE (class with no mutable properties)
+    - state: STABLE (marked @Stable or @Immutable)
+    - contentPadding: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - listState: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.WatchStatusRow(symbol: kotlin.String, state: com.meticulouscreations.homesafe.finance.FinanceUiState, onFollow: kotlin.Function0<kotlin.Unit>, onUnfollow: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -1666,6 +1726,14 @@ public fun com.meticulouscreations.homesafe.finance.ui.components.DonutChart(sli
     - thickness: STABLE (marked @Stable or @Immutable)
 
 @Composable
+public fun com.meticulouscreations.homesafe.finance.ui.components.EntranceEffect(key: kotlin.Any?, block: @[ExtensionFunctionType] kotlin.coroutines.SuspendFunction1<kotlinx.coroutines.CoroutineScope, kotlin.Unit>): kotlin.Unit
+  skippable: false
+  restartable: false
+  params:
+    - key: UNSTABLE (cross-module type without @Stable/@Immutable)
+    - block: UNKNOWN (interface or non-final class; concrete implementation unknown)
+
+@Composable
 public fun com.meticulouscreations.homesafe.finance.ui.components.GroupedBarChart(labels: kotlin.collections.List<kotlin.String>, series: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.BarSeries>, modifier: androidx.compose.ui.Modifier, stacked: kotlin.Boolean, selected: kotlin.Int?, contentDescription: kotlin.String, onSelect: kotlin.Function1<kotlin.Int?, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -1765,6 +1833,13 @@ internal fun com.meticulouscreations.homesafe.finance.ui.components.StressRing(l
   params:
     - level: STABLE (primitive type)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.finance.ui.components.rememberEntrance(settled: kotlin.Float): androidx.compose.animation.core.Animatable<kotlin.Float, androidx.compose.animation.core.AnimationVector1D>
+  skippable: false
+  restartable: false
+  params:
+    - settled: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.components.rememberRisingLevel(target: kotlin.Float, millis: kotlin.Int): androidx.compose.runtime.State<kotlin.Float>
