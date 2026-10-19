@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +77,7 @@ import homesafe.shared.generated.resources.finance_wallet_topic_tax_note
 import homesafe.shared.generated.resources.finance_wallet_topic_vest_note
 import homesafe.shared.generated.resources.finance_wallet_topic_vesting_taxes
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -171,7 +173,8 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
         }
 
         WalletTopic.DEBT -> {
-            val mortgage = finance.debts.firstOrNull { it.isMortgage && !it.isPaidOff }
+            // Every mortgage entry: the sheet splits one by owner column, and a household may carry two.
+            val mortgage = finance.mortgageBalance.takeIf { it > 0 }
             val open = finance.debts.count { !it.isMortgage && !it.isPaidOff }
             val history = Series.of(finance.history.mapNotNull { s -> s.debt?.let { s.epochSeconds to it } })
             TopicRowLayout(
@@ -180,7 +183,7 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
                 figure = FinanceFormat.compactMoney(finance.consumerDebt),
                 note = listOfNotNull(
                     open.takeIf { it > 0 }?.let { pluralStringResource(Res.plurals.finance_wallet_topic_debt_note, it, it) },
-                    mortgage?.let { stringResource(Res.string.finance_wallet_topic_mortgage_note, FinanceFormat.compactMoney(it.balance)) },
+                    mortgage?.let { stringResource(Res.string.finance_wallet_topic_mortgage_note, FinanceFormat.compactMoney(it)) },
                 ).joinToString(dot),
                 onClick = onClick,
             ) {
@@ -301,6 +304,8 @@ internal fun WalletTopicScreen(
     if (focus != null && finance != null) {
         LaunchedEffect(focus) {
             if (jumped) return@LaunchedEffect
+            // A page just pushed may not be measured yet; with no viewport the search below can't step.
+            snapshotFlow { listState.layoutInfo.viewportSize.height }.first { it > 0 }
             jumped = true
             listState.scrollToKey(focus.key)
             flash = focus
