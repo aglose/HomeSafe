@@ -10,7 +10,9 @@ requirements; every test here calls a function that touches none of them.
 
 import json
 import os
+import socket
 import sys
+import threading
 import time
 import types
 import unittest
@@ -6406,6 +6408,150 @@ class NestPrimerTest(unittest.TestCase):
 
     def test_a_stream_that_keeps_failing_is_asked_for_less_often(self):
         self.assertEqual([5, 5, 10, 20, 40, 80, 160, 300, 300], [relay.nest_primer_delay(n) for n in range(0, 9)])
+
+    def stream(self, *receivers):
+        """go2rtc's `GET /api/streams?src=` for one stream, its producer's receivers as (codec type, bytes)."""
+        return {
+            "producers": [{"url": "nest:?client_secret=never-printed", "receivers": [{"codec": {"codec_type": kind}, "bytes": n} for kind, n in receivers]}],
+            "consumers": [{"format_name": "mp4"}],
+        }
+
+    def fake_go2rtc(self, *readings):
+        """go2rtc's stream reads answer [readings] in turn, the last one again once they run out; returns the `src`s asked."""
+        asked, answers = [], list(readings)
+        get = relay.requests.get
+        self.addCleanup(setattr, relay.requests, "get", get)
+
+        def read(url, params=None, timeout=None):
+            asked.append(params["src"])
+            answer = answers.pop(0) if len(answers) > 1 else answers[0]
+            if isinstance(answer, Exception):
+                raise answer
+            return types.SimpleNamespace(json=lambda: answer)
+
+        relay.requests.get = read
+        return asked
+
+    def test_a_stream_s_video_bytes_are_its_video_receivers_added_up(self):
+        asked = self.fake_go2rtc(self.stream(("video", 100), ("audio", 7), ("video", 20)), self.stream(("audio", 7)), self.stream(), {}, None)
+        self.assertEqual(120, relay.nest_video_bytes("outdoor_doorbell_sub"))
+        self.assertIsNone(relay.nest_video_bytes("outdoor_doorbell_sub"))  # audio only
+        self.assertIsNone(relay.nest_video_bytes("outdoor_doorbell_sub"))  # the stalled producer: no receivers
+        self.assertIsNone(relay.nest_video_bytes("outdoor_doorbell_sub"))
+        self.assertIsNone(relay.nest_video_bytes("outdoor_doorbell_sub"))
+        self.assertEqual(["outdoor_doorbell_sub"] * 5, asked)
+
+    def test_a_session_flows_once_a_video_receiver_has_bytes(self):
+        self.fake_go2rtc(self.stream(("video", 0), ("audio", 50)), self.stream(("video", 1)), {})
+        self.assertFalse(relay.nest_session_flowing("kitchen"))
+        self.assertTrue(relay.nest_session_flowing("kitchen"))
+        self.assertFalse(relay.nest_session_flowing("kitchen"))
+
+    def watched(self, readings, started=1000.0):
+        """[readings] as (seconds into the hold, bytes) fed to a new hold's watch; whether each found it stalled."""
+        watch = relay.NestPrimerWatch(started)
+        return watch, [watch.stalled(started + at, received) for at, received in readings]
+
+    def test_a_flowing_stream_is_never_stalled(self):
+        watch, stalled = self.watched([(15 * i, 1000 * i) for i in range(1, 40)])
+        self.assertEqual([False] * 39, stalled)
+        self.assertTrue(watch.flowed)
+
+    def test_a_session_google_starts_slowly_is_given_the_first_minute(self):
+        # The hold's own viewer gets nothing on purpose; the receivers have nothing until Google answers.
+        watch, stalled = self.watched([(15, None), (30, 0), (45, 4000), (60, 90_000), (75, 180_000)])
+        self.assertEqual([False] * 5, stalled)
+        self.assertTrue(watch.flowed)
+
+    def test_a_stream_whose_bytes_stop_is_stalled_a_minute_after_they_last_moved(self):
+        # 2026-10-18: the Nest session ended and the producer's counts stood still.
+        watch, stalled = self.watched([(15, 5000), (30, 9000), (45, 9000), (60, 9000), (75, 9000), (90, 9000)])
+        self.assertEqual([False, False, False, False, False, True], stalled)
+        self.assertTrue(watch.flowed)
+
+    def test_a_stream_left_with_no_receivers_is_stalled(self):
+        watch, stalled = self.watched([(15, 5000), (30, 9000), (45, None), (60, None), (75, None), (90, None)])
+        self.assertEqual([False, False, False, False, False, True], stalled)
+        watch, stalled = self.watched([(15, None), (30, None), (45, None), (60, None)])
+        self.assertEqual([False, False, False, True], stalled)
+        self.assertFalse(watch.flowed)
+
+    def test_a_stream_stuck_from_the_start_never_flowed(self):
+        # A first reading is only a baseline: a producer stuck before the hold began has bytes.
+        watch, stalled = self.watched([(15, 9000), (30, 9000), (45, 9000), (60, 9000), (75, 9000)])
+        self.assertEqual([False, False, False, False, True], stalled)
+        self.assertFalse(watch.flowed)
+
+    def test_a_reopened_producer_s_counts_starting_again_are_arriving(self):
+        watch, stalled = self.watched([(15, 50_000), (60, 50_000), (70, 2000), (85, 30_000)])
+        self.assertEqual([False, False, False, False], stalled)
+
+    def test_a_hold_the_watchdog_dropped_was_working_only_if_its_video_moved(self):
+        flowed, dried_up = relay.NestPrimerWatch(0), relay.NestPrimerWatch(0)
+        flowed.dropped = dried_up.dropped = True
+        flowed.stalled(15, 100), flowed.stalled(30, 200)
+        dried_up.stalled(15, 100)
+        self.assertTrue(relay.nest_primer_held(flowed, 75))
+        self.assertFalse(relay.nest_primer_held(dried_up, 75))
+        self.assertFalse(relay.nest_primer_held(dried_up, 3600))
+        # Ended by go2rtc, not the watchdog: by how long it held, as before.
+        self.assertTrue(relay.nest_primer_held(relay.NestPrimerWatch(0), 60))
+        self.assertFalse(relay.nest_primer_held(relay.NestPrimerWatch(0), 59))
+
+    def quick_watchdog(self):
+        for name, seconds in (("NEST_PRIMER_WATCH_SECONDS", 0.01), ("NEST_PRIMER_STALL_SECONDS", 0.05)):
+            self.addCleanup(setattr, relay, name, getattr(relay, name))
+            setattr(relay, name, seconds)
+
+    def held_socket(self):
+        """One end of a connected socket pair as a held response's socket; the other end, and the response."""
+        held, far = socket.socketpair()
+        self.addCleanup(held.close)
+        self.addCleanup(far.close)
+        closed = []
+        response = types.SimpleNamespace(raw=types.SimpleNamespace(connection=types.SimpleNamespace(sock=held)), close=lambda: closed.append(True))
+        return held, far, response, closed
+
+    def test_the_watchdog_shuts_a_stalled_hold_s_socket_and_wakes_its_read(self):
+        self.quick_watchdog()
+        asked = self.fake_go2rtc(self.stream(("video", 9000)), self.stream(), ConnectionError("go2rtc restarting"))
+        held, _, response, _ = self.held_socket()
+        read = []
+        reader = threading.Thread(target=lambda: read.append(held.recv(1024)), daemon=True)
+        reader.start()
+        watch, done = relay.NestPrimerWatch(time.monotonic()), threading.Event()
+        relay.nest_primer_watchdog("living_room", response, watch, done)
+        reader.join(timeout=5)
+        self.assertFalse(reader.is_alive(), "the hold's blocked read was never woken")
+        self.assertEqual([b""], read)
+        self.assertTrue(watch.dropped)
+        self.assertEqual("living_room", asked[0])
+
+    def test_the_watchdog_leaves_a_flowing_hold_and_stops_with_it(self):
+        self.quick_watchdog()
+        counts = iter(range(1000, 10**9, 1000))
+        get = relay.requests.get
+        self.addCleanup(setattr, relay.requests, "get", get)
+        relay.requests.get = lambda url, params=None, timeout=None: types.SimpleNamespace(json=lambda c=next(counts): self.stream(("video", c)))
+        _, far, response, closed = self.held_socket()
+        watch, done = relay.NestPrimerWatch(time.monotonic()), threading.Event()
+        watchdog = threading.Thread(target=relay.nest_primer_watchdog, args=("kitchen", response, watch, done), daemon=True)
+        watchdog.start()
+        time.sleep(0.3)
+        done.set()
+        watchdog.join(timeout=5)
+        self.assertFalse(watchdog.is_alive())
+        self.assertFalse(watch.dropped)
+        self.assertTrue(watch.flowed)
+        self.assertEqual([], closed)
+        far.setblocking(False)
+        with self.assertRaises(BlockingIOError):  # the held end is still open: nothing, not end-of-stream
+            far.recv(1)
+
+    def test_a_hold_with_no_socket_to_shut_is_closed(self):
+        closed = []
+        relay.nest_primer_drop(types.SimpleNamespace(raw=types.SimpleNamespace(), close=lambda: closed.append(True)))
+        self.assertEqual([True], closed)
 
     def test_each_nest_camera_s_grid_stream_is_held_after_its_session(self):
         streams = {

@@ -5381,6 +5381,16 @@ NEST_PRIMER_RETRY_SECONDS = 5
 NEST_PRIMER_MAX_RETRY_SECONDS = 300
 # A hold this long was a working stream, whatever ended it: the next wait starts short again.
 NEST_PRIMER_HELD_SECONDS = 60
+# While a stream is held, how often go2rtc's video receiver byte counts for it are read, and how
+# long they may stand still before the hold is dropped and taken again. When Google ends a session,
+# go2rtc's Nest producer can be left with no receivers while the primer's viewer stays attached and
+# gets nothing, and go2rtc never reopens the producer for a viewer it already has: cameras were dark
+# for hours (2026-10-18) until the relay restarted. The counts are watched, not the hold's own read:
+# the viewer that starts a Nest session gets 0 bytes on purpose (above), so a read timeout would
+# drop the very viewer keeping the session up. The window runs from the hold's start, which is the
+# grace for Google to start the camera (up to ~11 s seen) and a transcoder its first keyframe.
+NEST_PRIMER_WATCH_SECONDS = 15
+NEST_PRIMER_STALL_SECONDS = 60
 
 
 def nest_stream_names(streams: dict[str, Any]) -> list[str]:
@@ -5397,22 +5407,99 @@ def nest_grid_streams(streams: dict[str, Any]) -> dict[str, str]:
     return {f"{name}_sub": name for name in nest_stream_names(streams) if f"{name}_sub" in (streams or {})}
 
 
-def nest_session_flowing(name: str) -> bool:
-    """Whether [name]'s Nest session is up and its video arriving: some video receiver has bytes."""
+def nest_video_bytes(name: str) -> int | None:
+    """The bytes [name]'s video receivers in go2rtc have had, added up; None when it has none."""
     stream = requests.get(f"{GO2RTC}/api/streams", params={"src": name}, timeout=5).json() or {}
-    return any(
-        (receiver.get("bytes") or 0) > 0
+    counts = [
+        receiver.get("bytes") or 0
         for producer in stream.get("producers") or []
         for receiver in producer.get("receivers") or []
         if (receiver.get("codec") or {}).get("codec_type") == "video"
-    )
+    ]
+    return sum(counts) if counts else None
 
 
-def nest_primer_hold(name: str) -> None:
-    """Holds [name] as one viewer for as long as go2rtc keeps the connection, its bytes read and dropped."""
+def nest_session_flowing(name: str) -> bool:
+    """Whether [name]'s Nest session is up and its video arriving: some video receiver has bytes."""
+    return (nest_video_bytes(name) or 0) > 0
+
+
+class NestPrimerWatch:
+    """One hold's view of whether its stream is still getting video, from go2rtc's receiver byte counts."""
+
+    def __init__(self, started: float):
+        self.bytes = 0
+        self.moved_at = started
+        # Whether the counts moved after a first reading while held: the hold was a working stream.
+        self.flowed = False
+        # Whether the watchdog dropped the hold.
+        self.dropped = False
+
+    def stalled(self, now: float, received: int | None) -> bool:
+        """
+        With [received] (the video bytes read now; None for no receivers, or no reading), whether
+        nothing has arrived for NEST_PRIMER_STALL_SECONDS. Any change counts as arriving, since a
+        reopened producer's counts start again from 0.
+        """
+        if received and received != self.bytes:
+            self.flowed = self.flowed or self.bytes > 0
+            self.bytes, self.moved_at = received, now
+        return now - self.moved_at >= NEST_PRIMER_STALL_SECONDS
+
+
+def nest_primer_drop(response: Any) -> None:
+    """
+    Ends a hold from the watchdog's thread. Its socket is shut down rather than closed: on Linux a
+    close doesn't wake the holding thread's blocked read, so the connection, and go2rtc's viewer,
+    would live on.
+    """
+    connection = getattr(response.raw, "connection", None) or getattr(response.raw, "_connection", None)
+    sock = getattr(connection, "sock", None)
+    if sock is None:
+        response.close()
+        return
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+def nest_primer_watchdog(name: str, response: Any, watch: NestPrimerWatch, done: threading.Event) -> None:
+    """Drops [name]'s hold ([response]) once its video stops arriving, or stops watching at [done]."""
+    while not done.wait(NEST_PRIMER_WATCH_SECONDS):
+        try:
+            received = nest_video_bytes(name)
+        except Exception:  # noqa: BLE001 - go2rtc restarting: nothing seen arriving
+            received = None
+        if watch.stalled(time.monotonic(), received):
+            log.info("nest primer: %s had no video for %d s; dropping it", name, NEST_PRIMER_STALL_SECONDS)
+            watch.dropped = True
+            nest_primer_drop(response)
+            return
+
+
+def nest_primer_hold(name: str, watch: NestPrimerWatch) -> None:
+    """
+    Holds [name] as one viewer, its bytes read and dropped, for as long as go2rtc keeps the
+    connection and [watch] sees video arriving.
+    """
     with requests.get(f"{GO2RTC}/api/stream.mp4", params={"src": name}, stream=True, timeout=(5, None)) as response:
-        for _ in response.iter_content(chunk_size=64 * 1024):
-            pass
+        done = threading.Event()
+        threading.Thread(target=nest_primer_watchdog, args=(name, response, watch, done), name=f"nest-watchdog-{name}", daemon=True).start()
+        try:
+            for _ in response.iter_content(chunk_size=64 * 1024):
+                pass
+        finally:
+            done.set()
+
+
+def nest_primer_held(watch: NestPrimerWatch, seconds: float) -> bool:
+    """
+    Whether a hold that lasted [seconds] was a working stream, so the next wait starts short. One
+    the watchdog dropped was if its video ever moved: a camera that never sends anything still
+    backs off, though each try now lasts a minute.
+    """
+    return watch.flowed if watch.dropped else seconds >= NEST_PRIMER_HELD_SECONDS
 
 
 def nest_primer_delay(failures: int) -> float:
@@ -5439,12 +5526,15 @@ def nest_primer_stream(name: str, after: str | None = None) -> None:
                 time.sleep(NEST_PRIMER_RETRY_SECONDS)
                 continue
         started = time.monotonic()
+        watch = NestPrimerWatch(started)
         try:
-            nest_primer_hold(name)
+            nest_primer_hold(name, watch)
             log.info("nest primer: %s closed; holding it again", name)
         except Exception as e:  # noqa: BLE001 - go2rtc restarting, Google refusing the camera
-            log.info("nest primer: %s not held (%s)", name, e)
-        failures = failures + 1 if time.monotonic() - started < NEST_PRIMER_HELD_SECONDS else 1
+            # The watchdog's drop ends the read with an error of its own, already logged.
+            if not watch.dropped:
+                log.info("nest primer: %s not held (%s)", name, e)
+        failures = 1 if nest_primer_held(watch, time.monotonic() - started) else failures + 1
         time.sleep(nest_primer_delay(failures))
 
 
