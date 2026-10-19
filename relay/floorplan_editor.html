@@ -36,6 +36,7 @@ svg text{font-family:system-ui,-apple-system,sans-serif}
     <button data-tool="wall" aria-pressed="false" title="Drag to draw a wall (W)">Add wall</button>
     <button data-tool="room" aria-pressed="false" title="Click where a room's name goes (R)">Add room name</button>
     <button data-tool="stairs" aria-pressed="false" title="Click where stairs go (S)">Add stairs</button>
+    <button data-tool="door" aria-pressed="false" title="Click on a wall to put a door in it (D)">Add door</button>
   </div>
   <div class="group">
     <button id="delete" disabled title="Delete the selected item (Delete)">Delete</button>
@@ -101,6 +102,35 @@ function snapPoint(x, y, moving) {
   return best ? [best[0], best[1]] : [snapValue(x), snapValue(y)];
 }
 
+// Every straight stretch of wall on this floor, outside and in: where a door can go.
+function segments() {
+  const f = floor(), list = [];
+  f.outline.forEach((p, i) => list.push([p, f.outline[(i + 1) % f.outline.length]]));
+  f.walls.forEach(w => list.push([[w[0], w[1]], [w[2], w[3]]]));
+  return list;
+}
+// The point of the nearest wall to (x, y), with the wall's direction; null when no wall is within [reach] feet.
+function nearestWall(x, y, reach) {
+  let best = null;
+  for (const [a, b] of segments()) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy);
+    if (length < 0.01) continue;
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (length * length)));
+    const px = a[0] + t * dx, py = a[1] + t * dy, d = Math.hypot(px - x, py - y);
+    if (d <= reach && (!best || d < best.distance)) best = { distance: d, at: [px, py], dir: [dx / length, dy / length], length };
+  }
+  return best;
+}
+// A doorway [width] wide centred on [at] along [dir], its ends on the grid where the wall allows.
+function doorway(at, dir, width) {
+  const snapAlong = v => document.getElementById("snap").checked ? Math.round(v * 2) / 2 : round(v);
+  const centre = Math.abs(dir[0]) >= Math.abs(dir[1]) ? [snapAlong(at[0]), round(at[1])] : [round(at[0]), snapAlong(at[1])];
+  const half = width / 2;
+  return { from: [round(centre[0] - dir[0] * half), round(centre[1] - dir[1] * half)], to: [round(centre[0] + dir[0] * half), round(centre[1] + dir[1] * half)] };
+}
+function doorWidth(d) { return Math.hypot(d.to[0] - d.from[0], d.to[1] - d.from[1]); }
+function sensorName(id) { const s = doors.find(d => d.id === id); return s ? s.name : null; }
+
 function feetAt(event) {
   const point = svg.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
   const at = point.matrixTransform(svg.getScreenCTM().inverse());
@@ -120,6 +150,7 @@ function bounds(f) {
   (f.walls || []).forEach(w => { xs.push(w[0], w[2]); ys.push(w[1], w[3]); });
   (f.rooms || []).forEach(r => { xs.push(r.x); ys.push(r.y); });
   (f.stairs || []).forEach(s => { xs.push(s[0]); ys.push(s[1]); });
+  (f.doors || []).forEach(d => { xs.push(d.from[0], d.to[0]); ys.push(d.from[1], d.to[1]); });
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
@@ -154,6 +185,21 @@ function render() {
     }
     [["a", w[0], w[1]], ["b", w[2], w[3]]].forEach(([end, x, y]) => el("circle", { cx: x, cy: y, r: on ? 0.45 : 0.28, fill: on ? color("--accent") : color("--wall"), "data-kind": "wall", "data-i": i, "data-end": end, style: "cursor:grab" }));
   });
+  (f.doors || []).forEach((d, i) => {
+    const on = isSelected("door", i), w = doorWidth(d);
+    const u = [(d.to[0] - d.from[0]) / w, (d.to[1] - d.from[1]) / w], n = [-u[1] * d.swing, u[0] * d.swing];
+    const leaf = [d.from[0] + n[0] * w, d.from[1] + n[1] * w], ink = on ? color("--accent") : color("--door");
+    // The opening cut out of the wall, the door standing open, and the arc it swings through.
+    el("line", { x1: d.from[0], y1: d.from[1], x2: d.to[0], y2: d.to[1], stroke: color("--fill"), "stroke-width": 0.34 });
+    el("line", { x1: d.from[0], y1: d.from[1], x2: leaf[0], y2: leaf[1], stroke: ink, "stroke-width": on ? 0.16 : 0.12 });
+    el("path", { d: `M ${d.to[0]} ${d.to[1]} A ${w} ${w} 0 0 ${d.swing === 1 ? 1 : 0} ${leaf[0]} ${leaf[1]}`, fill: "none", stroke: ink, "stroke-width": 0.07, "stroke-dasharray": "0.25 0.15" });
+    el("line", { x1: d.from[0], y1: d.from[1], x2: d.to[0], y2: d.to[1], stroke: "transparent", "stroke-width": 1, "data-kind": "door", "data-i": i, "data-end": "whole", style: "cursor:move" });
+    // A linked sensor is a dot in the doorway's middle; the label is the door's name, else the sensor's.
+    if (d.sensor) el("circle", { cx: (d.from[0] + d.to[0]) / 2, cy: (d.from[1] + d.to[1]) / 2, r: 0.42, fill: ink, "pointer-events": "none" });
+    const label = d.name || (d.sensor ? sensorName(d.sensor) || "Sensor not paired yet" : "");
+    if (label) el("text", { x: (d.from[0] + d.to[0]) / 2 + n[0] * (w + 0.6), y: (d.from[1] + d.to[1]) / 2 + n[1] * (w + 0.6), "font-size": 0.7, "text-anchor": "middle", "dominant-baseline": "middle", fill: ink, "font-weight": 600, "pointer-events": "none" }).textContent = label;
+    if (on) [["a", d.from], ["b", d.to]].forEach(([end, p]) => el("circle", { cx: p[0], cy: p[1], r: 0.4, fill: color("--accent"), "data-kind": "door", "data-i": i, "data-end": end, style: "cursor:ew-resize" }));
+  });
   (f.stairs || []).forEach((s, i) => {
     const on = isSelected("stairs", i), g = el("g", { "data-kind": "stairs", "data-i": i, style: "cursor:move" });
     el("rect", { x: s[0] - 1.5, y: s[1] - 1.5, width: 3, height: 3, fill: "transparent", stroke: on ? color("--accent") : color("--muted"), "stroke-width": 0.08, "data-kind": "stairs", "data-i": i }, g);
@@ -169,7 +215,8 @@ function render() {
     el("rect", { x: p[0] - 0.35, y: p[1] - 0.35, width: 0.7, height: 0.7, fill: on ? color("--accent") : color("--card"), stroke: on ? color("--accent") : color("--wall"), "stroke-width": 0.08, "data-kind": "corner", "data-i": i, style: "cursor:grab" });
   });
   // The doors placed in the app, for reference: they aren't edited here.
-  doors.filter(d => d.spot && d.spot.floor === f.id).forEach(d => {
+  const onDoorways = new Set(plan.floors.flatMap(fl => (fl.doors || []).map(d => d.sensor).filter(Boolean)));
+  doors.filter(d => d.spot && d.spot.floor === f.id && !onDoorways.has(d.id)).forEach(d => {
     el("circle", { cx: d.spot.x, cy: d.spot.y, r: 0.55, fill: color("--door"), opacity: 0.85, "pointer-events": "none" });
     el("text", { x: d.spot.x, y: d.spot.y + 1.4, "font-size": 0.7, "text-anchor": "middle", fill: color("--door"), "pointer-events": "none" }).textContent = d.name;
   });
@@ -192,7 +239,7 @@ function renderPanel() {
   const h = document.createElement("h2"); h.textContent = "Floor"; panel.appendChild(h);
   field("Name", f.name, v => { f.name = v.trim() || f.id; renderFloors(); }, "text");
   const hint = document.createElement("p");
-  hint.textContent = "Drag anything with Move. Double-click an outside wall to add a corner there, a corner to remove it, a room name to rename it. Arrow keys nudge the selection ½ ft (Shift: 0.1 ft).";
+  hint.textContent = "Drag anything with Move: a door slides along the walls, its ends make it wider. Double-click an outside wall to add a corner there, a corner to remove it, a room name to rename it. Arrow keys nudge the selection ½ ft (Shift: 0.1 ft).";
   panel.appendChild(hint);
   if (!selected) return;
   const title = document.createElement("h2");
@@ -210,6 +257,37 @@ function renderPanel() {
     const s = f.stairs[selected.i];
     title.textContent = "Stairs"; panel.appendChild(title);
     field("x", s[0], v => { s[0] = v; }); field("y", s[1], v => { s[1] = v; });
+  } else if (selected.kind === "door") {
+    const d = f.doors[selected.i];
+    title.textContent = `Door · ${round(doorWidth(d))} ft`; panel.appendChild(title);
+    field("Name", d.name || "", v => { if (v.trim()) d.name = v.trim(); else delete d.name; }, "text");
+    field("Width", round(doorWidth(d)), v => {
+      if (!(v >= 0.5)) return;
+      const w = doorWidth(d), u = [(d.to[0] - d.from[0]) / w, (d.to[1] - d.from[1]) / w], c = [(d.from[0] + d.to[0]) / 2, (d.from[1] + d.to[1]) / 2];
+      d.from = [round(c[0] - u[0] * v / 2), round(c[1] - u[1] * v / 2)]; d.to = [round(c[0] + u[0] * v / 2), round(c[1] + u[1] * v / 2)];
+    });
+    const buttons = document.createElement("div"); buttons.className = "row";
+    const swing = document.createElement("button"); swing.textContent = "Flip swing";
+    swing.addEventListener("click", () => { snapshot(); d.swing = -d.swing; changed(); render(); });
+    const hinge = document.createElement("button"); hinge.textContent = "Flip hinge";
+    // Hinged at the other end, opening into the same room.
+    hinge.addEventListener("click", () => { snapshot(); [d.from, d.to] = [d.to, d.from]; d.swing = -d.swing; changed(); render(); });
+    buttons.append(swing, hinge); panel.appendChild(buttons);
+    const sensorRow = document.createElement("div"); sensorRow.className = "row";
+    const sensorLabel = document.createElement("span"); sensorLabel.textContent = "Sensor";
+    const select = document.createElement("select");
+    select.style.cssText = "font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%;min-width:0";
+    const option = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; select.appendChild(o); };
+    option("", doors.length ? "None" : "None (no sensors paired yet)");
+    const linkedElsewhere = new Set(plan.floors.flatMap(fl => (fl.doors || []).filter(other => other !== d && other.sensor).map(other => other.sensor)));
+    doors.forEach(s => option(s.id, linkedElsewhere.has(s.id) ? `${s.name} (on another door)` : s.name));
+    if (d.sensor && !doors.some(s => s.id === d.sensor)) option(d.sensor, "Not paired yet");
+    select.value = d.sensor || "";
+    select.addEventListener("change", () => { snapshot(); if (select.value) d.sensor = select.value; else delete d.sensor; changed(); render(); });
+    sensorRow.append(sensorLabel, select); panel.appendChild(sensorRow);
+    const note = document.createElement("p");
+    note.textContent = "A linked sensor's dot goes in the middle of this doorway when you Save.";
+    panel.appendChild(note);
   } else if (selected.kind === "corner") {
     const p = f.outline[selected.i];
     title.textContent = `Corner ${selected.i + 1} of ${f.outline.length}`; panel.appendChild(title);
@@ -243,13 +321,21 @@ svg.addEventListener("pointerdown", event => {
     if (name && name.trim()) { snapshot(); f.rooms = f.rooms || []; f.rooms.push({ name: name.trim(), x: snapValue(at[0]), y: snapValue(at[1]) }); selected = { kind: "room", i: f.rooms.length - 1 }; changed(); }
     render(); return;
   }
+  if (tool === "door") {
+    const wall = nearestWall(at[0], at[1], 2);
+    if (!wall) { say("Click on a wall (or close to one) to put a door in it.", true); return; }
+    snapshot(); f.doors = f.doors || [];
+    f.doors.push({ ...doorway(wall.at, wall.dir, Math.min(3, wall.length)), swing: 1 });
+    selected = { kind: "door", i: f.doors.length - 1 }; setTool("move"); changed(); render(); return;
+  }
   if (tool === "stairs") {
     snapshot(); f.stairs = f.stairs || []; f.stairs.push([snapValue(at[0]), snapValue(at[1])]); selected = { kind: "stairs", i: f.stairs.length - 1 }; changed(); render(); return;
   }
   if (!target || target.kind === "edge") { selected = null; render(); return; }
   selected = { kind: target.kind, i: target.i };
   drag = { ...target, start: at, before: JSON.stringify(plan), moved: false };
-  if (target.kind === "room") drag.original = { ...f.rooms[target.i] };
+  if (target.kind === "door") drag.original = JSON.parse(JSON.stringify(f.doors[target.i]));
+  else if (target.kind === "room") drag.original = { ...f.rooms[target.i] };
   else if (target.kind === "stairs") drag.original = [...f.stairs[target.i]];
   else {
     // The points that move: the corner or wall end grabbed (both ends for a whole wall), and
@@ -275,7 +361,24 @@ svg.addEventListener("pointermove", event => {
   if (!drag.moved && Math.hypot(dx, dy) < 0.15) return;
   drag.moved = true;
   const o = drag.original;
-  if (drag.kind === "room") { const room = f.rooms[drag.i]; room.x = snapValue(o.x + dx); room.y = snapValue(o.y + dy); }
+  if (drag.kind === "door") {
+    const d = f.doors[drag.i], w = doorWidth(o), u = [(o.to[0] - o.from[0]) / w, (o.to[1] - o.from[1]) / w];
+    if (drag.end === "whole") {
+      // The doorway slides along walls: its middle follows the pointer to the nearest wall, turning to match it.
+      const c = [(o.from[0] + o.to[0]) / 2 + dx, (o.from[1] + o.to[1]) / 2 + dy], wall = nearestWall(c[0], c[1], 3);
+      if (wall) {
+        const flipped = wall.dir[0] * u[0] + wall.dir[1] * u[1] < 0, dir = flipped ? [-wall.dir[0], -wall.dir[1]] : wall.dir;
+        Object.assign(d, doorway(wall.at, dir, Math.min(w, wall.length)));
+      }
+    } else {
+      // An end drags along the doorway's own line: wider or narrower, never off the wall.
+      const fixed = drag.end === "a" ? o.to : o.from, moving = drag.end === "a" ? o.from : o.to;
+      const along = (moving[0] + dx - fixed[0]) * u[0] + (moving[1] + dy - fixed[1]) * u[1];
+      const sign = drag.end === "a" ? -1 : 1, length = Math.max(0.5, snapValue(Math.abs(along)));
+      const end = [round(fixed[0] + u[0] * sign * length), round(fixed[1] + u[1] * sign * length)];
+      if (drag.end === "a") d.from = end; else d.to = end;
+    }
+  } else if (drag.kind === "room") { const room = f.rooms[drag.i]; room.x = snapValue(o.x + dx); room.y = snapValue(o.y + dy); }
   else if (drag.kind === "stairs") { f.stairs[drag.i] = [snapValue(o[0] + dx), snapValue(o[1] + dy)]; }
   else {
     // A single point snaps to whatever it's dropped near; a whole wall moves by a snapped step.
@@ -320,7 +423,7 @@ function deleteSelected() {
   if (!selected) return;
   if (selected.kind === "corner" && f.outline.length <= 3) { say("A floor needs at least three corners.", true); return; }
   snapshot();
-  ({ wall: f.walls, room: f.rooms, stairs: f.stairs, corner: f.outline })[selected.kind].splice(selected.i, 1);
+  ({ wall: f.walls, room: f.rooms, stairs: f.stairs, corner: f.outline, door: f.doors })[selected.kind].splice(selected.i, 1);
   selected = null; changed(); render();
 }
 
@@ -332,6 +435,7 @@ function nudge(dx, dy) {
   if (selected.kind === "wall") { const w = f.walls[selected.i]; const a = move([w[0], w[1]]), b = move([w[2], w[3]]); f.walls[selected.i] = [...a, ...b]; }
   else if (selected.kind === "room") { const room = f.rooms[selected.i]; room.x = round(room.x + dx); room.y = round(room.y + dy); }
   else if (selected.kind === "stairs") f.stairs[selected.i] = move(f.stairs[selected.i]);
+  else if (selected.kind === "door") { const d = f.doors[selected.i]; d.from = move(d.from); d.to = move(d.to); }
   else f.outline[selected.i] = move(f.outline[selected.i]);
   changed(); render();
 }
@@ -362,7 +466,10 @@ document.addEventListener("keydown", event => {
   else if (event.key === "ArrowUp") { event.preventDefault(); nudge(0, -step); }
   else if (event.key === "ArrowDown") { event.preventDefault(); nudge(0, step); }
   else if (event.key === "Escape") { selected = null; drag = null; render(); }
-  else if (!event.metaKey && !event.ctrlKey) ({ m: "move", w: "wall", r: "room", s: "stairs" })[event.key.toLowerCase()] && setTool({ m: "move", w: "wall", r: "room", s: "stairs" }[event.key.toLowerCase()]);
+  else if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+    const shortcut = { m: "move", w: "wall", r: "room", s: "stairs", d: "door" }[event.key.toLowerCase()];
+    if (shortcut) setTool(shortcut);
+  }
 });
 window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => plan && render());
@@ -385,11 +492,11 @@ async function load() {
     const r = await fetch("/floorplan", { credentials: "include" });
     if (r.status === 401) { statusLine.innerHTML = 'Sign in to Frigate in this browser first: <a href="http://' + location.hostname + ':8971/">open Frigate</a>, then reload this page.'; return; }
     if (r.status === 404) {
-      plan = { floors: [{ id: "first", name: "First floor", outline: [[0, 0], [30, 0], [30, 40], [0, 40]], rooms: [], stairs: [], walls: [] }] };
+      plan = { floors: [{ id: "first", name: "First floor", outline: [[0, 0], [30, 0], [30, 40], [0, 40]], rooms: [], stairs: [], walls: [], doors: [] }] };
       say("There's no floor plan on the box yet: this is a starting square. Shape it and Save.");
     } else if (!r.ok) { say(`The relay answered ${r.status}.`, true); return; }
     else { plan = await r.json(); say("Saved plan loaded. Changes stay here until you Save."); }
-    plan.floors.forEach(f => { f.rooms = f.rooms || []; f.stairs = f.stairs || []; f.walls = f.walls || []; });
+    plan.floors.forEach(f => { f.rooms = f.rooms || []; f.stairs = f.stairs || []; f.walls = f.walls || []; f.doors = f.doors || []; });
     const d = await fetch("/doors", { credentials: "include" }).catch(() => null);
     if (d && d.ok) doors = (await d.json()).doors || [];
     renderFloors(); render();

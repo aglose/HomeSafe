@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
+import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
@@ -43,6 +44,11 @@ private val previewPlan = FloorPlan(
                 PlanWall(PlanPoint(0f, 13f), PlanPoint(14f, 13f)),
                 PlanWall(PlanPoint(14f, 0f), PlanPoint(14f, 16f)),
                 PlanWall(PlanPoint(0f, 25f), PlanPoint(12f, 25f)),
+            ),
+            doors = listOf(
+                PlanDoor(PlanPoint(12.5f, 0f), PlanPoint(15.5f, 0f), swing = 1, name = "Back door", sensorId = "0x01"),
+                PlanDoor(PlanPoint(10.5f, 36f), PlanPoint(7.5f, 36f), swing = 1, name = "Front door", sensorId = "0x02"),
+                PlanDoor(PlanPoint(28f, 18f), PlanPoint(28f, 21f), swing = 1, name = "Garage door"),
             ),
         ),
         PlanFloor(

@@ -5372,8 +5372,12 @@ def set_door(door_id: str, patch: DoorPatch, request: Request) -> dict[str, Any]
 # plan"). It lives only on the box, as FLOORPLAN_FILE (relay/data, gitignored): the repository is
 # public, and a plan with the door sensors on it says too much about the house. The shape:
 #   {"floors": [{"id": "first", "name": "First floor", "outline": [[x, y], ...],
-#                "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}], "stairs": [[x, y]]}, ...]}
-# in feet, y downward, each floor's outline one closed polygon. Each door's spot on it is kept with
+#                "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}], "stairs": [[x, y]],
+#                "walls": [[x1, y1, x2, y2]], "doors": [{"name": "Back door", "from": [x, y], "to": [x, y],
+#                "swing": 1, "sensor": "0x…"}]}, ...]}
+# in feet, y downward, each floor's outline one closed polygon. A door is a doorway along a wall,
+# hinged at `from`, swinging to the left of from→to (1) or the right (-1); one linked to a sensor
+# puts that sensor's spot at the doorway's middle when the plan is saved (`link_door_sensors`). Each door's spot on it is kept with
 # the door (`spot_floor`, `spot_x`, `spot_y`), placed from the app.
 
 FLOORPLAN_FILE = os.environ.get("FLOORPLAN_FILE", os.path.join(os.path.dirname(DB_PATH), "floorplan.json"))
@@ -5458,6 +5462,19 @@ def clean_floorplan(plan: Any) -> dict[str, Any]:
             if not isinstance(wall, list) or len(wall) != 4:
                 raise ValueError(f"{floor_id}: a wall must be [x1, y1, x2, y2]")
             walls.append([number(v) for v in wall])
+        doors = []
+        for door in floor.get("doors") or []:
+            if not isinstance(door, dict):
+                raise ValueError(f"{floor_id}: a door must be an object")
+            hinge, latch = point(door.get("from")), point(door.get("to"))
+            if math.hypot(latch[0] - hinge[0], latch[1] - hinge[1]) < 0.5:
+                raise ValueError(f"{floor_id}: a door must be at least half a foot wide")
+            cleaned_door: dict[str, Any] = {"from": hinge, "to": latch, "swing": -1 if door.get("swing") == -1 else 1}
+            if isinstance(door.get("name"), str) and door["name"].strip():
+                cleaned_door["name"] = door["name"].strip()[:60]
+            if isinstance(door.get("sensor"), str) and door["sensor"].strip():
+                cleaned_door["sensor"] = door["sensor"].strip()
+            doors.append(cleaned_door)
         name = floor.get("name")
         cleaned.append({
             "id": floor_id,
@@ -5466,8 +5483,34 @@ def clean_floorplan(plan: Any) -> dict[str, Any]:
             "rooms": rooms,
             "stairs": [point(p) for p in floor.get("stairs") or []],
             "walls": walls,
+            "doors": doors,
         })
+    linked = [d["sensor"] for f in cleaned for d in f["doors"] if "sensor" in d]
+    if len(linked) != len(set(linked)):
+        raise ValueError("A door sensor can be linked to one door only")
     return {"floors": cleaned}
+
+
+def link_door_sensors(plan: dict[str, Any]) -> list[str]:
+    """
+    Puts each door sensor the plan links to a doorway at that doorway's middle, on its floor (the
+    spot the app draws its dot at), and answers the ids it moved. A link to a sensor this relay
+    doesn't know is left in the plan for when it's paired, and moves nothing.
+    """
+    moved = []
+    for floor in plan["floors"]:
+        for door in floor.get("doors") or []:
+            sensor = door.get("sensor")
+            if not sensor:
+                continue
+            x = round((door["from"][0] + door["to"][0]) / 2, 2)
+            y = round((door["from"][1] + door["to"][1]) / 2, 2)
+            changed = with_db(lambda c: (c.execute(
+                "UPDATE doors SET spot_floor=?, spot_x=?, spot_y=? WHERE id=? AND removed=0", (floor["id"], x, y, sensor)
+            ).rowcount, c.commit())[0])
+            if changed:
+                moved.append(sensor)
+    return moved
 
 
 def save_floorplan(plan: dict[str, Any], now: float) -> None:
@@ -5496,7 +5539,12 @@ def put_floorplan(plan: dict[str, Any], request: Request) -> dict[str, Any]:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     save_floorplan(cleaned, time.time())
-    log.info("floor plan: %s saved %s", user, ", ".join(f"{f['id']} ({len(f['walls'])} walls, {len(f['rooms'])} rooms)" for f in cleaned["floors"]))
+    moved = link_door_sensors(cleaned)
+    log.info(
+        "floor plan: %s saved %s%s", user,
+        ", ".join(f"{f['id']} ({len(f['walls'])} walls, {len(f['doors'])} doors, {len(f['rooms'])} rooms)" for f in cleaned["floors"]),
+        f"; sensors placed at their doors: {', '.join(moved)}" if moved else "",
+    )
     return cleaned
 
 

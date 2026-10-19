@@ -111,21 +111,28 @@ previews and tests use a made-up house instead. Without the file the page is the
    "outline": [[0, 0], [13.5, 0], [13.5, 8], ...],
    "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}],
    "stairs": [[14.5, 24]],
-   "walls": [[0, 8, 13.5, 8], [13.5, 8, 13.5, 20]]}
+   "walls": [[0, 8, 13.5, 8], [13.5, 8, 13.5, 20]],
+   "doors": [{"name": "Back door", "from": [2.5, 0], "to": [5.5, 0], "swing": 1, "sensor": "0x…"}]}
 ]}
 ```
 
 - Feet, `y` downward, from any origin; each floor's `outline` is its outside walls as one closed
-  polygon, and `walls` its inside walls, each `[x1, y1, x2, y2]`. `rooms`, `stairs` and `walls`
-  are optional.
+  polygon, and `walls` its inside walls, each `[x1, y1, x2, y2]`. `rooms`, `stairs`, `walls` and
+  `doors` are optional.
+- A door is a doorway along a wall, hinged at `from`, as wide as `from`→`to`, swinging to the left
+  of that line (`swing` 1) or the right (-1). One with a `sensor` (the sensor's Zigbee address)
+  puts that sensor's dot in the doorway's middle whenever the plan is saved; a link to a sensor
+  not paired yet waits in the file until it is.
 - The floors are shown in the file's order, the first first.
 - The current file's outside walls were traced from a floor plan sketch, wall by wall from the
   lengths it labels; each floor's area matches the sketch's. The sketch has no inside walls or
   doors: the inside walls in the file are drawn from where the sketch puts each room's name and
   where the outside walls step in and out, and corrected by hand.
 
-**Placing the doors:** Doors page › Place doors, pick a door, tap where it is; the next door not
-on the plan yet is picked for the next tap. The spot is kept with the door in `relay.db`
+**Placing the doors:** the easiest way is the editor below: put a door in the wall where each
+sensor is and pick the sensor for it. From the app instead: Doors page › Place doors, pick a door,
+tap where it is (a tap near a doorway lands in its middle); the next door not on the plan yet is
+picked for the next tap. The spot is kept with the door in `relay.db`
 (`PUT /doors/{id}/spot`, `DELETE` to take it off), so every phone sees it and a sensor renamed
 on the pairing page keeps its spot.
 
@@ -137,6 +144,9 @@ at home or `http://100.99.163.71:8787/floorplan/edit` over Tailscale, signed in 
   end it's dropped near, else to the half-foot grid; dragging a joint moves every wall that meets
   there, and dragging a whole wall stretches the walls attached to it (never the outside ones).
 - **Add wall** draws by dragging; **Add room name** and **Add stairs** place with a click.
+- **Add door** puts a 3 ft doorway in the wall nearest the click. Drag it to slide it along the
+  walls, drag an end to make it wider; the side panel names it, flips its swing or its hinge, and
+  links the door sensor on it.
 - Double-click an outside wall to add a corner there, a corner to remove it, a room name to
   rename it. Arrow keys nudge the selection (Shift for a tenth of a foot); Delete deletes it;
   Ctrl/Cmd+Z undoes. The side panel takes exact numbers.

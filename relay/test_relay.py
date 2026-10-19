@@ -6404,13 +6404,35 @@ class DoorsTest(_ScratchDb):
                               "rooms": [{"name": "Kitchen", "x": 8, "y": 10}], "walls": [[0, 13, 14, 13]], "extra": "dropped"}]}
         saved = relay.put_floorplan(edited, types.SimpleNamespace(headers={}))
         self.assertEqual({"id": "ground", "name": "Ground floor", "outline": [[0.0, 0.0], [30.0, 0.0], [30.0, 40.0], [0.0, 40.0]],
-                          "rooms": [{"name": "Kitchen", "x": 8.0, "y": 10.0}], "stairs": [], "walls": [[0.0, 13.0, 14.0, 13.0]]}, saved["floors"][0])
+                          "rooms": [{"name": "Kitchen", "x": 8.0, "y": 10.0}], "stairs": [], "walls": [[0.0, 13.0, 14.0, 13.0]], "doors": []}, saved["floors"][0])
         self.assertEqual(saved, relay.floorplan())
         history = os.path.join(self._dir.name, "floorplan-history")
         kept = os.listdir(history)
         self.assertEqual(1, len(kept))
         with open(os.path.join(history, kept[0])) as f:
             self.assertEqual(self.PLAN, json.load(f))
+
+    def test_a_doorway_linked_to_a_sensor_puts_the_sensor_at_its_middle(self):
+        self.paired()
+        plan = {"floors": [{"id": "ground", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]],
+                            "doors": [{"name": "Front door", "from": [10, 40], "to": [13, 40], "swing": -1, "sensor": FRONT},
+                                      {"from": [0, 5], "to": [0, 8], "swing": 7, "sensor": "0xnot-paired-yet"}]}]}
+        saved = relay.put_floorplan(plan, types.SimpleNamespace(headers={}))
+        self.assertEqual([{"from": [10.0, 40.0], "to": [13.0, 40.0], "swing": -1, "name": "Front door", "sensor": FRONT},
+                          {"from": [0.0, 5.0], "to": [0.0, 8.0], "swing": 1, "sensor": "0xnot-paired-yet"}], saved["floors"][0]["doors"])
+        self.assertEqual({"floor": "ground", "x": 11.5, "y": 40.0}, self.door()["spot"])
+
+    def test_a_sensor_links_to_one_doorway_and_a_doorway_has_width(self):
+        request = types.SimpleNamespace(headers={})
+        outline = [[0, 0], [30, 0], [30, 40], [0, 40]]
+        for doors in (
+            [{"from": [0, 0], "to": [3, 0], "sensor": FRONT}, {"from": [5, 0], "to": [8, 0], "sensor": FRONT}],
+            [{"from": [0, 0], "to": [0.2, 0]}],
+            [{"from": [0, 0]}],
+        ):
+            with self.assertRaises(relay.HTTPException) as refused:
+                relay.put_floorplan({"floors": [{"id": "ground", "outline": outline, "doors": doors}]}, request)
+            self.assertEqual(400, refused.exception.status_code)
 
     def test_a_plan_the_editor_got_wrong_is_refused(self):
         request = types.SimpleNamespace(headers={})

@@ -53,8 +53,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.PlanBounds
+import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
+import com.meticulouscreations.homesafe.domain.model.nearestDoorway
 import com.meticulouscreations.homesafe.viewmodel.DoorsUiState
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.doors_chip_closed
@@ -105,7 +107,8 @@ internal class PlanTransform(private val bounds: PlanBounds, width: Float, heigh
  * door's card below ([onShowDoor]).
  *
  * Placing (from "Place doors"): pick a door from the chips under the plan, then tap where it is;
- * the next door not on the plan yet is picked for the next tap. The plan file itself has no
+ * the next door not on the plan yet is picked for the next tap. A tap near one of the plan's
+ * doorways puts the door in its middle. The plan file itself has no
  * doors, only the outside walls and the rooms' names, so this is how the dots get there.
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -188,8 +191,10 @@ private fun FloorDrawing(
                     if (placing) {
                         Modifier.pointerInput(transform) {
                             detectTapGestures { tap ->
+                                // A tap near a doorway puts the door on it, in its middle.
                                 val feet = transform.toFeet(tap)
-                                onPlaceAt(feet.x, feet.y)
+                                val at = nearestDoorway(floor, feet)?.middle ?: feet
+                                onPlaceAt(at.x, at.y)
                             }
                         }
                     } else {
@@ -205,6 +210,7 @@ private fun FloorDrawing(
                 drawPath(outline, inside)
                 floor.walls.forEach { inner -> drawLine(wall.copy(alpha = 0.7f), transform.toPx(inner.from), transform.toPx(inner.to), 1.5.dp.toPx()) }
                 drawPath(outline, wall, style = Stroke(width = 2.dp.toPx()))
+                floor.doors.forEach { door -> drawDoorway(door, transform, gap = inside, ink = wall) }
                 floor.stairs.forEach { stair -> drawStairs(transform.toPx(stair), transform.scale, wall) }
                 floor.rooms.forEach { room ->
                     val text = measurer.measure(room.name, label)
@@ -225,6 +231,32 @@ private fun FloorDrawing(
             }
         }
     }
+}
+
+/**
+ * A doorway: the opening cut out of the wall, the door standing open at right angles from its
+ * hinge, and the quarter circle it swings through.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDoorway(door: PlanDoor, transform: PlanTransform, gap: Color, ink: Color) {
+    val from = transform.toPx(door.from)
+    val to = transform.toPx(door.to)
+    val width = (to - from).getDistance()
+    if (width < 1f) return
+    val along = (to - from) / width
+    val open = Offset(-along.y, along.x) * door.swing.toFloat()
+    val leaf = from + open * width
+    drawLine(gap, from, to, 4.dp.toPx())
+    drawLine(ink, from, leaf, 1.5.dp.toPx())
+    val start = kotlin.math.atan2(along.y, along.x) * 180f / kotlin.math.PI.toFloat()
+    drawArc(
+        color = ink.copy(alpha = 0.6f),
+        startAngle = start,
+        sweepAngle = 90f * door.swing,
+        useCenter = false,
+        topLeft = Offset(from.x - width, from.y - width),
+        size = androidx.compose.ui.geometry.Size(width * 2, width * 2),
+        style = Stroke(width = 1.dp.toPx()),
+    )
 }
 
 /** A flight of stairs where the plan has one: a few treads, about three feet across. */

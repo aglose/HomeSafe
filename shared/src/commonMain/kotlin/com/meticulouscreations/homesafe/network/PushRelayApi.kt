@@ -13,6 +13,7 @@ import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
+import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
@@ -667,6 +668,7 @@ internal data class RelayFloor(
     val stairs: List<List<Double>> = emptyList(),
     /** Each inside wall as [x1, y1, x2, y2]. */
     val walls: List<List<Double>> = emptyList(),
+    val doors: List<RelayPlanDoor> = emptyList(),
 ) {
     fun toDomain(): PlanFloor? {
         val points = outline.mapNotNull { it.point() }
@@ -678,9 +680,23 @@ internal data class RelayFloor(
             rooms = rooms.map { PlanRoom(it.name, PlanPoint(it.x.toFloat(), it.y.toFloat())) },
             stairs = stairs.mapNotNull { it.point() },
             walls = walls.filter { it.size >= 4 }.map { PlanWall(PlanPoint(it[0].toFloat(), it[1].toFloat()), PlanPoint(it[2].toFloat(), it[3].toFloat())) },
+            doors = doors.mapNotNull { door ->
+                val from = door.from.point() ?: return@mapNotNull null
+                val to = door.to.point() ?: return@mapNotNull null
+                PlanDoor(from, to, if (door.swing == -1) -1 else 1, door.name?.ifBlank { null }, door.sensor?.ifBlank { null })
+            },
         )
     }
 }
+
+@Serializable
+internal data class RelayPlanDoor(
+    val from: List<Double> = emptyList(),
+    val to: List<Double> = emptyList(),
+    val swing: Int = 1,
+    val name: String? = null,
+    val sensor: String? = null,
+)
 
 @Serializable
 internal data class RelayRoom(val name: String, val x: Double, val y: Double)

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
+import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
@@ -87,5 +88,28 @@ class DoorsFloorPlanUiTest {
         assertTrue(abs(x - 10f) < 0.5f && abs(y - 10f) < 0.5f, "the middle of a 20 ft square floor, was ($x, $y)")
         onNodeWithTag(DOORS_PLACE_TEST_TAG).performClick()
         assertEquals(0, started, "while placing the button is Done, not Place doors")
+    }
+
+    @Test
+    fun whilePlacingATapNearADoorwayPutsTheDoorInItsMiddle() = runComposeUiTest {
+        var placed: Pair<Float, Float>? = null
+        // A doorway a little off the floor's centre: a tap at the centre lands near it.
+        val doorway = PlanDoor(PlanPoint(9f, 11f), PlanPoint(12f, 11f), name = "Hall door")
+        val withDoorway = FloorPlan(listOf(plan.floors[0].copy(doors = listOf(doorway))))
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                Column(modifier = Modifier.width(400.dp)) {
+                    DoorsFloorPlan(
+                        DoorsUiState(doors = listOf(back, front), loaded = true, floorPlan = withDoorway, floorId = "ground", placing = true, placingDoorId = "0x02"),
+                        DoorsPlanActions(onPlaceAt = { x, y -> placed = x to y }),
+                        onShowDoor = {},
+                    )
+                }
+            }
+        }
+
+        onNodeWithTag(DOORS_PLAN_TEST_TAG).performTouchInput { click(center) }
+        assertEquals(10.5f to 11f, placed)
     }
 }
