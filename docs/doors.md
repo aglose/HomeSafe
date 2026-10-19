@@ -15,7 +15,7 @@ sensor ──Zigbee──▶ USB stick ──▶ Zigbee2MQTT ──MQTT──▶
 | Sensors | ThirdReality Zigbee Contact Sensor (3RDS17BZ), two AAA cells each |
 | Zigbee2MQTT, Mosquitto | `server/zigbee/docker-compose.yml`, both `restart: always`, host networking. The broker listens on 127.0.0.1 only. |
 | Relay | `relay/relay.py`, "doors": keeps each door's state and 90 days of openings and closings in `relay.db`, answers `GET /doors`, and pushes |
-| App | Pills at the top of Home (each open or offline door, and a count of the closed ones) opening the Doors page, also at Settings › Doors: each sensor's battery and signal, its push setting, and the last 7 days |
+| App | Pills at the top of Home (each open or offline door, and a count of the closed ones) opening the Doors page, also at Settings › Doors: the floor plan with each door on it, each sensor's battery and signal, its push setting, and the last 7 days |
 
 ## What pushes
 
@@ -93,6 +93,41 @@ should say `doors: listening to zigbee2mqtt on 127.0.0.1:1883`.
 
 Pair the sensors where they'll live, or at least re-pair any that drop off once mounted: a battery
 sensor keeps the router (or the stick) it joined through.
+
+## The floor plan
+
+The Doors page draws the house's floor plan with each door on it: one floor at a time, to scale,
+the rooms named, and a dot per door at its spot (orange while open, ringed red while offline). A
+dot opens that door's card.
+
+The plan is a file on the box only, `relay/data/floorplan.json` (the relay reads it as
+`FLOORPLAN_FILE`, default next to `relay.db`). It isn't in the repository on purpose: the
+repository is public, and a plan with the door sensors on it says too much about the house. The
+previews and tests use a made-up house instead. Without the file the page is the list alone.
+
+```json
+{"floors": [
+  {"id": "first", "name": "First floor",
+   "outline": [[0, 0], [13.5, 0], [13.5, 8], ...],
+   "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}],
+   "stairs": [[14.5, 24]]}
+]}
+```
+
+- Feet, `y` downward, from any origin; each floor's `outline` is its outside walls as one closed
+  polygon. `rooms` and `stairs` are optional.
+- The floors are shown in the file's order, the first first.
+- The current file was traced from a floor plan sketch, wall by wall from the lengths it labels;
+  each floor's area matches the sketch's. The sketch has no interior walls and no doors, so
+  neither does the plan.
+
+**Placing the doors:** Doors page › Place doors, pick a door, tap where it is; the next door not
+on the plan yet is picked for the next tap. The spot is kept with the door in `relay.db`
+(`PUT /doors/{id}/spot`, `DELETE` to take it off), so every phone sees it and a sensor renamed
+on the pairing page keeps its spot.
+
+**Changing the plan:** edit the file on the box and pull to refresh on the Doors page; the app
+reads the plan once per server and again on a refresh. No restart needed.
 
 ## Range
 

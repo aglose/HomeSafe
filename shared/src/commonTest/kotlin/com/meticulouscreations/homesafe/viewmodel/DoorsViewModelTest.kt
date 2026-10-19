@@ -3,15 +3,22 @@ package com.meticulouscreations.homesafe.viewmodel
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
+import com.meticulouscreations.homesafe.domain.model.FloorPlan
+import com.meticulouscreations.homesafe.domain.model.PlanFloor
+import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.repository.DoorRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveDoorsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveFloorPlanUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetDoorNotifyUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetDoorSpotUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.doors_load_failed
 import homesafe.shared.generated.resources.doors_save_failed
+import homesafe.shared.generated.resources.doors_spot_save_failed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,8 +45,17 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 /** The relay's doors, in memory: what the Doors page and the Home strip are tested against. */
-internal class FakeDoorRepository(snapshot: DoorsSnapshot = DoorsSnapshot.EMPTY) : DoorRepository {
+internal class FakeDoorRepository(snapshot: DoorsSnapshot = DoorsSnapshot.EMPTY, plan: FloorPlan? = null) : DoorRepository {
     override val doors = MutableStateFlow(snapshot)
+    override val floorPlan = MutableStateFlow(plan)
+    val spots = mutableListOf<Pair<String, DoorSpot?>>()
+
+    override suspend fun setSpot(doorId: String, spot: DoorSpot?): Result<Unit> {
+        saveFailure?.let { return Result.failure(it) }
+        spots += doorId to spot
+        doors.value = doors.value.copy(doors = doors.value.doors.map { if (it.id == doorId) it.copy(spot = spot) else it })
+        return Result.success(Unit)
+    }
     var refreshes = 0
     var refreshFailure: Throwable? = null
     var saveFailure: Throwable? = null
@@ -83,6 +99,8 @@ class DoorsViewModelTest {
         ObserveDoorsUseCase(repo),
         RefreshDoorsUseCase(repo),
         SetDoorNotifyUseCase(repo),
+        ObserveFloorPlanUseCase(repo),
+        SetDoorSpotUseCase(repo),
         object : Clock {
             override fun now(): Instant = noon
         },
@@ -169,5 +187,74 @@ class DoorsViewModelTest {
     fun aRelayFromBeforeDoorSensorsIsToldApart() = runTest(dispatcher) {
         val state = collecting(viewModel(FakeDoorRepository(DoorsSnapshot(supported = false)))).value
         assertFalse(state.supported)
+    }
+
+    private val plan = FloorPlan(
+        listOf(
+            PlanFloor("ground", "Ground floor", listOf(PlanPoint(0f, 0f), PlanPoint(30f, 0f), PlanPoint(30f, 40f), PlanPoint(0f, 40f))),
+            PlanFloor("upper", "Upper floor", listOf(PlanPoint(0f, 0f), PlanPoint(30f, 0f), PlanPoint(30f, 25f), PlanPoint(0f, 25f))),
+        ),
+    )
+
+    @Test
+    fun thePlanShowsItsFirstFloorUntilAnotherIsPicked() = runTest(dispatcher) {
+        val viewModel = viewModel(FakeDoorRepository(DoorsSnapshot(doors = listOf(front), answered = true), plan))
+        val state = collecting(viewModel)
+        assertEquals("ground", state.value.floorId)
+        viewModel.selectFloor("upper")
+        runCurrent()
+        assertEquals("upper", state.value.floor?.id)
+        viewModel.selectFloor("attic")
+        runCurrent()
+        assertEquals("ground", state.value.floorId, "a floor the plan doesn't have falls back to the first")
+    }
+
+    @Test
+    fun placingPutsEachDoorWhereItIsTappedAndMovesOnToTheNext() = runTest(dispatcher) {
+        val repo = FakeDoorRepository(DoorsSnapshot(doors = listOf(back.copy(spot = DoorSpot("upper", 3f, 4f)), front), answered = true), plan)
+        val viewModel = viewModel(repo)
+        val state = collecting(viewModel)
+        viewModel.startPlacing()
+        runCurrent()
+        assertTrue(state.value.placing)
+        assertEquals("0x01", state.value.placingDoorId, "the first door not on the plan yet")
+
+        viewModel.placeAt(12f, 39f)
+        runCurrent()
+        assertEquals(listOf<Pair<String, DoorSpot?>>("0x01" to DoorSpot("ground", 12f, 39f)), repo.spots)
+        assertEquals(DoorSpot("ground", 12f, 39f), state.value.doors.single { it.id == "0x01" }.spot)
+
+        viewModel.choosePlacingDoor("0x02")
+        runCurrent()
+        assertEquals("upper", state.value.floorId, "picking a placed door turns to its floor")
+        viewModel.removeFromPlan("0x02")
+        runCurrent()
+        assertEquals<Pair<String, DoorSpot?>>("0x02" to null, repo.spots.last())
+
+        viewModel.finishPlacing()
+        runCurrent()
+        assertFalse(state.value.placing)
+    }
+
+    @Test
+    fun aSpotThatWontSaveSaysSo() = runTest(dispatcher) {
+        val repo = FakeDoorRepository(DoorsSnapshot(doors = listOf(front), answered = true), plan).apply { saveFailure = IllegalStateException("relay down") }
+        val viewModel = viewModel(repo)
+        val state = collecting(viewModel)
+        viewModel.startPlacing()
+        runCurrent()
+        viewModel.placeAt(1f, 1f)
+        runCurrent()
+        assertEquals(UiText.of(Res.string.doors_spot_save_failed, "relay down"), state.value.error)
+    }
+
+    @Test
+    fun withNoPlanThereIsNothingToPlace() = runTest(dispatcher) {
+        val viewModel = viewModel(FakeDoorRepository(DoorsSnapshot(doors = listOf(front), answered = true)))
+        val state = collecting(viewModel)
+        viewModel.startPlacing()
+        runCurrent()
+        assertFalse(state.value.placing)
+        assertNull(state.value.floor)
     }
 }

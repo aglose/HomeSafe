@@ -4,6 +4,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorSpot
+import com.meticulouscreations.homesafe.domain.model.FloorPlan
+import com.meticulouscreations.homesafe.domain.model.PlanFloor
+import com.meticulouscreations.homesafe.domain.model.PlanPoint
+import com.meticulouscreations.homesafe.domain.model.PlanRoom
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryDay
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryEntry
@@ -16,9 +21,32 @@ import org.jetbrains.compose.resources.stringResource
 private const val PREVIEW_NOW = 1_792_300_000_000L
 
 private val previewDoors = listOf(
-    Door("0x01", "Back door", open = true, changedAtMillis = PREVIEW_NOW - 7 * 60_000, battery = 88, linkQuality = 120, online = true, notify = DoorNotify.ALWAYS),
-    Door("0x02", "Front door", open = false, changedAtMillis = PREVIEW_NOW - 3 * 3_600_000, battery = 97, linkQuality = 140, online = true),
+    Door("0x01", "Back door", open = true, changedAtMillis = PREVIEW_NOW - 7 * 60_000, battery = 88, linkQuality = 120, online = true, notify = DoorNotify.ALWAYS, spot = DoorSpot("ground", 14f, 0f)),
+    Door("0x02", "Front door", open = false, changedAtMillis = PREVIEW_NOW - 3 * 3_600_000, battery = 97, linkQuality = 140, online = true, spot = DoorSpot("ground", 9f, 36f)),
     Door("0x03", "Garage door", open = false, changedAtMillis = PREVIEW_NOW - 2 * 86_400_000, battery = 12, linkQuality = 22, online = true, notify = DoorNotify.NEVER),
+)
+
+/**
+ * A made-up two-storey house for the previews: the real plan lives only on the box (see
+ * docs/doors.md, "The floor plan"). An L-shaped ground floor with the front door at the bottom.
+ */
+private val previewPlan = FloorPlan(
+    listOf(
+        PlanFloor(
+            id = "ground",
+            name = "Ground floor",
+            outline = listOf(PlanPoint(0f, 0f), PlanPoint(28f, 0f), PlanPoint(28f, 24f), PlanPoint(18f, 24f), PlanPoint(18f, 36f), PlanPoint(0f, 36f)),
+            rooms = listOf(PlanRoom("Kitchen", PlanPoint(7f, 6f)), PlanRoom("Family Room", PlanPoint(21f, 12f)), PlanRoom("Hall", PlanPoint(9f, 20f)), PlanRoom("Living Room", PlanPoint(9f, 30f))),
+            stairs = listOf(PlanPoint(15f, 18f)),
+        ),
+        PlanFloor(
+            id = "upper",
+            name = "Upper floor",
+            outline = listOf(PlanPoint(0f, 0f), PlanPoint(28f, 0f), PlanPoint(28f, 24f), PlanPoint(0f, 24f)),
+            rooms = listOf(PlanRoom("Bedroom", PlanPoint(7f, 7f)), PlanRoom("Bedroom", PlanPoint(21f, 7f)), PlanRoom("Bath", PlanPoint(7f, 18f))),
+            stairs = listOf(PlanPoint(15f, 18f)),
+        ),
+    ),
 )
 
 private val previewHistory = listOf(
@@ -47,6 +75,32 @@ private fun DoorsPagePreviewContent(state: DoorsUiState) {
 @Composable
 private fun DoorsPreview() {
     DoorsPagePreviewContent(DoorsUiState(doors = previewDoors, history = previewHistory, nowMillis = PREVIEW_NOW, loaded = true))
+}
+
+/** The same doors over the house's plan: two placed on the ground floor, the garage's not yet. */
+@Preview(name = "Doors, on the floor plan", widthDp = 412, heightDp = 1900)
+@Composable
+private fun DoorsFloorPlanPreview() {
+    DoorsPagePreviewContent(
+        DoorsUiState(doors = previewDoors, history = previewHistory, nowMillis = PREVIEW_NOW, loaded = true, floorPlan = previewPlan, floorId = "ground"),
+    )
+}
+
+/** Placing doors: the garage door picked, the next tap on the plan puts it there. */
+@Preview(name = "Doors, placing on the floor plan", widthDp = 412, heightDp = 915)
+@Composable
+private fun DoorsPlacingPreview() {
+    DoorsPagePreviewContent(
+        DoorsUiState(
+            doors = previewDoors,
+            nowMillis = PREVIEW_NOW,
+            loaded = true,
+            floorPlan = previewPlan,
+            floorId = "ground",
+            placing = true,
+            placingDoorId = "0x03",
+        ),
+    )
 }
 
 /** No sensor paired yet, and the server not hearing the Zigbee network either. */

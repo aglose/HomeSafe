@@ -7,10 +7,15 @@ import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
+import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
+import com.meticulouscreations.homesafe.domain.model.PlanFloor
+import com.meticulouscreations.homesafe.domain.model.PlanPoint
+import com.meticulouscreations.homesafe.domain.model.PlanRoom
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.ServerUptime
@@ -323,6 +328,32 @@ class PushRelayApi(private val httpClient: HttpClient) {
         response.body<RelayDoors>().toDomain()
     }
 
+    /**
+     * The house's floor plan (the relay's `/floorplan`, from a file kept only on the box). Null when
+     * the box has none, or the relay predates it (both answer 404).
+     */
+    suspend fun getFloorPlan(serverUrl: String, deviceId: String? = null, secret: String? = null): Result<FloorPlan?> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/floorplan")) { asDevice(deviceId, secret) }
+        if (response.status == HttpStatusCode.NotFound) return@runCatching null
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayFloorPlan>().toDomain()
+    }.onFailure { if (it is CancellationException) throw it }
+
+    /** Places [doorId] on the floor plan, or with null takes it off. A user action, so the session cookie. Answers the doors as they now stand. */
+    suspend fun setDoorSpot(serverUrl: String, doorId: String, spot: DoorSpot?): Result<DoorsSnapshot> = runCatching {
+        val url = relayUrl(serverUrl, "/doors/$doorId/spot")
+        val response = if (spot == null) {
+            httpClient.delete(url)
+        } else {
+            httpClient.put(url) {
+                contentType(ContentType.Application.Json)
+                setBody(RelayDoorSpot(spot.floorId, spot.x.toDouble(), spot.y.toDouble()))
+            }
+        }
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayDoors>().toDomain()
+    }
+
     /** The relay answered [status] instead of success; the message keeps the status for callers that look for a 401 or 403. */
     private fun relayRefused(status: HttpStatusCode) =
         FrigateResponseException(UiText.of(Res.string.error_relay_answered, status.toString()), technical = "Relay answered $status")
@@ -600,6 +631,7 @@ internal data class RelayDoor(
     val link: Int? = null,
     val online: Boolean? = null,
     val notify: String? = null,
+    val spot: RelayDoorSpot? = null,
 ) {
     fun toDomain() = Door(
         id = id,
@@ -612,8 +644,38 @@ internal data class RelayDoor(
         online = online,
         notify = DoorNotify.fromWire(notify),
         model = model,
+        spot = spot?.let { DoorSpot(it.floor, it.x.toFloat(), it.y.toFloat()) },
     )
 }
+
+@Serializable
+internal data class RelayDoorSpot(val floor: String, val x: Double, val y: Double)
+
+@Serializable
+internal data class RelayFloorPlan(val floors: List<RelayFloor> = emptyList()) {
+    /** Null when no floor has an outline to draw: nothing to show. */
+    fun toDomain(): FloorPlan? = floors.mapNotNull { it.toDomain() }.takeIf { it.isNotEmpty() }?.let(::FloorPlan)
+}
+
+@Serializable
+internal data class RelayFloor(
+    val id: String,
+    val name: String? = null,
+    val outline: List<List<Double>> = emptyList(),
+    val rooms: List<RelayRoom> = emptyList(),
+    val stairs: List<List<Double>> = emptyList(),
+) {
+    fun toDomain(): PlanFloor? {
+        val points = outline.mapNotNull { it.point() }
+        if (points.size < 3) return null
+        return PlanFloor(id, name?.ifBlank { null } ?: id, points, rooms.map { PlanRoom(it.name, PlanPoint(it.x.toFloat(), it.y.toFloat())) }, stairs.mapNotNull { it.point() })
+    }
+}
+
+@Serializable
+internal data class RelayRoom(val name: String, val x: Double, val y: Double)
+
+private fun List<Double>.point(): PlanPoint? = if (size >= 2) PlanPoint(this[0].toFloat(), this[1].toFloat()) else null
 
 @Serializable
 internal data class RelayDoorEvent(val door: String, val open: Boolean, val at: Double, val pushed: String? = null)

@@ -6221,10 +6221,11 @@ FRONT = "0x282c02bfffe6aa01"
 class DoorsTest(_ScratchDb):
     """The door sensors: what Zigbee2MQTT says, what the relay keeps of it, and which openings push."""
 
-    NAMES = _ScratchDb.NAMES + ("away_since", "require_frigate_session")
+    NAMES = _ScratchDb.NAMES + ("away_since", "require_frigate_session", "FLOORPLAN_FILE", "authenticate")
 
     def setUp(self):
         super().setUp()
+        relay.FLOORPLAN_FILE = os.path.join(self._dir.name, "floorplan.json")
         self.away = False
         relay.away_since = lambda: 1.0 if self.away else None
         relay.require_frigate_session = lambda request: "alex"
@@ -6371,6 +6372,57 @@ class DoorsTest(_ScratchDb):
         self.paired()
         self.receive("zigbee2mqtt/Front door/availability", {"state": "offline"}, self.T)
         self.assertFalse(self.door()["online"])
+
+    # A made-up two-floor plan: the real one lives only on the box.
+    PLAN = {"floors": [
+        {"id": "ground", "name": "Ground floor", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]], "rooms": [{"name": "Kitchen", "x": 8, "y": 10}]},
+        {"id": "upper", "name": "Upper floor", "outline": [[0, 0], [30, 0], [30, 25], [0, 25]]},
+    ]}
+
+    def write_plan(self, plan):
+        with open(relay.FLOORPLAN_FILE, "w") as f:
+            f.write(plan if isinstance(plan, str) else json.dumps(plan))
+
+    def test_the_floor_plan_is_served_only_when_the_box_has_one(self):
+        request = types.SimpleNamespace(headers={})
+        relay.authenticate = lambda request, device=None: "alex"
+        with self.assertRaises(relay.HTTPException) as missing:
+            relay.get_floorplan(request)
+        self.assertEqual(404, missing.exception.status_code)
+        self.write_plan("not json")
+        with self.assertRaises(relay.HTTPException):
+            relay.get_floorplan(request)
+        self.write_plan({"floors": [{"name": "no id or outline"}]})
+        with self.assertRaises(relay.HTTPException):
+            relay.get_floorplan(request)
+        self.write_plan(self.PLAN)
+        self.assertEqual(self.PLAN, relay.get_floorplan(request))
+
+    def test_a_door_is_placed_on_a_floor_and_taken_off_again(self):
+        self.paired()
+        self.write_plan(self.PLAN)
+        request = types.SimpleNamespace(headers={})
+        self.assertIsNone(self.door()["spot"])
+        placed = relay.set_door_spot(FRONT, types.SimpleNamespace(floor="ground", x=12.5, y=39.0), request)
+        self.assertEqual({"floor": "ground", "x": 12.5, "y": 39.0}, placed["doors"][0]["spot"])
+        self.assertIsNone(relay.clear_door_spot(FRONT, request)["doors"][0]["spot"])
+
+    def test_a_spot_must_be_on_a_floor_the_plan_has(self):
+        self.paired()
+        request = types.SimpleNamespace(headers={})
+        with self.assertRaises(relay.HTTPException) as no_plan:
+            relay.set_door_spot(FRONT, types.SimpleNamespace(floor="ground", x=1.0, y=1.0), request)
+        self.assertEqual(400, no_plan.exception.status_code)
+        self.write_plan(self.PLAN)
+        with self.assertRaises(relay.HTTPException) as attic:
+            relay.set_door_spot(FRONT, types.SimpleNamespace(floor="attic", x=1.0, y=1.0), request)
+        self.assertEqual(400, attic.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as nan:
+            relay.set_door_spot(FRONT, types.SimpleNamespace(floor="ground", x=float("nan"), y=1.0), request)
+        self.assertEqual(400, nan.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as nobody:
+            relay.set_door_spot("0xnobody", types.SimpleNamespace(floor="ground", x=1.0, y=1.0), request)
+        self.assertEqual(404, nobody.exception.status_code)
 
     def test_setting_a_door_checks_the_mode_and_the_door(self):
         self.paired()

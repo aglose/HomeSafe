@@ -987,13 +987,24 @@ internal fun com.meticulouscreations.homesafe.ui.screens.DismissQuickLookWhenHom
     - cardZoom: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.DoorCard(door: com.meticulouscreations.homesafe.domain.model.Door, nowMillis: kotlin.Long, onNotify: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.DoorNotify, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.DoorCard(door: com.meticulouscreations.homesafe.domain.model.Door, nowMillis: kotlin.Long, onNotify: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.DoorNotify, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - door: STABLE (class with no mutable properties)
     - nowMillis: STABLE (primitive type)
     - onNotify: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.DoorDot(door: com.meticulouscreations.homesafe.domain.model.Door, picked: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - door: STABLE (class with no mutable properties)
+    - picked: STABLE (primitive type)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.DoorHistory(days: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.DoorHistoryDay>): kotlin.Unit
@@ -1018,12 +1029,22 @@ private fun com.meticulouscreations.homesafe.ui.screens.DoorPills(doors: kotlin.
     - onOpenDoors: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.DoorsContent(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, onNotify: kotlin.Function2<@[ParameterName(name = \): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.DoorsContent(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, onNotify: kotlin.Function2<@[ParameterName(name = \, plan: com.meticulouscreations.homesafe.ui.screens.DoorsPlanActions): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onNotify: STABLE (function type)
+    - plan: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.DoorsFloorPlan(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, actions: com.meticulouscreations.homesafe.ui.screens.DoorsPlanActions, onShowDoor: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - actions: STABLE (marked @Stable or @Immutable)
+    - onShowDoor: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.DoorsPagePreviewContent(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState): kotlin.Unit
@@ -1221,6 +1242,18 @@ private fun com.meticulouscreations.homesafe.ui.screens.FloatingPlacementSwitch(
     - onSelect: STABLE (function type)
     - shown: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.FloorDrawing(floor: com.meticulouscreations.homesafe.domain.model.PlanFloor, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, placing: kotlin.Boolean, placingDoorId: kotlin.String?, onPlaceAt: kotlin.Function2<@[ParameterName(name = \, onDoorClick: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - floor: RUNTIME (requires runtime check)
+    - doors: RUNTIME (requires runtime check)
+    - placing: STABLE (primitive type)
+    - placingDoorId: STABLE (class with no mutable properties)
+    - onPlaceAt: STABLE (function type)
+    - onDoorClick: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FrameEditor(frame: com.meticulouscreations.homesafe.viewmodel.CameraFrame, uiState: com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState, onTap: kotlin.Function2<kotlin.Double, kotlin.Double, kotlin.Unit>, onDraw: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.SeenBox, kotlin.Unit>): kotlin.Unit
@@ -2180,10 +2213,11 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsCaption(text: k
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.SettingsCard(content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsCard(modifier: androidx.compose.ui.Modifier, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
+    - modifier: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 
 @Composable

@@ -375,6 +375,12 @@ def db() -> sqlite3.Connection:
         " removed INTEGER NOT NULL DEFAULT 0)"
     )
     conn.execute("CREATE TABLE IF NOT EXISTS door_events (id INTEGER PRIMARY KEY AUTOINCREMENT, door TEXT NOT NULL, open INTEGER NOT NULL, at REAL NOT NULL, pushed TEXT)")
+    # Where each door is on the floor plan (see "floor plan"): the floor's id and the spot on it,
+    # in feet from the plan's origin. NULL until someone places it in the app.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(doors)")}
+    for column, declaration in (("spot_floor", "TEXT"), ("spot_x", "REAL"), ("spot_y", "REAL")):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE doors ADD COLUMN {column} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS door_events_at ON door_events (at)")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
@@ -5307,18 +5313,20 @@ def doors_forever() -> None:
 
 
 def door_json(row: tuple) -> dict[str, Any]:
-    door_id, name, model, is_open, changed, battery, battery_low, link, online, last_seen, notify = row
+    door_id, name, model, is_open, changed, battery, battery_low, link, online, last_seen, notify, spot_floor, spot_x, spot_y = row
     return {
         "id": door_id, "name": name, "model": model, "open": None if is_open is None else bool(is_open), "changed": changed,
         "battery": battery, "battery_low": None if battery_low is None else bool(battery_low), "link": link,
         "online": None if online is None else bool(online), "last_seen": last_seen, "notify": notify,
+        "spot": {"floor": spot_floor, "x": spot_x, "y": spot_y} if spot_floor is not None else None,
     }
 
 
 def doors_snapshot(now: float, days: float = 7) -> dict[str, Any]:
     """Every door sensor on the network and how it stands, and its openings and closings over the last [days], newest first."""
     rows = with_db(lambda c: c.execute(
-        "SELECT id, name, model, open, changed, battery, battery_low, link, online, last_seen, notify FROM doors WHERE removed=0 ORDER BY name COLLATE NOCASE"
+        "SELECT id, name, model, open, changed, battery, battery_low, link, online, last_seen, notify, spot_floor, spot_x, spot_y FROM doors"
+        " WHERE removed=0 ORDER BY name COLLATE NOCASE"
     ).fetchall())
     events = with_db(lambda c: c.execute(
         "SELECT e.door, e.open, e.at, e.pushed FROM door_events e JOIN doors d ON d.id=e.door WHERE d.removed=0 AND e.at >= ? ORDER BY e.at DESC LIMIT 500",
@@ -5355,6 +5363,85 @@ def set_door(door_id: str, patch: DoorPatch, request: Request) -> dict[str, Any]
     if not changed:
         raise HTTPException(status_code=404, detail="No such door")
     log.info("doors: %s set %s to notify %s", user, door_id, patch.notify)
+    return doors_snapshot(time.time())
+
+
+# ---------------------------------------------------------------- floor plan
+
+# The house's floor plan, for the app's Doors page to draw the doors on (docs/doors.md, "The floor
+# plan"). It lives only on the box, as FLOORPLAN_FILE (relay/data, gitignored): the repository is
+# public, and a plan with the door sensors on it says too much about the house. The shape:
+#   {"floors": [{"id": "first", "name": "First floor", "outline": [[x, y], ...],
+#                "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}], "stairs": [[x, y]]}, ...]}
+# in feet, y downward, each floor's outline one closed polygon. Each door's spot on it is kept with
+# the door (`spot_floor`, `spot_x`, `spot_y`), placed from the app.
+
+FLOORPLAN_FILE = os.environ.get("FLOORPLAN_FILE", os.path.join(os.path.dirname(DB_PATH), "floorplan.json"))
+
+
+def floorplan() -> dict[str, Any] | None:
+    """The floor plan as the file has it, or None when there is none (or it can't be read: logged)."""
+    try:
+        with open(FLOORPLAN_FILE) as f:
+            plan = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        log.warning("floor plan: can't read %s: %s", FLOORPLAN_FILE, e)
+        return None
+    floors = plan.get("floors") if isinstance(plan, dict) else None
+    if not isinstance(floors, list) or not all(isinstance(f, dict) and f.get("id") and isinstance(f.get("outline"), list) for f in floors):
+        log.warning("floor plan: %s has no usable floors", FLOORPLAN_FILE)
+        return None
+    return plan
+
+
+class DoorSpot(BaseModel):
+    # Which floor of the plan, and where on it, in the plan's feet.
+    floor: str
+    x: float
+    y: float
+
+
+@app.get("/floorplan")
+def get_floorplan(request: Request, device: str | None = None) -> dict[str, Any]:
+    """The floor plan (see "floor plan"); 404 while the box has none. A signed-in user or a device."""
+    authenticate(request, device)
+    plan = floorplan()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No floor plan on this box")
+    return plan
+
+
+@app.put("/doors/{door_id}/spot")
+def set_door_spot(door_id: str, spot: DoorSpot, request: Request) -> dict[str, Any]:
+    """Places one door on the floor plan. A signed-in user."""
+    user = require_frigate_session(request)
+    plan = floorplan()
+    floors = {f["id"] for f in (plan or {}).get("floors", [])}
+    if spot.floor not in floors:
+        raise HTTPException(status_code=400, detail="No such floor on the plan")
+    if not (math.isfinite(spot.x) and math.isfinite(spot.y)):
+        raise HTTPException(status_code=400, detail="The spot must be a number of feet")
+    changed = with_db(lambda c: (c.execute(
+        "UPDATE doors SET spot_floor=?, spot_x=?, spot_y=? WHERE id=? AND removed=0", (spot.floor, spot.x, spot.y, door_id)
+    ).rowcount, c.commit())[0])
+    if not changed:
+        raise HTTPException(status_code=404, detail="No such door")
+    log.info("doors: %s placed %s on %s at (%.1f, %.1f)", user, door_id, spot.floor, spot.x, spot.y)
+    return doors_snapshot(time.time())
+
+
+@app.delete("/doors/{door_id}/spot")
+def clear_door_spot(door_id: str, request: Request) -> dict[str, Any]:
+    """Takes one door off the floor plan. A signed-in user."""
+    user = require_frigate_session(request)
+    changed = with_db(lambda c: (c.execute(
+        "UPDATE doors SET spot_floor=NULL, spot_x=NULL, spot_y=NULL WHERE id=? AND removed=0", (door_id,)
+    ).rowcount, c.commit())[0])
+    if not changed:
+        raise HTTPException(status_code=404, detail="No such door")
+    log.info("doors: %s took %s off the floor plan", user, door_id)
     return doors_snapshot(time.time())
 # ---------------------------------------------------------------- Nest primer
 

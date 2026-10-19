@@ -36,6 +36,8 @@ data class Door(
     val notify: DoorNotify = DoorNotify.AWAY,
     /** Vendor and model, e.g. "Third Reality 3RDS17BZ". */
     val model: String? = null,
+    /** Where it is on the floor plan; null until someone places it. */
+    val spot: DoorSpot? = null,
 ) {
     /** Battery low enough to swap: the sensor says so, or reports a fifth or less. */
     val needsBattery: Boolean get() = batteryLow || (battery != null && battery <= LOW_BATTERY_PERCENT)

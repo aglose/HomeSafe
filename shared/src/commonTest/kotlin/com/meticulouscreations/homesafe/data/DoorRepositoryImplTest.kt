@@ -83,7 +83,11 @@ class DoorRepositoryImplTest {
 
                 else -> {
                     requests += "GET ${req.url.encodedPath}"
-                    respond(doors(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                    if (req.url.encodedPath == "/floorplan") {
+                        respond("""{"floors":[{"id":"ground","name":"Ground floor","outline":[[0,0],[30,0],[30,40],[0,40]]}]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                    } else {
+                        respond(doors(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                    }
                 }
             }
         }
@@ -112,7 +116,7 @@ class DoorRepositoryImplTest {
         assertTrue(h.requests.isEmpty())
         backgroundScope.launch { h.repository.doors.collect {} }
         eventually("the first read") { h.repository.doors.value.doors.size == 2 }
-        assertEquals("GET /doors", h.requests.first())
+        assertEquals(listOf("GET /floorplan", "GET /doors"), h.requests.take(2), "the plan once, then the doors")
     }
 
     private fun Harness.shown(id: String) = repository.doors.value.doors.single { it.id == id }.notify
@@ -162,5 +166,17 @@ class DoorRepositoryImplTest {
         h.repository.refresh().getOrThrow()
         connection.currentServerUrl.value = null
         eventually("the doors forgotten") { h.repository.doors.value == DoorsSnapshot.EMPTY }
+    }
+
+    @Test
+    fun thePlanIsReadOncePerServerAndAgainOnARefresh() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.65:8971"))
+        h.repository.refresh().getOrThrow()
+        assertEquals("ground", h.repository.floorPlan.value?.floors?.single()?.id)
+        backgroundScope.launch { h.repository.doors.collect {} }
+        eventually("a poll or two") { h.requests.count { it == "GET /doors" } >= 3 }
+        assertEquals(1, h.requests.count { it == "GET /floorplan" }, "polls don't read the plan again")
+        h.repository.refresh().getOrThrow()
+        assertEquals(2, h.requests.count { it == "GET /floorplan" })
     }
 }

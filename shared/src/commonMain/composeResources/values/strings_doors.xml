@@ -80,5 +80,18 @@
     <string name="doors_not_listening">The server can't hear the door sensors right now. Zigbee2MQTT or its broker isn't running.</string>
     <string name="doors_unsupported">This server's relay doesn't know about door sensors yet. Update it to use them.</string>
     <string name="doors_load_failed">Couldn't load the doors: %1$s</string>
+    <!-- The floor plan at the top of the Doors page, and placing the doors on it. -->
+    <string name="doors_plan_place">Place doors</string>
+    <string name="doors_plan_done">Done</string>
+    <string name="doors_plan_place_hint">Pick a door, then tap where it is on the plan.</string>
+    <string name="doors_plan_remove">Take %1$s off the plan</string>
+    <plurals name="doors_plan_unplaced">
+        <item quantity="one">%1$d door isn't on the plan yet.</item>
+        <item quantity="other">%1$d doors aren't on the plan yet.</item>
+    </plurals>
+    <!-- What a screen reader says for a door's dot on the plan: its name and how it stands, e.g. "Back door, Open". -->
+    <string name="doors_plan_marker">%1$s, %2$s</string>
+    <string name="doors_plan_marker_action">Show this door's details</string>
+    <string name="doors_spot_save_failed">Couldn't save where that door is: %1$s</string>
     <string name="doors_save_failed">Couldn't change that door's alerts: %1$s</string>
 </resources>

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DoorFront
 import androidx.compose.material.icons.filled.MeetingRoom
@@ -20,6 +22,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -53,6 +57,7 @@ import homesafe.shared.generated.resources.doors_notify_title
 import homesafe.shared.generated.resources.doors_subtitle
 import homesafe.shared.generated.resources.doors_title
 import homesafe.shared.generated.resources.doors_unsupported
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -77,12 +82,30 @@ fun DoorsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         modifier = modifier,
         onRefresh = viewModel::refresh,
     ) {
-        DoorsContent(state = state, onNotify = viewModel::setNotify)
+        DoorsContent(
+            state = state,
+            onNotify = viewModel::setNotify,
+            plan = DoorsPlanActions(
+                onSelectFloor = viewModel::selectFloor,
+                onStartPlacing = viewModel::startPlacing,
+                onFinishPlacing = viewModel::finishPlacing,
+                onChoosePlacingDoor = viewModel::choosePlacingDoor,
+                onPlaceAt = viewModel::placeAt,
+                onRemoveFromPlan = viewModel::removeFromPlan,
+            ),
+        )
     }
 }
 
+/**
+ * The page under its header: the floor plan with the doors on it when the box has one
+ * ([DoorsFloorPlan], [plan]), each door's card, and the history. A door's dot on the plan scrolls
+ * its card into view.
+ */
 @Composable
-internal fun DoorsContent(state: DoorsUiState, onNotify: (doorId: String, notify: DoorNotify) -> Unit) {
+internal fun DoorsContent(state: DoorsUiState, onNotify: (doorId: String, notify: DoorNotify) -> Unit, plan: DoorsPlanActions = DoorsPlanActions()) {
+    val cards = remember { mutableMapOf<String, BringIntoViewRequester>() }
+    val scope = rememberCoroutineScope()
     state.error?.let { SettingsCaption(it.resolve(), error = true) }
     when {
         !state.supported -> SettingsCard { SettingsCaption(stringResource(Res.string.doors_unsupported)) }
@@ -91,13 +114,21 @@ internal fun DoorsContent(state: DoorsUiState, onNotify: (doorId: String, notify
 
         else -> {
             if (!state.listening) SettingsCaption(stringResource(Res.string.doors_not_listening), error = true)
+            DoorsFloorPlan(state = state, actions = plan, onShowDoor = { id -> scope.launch { cards[id]?.bringIntoView() } })
             if (state.doors.isEmpty()) {
                 SettingsCard {
                     Text(stringResource(Res.string.doors_none_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                     SettingsCaption(stringResource(Res.string.doors_none_body))
                 }
             } else {
-                state.doors.forEach { door -> DoorCard(door = door, nowMillis = state.nowMillis, onNotify = { onNotify(door.id, it) }) }
+                state.doors.forEach { door ->
+                    DoorCard(
+                        door = door,
+                        nowMillis = state.nowMillis,
+                        onNotify = { onNotify(door.id, it) },
+                        modifier = Modifier.bringIntoViewRequester(cards.getOrPut(door.id) { BringIntoViewRequester() }),
+                    )
+                }
                 SettingsCaption(stringResource(Res.string.doors_notify_caption))
                 DoorHistory(days = state.history)
             }
@@ -112,8 +143,8 @@ private fun doorTint(open: Boolean?): Color =
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DoorCard(door: Door, nowMillis: Long, onNotify: (DoorNotify) -> Unit) {
-    SettingsCard {
+private fun DoorCard(door: Door, nowMillis: Long, onNotify: (DoorNotify) -> Unit, modifier: Modifier = Modifier) {
+    SettingsCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Icon(
                 imageVector = if (door.open == true) Icons.Filled.MeetingRoom else Icons.Filled.DoorFront,
