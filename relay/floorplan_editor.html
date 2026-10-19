@@ -192,12 +192,16 @@ function render() {
     // The opening cut out of the wall, the door standing open, and the arc it swings through.
     el("line", { x1: d.from[0], y1: d.from[1], x2: d.to[0], y2: d.to[1], stroke: color("--fill"), "stroke-width": 0.34 });
     el("line", { x1: d.from[0], y1: d.from[1], x2: leaf[0], y2: leaf[1], stroke: ink, "stroke-width": on ? 0.16 : 0.12 });
-    el("path", { d: `M ${d.to[0]} ${d.to[1]} A ${w} ${w} 0 0 ${d.swing === 1 ? 1 : 0} ${leaf[0]} ${leaf[1]}`, fill: "none", stroke: ink, "stroke-width": 0.07, "stroke-dasharray": "0.25 0.15" });
-    el("line", { x1: d.from[0], y1: d.from[1], x2: d.to[0], y2: d.to[1], stroke: "transparent", "stroke-width": 1, "data-kind": "door", "data-i": i, "data-end": "whole", style: "cursor:move" });
+    const arc = `M ${d.to[0]} ${d.to[1]} A ${w} ${w} 0 0 ${d.swing === 1 ? 1 : 0} ${leaf[0]} ${leaf[1]}`;
+    el("path", { d: arc, fill: "none", stroke: ink, "stroke-width": 0.07, "stroke-dasharray": "0.25 0.15" });
+    // Anywhere on the door picks it: the doorway, the open leaf, or inside the arc it swings through.
+    const grab = { "data-kind": "door", "data-i": i, "data-end": "whole", style: "cursor:move" };
+    el("path", { d: `M ${d.from[0]} ${d.from[1]} L ${d.to[0]} ${d.to[1]} ${arc.slice(arc.indexOf("A"))} Z`, fill: "transparent", stroke: "transparent", "stroke-width": 0.6, ...grab });
+    el("line", { x1: d.from[0], y1: d.from[1], x2: d.to[0], y2: d.to[1], stroke: "transparent", "stroke-width": 1, ...grab });
     // A linked sensor is a dot in the doorway's middle; the label is the door's name, else the sensor's.
     if (d.sensor) el("circle", { cx: (d.from[0] + d.to[0]) / 2, cy: (d.from[1] + d.to[1]) / 2, r: 0.42, fill: ink, "pointer-events": "none" });
     const label = d.name || (d.sensor ? sensorName(d.sensor) || "Sensor not paired yet" : "");
-    if (label) el("text", { x: (d.from[0] + d.to[0]) / 2 + n[0] * (w + 0.6), y: (d.from[1] + d.to[1]) / 2 + n[1] * (w + 0.6), "font-size": 0.7, "text-anchor": "middle", "dominant-baseline": "middle", fill: ink, "font-weight": 600, "pointer-events": "none" }).textContent = label;
+    if (label) el("text", { x: (d.from[0] + d.to[0]) / 2 + n[0] * (w + 0.6), y: (d.from[1] + d.to[1]) / 2 + n[1] * (w + 0.6), "font-size": 0.7, "text-anchor": "middle", "dominant-baseline": "middle", fill: ink, "font-weight": 600, ...grab }).textContent = label;
     if (on) [["a", d.from], ["b", d.to]].forEach(([end, p]) => el("circle", { cx: p[0], cy: p[1], r: 0.4, fill: color("--accent"), "data-kind": "door", "data-i": i, "data-end": end, style: "cursor:ew-resize" }));
   });
   (f.stairs || []).forEach((s, i) => {
@@ -225,10 +229,15 @@ function render() {
   document.getElementById("delete").disabled = !selected;
 }
 
-function field(label, value, onChange, type) {
+// Puts the cursor in the selected item's name, its text selected, ready to type over.
+function focusName() { const input = document.getElementById("selected-name"); if (input) { input.focus(); input.select(); } }
+
+function field(label, value, onChange, type, id) {
   const row = document.createElement("div"); row.className = "row";
   const name = document.createElement("span"); name.textContent = label;
   const input = document.createElement("input"); input.type = type || "number"; input.step = "0.5"; input.value = value;
+  if (id) input.id = id;
+  input.addEventListener("keydown", event => { if (event.key === "Enter") input.blur(); });
   input.addEventListener("change", () => { snapshot(); onChange(type === "text" ? input.value : Number(input.value)); changed(); render(); });
   row.append(name, input); panel.appendChild(row);
 }
@@ -239,7 +248,7 @@ function renderPanel() {
   const h = document.createElement("h2"); h.textContent = "Floor"; panel.appendChild(h);
   field("Name", f.name, v => { f.name = v.trim() || f.id; renderFloors(); }, "text");
   const hint = document.createElement("p");
-  hint.textContent = "Drag anything with Move: a door slides along the walls, its ends make it wider. Double-click an outside wall to add a corner there, a corner to remove it, a room name to rename it. Arrow keys nudge the selection ½ ft (Shift: 0.1 ft).";
+  hint.textContent = "Click anything to select it; Delete removes it. Drag with Move: a door slides along the walls, its ends make it wider. Double-click an outside wall to add a corner there, a corner to remove it, a room name or door to rename it. Arrow keys nudge the selection ½ ft (Shift: 0.1 ft).";
   panel.appendChild(hint);
   if (!selected) return;
   const title = document.createElement("h2");
@@ -251,7 +260,7 @@ function renderPanel() {
   } else if (selected.kind === "room") {
     const room = f.rooms[selected.i];
     title.textContent = "Room name"; panel.appendChild(title);
-    field("Name", room.name, v => { room.name = v.trim() || room.name; }, "text");
+    field("Name", room.name, v => { room.name = v.trim() || room.name; }, "text", "selected-name");
     field("x", room.x, v => { room.x = v; }); field("y", room.y, v => { room.y = v; });
   } else if (selected.kind === "stairs") {
     const s = f.stairs[selected.i];
@@ -260,7 +269,7 @@ function renderPanel() {
   } else if (selected.kind === "door") {
     const d = f.doors[selected.i];
     title.textContent = `Door · ${round(doorWidth(d))} ft`; panel.appendChild(title);
-    field("Name", d.name || "", v => { if (v.trim()) d.name = v.trim(); else delete d.name; }, "text");
+    field("Name", d.name || "", v => { if (v.trim()) d.name = v.trim(); else delete d.name; }, "text", "selected-name");
     field("Width", round(doorWidth(d)), v => {
       if (!(v >= 0.5)) return;
       const w = doorWidth(d), u = [(d.to[0] - d.from[0]) / w, (d.to[1] - d.from[1]) / w], c = [(d.from[0] + d.to[0]) / 2, (d.from[1] + d.to[1]) / 2];
@@ -317,9 +326,9 @@ svg.addEventListener("pointerdown", event => {
     return;
   }
   if (tool === "room") {
-    const name = prompt("Room name");
-    if (name && name.trim()) { snapshot(); f.rooms = f.rooms || []; f.rooms.push({ name: name.trim(), x: snapValue(at[0]), y: snapValue(at[1]) }); selected = { kind: "room", i: f.rooms.length - 1 }; changed(); }
-    render(); return;
+    // Placed at once as "Room", its name ready to type over in the side panel.
+    snapshot(); f.rooms = f.rooms || []; f.rooms.push({ name: "Room", x: snapValue(at[0]), y: snapValue(at[1]) });
+    selected = { kind: "room", i: f.rooms.length - 1 }; setTool("move"); changed(); render(); focusName(); return;
   }
   if (tool === "door") {
     const wall = nearestWall(at[0], at[1], 2);
@@ -412,9 +421,8 @@ svg.addEventListener("dblclick", event => {
     snapshot(); f.outline.splice(target.i + 1, 0, [snapValue(at[0]), snapValue(at[1])]); selected = { kind: "corner", i: target.i + 1 }; changed(); render();
   } else if (target.kind === "corner" && f.outline.length > 3) {
     snapshot(); f.outline.splice(target.i, 1); selected = null; changed(); render();
-  } else if (target.kind === "room") {
-    const room = f.rooms[target.i], name = prompt("Room name", room.name);
-    if (name && name.trim()) { snapshot(); room.name = name.trim(); changed(); render(); }
+  } else if (target.kind === "room" || target.kind === "door") {
+    selected = { kind: target.kind, i: target.i }; render(); focusName();
   }
 });
 
@@ -457,7 +465,7 @@ document.getElementById("delete").addEventListener("click", deleteSelected);
 document.getElementById("undo").addEventListener("click", undo);
 document.getElementById("save").addEventListener("click", save);
 document.addEventListener("keydown", event => {
-  if (event.target.tagName === "INPUT") return;
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
   const step = event.shiftKey ? 0.1 : 0.5;
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") { event.preventDefault(); undo(); }
   else if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); deleteSelected(); }
