@@ -110,16 +110,19 @@ previews and tests use a made-up house instead. Without the file the page is the
   {"id": "first", "name": "First floor",
    "outline": [[0, 0], [13.5, 0], [13.5, 8], ...],
    "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}],
-   "stairs": [[14.5, 24]]}
+   "stairs": [[14.5, 24]],
+   "walls": [[0, 8, 13.5, 8], [13.5, 8, 13.5, 20]]}
 ]}
 ```
 
 - Feet, `y` downward, from any origin; each floor's `outline` is its outside walls as one closed
-  polygon. `rooms` and `stairs` are optional.
+  polygon, and `walls` its inside walls, each `[x1, y1, x2, y2]`. `rooms`, `stairs` and `walls`
+  are optional.
 - The floors are shown in the file's order, the first first.
-- The current file was traced from a floor plan sketch, wall by wall from the lengths it labels;
-  each floor's area matches the sketch's. The sketch has no interior walls and no doors, so
-  neither does the plan.
+- The current file's outside walls were traced from a floor plan sketch, wall by wall from the
+  lengths it labels; each floor's area matches the sketch's. The sketch has no inside walls or
+  doors: the inside walls in the file are drawn from where the sketch puts each room's name and
+  where the outside walls step in and out, and corrected by hand.
 
 **Placing the doors:** Doors page › Place doors, pick a door, tap where it is; the next door not
 on the plan yet is picked for the next tap. The spot is kept with the door in `relay.db`

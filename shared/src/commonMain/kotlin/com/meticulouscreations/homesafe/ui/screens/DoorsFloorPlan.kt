@@ -100,7 +100,7 @@ internal class PlanTransform(private val bounds: PlanBounds, width: Float, heigh
 
 /**
  * The house's floor plan at the top of the Doors page: one floor at a time (the chips switch), to
- * scale, its rooms named where the plan names them, and each door that has been placed as a dot
+ * scale, its inside walls where the plan has them, its rooms named where the plan names them, and each door that has been placed as a dot
  * at its spot — orange while open, ringed red while its sensor is offline. A dot opens that
  * door's card below ([onShowDoor]).
  *
@@ -203,6 +203,7 @@ private fun FloorDrawing(
                     close()
                 }
                 drawPath(outline, inside)
+                floor.walls.forEach { inner -> drawLine(wall.copy(alpha = 0.7f), transform.toPx(inner.from), transform.toPx(inner.to), 1.5.dp.toPx()) }
                 drawPath(outline, wall, style = Stroke(width = 2.dp.toPx()))
                 floor.stairs.forEach { stair -> drawStairs(transform.toPx(stair), transform.scale, wall) }
                 floor.rooms.forEach { room ->

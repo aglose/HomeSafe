@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
+import com.meticulouscreations.homesafe.domain.model.PlanWall
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryDay
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryEntry
@@ -38,6 +39,11 @@ private val previewPlan = FloorPlan(
             outline = listOf(PlanPoint(0f, 0f), PlanPoint(28f, 0f), PlanPoint(28f, 24f), PlanPoint(18f, 24f), PlanPoint(18f, 36f), PlanPoint(0f, 36f)),
             rooms = listOf(PlanRoom("Kitchen", PlanPoint(7f, 6f)), PlanRoom("Family Room", PlanPoint(21f, 12f)), PlanRoom("Hall", PlanPoint(9f, 20f)), PlanRoom("Living Room", PlanPoint(9f, 30f))),
             stairs = listOf(PlanPoint(15f, 18f)),
+            walls = listOf(
+                PlanWall(PlanPoint(0f, 13f), PlanPoint(14f, 13f)),
+                PlanWall(PlanPoint(14f, 0f), PlanPoint(14f, 16f)),
+                PlanWall(PlanPoint(0f, 25f), PlanPoint(12f, 25f)),
+            ),
         ),
         PlanFloor(
             id = "upper",

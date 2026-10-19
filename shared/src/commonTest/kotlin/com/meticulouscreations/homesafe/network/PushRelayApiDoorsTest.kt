@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
+import com.meticulouscreations.homesafe.domain.model.PlanWall
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -95,10 +96,10 @@ class PushRelayApiDoorsTest {
     }
 
     @Test
-    fun theFloorPlanIsReadAndAFloorWithNoOutlineIsLeftOut() = runTest {
+    fun theFloorPlanIsReadAndAFloorWithNoOutlineOrAShortWallIsLeftOut() = runTest {
         val seen = mutableListOf<Seen>()
         val body = """{"floors": [{"id": "ground", "name": "Ground floor", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]],
-            "rooms": [{"name": "Kitchen", "x": 8, "y": 10.5}], "stairs": [[15, 18]]}, {"id": "attic", "outline": [[0, 0]]}]}"""
+            "rooms": [{"name": "Kitchen", "x": 8, "y": 10.5}], "stairs": [[15, 18]], "walls": [[0, 13, 14, 13], [1, 2]]}, {"id": "attic", "outline": [[0, 0]]}]}"""
         val plan = api(respondWith = body, seen = seen).getFloorPlan("http://192.168.68.65:8971", "device-1", "secret-1").getOrThrow()
         assertEquals("http://192.168.68.65:8787/floorplan?device=device-1", seen.single().url)
         assertEquals(
@@ -110,6 +111,7 @@ class PushRelayApiDoorsTest {
                         listOf(PlanPoint(0f, 0f), PlanPoint(30f, 0f), PlanPoint(30f, 40f), PlanPoint(0f, 40f)),
                         listOf(PlanRoom("Kitchen", PlanPoint(8f, 10.5f))),
                         listOf(PlanPoint(15f, 18f)),
+                        listOf(PlanWall(PlanPoint(0f, 13f), PlanPoint(14f, 13f))),
                     ),
                 ),
             ),

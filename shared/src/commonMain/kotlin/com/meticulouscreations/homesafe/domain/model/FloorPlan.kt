@@ -6,7 +6,10 @@ data class PlanPoint(val x: Float, val y: Float)
 /** A room's name where the plan writes it. The name is data: it comes from the plan file on the box. */
 data class PlanRoom(val name: String, val at: PlanPoint)
 
-/** One level of the house: its outside walls as one closed outline, its rooms' names, and where the stairs are. */
+/** An inside wall, from [from] to [to], in feet. */
+data class PlanWall(val from: PlanPoint, val to: PlanPoint)
+
+/** One level of the house: its outside walls as one closed outline, the walls inside it, its rooms' names, and where the stairs are. */
 data class PlanFloor(
     val id: String,
     /** As the plan file names it, e.g. "First floor". Data, not copy. */
@@ -14,6 +17,7 @@ data class PlanFloor(
     val outline: List<PlanPoint>,
     val rooms: List<PlanRoom> = emptyList(),
     val stairs: List<PlanPoint> = emptyList(),
+    val walls: List<PlanWall> = emptyList(),
 ) {
     /** The outline's extent, with every room label and stair inside it: left, top, right, bottom, in feet. */
     val bounds: PlanBounds = (outline + rooms.map { it.at } + stairs).let { points ->

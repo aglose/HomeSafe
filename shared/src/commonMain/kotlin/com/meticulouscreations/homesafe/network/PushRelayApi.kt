@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
+import com.meticulouscreations.homesafe.domain.model.PlanWall
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.ServerUptime
@@ -664,11 +665,20 @@ internal data class RelayFloor(
     val outline: List<List<Double>> = emptyList(),
     val rooms: List<RelayRoom> = emptyList(),
     val stairs: List<List<Double>> = emptyList(),
+    /** Each inside wall as [x1, y1, x2, y2]. */
+    val walls: List<List<Double>> = emptyList(),
 ) {
     fun toDomain(): PlanFloor? {
         val points = outline.mapNotNull { it.point() }
         if (points.size < 3) return null
-        return PlanFloor(id, name?.ifBlank { null } ?: id, points, rooms.map { PlanRoom(it.name, PlanPoint(it.x.toFloat(), it.y.toFloat())) }, stairs.mapNotNull { it.point() })
+        return PlanFloor(
+            id = id,
+            name = name?.ifBlank { null } ?: id,
+            outline = points,
+            rooms = rooms.map { PlanRoom(it.name, PlanPoint(it.x.toFloat(), it.y.toFloat())) },
+            stairs = stairs.mapNotNull { it.point() },
+            walls = walls.filter { it.size >= 4 }.map { PlanWall(PlanPoint(it[0].toFloat(), it[1].toFloat()), PlanPoint(it[2].toFloat(), it[3].toFloat())) },
+        )
     }
 }
 

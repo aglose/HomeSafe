@@ -57,8 +57,11 @@ class DoorRepositoryImpl(
     private val _floorPlan = MutableStateFlow<FloorPlan?>(null)
     override val floorPlan: StateFlow<FloorPlan?> = _floorPlan.asStateFlow()
 
-    /** The server [floorPlan] was read from; another server (or a refresh) reads it again. */
+    /** The server [floorPlan] was read from; another server (or a refresh) reads it again. Guarded by [planLock]. */
     private var planFrom: String? = null
+
+    /** One plan read at a time, so a refresh and a poll landing together read it once. */
+    private val planLock = Mutex()
 
     /** Guards [fromRelay], [pending], [pendingSpots] and [edits]: polls and saves land on different coroutines. */
     private val state = Mutex()
@@ -76,8 +79,10 @@ class DoorRepositoryImpl(
                         fromRelay = DoorsSnapshot.EMPTY
                         publish()
                     }
-                    planFrom = null
-                    _floorPlan.value = null
+                    planLock.withLock {
+                        planFrom = null
+                        _floorPlan.value = null
+                    }
                 }
             }
         }
@@ -99,8 +104,7 @@ class DoorRepositoryImpl(
 
     override suspend fun refresh(): Result<Unit> {
         val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
-        planFrom = null
-        return fetch(url)
+        return fetch(url, rereadPlan = true)
     }
 
     /**
@@ -144,14 +148,16 @@ class DoorRepositoryImpl(
         return answer.map { }
     }
 
-    private suspend fun fetch(url: String): Result<Unit> {
+    private suspend fun fetch(url: String, rereadPlan: Boolean = false): Result<Unit> {
         val deviceId = identity.deviceId()
         val secret = identity.secret()
         // The plan barely ever changes: read once per server, and again on a refresh.
-        if (planFrom != url) {
-            relayApi.getFloorPlan(url, deviceId, secret).onSuccess {
-                _floorPlan.value = it
-                planFrom = url
+        planLock.withLock {
+            if (rereadPlan || planFrom != url) {
+                relayApi.getFloorPlan(url, deviceId, secret).onSuccess {
+                    _floorPlan.value = it
+                    planFrom = url
+                }
             }
         }
         return relayApi.getDoors(url, deviceId, secret).map { snapshot ->
