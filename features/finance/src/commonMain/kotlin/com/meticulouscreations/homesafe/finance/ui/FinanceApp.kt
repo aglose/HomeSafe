@@ -138,6 +138,9 @@ internal sealed interface FinanceDetail {
 
     /** How every chart looks and feels. */
     data object ChartSettings : FinanceDetail
+
+    /** A part of the Wallet on a page of its own; [focus] is a section a checkup link asked for. */
+    data class WalletPage(val topic: WalletTopic, val focus: WalletSection? = null) : FinanceDetail
 }
 
 /**
@@ -305,10 +308,9 @@ private fun FinanceAppContent(
                             state,
                             listStates.getValue(FinanceTab.WALLET),
                             padding,
-                            onOpenQuote = { push(FinanceDetail.QuotePage(it)) },
                             onRetrySheet = viewModel::retrySheet,
                             onOpenSync = { push(FinanceDetail.SheetSync) },
-                            onAddSymbol = openAddSymbol,
+                            onOpenTopic = { topic, focus -> push(FinanceDetail.WalletPage(topic, focus)) },
                             budget = budgetState.budget,
                             onOpenBudget = { tab = FinanceTab.BUDGET },
                         )
@@ -366,6 +368,8 @@ private fun FinanceAppContent(
                         FinanceDetail.BudgetSettings -> BudgetSettingsRoute(state.finance, detailPadding)
 
                         FinanceDetail.ChartSettings -> ChartSettingsScreen(chartStyle, detailPadding, onChange = chartStyleViewModel::update)
+
+                        is FinanceDetail.WalletPage -> WalletTopicScreen(page.topic, page.focus, state, detailPadding)
                     }
                 }
             }
@@ -458,6 +462,7 @@ private fun titleOf(detail: FinanceDetail): String = when (detail) {
     FinanceDetail.BankSync -> stringResource(Res.string.fin_bank_title)
     FinanceDetail.BudgetSettings -> stringResource(Res.string.fin_budget_settings_title)
     FinanceDetail.ChartSettings -> stringResource(Res.string.finance_title_chart_settings)
+    is FinanceDetail.WalletPage -> stringResource(detail.topic.title)
 }
 
 /**

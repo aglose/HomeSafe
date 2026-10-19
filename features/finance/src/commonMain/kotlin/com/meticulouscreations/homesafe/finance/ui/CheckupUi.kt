@@ -3,7 +3,6 @@ package com.meticulouscreations.homesafe.finance.ui
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -51,7 +50,6 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -75,6 +73,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.domain.Explainers
+import com.meticulouscreations.homesafe.finance.ui.components.EntranceEffect
+import com.meticulouscreations.homesafe.finance.ui.components.rememberEntrance
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.checkup_all_checks
@@ -120,10 +120,11 @@ import kotlin.math.roundToInt
  * The money checkup on the Wallet page: a ring of its lines, passed or flagged, the score beside
  * it, the most pressing flag as "Start here", then each line with its number against the rule's
  * line. Tapping the score opens how it's scored; tapping a line (or its ⓘ) opens that line's
- * breakdown ([CheckupSheet]). Rules of thumb, not advice.
+ * breakdown ([CheckupSheet]). Rules of thumb, not advice. [compact] keeps only the score and
+ * "Start here"; the lines are a tap away in the sheet.
  */
 @Composable
-internal fun MoneyCheckup(checkup: Checkup, onOpen: (CheckKind?) -> Unit, modifier: Modifier = Modifier) {
+internal fun MoneyCheckup(checkup: Checkup, onOpen: (CheckKind?) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     if (checkup.checks.isEmpty()) return
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
@@ -150,8 +151,9 @@ internal fun MoneyCheckup(checkup: Checkup, onOpen: (CheckKind?) -> Unit, modifi
             Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(18.dp))
         }
         checkup.toFix.firstOrNull()?.let { first ->
-            StartHere(first, onClick = { onOpen(first.kind) }, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
+            StartHere(first, onClick = { onOpen(first.kind) }, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = if (compact) 12.dp else 4.dp))
         }
+        if (compact) return@FinanceCard
         checkup.checks.forEachIndexed { i, check ->
             if (i > 0 || checkup.toFix.isNotEmpty()) Hairline(Modifier.padding(horizontal = 16.dp).padding(top = 8.dp))
             CheckRow(check, onClick = { onOpen(check.kind) })
@@ -169,8 +171,8 @@ internal fun MoneyCheckup(checkup: Checkup, onOpen: (CheckKind?) -> Unit, modifi
 @Composable
 private fun CheckupRing(checkup: Checkup, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
-    val sweep = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { sweep.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
+    val sweep = rememberEntrance(1f)
+    EntranceEffect(Unit) { sweep.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
     val n = checkup.checks.size
     val oks = checkup.checks.map { it.ok }
     val description = pluralStringResource(Res.plurals.checkup_ring_description, n, checkup.passed, n)
@@ -275,9 +277,9 @@ private fun StatusIcon(ok: Boolean, modifier: Modifier = Modifier) {
 @Composable
 internal fun CheckGaugeBar(gauge: CheckGauge, ok: Boolean, modifier: Modifier = Modifier, compact: Boolean = false) {
     val colors = FinanceTheme.colors
-    val fill = remember { Animatable(0f) }
     val target = (gauge.value / gauge.max).toFloat().coerceIn(0f, 1f)
-    LaunchedEffect(target) { fill.animateTo(target, tween(800, easing = FastOutSlowInEasing)) }
+    val fill = rememberEntrance(target)
+    EntranceEffect(target) { fill.animateTo(target, tween(800, easing = FastOutSlowInEasing)) }
     val tick = (gauge.target / gauge.max).toFloat().coerceIn(0f, 1f)
     val stretch = gauge.stretch?.let { (it / gauge.max).toFloat().coerceIn(0f, 1f) }
     val barColor = if (ok) colors.gain else colors.watch

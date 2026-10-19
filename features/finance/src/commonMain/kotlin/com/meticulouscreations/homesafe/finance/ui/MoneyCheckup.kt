@@ -166,12 +166,15 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
-/** A part of the Wallet page a checkup figure comes from, by its header's list key, to jump to; [label] is the header's title. */
-internal enum class WalletSection(val key: String, val label: StringResource) {
-    ACCOUNTS("acct-h", Res.string.finance_wallet_accounts_title),
-    ALLOCATION("alloc-h", Res.string.finance_wallet_allocation_title),
-    CASH_FLOW("flow-h", Res.string.finance_wallet_cash_flow_title),
-    DEBT("debt-h", Res.string.finance_wallet_debt_title),
+/**
+ * A part of the Wallet a checkup figure comes from, to jump to: on [topic]'s page, by its header's
+ * list key; [label] is the header's title.
+ */
+internal enum class WalletSection(val key: String, val label: StringResource, val topic: WalletTopic) {
+    ACCOUNTS("acct-h", Res.string.finance_wallet_accounts_title, WalletTopic.ACCOUNTS),
+    ALLOCATION("alloc-h", Res.string.finance_wallet_allocation_title, WalletTopic.ACCOUNTS),
+    CASH_FLOW("flow-h", Res.string.finance_wallet_cash_flow_title, WalletTopic.CASH_FLOW),
+    DEBT("debt-h", Res.string.finance_wallet_debt_title, WalletTopic.DEBT),
 }
 
 /** The checkup's lines, in the order the card lists them. */
