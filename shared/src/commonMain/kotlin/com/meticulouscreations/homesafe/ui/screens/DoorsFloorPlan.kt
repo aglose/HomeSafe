@@ -52,10 +52,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.meticulouscreations.homesafe.domain.model.Door
+import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.PlanBounds
 import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
+import com.meticulouscreations.homesafe.domain.model.StairDirection
 import com.meticulouscreations.homesafe.domain.model.nearestDoorway
 import com.meticulouscreations.homesafe.viewmodel.DoorsUiState
 import homesafe.shared.generated.resources.Res
@@ -69,6 +71,11 @@ import homesafe.shared.generated.resources.doors_plan_marker_action
 import homesafe.shared.generated.resources.doors_plan_place
 import homesafe.shared.generated.resources.doors_plan_place_hint
 import homesafe.shared.generated.resources.doors_plan_remove
+import homesafe.shared.generated.resources.doors_plan_stairs_down
+import homesafe.shared.generated.resources.doors_plan_stairs_down_to
+import homesafe.shared.generated.resources.doors_plan_stairs_up
+import homesafe.shared.generated.resources.doors_plan_stairs_up_to
+import homesafe.shared.generated.resources.doors_plan_street
 import homesafe.shared.generated.resources.doors_plan_unplaced
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -101,8 +108,9 @@ internal class PlanTransform(private val bounds: PlanBounds, width: Float, heigh
 }
 
 /**
- * The house's floor plan at the top of the Doors page: one floor at a time (the chips switch), to
- * scale, its inside walls where the plan has them, its rooms named where the plan names them, and each door that has been placed as a dot
+ * The house's floor plan at the top of the Doors page: one floor at a time (the chips switch, and
+ * so do stairs that lead to another floor), every floor in the same frame with the street at the
+ * bottom, to scale, its inside walls where the plan has them, its rooms named where the plan names them, and each door that has been placed as a dot
  * at its spot — orange while open, ringed red while its sensor is offline. A dot opens that
  * door's card below ([onShowDoor]).
  *
@@ -132,13 +140,24 @@ internal fun DoorsFloorPlan(state: DoorsUiState, actions: DoorsPlanActions, onSh
             }
         }
         FloorDrawing(
+            plan = plan,
             floor = floor,
             doors = state.doors.filter { it.spot?.floorId == floor.id },
             placing = state.placing,
             placingDoorId = state.placingDoorId,
             onPlaceAt = actions.onPlaceAt,
             onDoorClick = if (state.placing) actions.onChoosePlacingDoor else onShowDoor,
+            onSelectFloor = actions.onSelectFloor,
         )
+        plan.street?.let { street ->
+            Text(
+                text = stringResource(Res.string.doors_plan_street, street),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         if (state.placing) {
             SettingsCaption(stringResource(Res.string.doors_plan_place_hint))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -161,25 +180,34 @@ internal fun DoorsFloorPlan(state: DoorsUiState, actions: DoorsPlanActions, onSh
     }
 }
 
-/** One floor, drawn to fit the card's width and at most [PLAN_MAX_HEIGHT] tall, with its doors' dots over it. */
+/**
+ * One floor, drawn to fit the card's width and at most [PLAN_MAX_HEIGHT] tall, with its doors'
+ * dots over it. Scaled to the whole [plan]'s frame rather than this floor's, so switching floors
+ * keeps the house where it is. Stairs that lead to another floor open it ([onSelectFloor]).
+ */
 @Composable
 private fun FloorDrawing(
+    plan: FloorPlan,
     floor: PlanFloor,
     doors: List<Door>,
     placing: Boolean,
     placingDoorId: String?,
     onPlaceAt: (x: Float, y: Float) -> Unit,
     onDoorClick: (doorId: String) -> Unit,
+    onSelectFloor: (floorId: String) -> Unit,
 ) {
+    // Each flight's words: "Down to Basement", or just "Up" when it isn't linked.
+    val stairs = floor.stairs.map { stair -> stair to plan.leadsTo(floor.id, stair) }
+    val stairLabels = stairs.map { (stair, to) -> stairsLabel(stair.direction, to?.name) }
     val measurer = rememberTextMeasurer()
     val wall = MaterialTheme.colorScheme.onSurfaceVariant
     val inside = MaterialTheme.colorScheme.surfaceContainerHigh
     val label = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val bounds = floor.bounds
+        val bounds = plan.frame
         val height = min(maxWidth * (bounds.height / bounds.width.coerceAtLeast(1f)) + PLAN_PADDING * 2, PLAN_MAX_HEIGHT)
         val density = LocalDensity.current
-        val transform = remember(floor, maxWidth, height) {
+        val transform = remember(bounds, maxWidth, height) {
             with(density) { PlanTransform(bounds, maxWidth.toPx(), height.toPx(), PLAN_PADDING.toPx()) }
         }
         Box(
@@ -211,11 +239,33 @@ private fun FloorDrawing(
                 floor.walls.forEach { inner -> drawLine(wall.copy(alpha = 0.7f), transform.toPx(inner.from), transform.toPx(inner.to), 1.5.dp.toPx()) }
                 drawPath(outline, wall, style = Stroke(width = 2.dp.toPx()))
                 floor.doors.forEach { door -> drawDoorway(door, transform, gap = inside, ink = wall) }
-                floor.stairs.forEach { stair -> drawStairs(transform.toPx(stair), transform.scale, wall) }
+                stairs.forEachIndexed { i, (stair, _) ->
+                    val at = transform.toPx(stair.at)
+                    drawStairs(at, transform.scale, stair.facingDegrees, stair.direction != null, wall, inside)
+                    stairLabels[i]?.let { words ->
+                        val text = measurer.measure(words, label)
+                        drawText(text, topLeft = Offset(at.x - text.size.width / 2f, at.y + 1.9f * transform.scale))
+                    }
+                }
                 floor.rooms.forEach { room ->
                     val text = measurer.measure(room.name, label)
                     val at = transform.toPx(room.at)
                     drawText(text, topLeft = Offset(at.x - text.size.width / 2f, at.y - text.size.height / 2f))
+                }
+            }
+            // Stairs to another floor are buttons to it, the size of a finger over the drawn stairs.
+            if (!placing) {
+                stairs.forEachIndexed { i, (stair, to) ->
+                    to ?: return@forEachIndexed
+                    val at = transform.toPx(stair.at)
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset((at.x - DOT_TARGET.toPx() / 2).roundToInt(), (at.y - DOT_TARGET.toPx() / 2).roundToInt()) }
+                            .size(DOT_TARGET)
+                            .clip(CircleShape)
+                            .clickable(onClickLabel = stairLabels[i], role = Role.Button) { onSelectFloor(to.id) }
+                            .semantics { contentDescription = stairLabels[i].orEmpty() },
+                    )
                 }
             }
             doors.forEach { door ->
@@ -259,16 +309,47 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDoorway(door: P
     )
 }
 
-/** A flight of stairs where the plan has one: a few treads, about three feet across. */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStairs(center: Offset, feet: Float, color: Color) {
+/** What a flight of stairs says under it: which way it goes, and to which floor when it's linked. */
+@Composable
+private fun stairsLabel(direction: StairDirection?, to: String?): String? = when (direction) {
+    StairDirection.UP -> if (to != null) stringResource(Res.string.doors_plan_stairs_up_to, to) else stringResource(Res.string.doors_plan_stairs_up)
+    StairDirection.DOWN -> if (to != null) stringResource(Res.string.doors_plan_stairs_down_to, to) else stringResource(Res.string.doors_plan_stairs_down)
+    null -> null
+}
+
+/**
+ * A flight of stairs where the plan has one: about three feet square, its treads across the way
+ * it runs, turned [facingDegrees] from pointing up the page, and an arrow that way when the plan
+ * says whether it goes up or down ([arrow]).
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStairs(center: Offset, feet: Float, facingDegrees: Int, arrow: Boolean, color: Color, fill: Color) {
     val half = 1.5f * feet
     val stroke = 1.dp.toPx()
-    for (i in 0..4) {
-        val y = center.y - half + i * (2 * half / 4)
-        drawLine(color.copy(alpha = 0.6f), Offset(center.x - half, y), Offset(center.x + half, y), stroke)
+    val turn = facingDegrees * kotlin.math.PI.toFloat() / 180f
+    val cos = kotlin.math.cos(turn)
+    val sin = kotlin.math.sin(turn)
+
+    // A point given as if the stairs pointed up the page, turned to face the way they run.
+    fun at(x: Float, y: Float) = Offset(center.x + x * cos - y * sin, center.y + x * sin + y * cos)
+    val box = Path().apply {
+        at(-half, -half).let { moveTo(it.x, it.y) }
+        at(half, -half).let { lineTo(it.x, it.y) }
+        at(half, half).let { lineTo(it.x, it.y) }
+        at(-half, half).let { lineTo(it.x, it.y) }
+        close()
     }
-    drawLine(color.copy(alpha = 0.6f), Offset(center.x - half, center.y - half), Offset(center.x - half, center.y + half), stroke)
-    drawLine(color.copy(alpha = 0.6f), Offset(center.x + half, center.y - half), Offset(center.x + half, center.y + half), stroke)
+    drawPath(box, fill)
+    drawPath(box, color.copy(alpha = 0.8f), style = Stroke(width = stroke))
+    for (i in 1..4) {
+        val y = -half + i * (2 * half / 5)
+        drawLine(color.copy(alpha = 0.45f), at(-half, y), at(half, y), stroke)
+    }
+    if (arrow) {
+        val tip = at(0f, -half * 0.75f)
+        drawLine(color, at(0f, half * 0.8f), tip, 1.5.dp.toPx())
+        drawLine(color, tip, at(-half * 0.35f, -half * 0.35f), 1.5.dp.toPx())
+        drawLine(color, tip, at(half * 0.35f, -half * 0.35f), 1.5.dp.toPx())
+    }
 }
 
 /** One door on the plan: a dot with its door, and its name under it. */

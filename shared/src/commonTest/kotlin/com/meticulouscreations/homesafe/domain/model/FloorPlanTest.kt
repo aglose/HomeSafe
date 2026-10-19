@@ -23,4 +23,17 @@ class FloorPlanTest {
         val porch = floor.copy(doors = listOf(PlanDoor(PlanPoint(10f, 44f), PlanPoint(13f, 44f))))
         assertEquals(44f, porch.bounds.bottom)
     }
+
+    @Test
+    fun linkedStairsLeadToTheFloorAtTheirOtherEndAndTheFloorsShareOneFrame() {
+        val down = PlanStairs(PlanPoint(14f, 20f), StairDirection.DOWN, flight = "cellar")
+        val up = PlanStairs(PlanPoint(14f, 20f), StairDirection.UP, flight = "cellar")
+        val loose = PlanStairs(PlanPoint(2f, 2f), StairDirection.UP)
+        val cellar = PlanFloor("cellar", "Basement", listOf(PlanPoint(4f, 6f), PlanPoint(20f, 6f), PlanPoint(20f, 46f)), stairs = listOf(up))
+        val plan = FloorPlan(listOf(floor.copy(stairs = listOf(down, loose)), cellar), street = "Elm St")
+        assertEquals(cellar, plan.leadsTo("ground", down))
+        assertEquals("ground", plan.leadsTo("cellar", up)?.id)
+        assertNull(plan.leadsTo("ground", loose))
+        assertEquals(PlanBounds(0f, 0f, 30f, 46f), plan.frame)
+    }
 }

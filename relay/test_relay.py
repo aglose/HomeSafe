@@ -6434,6 +6434,32 @@ class DoorsTest(_ScratchDb):
                 relay.put_floorplan({"floors": [{"id": "ground", "outline": outline, "doors": doors}]}, request)
             self.assertEqual(400, refused.exception.status_code)
 
+    def test_stairs_say_which_way_they_go_and_which_floor_they_join(self):
+        outline = [[0, 0], [30, 0], [30, 40], [0, 40]]
+        plan = {"street": " Elm St ", "floors": [
+            {"id": "ground", "outline": outline, "stairs": [{"x": 14, "y": 20, "direction": "down", "facing": "w", "flight": "cellar"}, [5, 5]]},
+            {"id": "cellar", "outline": outline, "stairs": [{"x": 14, "y": 20, "direction": "up", "facing": "sideways", "flight": "cellar"}]},
+        ]}
+        saved = relay.put_floorplan(plan, types.SimpleNamespace(headers={}))
+        self.assertEqual("Elm St", saved["street"])
+        self.assertEqual([{"x": 14.0, "y": 20.0, "direction": "down", "facing": "w", "flight": "cellar"}, {"x": 5.0, "y": 5.0, "facing": "n"}], saved["floors"][0]["stairs"])
+        self.assertEqual({"x": 14.0, "y": 20.0, "direction": "up", "facing": "n", "flight": "cellar"}, saved["floors"][1]["stairs"][0])
+
+    def test_linked_stairs_join_two_floors_going_opposite_ways(self):
+        request = types.SimpleNamespace(headers={})
+        outline = [[0, 0], [30, 0], [30, 40], [0, 40]]
+        up = {"x": 1, "y": 1, "direction": "up", "flight": "f"}
+        down = {"x": 1, "y": 1, "direction": "down", "flight": "f"}
+        for floors in (
+            [{"id": "a", "outline": outline, "stairs": [up]}, {"id": "b", "outline": outline, "stairs": [dict(up)]}],
+            [{"id": "a", "outline": outline, "stairs": [up, down]}],
+            [{"id": "a", "outline": outline, "stairs": [up]}, {"id": "b", "outline": outline, "stairs": [down]}, {"id": "c", "outline": outline, "stairs": [dict(down)]}],
+            [{"id": "a", "outline": outline, "stairs": [{"x": 1, "y": 1, "flight": "f"}]}, {"id": "b", "outline": outline, "stairs": [down]}],
+        ):
+            with self.assertRaises(relay.HTTPException, msg=str(floors)) as refused:
+                relay.put_floorplan({"floors": floors}, request)
+            self.assertEqual(400, refused.exception.status_code)
+
     def test_a_plan_the_editor_got_wrong_is_refused(self):
         request = types.SimpleNamespace(headers={})
         bad = [

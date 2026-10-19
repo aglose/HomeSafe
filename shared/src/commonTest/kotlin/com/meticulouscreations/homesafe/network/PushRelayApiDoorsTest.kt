@@ -9,7 +9,9 @@ import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
+import com.meticulouscreations.homesafe.domain.model.PlanStairs
 import com.meticulouscreations.homesafe.domain.model.PlanWall
+import com.meticulouscreations.homesafe.domain.model.StairDirection
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -100,7 +102,7 @@ class PushRelayApiDoorsTest {
     fun theFloorPlanIsReadAndAFloorWithNoOutlineOrAShortWallIsLeftOut() = runTest {
         val seen = mutableListOf<Seen>()
         val body = """{"floors": [{"id": "ground", "name": "Ground floor", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]],
-            "rooms": [{"name": "Kitchen", "x": 8, "y": 10.5}], "stairs": [[15, 18]], "walls": [[0, 13, 14, 13], [1, 2]],
+            "rooms": [{"name": "Kitchen", "x": 8, "y": 10.5}], "stairs": [[15, 18], {"x": 4, "y": 5, "direction": "down", "facing": "w", "flight": "cellar"}], "walls": [[0, 13, 14, 13], [1, 2]],
             "doors": [{"name": "Back door", "from": [12, 0], "to": [15, 0], "swing": -1, "sensor": "0x01"}, {"from": [1], "to": [2, 0]}]},
             {"id": "attic", "outline": [[0, 0]]}]}"""
         val plan = api(respondWith = body, seen = seen).getFloorPlan("http://192.168.68.65:8971", "device-1", "secret-1").getOrThrow()
@@ -113,7 +115,7 @@ class PushRelayApiDoorsTest {
                         "Ground floor",
                         listOf(PlanPoint(0f, 0f), PlanPoint(30f, 0f), PlanPoint(30f, 40f), PlanPoint(0f, 40f)),
                         listOf(PlanRoom("Kitchen", PlanPoint(8f, 10.5f))),
-                        listOf(PlanPoint(15f, 18f)),
+                        listOf(PlanStairs(PlanPoint(15f, 18f)), PlanStairs(PlanPoint(4f, 5f), StairDirection.DOWN, facingDegrees = 270, flight = "cellar")),
                         listOf(PlanWall(PlanPoint(0f, 13f), PlanPoint(14f, 13f))),
                         listOf(PlanDoor(PlanPoint(12f, 0f), PlanPoint(15f, 0f), swing = -1, name = "Back door", sensorId = "0x01")),
                     ),

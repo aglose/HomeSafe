@@ -1244,16 +1244,18 @@ private fun com.meticulouscreations.homesafe.ui.screens.FloatingPlacementSwitch(
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.FloorDrawing(floor: com.meticulouscreations.homesafe.domain.model.PlanFloor, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, placing: kotlin.Boolean, placingDoorId: kotlin.String?, onPlaceAt: kotlin.Function2<@[ParameterName(name = \, onDoorClick: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.FloorDrawing(plan: com.meticulouscreations.homesafe.domain.model.FloorPlan, floor: com.meticulouscreations.homesafe.domain.model.PlanFloor, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, placing: kotlin.Boolean, placingDoorId: kotlin.String?, onPlaceAt: kotlin.Function2<@[ParameterName(name = \, onDoorClick: kotlin.Function1<@[ParameterName(name = \, onSelectFloor: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
+    - plan: RUNTIME (requires runtime check)
     - floor: RUNTIME (requires runtime check)
     - doors: RUNTIME (requires runtime check)
     - placing: STABLE (primitive type)
     - placingDoorId: STABLE (class with no mutable properties)
     - onPlaceAt: STABLE (function type)
     - onDoorClick: STABLE (function type)
+    - onSelectFloor: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FrameEditor(frame: com.meticulouscreations.homesafe.viewmodel.CameraFrame, uiState: com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState, onTap: kotlin.Function2<kotlin.Double, kotlin.Double, kotlin.Unit>, onDraw: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.SeenBox, kotlin.Unit>): kotlin.Unit
@@ -2873,6 +2875,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.showsNavRail(): kotlin.
   skippable: false
   restartable: false
   params:
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.stairsLabel(direction: com.meticulouscreations.homesafe.domain.model.StairDirection?, to: kotlin.String?): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - direction: STABLE (class with no mutable properties)
+    - to: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.stateColor(state: com.meticulouscreations.homesafe.domain.model.UptimeState): androidx.compose.ui.graphics.Color

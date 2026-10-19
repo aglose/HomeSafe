@@ -17,10 +17,12 @@ import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
+import com.meticulouscreations.homesafe.domain.model.PlanStairs
 import com.meticulouscreations.homesafe.domain.model.PlanWall
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.ServerUptime
+import com.meticulouscreations.homesafe.domain.model.StairDirection
 import com.meticulouscreations.homesafe.domain.model.UptimeCheck
 import com.meticulouscreations.homesafe.domain.model.UptimeDevice
 import com.meticulouscreations.homesafe.domain.model.UptimeOutage
@@ -50,6 +52,12 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * The HomeSafe push relay that runs next to Frigate on the same box (port [RELAY_PORT]). It
@@ -654,9 +662,9 @@ internal data class RelayDoor(
 internal data class RelayDoorSpot(val floor: String, val x: Double, val y: Double)
 
 @Serializable
-internal data class RelayFloorPlan(val floors: List<RelayFloor> = emptyList()) {
+internal data class RelayFloorPlan(val floors: List<RelayFloor> = emptyList(), val street: String? = null) {
     /** Null when no floor has an outline to draw: nothing to show. */
-    fun toDomain(): FloorPlan? = floors.mapNotNull { it.toDomain() }.takeIf { it.isNotEmpty() }?.let(::FloorPlan)
+    fun toDomain(): FloorPlan? = floors.mapNotNull { it.toDomain() }.takeIf { it.isNotEmpty() }?.let { FloorPlan(it, street?.ifBlank { null }) }
 }
 
 @Serializable
@@ -665,7 +673,8 @@ internal data class RelayFloor(
     val name: String? = null,
     val outline: List<List<Double>> = emptyList(),
     val rooms: List<RelayRoom> = emptyList(),
-    val stairs: List<List<Double>> = emptyList(),
+    /** Each as {x, y, direction, facing, flight}; a plan from before stairs had a direction lists bare [x, y]s. */
+    val stairs: List<JsonElement> = emptyList(),
     /** Each inside wall as [x1, y1, x2, y2]. */
     val walls: List<List<Double>> = emptyList(),
     val doors: List<RelayPlanDoor> = emptyList(),
@@ -678,7 +687,7 @@ internal data class RelayFloor(
             name = name?.ifBlank { null } ?: id,
             outline = points,
             rooms = rooms.map { PlanRoom(it.name, PlanPoint(it.x.toFloat(), it.y.toFloat())) },
-            stairs = stairs.mapNotNull { it.point() },
+            stairs = stairs.mapNotNull { it.stairs() },
             walls = walls.filter { it.size >= 4 }.map { PlanWall(PlanPoint(it[0].toFloat(), it[1].toFloat()), PlanPoint(it[2].toFloat(), it[3].toFloat())) },
             doors = doors.mapNotNull { door ->
                 val from = door.from.point() ?: return@mapNotNull null
@@ -702,6 +711,40 @@ internal data class RelayPlanDoor(
 internal data class RelayRoom(val name: String, val x: Double, val y: Double)
 
 private fun List<Double>.point(): PlanPoint? = if (size >= 2) PlanPoint(this[0].toFloat(), this[1].toFloat()) else null
+
+private fun JsonElement.stairs(): PlanStairs? = when (this) {
+    is JsonArray -> {
+        val x = getOrNull(0)?.jsonPrimitive?.doubleOrNull
+        val y = getOrNull(1)?.jsonPrimitive?.doubleOrNull
+        if (x != null && y != null) PlanStairs(PlanPoint(x.toFloat(), y.toFloat())) else null
+    }
+
+    is JsonObject -> {
+        val x = this["x"]?.jsonPrimitive?.doubleOrNull
+        val y = this["y"]?.jsonPrimitive?.doubleOrNull
+        if (x == null || y == null) {
+            null
+        } else {
+            PlanStairs(
+                at = PlanPoint(x.toFloat(), y.toFloat()),
+                direction = when (this["direction"]?.jsonPrimitive?.contentOrNull) {
+                    "up" -> StairDirection.UP
+                    "down" -> StairDirection.DOWN
+                    else -> null
+                },
+                facingDegrees = when (this["facing"]?.jsonPrimitive?.contentOrNull) {
+                    "e" -> 90
+                    "s" -> 180
+                    "w" -> 270
+                    else -> 0
+                },
+                flight = this["flight"]?.jsonPrimitive?.contentOrNull?.ifBlank { null },
+            )
+        }
+    }
+
+    else -> null
+}
 
 @Serializable
 internal data class RelayDoorEvent(val door: String, val open: Boolean, val at: Double, val pushed: String? = null)

@@ -10,7 +10,9 @@ import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
 import com.meticulouscreations.homesafe.domain.model.PlanRoom
+import com.meticulouscreations.homesafe.domain.model.PlanStairs
 import com.meticulouscreations.homesafe.domain.model.PlanWall
+import com.meticulouscreations.homesafe.domain.model.StairDirection
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryDay
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryEntry
@@ -39,7 +41,7 @@ private val previewPlan = FloorPlan(
             name = "Ground floor",
             outline = listOf(PlanPoint(0f, 0f), PlanPoint(28f, 0f), PlanPoint(28f, 24f), PlanPoint(18f, 24f), PlanPoint(18f, 36f), PlanPoint(0f, 36f)),
             rooms = listOf(PlanRoom("Kitchen", PlanPoint(7f, 6f)), PlanRoom("Family Room", PlanPoint(21f, 12f)), PlanRoom("Hall", PlanPoint(9f, 20f)), PlanRoom("Living Room", PlanPoint(9f, 30f))),
-            stairs = listOf(PlanPoint(15f, 18f)),
+            stairs = listOf(PlanStairs(PlanPoint(15f, 18f), StairDirection.UP, facingDegrees = 0, flight = "main")),
             walls = listOf(
                 PlanWall(PlanPoint(0f, 13f), PlanPoint(14f, 13f)),
                 PlanWall(PlanPoint(14f, 0f), PlanPoint(14f, 16f)),
@@ -56,9 +58,10 @@ private val previewPlan = FloorPlan(
             name = "Upper floor",
             outline = listOf(PlanPoint(0f, 0f), PlanPoint(28f, 0f), PlanPoint(28f, 24f), PlanPoint(0f, 24f)),
             rooms = listOf(PlanRoom("Bedroom", PlanPoint(7f, 7f)), PlanRoom("Bedroom", PlanPoint(21f, 7f)), PlanRoom("Bath", PlanPoint(7f, 18f))),
-            stairs = listOf(PlanPoint(15f, 18f)),
+            stairs = listOf(PlanStairs(PlanPoint(15f, 18f), StairDirection.DOWN, facingDegrees = 180, flight = "main")),
         ),
     ),
+    street = "Maple Street",
 )
 
 private val previewHistory = listOf(

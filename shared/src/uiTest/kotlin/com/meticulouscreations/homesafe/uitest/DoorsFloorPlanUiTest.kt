@@ -21,6 +21,8 @@ import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
 import com.meticulouscreations.homesafe.domain.model.PlanPoint
+import com.meticulouscreations.homesafe.domain.model.PlanStairs
+import com.meticulouscreations.homesafe.domain.model.StairDirection
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.DOORS_PLACE_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.DOORS_PLAN_TEST_TAG
@@ -111,5 +113,28 @@ class DoorsFloorPlanUiTest {
 
         onNodeWithTag(DOORS_PLAN_TEST_TAG).performTouchInput { click(center) }
         assertEquals(10.5f to 11f, placed)
+    }
+
+    @Test
+    fun stairsToAnotherFloorAreAButtonToIt() = runComposeUiTest {
+        var shown: String? = null
+        val down = PlanStairs(PlanPoint(10f, 10f), StairDirection.DOWN, flight = "cellar")
+        val withStairs = FloorPlan(
+            listOf(
+                plan.floors[0].copy(stairs = listOf(down)),
+                plan.floors[1].copy(id = "cellar", name = "Basement", stairs = listOf(down.copy(direction = StairDirection.UP))),
+            ),
+        )
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                Column(modifier = Modifier.width(400.dp)) {
+                    DoorsFloorPlan(DoorsUiState(loaded = true, floorPlan = withStairs, floorId = "ground"), DoorsPlanActions(onSelectFloor = { shown = it }), onShowDoor = {})
+                }
+            }
+        }
+
+        onNodeWithContentDescription("Down to Basement").assertHeightIsAtLeast(48.dp).performClick()
+        assertEquals("cellar", shown)
     }
 }

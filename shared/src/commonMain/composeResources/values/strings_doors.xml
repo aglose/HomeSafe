@@ -92,6 +92,13 @@
     <!-- What a screen reader says for a door's dot on the plan: its name and how it stands, e.g. "Back door, Open". -->
     <string name="doors_plan_marker">%1$s, %2$s</string>
     <string name="doors_plan_marker_action">Show this door's details</string>
+    <!-- Under stairs on the plan: which way they go, and to which floor (%1$s, its name in the plan, e.g. "Basement"). -->
+    <string name="doors_plan_stairs_up">Up</string>
+    <string name="doors_plan_stairs_down">Down</string>
+    <string name="doors_plan_stairs_up_to">Up to %1$s</string>
+    <string name="doors_plan_stairs_down_to">Down to %1$s</string>
+    <!-- Under the plan: the street the house fronts onto, at the bottom of every floor. %1$s is its name. -->
+    <string name="doors_plan_street">%1$s (street side)</string>
     <string name="doors_spot_save_failed">Couldn't save where that door is: %1$s</string>
     <string name="doors_save_failed">Couldn't change that door's alerts: %1$s</string>
 </resources>

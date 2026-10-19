@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -64,7 +65,10 @@ class DoorRepositoryImplTest {
         val notify = mutableMapOf("0x01" to "away", "0x02" to "away")
         val putStatuses = ArrayDeque<HttpStatusCode>()
         val putGates = ArrayDeque<CompletableDeferred<Unit>>()
-        val requests = mutableListOf<String>()
+
+        // Appended to by the engine on its own thread while the test reads it: swapped whole, never mutated.
+        private val requestLog = MutableStateFlow(emptyList<String>())
+        val requests: List<String> get() = requestLog.value
         private fun doors() = notify.entries.joinToString(",", """{"doors":[""", """],"events":[],"broker":true,"bridge":true}""") { (id, mode) ->
             """{"id":"$id","name":"Door $id","open":false,"notify":"$mode"}"""
         }
@@ -75,14 +79,14 @@ class DoorRepositoryImplTest {
                     val status = putStatuses.removeFirstOrNull() ?: HttpStatusCode.OK
                     val id = req.url.encodedPath.removePrefix("/doors/")
                     val mode = (req.body as TextContent).text.substringAfter("\"notify\":\"").substringBefore("\"")
-                    requests += "PUT $id $mode"
+                    requestLog.update { it + "PUT $id $mode" }
                     gate?.await()
                     if (status == HttpStatusCode.OK) notify[id] = mode
                     respond(if (status == HttpStatusCode.OK) doors() else "{}", status, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
                 else -> {
-                    requests += "GET ${req.url.encodedPath}"
+                    requestLog.update { it + "GET ${req.url.encodedPath}" }
                     if (req.url.encodedPath == "/floorplan") {
                         respond("""{"floors":[{"id":"ground","name":"Ground floor","outline":[[0,0],[30,0],[30,40],[0,40]]}]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                     } else {

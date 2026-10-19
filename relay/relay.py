@@ -5374,7 +5374,11 @@ def set_door(door_id: str, patch: DoorPatch, request: Request) -> dict[str, Any]
 #   {"floors": [{"id": "first", "name": "First floor", "outline": [[x, y], ...],
 #                "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}], "stairs": [[x, y]],
 #                "walls": [[x1, y1, x2, y2]], "doors": [{"name": "Back door", "from": [x, y], "to": [x, y],
-#                "swing": 1, "sensor": "0x…"}]}, ...]}
+#                "swing": 1, "sensor": "0x…"}], "stairs": [{"x": 14.5, "y": 24, "direction": "down",
+#                "facing": "n", "flight": "basement"}]}, ...], "street": "Central Ave"}
+# Every floor is drawn in the same frame, with the street side (`street`) at the bottom: stairs
+# that join two floors share a `flight` id, go up on one and down on the other, and sit in the
+# same spot on both.
 # in feet, y downward, each floor's outline one closed polygon. A door is a doorway along a wall,
 # hinged at `from`, swinging to the left of from→to (1) or the right (-1); one linked to a sensor
 # puts that sensor's spot at the doorway's middle when the plan is saved (`link_door_sensors`). Each door's spot on it is kept with
@@ -5475,20 +5479,53 @@ def clean_floorplan(plan: Any) -> dict[str, Any]:
             if isinstance(door.get("sensor"), str) and door["sensor"].strip():
                 cleaned_door["sensor"] = door["sensor"].strip()
             doors.append(cleaned_door)
+        stairs = []
+        for stair in floor.get("stairs") or []:
+            # Plans from before stairs had a direction list each as a bare [x, y].
+            if isinstance(stair, list):
+                stair = {"x": stair[0] if stair else None, "y": stair[1] if len(stair) > 1 else None}
+            if not isinstance(stair, dict):
+                raise ValueError(f"{floor_id}: stairs must be an object")
+            cleaned_stair: dict[str, Any] = {"x": number(stair.get("x")), "y": number(stair.get("y"))}
+            if stair.get("direction") in ("up", "down"):
+                cleaned_stair["direction"] = stair["direction"]
+            cleaned_stair["facing"] = stair.get("facing") if stair.get("facing") in ("n", "e", "s", "w") else "n"
+            if isinstance(stair.get("flight"), str) and stair["flight"].strip():
+                cleaned_stair["flight"] = stair["flight"].strip()[:40]
+            stairs.append(cleaned_stair)
         name = floor.get("name")
         cleaned.append({
             "id": floor_id,
             "name": name.strip()[:60] if isinstance(name, str) and name.strip() else floor_id,
             "outline": outline,
             "rooms": rooms,
-            "stairs": [point(p) for p in floor.get("stairs") or []],
+            "stairs": stairs,
             "walls": walls,
             "doors": doors,
         })
     linked = [d["sensor"] for f in cleaned for d in f["doors"] if "sensor" in d]
     if len(linked) != len(set(linked)):
         raise ValueError("A door sensor can be linked to one door only")
-    return {"floors": cleaned}
+    # A flight of stairs joins two floors: its two ends share an id, one going up and one down.
+    ends: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for f in cleaned:
+        for stair in f["stairs"]:
+            if "flight" in stair:
+                ends.setdefault(stair["flight"], []).append((f["id"], stair))
+    for flight, pair in ends.items():
+        if len(pair) > 2:
+            raise ValueError("A flight of stairs joins two floors, no more")
+        if len(pair) == 2:
+            (floor_a, a), (floor_b, b) = pair
+            if floor_a == floor_b:
+                raise ValueError("Linked stairs must be on two different floors")
+            if {a.get("direction"), b.get("direction")} != {"up", "down"}:
+                raise ValueError("Linked stairs go up on one floor and down on the other")
+    plan_out: dict[str, Any] = {"floors": cleaned}
+    street = plan.get("street")
+    if isinstance(street, str) and street.strip():
+        plan_out["street"] = street.strip()[:60]
+    return plan_out
 
 
 def link_door_sensors(plan: dict[str, Any]) -> list[str]:
