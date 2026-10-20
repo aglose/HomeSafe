@@ -216,6 +216,13 @@ reports 0 fps (2026-10-18 and -19). The primer heals it in two steps:
    stream blips for a few seconds, about 2–3 minutes after the video stopped. Restarts are at
    least 30 minutes apart, doubling to 4 hours while they don't bring the camera back.
 
+A camera Google won't stream at all never gets that far: go2rtc opens no session for it, so there
+is nothing for a restart to clear. The primer just keeps asking, every 6 minutes once it has backed
+off, and the camera is back within that long of Google streaming it again. Frigate's log shows
+`nest: wrong status: 400 Bad Request` for it. Google's reason, "The camera is not available for
+streaming", came for the doorbell on 2026-10-17 (turned off in Google Home) and from 07:00 on
+2026-10-20; check the camera in the Google Home app.
+
 The relay logs `nest primer: <name> had no video for 60 s; dropping it` for the first step and a
 warning `... restarting go2rtc` for the second (`docker logs homesafe-relay | grep "nest primer"`).
 

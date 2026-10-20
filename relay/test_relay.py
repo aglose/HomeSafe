@@ -6776,10 +6776,10 @@ class NestPrimerTest(unittest.TestCase):
         self.assertEqual({"living_room_sub": "living_room"}, relay.nest_grid_streams(streams))
 
     @staticmethod
-    def ended(dropped=False, flowed=False):
-        """A hold's watch as it ended: dropped by the watchdog or not, its video having moved or not."""
+    def ended(dropped=False, flowed=False, session=True):
+        """A hold's watch as it ended: dropped by the watchdog or not, its video having moved or not, go2rtc with a session or none."""
         watch = relay.NestPrimerWatch(0)
-        watch.dropped, watch.flowed = dropped, flowed
+        watch.dropped, watch.flowed, watch.session = dropped, flowed, session
         return watch
 
     def test_go2rtc_is_restarted_when_a_dead_session_outlives_dropping_the_hold(self):
@@ -6799,6 +6799,28 @@ class NestPrimerTest(unittest.TestCase):
         restarts = relay.NestGo2rtcRestarts()
         for at in range(0, 3600 * 5, 600):
             self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True, flowed=True), at))
+
+    def test_a_camera_google_won_t_stream_never_restarts_go2rtc(self):
+        # 2026-10-20: "The camera is not available for streaming" for the doorbell all day. go2rtc
+        # never opened a session, so each hold dialed Google afresh; a restart couldn't help.
+        restarts = relay.NestGo2rtcRestarts()
+        for at in range(0, 3600 * 24, 360):
+            self.assertFalse(restarts.hold_ended("outdoor_doorbell", self.ended(dropped=True, session=False), at))
+
+    def test_a_session_gone_before_the_drop_starts_the_count_over(self):
+        # Kitchen on 2026-10-19: no receivers left, the hold its last viewer, so dropping it was enough.
+        restarts = relay.NestGo2rtcRestarts()
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True), 60))
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True, session=False), 130))
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True), 200))
+
+    def test_a_watch_knows_whether_go2rtc_had_a_session_at_its_last_reading(self):
+        watch, _ = self.watched([(15, 9000), (30, 9000)])
+        self.assertTrue(watch.session)
+        watch, _ = self.watched([(15, 9000), (30, None)])
+        self.assertFalse(watch.session)
+        watch, _ = self.watched([(15, None), (30, 0)])
+        self.assertTrue(watch.session)
 
     def test_a_hold_go2rtc_ended_starts_the_count_over(self):
         # Google refusing the camera, or go2rtc closing the viewer, means it let go of the session.

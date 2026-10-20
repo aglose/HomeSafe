@@ -5725,6 +5725,8 @@ class NestPrimerWatch:
         self.flowed = False
         # Whether the watchdog dropped the hold.
         self.dropped = False
+        # Whether go2rtc had a session for the stream at the last reading: video receivers, moving or not.
+        self.session = False
 
     def stalled(self, now: float, received: int | None) -> bool:
         """
@@ -5732,6 +5734,7 @@ class NestPrimerWatch:
         nothing has arrived for NEST_PRIMER_STALL_SECONDS. Any change to a count above 0 counts as
         arriving, since a reopened producer's counts start again from 0.
         """
+        self.session = received is not None
         if received is not None and received != self.bytes:
             if received > 0:
                 self.flowed = self.flowed or self.bytes is not None
@@ -5817,13 +5820,16 @@ class NestGo2rtcRestarts:
         With how [name]'s hold just ended ([watch]), whether go2rtc should be restarted now. A drop
         after video moved is the first in a row (the session just died); a drop of a hold that
         never saw any is one more (the hold joined a session go2rtc kept dead). A hold that ended
-        any other way means go2rtc let go of the session, so the count starts over.
+        any other way means go2rtc let go of the session, so the count starts over. So does a drop
+        with no session at all: go2rtc kept nothing, so the next hold dials Google afresh, and when
+        Google won't stream the camera ("The camera is not available for streaming", the doorbell
+        on 2026-10-20) a restart can't change that.
         """
         with self.lock:
             if watch.flowed and self.restarted_for == name:
                 # That restart brought it back: the next one may come at the first wait again.
                 self.restarted_for, self.cooldown = None, NEST_PRIMER_RESTART_COOLDOWN_SECONDS
-            if not watch.dropped:
+            if not (watch.dropped and watch.session):
                 self.drops[name] = 0
                 return False
             self.drops[name] = 1 if watch.flowed else self.drops.get(name, 0) + 1
