@@ -70,6 +70,11 @@ data class DoorsSnapshot(
     val supported: Boolean = true,
     /** Whether this is what the relay said, rather than the placeholder before it has answered. */
     val answered: Boolean = false,
+    /**
+     * The relay's count of door changes, for asking it to answer at the next one; null from a
+     * relay that can't (it's then polled).
+     */
+    val version: Long? = null,
 ) {
     companion object {
         val EMPTY = DoorsSnapshot()

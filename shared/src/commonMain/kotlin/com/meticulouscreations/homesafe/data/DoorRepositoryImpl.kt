@@ -28,10 +28,14 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Mirrors the relay's doors. Like [PresenceRepositoryImpl], the poll runs only while [doors] has
- * a collector (the Home card, the Doors page) and restarts on every server change. A door can
- * change any second, so it polls more often than presence does; a push covers the openings that
- * matter while the app is closed.
+ * Mirrors the relay's doors. Like [PresenceRepositoryImpl], the reading runs only while [doors] has
+ * a collector (the Home card, the Doors page) and restarts on every server change; a push covers
+ * the openings that matter while the app is closed.
+ *
+ * A door should show the moment it opens, so rather than polling, each read hands the relay the
+ * version it last answered and the relay holds it open until a door changes (or [waitSeconds]
+ * pass), then the next read goes straight out. A relay from before that answers at once with no
+ * version, and is polled every [pollIntervalMs] instead.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -42,6 +46,8 @@ class DoorRepositoryImpl(
     private val connectionRepository: ConnectionRepository,
     appScope: CoroutineScope,
     private val pollIntervalMs: Long = POLL_INTERVAL_MS,
+    private val waitSeconds: Int = WAIT_SECONDS,
+    private val retryMs: Long = RETRY_MS,
 ) : DoorRepository {
 
     private val _doors = MutableStateFlow(DoorsSnapshot.EMPTY)
@@ -49,6 +55,9 @@ class DoorRepositoryImpl(
 
     /** The doors as the relay last said, before any setting still on its way is laid over them. */
     private var fromRelay = DoorsSnapshot.EMPTY
+
+    /** The server [fromRelay] came from, null while it's [DoorsSnapshot.EMPTY]. */
+    private var doorsFrom: String? = null
 
     /** Settings chosen here and not yet answered, by door: each with its number, so a later choice for the same door supersedes it. */
     private val pending = mutableMapOf<String, Pair<Long, DoorNotify>>()
@@ -66,7 +75,7 @@ class DoorRepositoryImpl(
     /** One plan read at a time, so a refresh and a poll landing together read it once. */
     private val planLock = Mutex()
 
-    /** Guards [fromRelay], [pending], [pendingSpots] and [edits]: polls and saves land on different coroutines. */
+    /** Guards [fromRelay], [doorsFrom], [pending], [pendingSpots] and [edits]: polls and saves land on different coroutines. */
     private val state = Mutex()
 
     /** One save at a time, in the order they were chosen (a [Mutex] is fair), so the relay keeps the last one. */
@@ -75,22 +84,25 @@ class DoorRepositoryImpl(
     init {
         appScope.launch {
             // Signing out, or switching straight to another server, forgets this one's doors and
-            // plan, so the next server's sensors are never drawn over this one's house.
-            var last: String? = null
+            // plan, so the next server's sensors are never drawn over this one's house. Judged by
+            // where each came from rather than by the last address seen here: a switch made
+            // before this first looks would otherwise be missed.
             connectionRepository.currentServerUrl.collect { url ->
-                if (url == null || (last != null && url != last)) {
-                    state.withLock {
+                state.withLock {
+                    if (url == null || (doorsFrom != null && doorsFrom != url)) {
                         pending.clear()
                         pendingSpots.clear()
                         fromRelay = DoorsSnapshot.EMPTY
+                        doorsFrom = null
                         publish()
                     }
-                    planLock.withLock {
+                }
+                planLock.withLock {
+                    if (url == null || (planFrom != null && planFrom != url)) {
                         planFrom = null
                         _floorPlan.value = null
                     }
                 }
-                last = url
             }
         }
         appScope.launch {
@@ -101,9 +113,12 @@ class DoorRepositoryImpl(
                 .distinctUntilChanged()
                 .collectLatest { url ->
                     if (url == null) return@collectLatest
+                    var version: Long? = null
                     while (true) {
-                        fetch(url)
-                        delay(pollIntervalMs)
+                        val answer = fetch(url, since = version)
+                        version = answer.getOrNull()?.version
+                        // With a version, straight back to waiting on the next change.
+                        if (version == null) delay(if (answer.isFailure) retryMs else pollIntervalMs)
                     }
                 }
         }
@@ -111,7 +126,7 @@ class DoorRepositoryImpl(
 
     override suspend fun refresh(): Result<Unit> {
         val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
-        return fetch(url, rereadPlan = true)
+        return fetch(url, rereadPlan = true).map { }
     }
 
     /**
@@ -138,7 +153,12 @@ class DoorRepositoryImpl(
         settle {
             if (pending[doorId]?.first == edit) pending.remove(doorId)
             // An answer from the server signed out of meanwhile is no one's doors now.
-            answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
+            answer.onSuccess {
+                if (connectionRepository.currentServerUrl.value == url) {
+                    fromRelay = it
+                    doorsFrom = url
+                }
+            }
         }
         return answer.map { }
     }
@@ -159,12 +179,18 @@ class DoorRepositoryImpl(
         }
         settle {
             if (pendingSpots[doorId]?.first == edit) pendingSpots.remove(doorId)
-            answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
+            answer.onSuccess {
+                if (connectionRepository.currentServerUrl.value == url) {
+                    fromRelay = it
+                    doorsFrom = url
+                }
+            }
         }
         return answer.map { }
     }
 
-    private suspend fun fetch(url: String, rereadPlan: Boolean = false): Result<Unit> {
+    /** Reads the doors, waiting for the next change when [since] is the version already shown. Answers what the relay said. */
+    private suspend fun fetch(url: String, rereadPlan: Boolean = false, since: Long? = null): Result<DoorsSnapshot> {
         val deviceId = identity.deviceId()
         val secret = identity.secret()
         // The plan barely ever changes: read once per server, and again on a refresh.
@@ -179,10 +205,12 @@ class DoorRepositoryImpl(
                 }
             }
         }
-        return relayApi.getDoors(url, deviceId, secret).map { snapshot ->
+        val waiting = if (since != null) waitSeconds else 0
+        return relayApi.getDoors(url, deviceId, secret, since = since, waitSeconds = waiting).onSuccess { snapshot ->
             state.withLock {
                 if (connectionRepository.currentServerUrl.value == url) {
                     fromRelay = snapshot
+                    doorsFrom = url
                     publish()
                 }
             }
@@ -216,6 +244,16 @@ class DoorRepositoryImpl(
     }
 
     private companion object {
+        /** Against a relay that can't hold a read open. */
         const val POLL_INTERVAL_MS = 15_000L
+
+        /**
+         * How long the relay may hold a read open with nothing changing. Under the 30 s an idle
+         * connection lasts through most mobile carriers' NAT, and the relay's own cap.
+         */
+        const val WAIT_SECONDS = 25
+
+        /** After a read that failed: soon, since a door may change meanwhile, but not in a tight loop. */
+        const val RETRY_MS = 3_000L
     }
 }

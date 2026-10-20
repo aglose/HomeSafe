@@ -17,6 +17,38 @@ sensor ──Zigbee──▶ USB stick ──▶ Zigbee2MQTT ──MQTT──▶
 | Relay | `relay/relay.py`, "doors": keeps each door's state and 90 days of openings and closings in `relay.db`, answers `GET /doors`, and pushes |
 | App | Pills at the top of Home (each open or offline door, and a count of the closed ones) opening the Doors page, also at Settings › Doors: the floor plan with each door on it, each sensor's battery and signal, its push setting, and the last 7 days |
 
+## How fast the app sees a door
+
+While the app is open (Home's pills, the Doors page), it holds a read of `GET /doors` open
+rather than polling: each read carries the `version` of the snapshot it last got
+(`?since=<version>&wait=25`), and the relay answers it the moment a door changes, or after 25 s
+with nothing new, and the app asks again straight away. The version moves on every change the
+app draws: an opening or closing, a sensor going offline, the broker or Zigbee2MQTT dropping, a
+setting or spot saved. A reading that only repeats a door's state (a ThirdReality sensor says it
+three or four times) wakes nobody. The endpoint is async, so a held read costs the relay no
+worker thread. A relay from before this answers at once with no `version`, and the app polls it
+every 15 s as before.
+
+To measure it, open and close doors while this runs (it signs in with the test account in
+`local.credentials.properties`, and stamps each change where the broker hands it out):
+
+```bash
+scripts/door-latency.py --minutes 5
+```
+
+It prints, for every change, how long after Zigbee2MQTT published it each reader first had it in
+the relay's history: one reading every second (an upper bound on when the relay had it), one
+holding the read open (the app now), and one polling every 15 s (the app before). It also prints
+any read slower than a second as it happens, which means the relay was stuck.
+
+On 2026-10-19, over the tailnet, for 6 openings and closings of the Front and Back doors, the held
+read had each one 0.01-0.03 s after Zigbee2MQTT published it; the 15 s poll took 0.3-13.1 s (mean
+4.8 s; 7.5 s expected over many). A ThirdReality sensor's own hop, from the door moving to
+Zigbee2MQTT hearing it, isn't in these numbers. In an earlier round, one 30 s stretch reached no
+reader, while the relay was apparently stuck. The relay now logs any call holding its database
+lock over a second (`db: held … by …`) and any door message recorded over a second late, so a
+stretch like that names what caused it.
+
 ## What pushes
 
 Each door has its own setting, chosen in the app (`PUT /doors/{id}` with `{"notify": …}`):
