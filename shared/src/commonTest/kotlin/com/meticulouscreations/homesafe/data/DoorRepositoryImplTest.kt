@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -63,10 +64,13 @@ class DoorRepositoryImplTest {
     /**
      * A relay with two doors. Each PUT takes the next of [putGates] (when there is one) to wait on
      * and the next of [putStatuses] (OK when there are none left), and keeps what it was sent. A
-     * plan read does the same with [planGates] and [planStatuses].
+     * plan read does the same with [planGates] and [planStatuses]. With a [version] it is a relay
+     * that holds a read with `since` open until the version moves; without, one from before that.
      */
     private class Harness(scope: TestScope, connection: ConnectionRepository) {
         val notify = mutableMapOf("0x01" to "away", "0x02" to "away")
+        val open = mutableMapOf("0x01" to false, "0x02" to false)
+        val version = MutableStateFlow<Long?>(null)
         val putStatuses = ArrayDeque<HttpStatusCode>()
         val putGates = ArrayDeque<CompletableDeferred<Unit>>()
         val planStatuses = ArrayDeque<HttpStatusCode>()
@@ -75,8 +79,17 @@ class DoorRepositoryImplTest {
         // Appended to by the engine on its own thread while the test reads it: swapped whole, never mutated.
         private val requestLog = MutableStateFlow(emptyList<String>())
         val requests: List<String> get() = requestLog.value
-        private fun doors() = notify.entries.joinToString(",", """{"doors":[""", """],"events":[],"broker":true,"bridge":true}""") { (id, mode) ->
-            """{"id":"$id","name":"Door $id","open":false,"notify":"$mode"}"""
+        private fun doors(): String {
+            val tail = version.value?.let { ""","version":$it""" }.orEmpty()
+            return notify.entries.joinToString(",", """{"doors":[""", """],"events":[],"broker":true,"bridge":true$tail}""") { (id, mode) ->
+                """{"id":"$id","name":"Door $id","open":${open.getValue(id)},"notify":"$mode"}"""
+            }
+        }
+
+        /** A door changes on the relay: what a held read is waiting for. */
+        fun opens(id: String) {
+            open[id] = true
+            version.update { it?.plus(1) }
         }
         private val engine = MockEngine { req ->
             when (req.method) {
@@ -100,6 +113,11 @@ class DoorRepositoryImplTest {
                         if (status != HttpStatusCode.OK) return@MockEngine respond("{}", status, headersOf(HttpHeaders.ContentType, "application/json"))
                         respond("""{"floors":[{"id":"ground","name":"Ground floor","outline":[[0,0],[30,0],[30,40],[0,40]]}]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                     } else {
+                        val since = req.url.parameters["since"]?.toLong()
+                        if (since != null) {
+                            requestLog.update { it + "since=$since wait=${req.url.parameters["wait"]}" }
+                            if (version.value != null) version.first { it != since }
+                        }
                         respond(doors(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                     }
                 }
@@ -131,6 +149,25 @@ class DoorRepositoryImplTest {
         backgroundScope.launch { h.repository.doors.collect {} }
         eventually("the first read") { h.repository.doors.value.doors.size == 2 }
         assertEquals(listOf("GET /floorplan", "GET /doors"), h.requests.take(2), "the plan once, then the doors")
+        eventually("polled again") { h.requests.count { it == "GET /doors" } >= 2 }
+        assertTrue(h.requests.none { it.startsWith("since=") }, "a relay with no version is polled, not asked to wait")
+    }
+
+    @Test
+    fun aRelayThatHoldsTheReadShowsADoorTheMomentItChanges() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.65:8971"))
+        h.version.value = 41
+        backgroundScope.launch { h.repository.doors.collect {} }
+        eventually("the read held open on the version shown") { h.requests.lastOrNull() == "since=41 wait=25" }
+        assertEquals(false, h.repository.doors.value.doors.first().open)
+        h.opens("0x01")
+        eventually("the opening shown") { h.repository.doors.value.doors.first { it.id == "0x01" }.open == true }
+        eventually("and straight back to waiting, on the new version") { h.requests.lastOrNull() == "since=42 wait=25" }
+        assertEquals(
+            listOf("GET /doors", "GET /doors", "since=41 wait=25", "GET /doors", "since=42 wait=25"),
+            h.requests.filter { it != "GET /floorplan" },
+            "the first read, then one held read per change: no polling between",
+        )
     }
 
     private fun Harness.shown(id: String) = repository.doors.value.doors.single { it.id == id }.notify

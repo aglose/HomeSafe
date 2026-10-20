@@ -35,6 +35,7 @@ import homesafe.shared.generated.resources.error_relay_no_secret
 import homesafe.shared.generated.resources.error_relay_no_spot
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -316,12 +317,29 @@ class PushRelayApi(private val httpClient: HttpClient) {
      * The door sensors and their openings and closings over the last [days] (the relay's
      * `/doors`). Reads with the session cookie, or as this install ([deviceId], [secret]).
      * [DoorsSnapshot.supported] is false from a relay that predates the door sensors (404).
+     *
+     * With [since] (the [DoorsSnapshot.version] last read) the relay holds the request open up to
+     * [waitSeconds] and answers the moment a door changes. A relay from before that answers at
+     * once, with no version.
      */
-    suspend fun getDoors(serverUrl: String, deviceId: String? = null, secret: String? = null, days: Int = DOOR_HISTORY_DAYS): Result<DoorsSnapshot> =
+    suspend fun getDoors(
+        serverUrl: String,
+        deviceId: String? = null,
+        secret: String? = null,
+        days: Int = DOOR_HISTORY_DAYS,
+        since: Long? = null,
+        waitSeconds: Int = 0,
+    ): Result<DoorsSnapshot> =
         runCatching {
             val response = httpClient.get(relayUrl(serverUrl, "/doors")) {
                 asDevice(deviceId, secret)
                 parameter("days", days)
+                if (since != null && waitSeconds > 0) {
+                    parameter("since", since)
+                    parameter("wait", waitSeconds)
+                    // The client's usual cap is shorter than the wait; this allows for the wait plus an ordinary request.
+                    timeout { requestTimeoutMillis = (waitSeconds + DOOR_WAIT_SLACK_SECONDS) * 1000L }
+                }
             }
             if (response.status == HttpStatusCode.NotFound) return@runCatching DoorsSnapshot(supported = false, answered = true)
             if (!response.status.isSuccess()) throw relayRefused(response.status)
@@ -387,6 +405,9 @@ class PushRelayApi(private val httpClient: HttpClient) {
 
         /** How far back the door history goes in the app. */
         const val DOOR_HISTORY_DAYS = 7
+
+        /** How much longer than its wait a held `/doors` may take before it counts as failed. */
+        private const val DOOR_WAIT_SLACK_SECONDS = 10
 
         /** Same host as Frigate, the relay's port, no query — works for both the LAN and Tailscale addresses. */
         fun relayUrl(serverUrl: String, path: String): String =
@@ -620,12 +641,15 @@ internal data class RelayDoors(
     val events: List<RelayDoorEvent> = emptyList(),
     val broker: Boolean = false,
     val bridge: Boolean = false,
+    /** Moves on every change; null from a relay that can't hold a request open for the next one. */
+    val version: Long? = null,
 ) {
     fun toDomain() = DoorsSnapshot(
         doors = doors.map { it.toDomain() },
         events = events.map { DoorEvent(it.door, it.open, (it.at * 1000).toLong(), it.pushed) },
         listening = broker && bridge,
         answered = true,
+        version = version,
     )
 }
 

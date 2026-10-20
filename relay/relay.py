@@ -27,6 +27,7 @@ driveway" — see "vehicle memory". The local vision model checks those names ag
 of each car kept on the box.
 """
 
+import asyncio
 import bisect
 import calendar
 import gzip
@@ -42,6 +43,7 @@ import re
 import secrets
 import socket
 import sqlite3
+import sys
 from statistics import median
 import threading
 import time
@@ -434,9 +436,21 @@ DB_LOCK = threading.Lock()
 CONN = None
 
 
+# A call holding DB_LOCK longer than this is logged with its caller: every other thread (the door
+# sensors' among them) waits on it meanwhile.
+DB_SLOW_SECONDS = 1.0
+
+
 def with_db(fn):
     with DB_LOCK:
-        return fn(CONN)
+        started = time.monotonic()
+        try:
+            return fn(CONN)
+        finally:
+            held = time.monotonic() - started
+            if held > DB_SLOW_SECONDS:
+                caller = sys._getframe(1).f_code
+                log.warning("db: held %.1f s by %s (relay.py:%d)", held, caller.co_name, caller.co_firstlineno)
 
 
 def state_get(key: str) -> Any | None:
@@ -5089,6 +5103,58 @@ DOOR_HISTORY_DAYS = 90
 # Whether the relay is connected to the broker, and whether Zigbee2MQTT says it's running, for the
 # app to tell "no sensors yet" from "can't hear them".
 DOORS_LINK = {"broker": False, "bridge": False}
+# How long one GET /doors may be held open waiting for a change (see DoorsChanges).
+DOORS_WAIT_MAX = 30.0
+
+
+class DoorsChanges:
+    """
+    The doors' version, which moves on every change the app would draw, and a way for a request to
+    wait for the next one. The app holds GET /doors?since=<version>&wait=<seconds> open; the relay
+    answers it the moment a door changes (an MQTT message on the doors thread, an edit from the
+    app), or when the wait runs out with the same version. So a door shows within a network round
+    trip of Zigbee2MQTT hearing it, rather than at the app's next poll.
+
+    The version starts at the boot's clock in milliseconds, so one from before a restart never
+    matches and is answered at once. It moves after the change is committed, and a snapshot reads
+    it before the rows: a snapshot can carry an older version than its rows (the app asks again
+    and is answered at once) but never a newer one.
+    """
+
+    def __init__(self) -> None:
+        self.version = int(time.time() * 1000)
+        self._lock = threading.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._event: asyncio.Event | None = None
+
+    def bump(self) -> None:
+        """A change was committed: moves the version and wakes every request waiting on the last one. From any thread."""
+        with self._lock:
+            self.version += 1
+            loop, event = self._loop, self._event
+        if loop is not None and event is not None:
+            try:
+                loop.call_soon_threadsafe(event.set)
+            except RuntimeError:
+                pass  # the server is shutting down
+
+    async def wait(self, since: int, timeout: float) -> None:
+        """Returns once the version is no longer [since], or after [timeout] seconds."""
+        loop = asyncio.get_running_loop()
+        with self._lock:
+            if self.version != since:
+                return
+            # One event per version: a set one belongs to a change already answered.
+            if self._loop is not loop or self._event is None or self._event.is_set():
+                self._loop, self._event = loop, asyncio.Event()
+            event = self._event
+        try:
+            await asyncio.wait_for(event.wait(), timeout)
+        except TimeoutError:
+            pass
+
+
+DOORS_CHANGES = DoorsChanges()
 
 
 def has_contact(exposes: Any) -> bool:
@@ -5159,6 +5225,11 @@ def door_sync(sensors: dict[str, dict[str, Any]]) -> None:
 
 def door_by_name(name: str) -> tuple | None:
     return with_db(lambda c: c.execute("SELECT id, name, open, notify, last_push FROM doors WHERE name=? AND removed=0", (name,)).fetchone())
+
+
+def door_shown(name: str) -> tuple | None:
+    """How the app draws the door called [name]: whether it's open, and whether it's online."""
+    return with_db(lambda c: c.execute("SELECT open, online FROM doors WHERE name=? AND removed=0", (name,)).fetchone())
 
 
 def door_state(name: str, readings: dict[str, Any], now: float) -> dict[str, Any] | None:
@@ -5258,15 +5329,30 @@ def door_receive(topic: str, payload: bytes, now: float) -> None:
     if kind == "devices":
         sensors = contact_sensors(body)
         door_sync(sensors)
+        DOORS_CHANGES.bump()
         log.info("doors: %d sensor(s) on the Zigbee network: %s", len(sensors), ", ".join(sorted(s["name"] for s in sensors.values())) or "none")
     elif kind == "bridge":
         DOORS_LINK["bridge"] = body == "online"
+        DOORS_CHANGES.bump()
     elif kind == "availability":
         with_db(lambda c: (c.execute("UPDATE doors SET online=? WHERE name=? AND removed=0", (int(body == "online"), name)), c.commit()))
+        DOORS_CHANGES.bump()
     elif kind == "state":
+        before = door_shown(name)
         change = door_state(name, body, now)
-        if change is not None:
-            door_announce(change, now, away_since() is not None)
+        late = time.time() - now
+        if late > 1:
+            log.warning("doors: a message from %s took %.1f s to record", name, late)
+        # The app's waiting requests first: the push can take a second, and a phone with the app
+        # open shouldn't wait on Firebase. Whatever moves how the door is drawn wakes them (an
+        # opening or closing, a sensor's first reading, one back online); a reading that changed
+        # neither (the sensor says the same thing three times) wakes nobody, and its battery shows
+        # at the next wait's end.
+        if change is not None or door_shown(name) != before:
+            DOORS_CHANGES.bump()
+        # A push that reached a phone marks the history entry as notified: wake them again for that.
+        if change is not None and door_announce(change, now, away_since() is not None) is not None:
+            DOORS_CHANGES.bump()
 
 
 def doors_forever() -> None:
@@ -5282,11 +5368,13 @@ def doors_forever() -> None:
             log.warning("doors: the broker refused the connection: %s", reason_code)
             return
         DOORS_LINK["broker"] = True
+        DOORS_CHANGES.bump()
         client.subscribe(f"{Z2M_TOPIC}/#")
         log.info("doors: listening to %s on %s:%s", Z2M_TOPIC, MQTT_HOST, MQTT_PORT)
 
     def on_disconnect(client, userdata, flags, reason_code, properties):
         DOORS_LINK["broker"] = DOORS_LINK["bridge"] = False
+        DOORS_CHANGES.bump()
 
     def on_message(client, userdata, message):
         try:
@@ -5324,6 +5412,7 @@ def door_json(row: tuple) -> dict[str, Any]:
 
 def doors_snapshot(now: float, days: float = 7) -> dict[str, Any]:
     """Every door sensor on the network and how it stands, and its openings and closings over the last [days], newest first."""
+    version = DOORS_CHANGES.version  # before the rows: see DoorsChanges
     rows = with_db(lambda c: c.execute(
         "SELECT id, name, model, open, changed, battery, battery_low, link, online, last_seen, notify, spot_floor, spot_x, spot_y FROM doors"
         " WHERE removed=0 ORDER BY name COLLATE NOCASE"
@@ -5338,6 +5427,7 @@ def doors_snapshot(now: float, days: float = 7) -> dict[str, Any]:
         "broker": DOORS_LINK["broker"],
         "bridge": DOORS_LINK["bridge"],
         "away": away_since() is not None,
+        "version": version,
     }
 
 
@@ -5347,10 +5437,17 @@ class DoorPatch(BaseModel):
 
 
 @app.get("/doors")
-def get_doors(request: Request, device: str | None = None, days: float = 7) -> dict[str, Any]:
-    """The door sensors and their recent history (see "doors"). A signed-in user or a device."""
-    authenticate(request, device)
-    return doors_snapshot(time.time(), days)
+async def get_doors(request: Request, device: str | None = None, days: float = 7, since: int | None = None, wait: float = 0) -> dict[str, Any]:
+    """
+    The door sensors and their recent history (see "doors"). A signed-in user or a device. With
+    `since` (the `version` of the snapshot the app has) and `wait`, held open up to `wait` seconds
+    until the doors change (see DoorsChanges). Async so a held request costs no worker thread; the
+    database work runs on one.
+    """
+    await asyncio.to_thread(authenticate, request, device)
+    if since is not None and wait > 0:
+        await DOORS_CHANGES.wait(since, min(wait, DOORS_WAIT_MAX))
+    return await asyncio.to_thread(doors_snapshot, time.time(), days)
 
 
 @app.put("/doors/{door_id}")
@@ -5362,6 +5459,7 @@ def set_door(door_id: str, patch: DoorPatch, request: Request) -> dict[str, Any]
     changed = with_db(lambda c: (c.execute("UPDATE doors SET notify=? WHERE id=? AND removed=0", (patch.notify, door_id)).rowcount, c.commit())[0])
     if not changed:
         raise HTTPException(status_code=404, detail="No such door")
+    DOORS_CHANGES.bump()
     log.info("doors: %s set %s to notify %s", user, door_id, patch.notify)
     return doors_snapshot(time.time())
 
@@ -5577,6 +5675,8 @@ def put_floorplan(plan: dict[str, Any], request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(e))
     save_floorplan(cleaned, time.time())
     moved = link_door_sensors(cleaned)
+    if moved:
+        DOORS_CHANGES.bump()
     log.info(
         "floor plan: %s saved %s%s", user,
         ", ".join(f"{f['id']} ({len(f['walls'])} walls, {len(f['doors'])} doors, {len(f['rooms'])} rooms)" for f in cleaned["floors"]),
@@ -5617,6 +5717,7 @@ def set_door_spot(door_id: str, spot: DoorSpot, request: Request) -> dict[str, A
     ).rowcount, c.commit())[0])
     if not changed:
         raise HTTPException(status_code=404, detail="No such door")
+    DOORS_CHANGES.bump()
     log.info("doors: %s placed %s on %s at (%.1f, %.1f)", user, door_id, spot.floor, spot.x, spot.y)
     return doors_snapshot(time.time())
 
@@ -5630,6 +5731,7 @@ def clear_door_spot(door_id: str, request: Request) -> dict[str, Any]:
     ).rowcount, c.commit())[0])
     if not changed:
         raise HTTPException(status_code=404, detail="No such door")
+    DOORS_CHANGES.bump()
     log.info("doors: %s took %s off the floor plan", user, door_id)
     return doors_snapshot(time.time())
 # ---------------------------------------------------------------- Nest primer
