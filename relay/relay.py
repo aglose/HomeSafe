@@ -5667,6 +5667,20 @@ NEST_PRIMER_HELD_SECONDS = 60
 # grace for Google to start the camera (up to ~11 s seen) and a transcoder its first keyframe.
 NEST_PRIMER_WATCH_SECONDS = 15
 NEST_PRIMER_STALL_SECONDS = 60
+# Dropping the hold heals a session only when the hold was its last viewer. go2rtc stops a producer
+# once no viewer is bound to it, and reconnects one only when its connection ends, which a Nest
+# session Google stopped feeding doesn't do. Any other viewer left on it (the `_sub` transcoder,
+# a leaked `frame.jpeg` waiting for a keyframe that never comes) keeps the dead session, and the
+# hold taken again just joins it: on 2026-10-19 kitchen, kids_room and the doorbell were dark from
+# the small hours to the evening that way. go2rtc has no way to drop one stream's viewers, so after
+# this many drops in a row with no video between them the relay restarts go2rtc (`POST
+# /api/restart`, an in-place re-exec that every viewer reconnects from in seconds). Frigate reads
+# only the wired cameras' detect streams through go2rtc, not their recordings.
+NEST_PRIMER_RESTART_AFTER_DROPS = 2
+# The least time between two restarts, doubling while restarts don't bring the stream back, so a
+# camera that sends nothing for reasons of its own doesn't blip every stream all day.
+NEST_PRIMER_RESTART_COOLDOWN_SECONDS = 30 * 60
+NEST_PRIMER_MAX_RESTART_COOLDOWN_SECONDS = 4 * 3600
 
 
 def nest_stream_names(streams: dict[str, Any]) -> list[str]:
@@ -5785,6 +5799,57 @@ def nest_primer_held(watch: NestPrimerWatch, seconds: float) -> bool:
     return watch.flowed if watch.dropped else seconds >= NEST_PRIMER_HELD_SECONDS
 
 
+class NestGo2rtcRestarts:
+    """Across every Nest stream's holds, whether go2rtc is keeping a dead session and should be restarted."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        # Per stream, the drops in a row with no video between them.
+        self.drops: dict[str, int] = {}
+        # When a restart may come again (monotonic), and how long the next wait is.
+        self.allowed_at = 0.0
+        self.cooldown = NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+        # The stream the last restart was for, until its video moves again.
+        self.restarted_for: str | None = None
+
+    def hold_ended(self, name: str, watch: NestPrimerWatch, now: float) -> bool:
+        """
+        With how [name]'s hold just ended ([watch]), whether go2rtc should be restarted now. A drop
+        after video moved is the first in a row (the session just died); a drop of a hold that
+        never saw any is one more (the hold joined a session go2rtc kept dead). A hold that ended
+        any other way means go2rtc let go of the session, so the count starts over.
+        """
+        with self.lock:
+            if watch.flowed and self.restarted_for == name:
+                # That restart brought it back: the next one may come at the first wait again.
+                self.restarted_for, self.cooldown = None, NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+            if not watch.dropped:
+                self.drops[name] = 0
+                return False
+            self.drops[name] = 1 if watch.flowed else self.drops.get(name, 0) + 1
+            if self.drops[name] < NEST_PRIMER_RESTART_AFTER_DROPS or now < self.allowed_at:
+                return False
+            self.drops.clear()
+            if self.restarted_for == name:
+                # The last restart, for this same stream, didn't bring it back.
+                self.cooldown = min(NEST_PRIMER_MAX_RESTART_COOLDOWN_SECONDS, self.cooldown * 2)
+            self.allowed_at = now + self.cooldown
+            self.restarted_for = name
+            return True
+
+
+NEST_GO2RTC_RESTARTS = NestGo2rtcRestarts()
+
+
+def go2rtc_restart(name: str) -> None:
+    """Restarts go2rtc in place, for [name]'s session it kept dead."""
+    log.warning("nest primer: %s still has no video after %d holds; restarting go2rtc", name, NEST_PRIMER_RESTART_AFTER_DROPS)
+    try:
+        requests.post(f"{GO2RTC}/api/restart", timeout=5).raise_for_status()
+    except Exception as e:  # noqa: BLE001 - the next stall asks again, after the cooldown
+        log.warning("nest primer: go2rtc not restarted (%s)", e)
+
+
 def nest_primer_delay(failures: int) -> float:
     """The wait before holding a stream again after [failures] short holds in a row: 5 s, doubling to 5 minutes."""
     return min(NEST_PRIMER_MAX_RETRY_SECONDS, NEST_PRIMER_RETRY_SECONDS * 2 ** max(0, failures - 1))
@@ -5819,6 +5884,10 @@ def nest_primer_stream(name: str, after: str | None = None) -> None:
             if not watch.dropped:
                 log.info("nest primer: %s not held (%s)", name, e)
         failures = 1 if nest_primer_held(watch, time.monotonic() - started) else failures + 1
+        # A grid stream stalls with its Nest stream, which decides for both.
+        if after is None and NEST_GO2RTC_RESTARTS.hold_ended(name, watch, time.monotonic()):
+            go2rtc_restart(name)
+            failures = 0
         time.sleep(nest_primer_delay(failures))
 
 

@@ -6774,3 +6774,90 @@ class NestPrimerTest(unittest.TestCase):
             "hikvision_1_sub": {"producers": [{"url": "rtsp://x/102"}]},
         }
         self.assertEqual({"living_room_sub": "living_room"}, relay.nest_grid_streams(streams))
+
+    @staticmethod
+    def ended(dropped=False, flowed=False):
+        """A hold's watch as it ended: dropped by the watchdog or not, its video having moved or not."""
+        watch = relay.NestPrimerWatch(0)
+        watch.dropped, watch.flowed = dropped, flowed
+        return watch
+
+    def test_go2rtc_is_restarted_when_a_dead_session_outlives_dropping_the_hold(self):
+        # 2026-10-19: the session died, the hold was dropped, and the hold taken again joined the
+        # same dead session, kept by the doorbell's leaked frame.jpeg viewer.
+        restarts = relay.NestGo2rtcRestarts()
+        self.assertFalse(restarts.hold_ended("outdoor_doorbell", self.ended(dropped=True, flowed=True), 100))
+        self.assertTrue(restarts.hold_ended("outdoor_doorbell", self.ended(dropped=True), 170))
+
+    def test_a_relay_starting_on_a_dead_session_restarts_go2rtc_after_two_drops(self):
+        restarts = relay.NestGo2rtcRestarts()
+        self.assertFalse(restarts.hold_ended("kids_room", self.ended(dropped=True), 60))
+        self.assertTrue(restarts.hold_ended("kids_room", self.ended(dropped=True), 130))
+
+    def test_a_drop_that_heals_the_stream_never_restarts_go2rtc(self):
+        # Kitchen on 2026-10-19: no receivers, the hold its only viewer; held again, it flows.
+        restarts = relay.NestGo2rtcRestarts()
+        for at in range(0, 3600 * 5, 600):
+            self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True, flowed=True), at))
+
+    def test_a_hold_go2rtc_ended_starts_the_count_over(self):
+        # Google refusing the camera, or go2rtc closing the viewer, means it let go of the session.
+        restarts = relay.NestGo2rtcRestarts()
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True), 60))
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(), 70))
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True), 140))
+        self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 210))
+
+    def test_each_stream_counts_its_own_drops(self):
+        restarts = relay.NestGo2rtcRestarts()
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True), 60))
+        self.assertFalse(restarts.hold_ended("living_room", self.ended(dropped=True), 61))
+        self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 130))
+        # The restart ended every stream's hold: living_room starts over too.
+        self.assertFalse(restarts.hold_ended("living_room", self.ended(dropped=True), 200))
+
+    def test_restarts_wait_out_a_cooldown_that_doubles_while_they_don_t_help(self):
+        cooldown = relay.NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+        restarts = relay.NestGo2rtcRestarts()
+        dead = lambda at: restarts.hold_ended("kitchen", self.ended(dropped=True), at)  # noqa: E731
+        self.assertTrue(dead(0) or dead(1))
+        self.assertFalse(dead(100) or dead(cooldown - 1))
+        self.assertTrue(dead(cooldown + 1))
+        # The first restart didn't bring kitchen back: the next waits twice as long.
+        self.assertFalse(dead(cooldown + 100) or dead(3 * cooldown))
+        self.assertTrue(dead(3 * cooldown + 2))
+        # Capped.
+        at = 3 * cooldown + 2
+        for _ in range(10):
+            at += relay.NEST_PRIMER_MAX_RESTART_COOLDOWN_SECONDS + 1
+            self.assertTrue(dead(at - 1) or dead(at))
+
+    def test_a_restart_that_brought_the_stream_back_resets_the_cooldown(self):
+        cooldown = relay.NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+        restarts = relay.NestGo2rtcRestarts()
+        restarts.hold_ended("kitchen", self.ended(dropped=True), 0)
+        self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 1))
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(flowed=True), 2000))
+        # Hours later it dies again: one cooldown, not two.
+        restarts.hold_ended("kitchen", self.ended(dropped=True), 9000)
+        self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 9070))
+        restarts.hold_ended("kitchen", self.ended(dropped=True), 9070 + cooldown)
+        self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 9071 + cooldown))
+
+    def test_go2rtc_is_restarted_through_its_api(self):
+        posted = []
+        post = relay.requests.post
+        self.addCleanup(setattr, relay.requests, "post", post)
+        relay.requests.post = lambda url, timeout=None: (posted.append(url), types.SimpleNamespace(raise_for_status=lambda: None))[1]
+        relay.go2rtc_restart("outdoor_doorbell")
+        self.assertEqual([f"{relay.GO2RTC}/api/restart"], posted)
+
+    def test_a_go2rtc_that_can_t_be_restarted_is_only_logged(self):
+        post = relay.requests.post
+        self.addCleanup(setattr, relay.requests, "post", post)
+
+        def refused(url, timeout=None):
+            raise ConnectionError("go2rtc down")
+
+        relay.requests.post = refused
+        relay.go2rtc_restart("outdoor_doorbell")

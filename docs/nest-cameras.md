@@ -202,6 +202,23 @@ session. It also keeps every Nest camera streaming through Google all day.
 Leaked `frame.jpeg` requests did this by accident before: a client that gave up waiting for a
 keyframe stays a go2rtc consumer, and held the session open (and, on a dead binding, held it dead).
 
+**Self-healing.** Google ends a session now and then, and go2rtc only notices when the session's
+connection closes, which a WebRTC session Google stopped feeding doesn't do; it also tears a
+session down only once no viewer is left on it. So a dead session can sit there for hours with the
+primer, the `_sub` transcoder, and any leaked `frame.jpeg` viewer still attached, while Frigate
+reports 0 fps (2026-10-18 and -19). The primer heals it in two steps:
+
+1. A watchdog beside each hold reads the stream's video receiver bytes every 15 s. When they've
+   stood still for 60 s, it drops the hold and takes it again. When the hold was the session's
+   last viewer, go2rtc opens a fresh one and the camera is back.
+2. When the hold taken again still gets no video for 60 s, something else is keeping the dead
+   session, so the relay restarts go2rtc (`POST :1984/api/restart`, an in-place re-exec). Every
+   stream blips for a few seconds, about 2–3 minutes after the video stopped. Restarts are at
+   least 30 minutes apart, doubling to 4 hours while they don't bring the camera back.
+
+The relay logs `nest primer: <name> had no video for 60 s; dropping it` for the first step and a
+warning `... restarting go2rtc` for the second (`docker logs homesafe-relay | grep "nest primer"`).
+
 ### 7. Frigate cameras (recommended): always ready
 
 A Nest stream exists only while someone watches it, so the first viewer after a quiet spell waits
