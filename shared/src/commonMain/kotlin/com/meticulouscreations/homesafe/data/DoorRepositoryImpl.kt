@@ -56,6 +56,9 @@ class DoorRepositoryImpl(
     /** The doors as the relay last said, before any setting still on its way is laid over them. */
     private var fromRelay = DoorsSnapshot.EMPTY
 
+    /** The server [fromRelay] came from, null while it's [DoorsSnapshot.EMPTY]. */
+    private var doorsFrom: String? = null
+
     /** Settings chosen here and not yet answered, by door: each with its number, so a later choice for the same door supersedes it. */
     private val pending = mutableMapOf<String, Pair<Long, DoorNotify>>()
 
@@ -72,7 +75,7 @@ class DoorRepositoryImpl(
     /** One plan read at a time, so a refresh and a poll landing together read it once. */
     private val planLock = Mutex()
 
-    /** Guards [fromRelay], [pending], [pendingSpots] and [edits]: polls and saves land on different coroutines. */
+    /** Guards [fromRelay], [doorsFrom], [pending], [pendingSpots] and [edits]: polls and saves land on different coroutines. */
     private val state = Mutex()
 
     /** One save at a time, in the order they were chosen (a [Mutex] is fair), so the relay keeps the last one. */
@@ -81,22 +84,25 @@ class DoorRepositoryImpl(
     init {
         appScope.launch {
             // Signing out, or switching straight to another server, forgets this one's doors and
-            // plan, so the next server's sensors are never drawn over this one's house.
-            var last: String? = null
+            // plan, so the next server's sensors are never drawn over this one's house. Judged by
+            // where each came from rather than by the last address seen here: a switch made
+            // before this first looks would otherwise be missed.
             connectionRepository.currentServerUrl.collect { url ->
-                if (url == null || (last != null && url != last)) {
-                    state.withLock {
+                state.withLock {
+                    if (url == null || (doorsFrom != null && doorsFrom != url)) {
                         pending.clear()
                         pendingSpots.clear()
                         fromRelay = DoorsSnapshot.EMPTY
+                        doorsFrom = null
                         publish()
                     }
-                    planLock.withLock {
+                }
+                planLock.withLock {
+                    if (url == null || (planFrom != null && planFrom != url)) {
                         planFrom = null
                         _floorPlan.value = null
                     }
                 }
-                last = url
             }
         }
         appScope.launch {
@@ -111,11 +117,8 @@ class DoorRepositoryImpl(
                     while (true) {
                         val answer = fetch(url, since = version)
                         version = answer.getOrNull()?.version
-                        when {
-                            version != null -> Unit // straight back to waiting on the next change
-                            answer.isFailure -> delay(retryMs)
-                            else -> delay(pollIntervalMs)
-                        }
+                        // With a version, straight back to waiting on the next change.
+                        if (version == null) delay(if (answer.isFailure) retryMs else pollIntervalMs)
                     }
                 }
         }
@@ -150,7 +153,12 @@ class DoorRepositoryImpl(
         settle {
             if (pending[doorId]?.first == edit) pending.remove(doorId)
             // An answer from the server signed out of meanwhile is no one's doors now.
-            answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
+            answer.onSuccess {
+                if (connectionRepository.currentServerUrl.value == url) {
+                    fromRelay = it
+                    doorsFrom = url
+                }
+            }
         }
         return answer.map { }
     }
@@ -171,7 +179,12 @@ class DoorRepositoryImpl(
         }
         settle {
             if (pendingSpots[doorId]?.first == edit) pendingSpots.remove(doorId)
-            answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
+            answer.onSuccess {
+                if (connectionRepository.currentServerUrl.value == url) {
+                    fromRelay = it
+                    doorsFrom = url
+                }
+            }
         }
         return answer.map { }
     }
@@ -197,6 +210,7 @@ class DoorRepositoryImpl(
             state.withLock {
                 if (connectionRepository.currentServerUrl.value == url) {
                     fromRelay = snapshot
+                    doorsFrom = url
                     publish()
                 }
             }
