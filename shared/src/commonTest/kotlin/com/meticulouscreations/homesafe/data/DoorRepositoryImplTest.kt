@@ -163,7 +163,11 @@ class DoorRepositoryImplTest {
         h.opens("0x01")
         eventually("the opening shown") { h.repository.doors.value.doors.first { it.id == "0x01" }.open == true }
         eventually("and straight back to waiting, on the new version") { h.requests.lastOrNull() == "since=42 wait=25" }
-        assertEquals(2, h.requests.count { it == "GET /doors" }, "one read per change, no polling between")
+        assertEquals(
+            listOf("GET /doors", "GET /doors", "since=41 wait=25", "GET /doors", "since=42 wait=25"),
+            h.requests.filter { it != "GET /floorplan" },
+            "the first read, then one held read per change: no polling between",
+        )
     }
 
     private fun Harness.shown(id: String) = repository.doors.value.doors.single { it.id == id }.notify
