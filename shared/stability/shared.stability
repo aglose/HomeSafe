@@ -997,7 +997,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.DoorCard(door: com.metic
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.DoorDot(door: com.meticulouscreations.homesafe.domain.model.Door, picked: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.DoorDot(door: com.meticulouscreations.homesafe.domain.model.Door, picked: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:

@@ -12,6 +12,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +24,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Mirrors the relay's doors. Like [PresenceRepositoryImpl], the poll runs only while [doors] has
@@ -71,8 +74,11 @@ class DoorRepositoryImpl(
 
     init {
         appScope.launch {
+            // Signing out, or switching straight to another server, forgets this one's doors and
+            // plan, so the next server's sensors are never drawn over this one's house.
+            var last: String? = null
             connectionRepository.currentServerUrl.collect { url ->
-                if (url == null) {
+                if (url == null || (last != null && url != last)) {
                     state.withLock {
                         pending.clear()
                         pendingSpots.clear()
@@ -84,6 +90,7 @@ class DoorRepositoryImpl(
                         _floorPlan.value = null
                     }
                 }
+                last = url
             }
         }
         appScope.launch {
@@ -121,12 +128,17 @@ class DoorRepositoryImpl(
             publish()
             edit
         }
-        val answer = writes.withLock { relayApi.setDoorNotify(url, doorId, notify) }
-        state.withLock {
+        val answer = try {
+            writes.withLock { relayApi.setDoorNotify(url, doorId, notify) }
+        } catch (cancelled: CancellationException) {
+            // The page closed while the choice waited its turn or its answer: it was never saved.
+            settle { if (pending[doorId]?.first == edit) pending.remove(doorId) }
+            throw cancelled
+        }
+        settle {
             if (pending[doorId]?.first == edit) pending.remove(doorId)
             // An answer from the server signed out of meanwhile is no one's doors now.
             answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
-            publish()
         }
         return answer.map { }
     }
@@ -139,11 +151,15 @@ class DoorRepositoryImpl(
             publish()
             edit
         }
-        val answer = writes.withLock { relayApi.setDoorSpot(url, doorId, spot) }
-        state.withLock {
+        val answer = try {
+            writes.withLock { relayApi.setDoorSpot(url, doorId, spot) }
+        } catch (cancelled: CancellationException) {
+            settle { if (pendingSpots[doorId]?.first == edit) pendingSpots.remove(doorId) }
+            throw cancelled
+        }
+        settle {
             if (pendingSpots[doorId]?.first == edit) pendingSpots.remove(doorId)
             answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
-            publish()
         }
         return answer.map { }
     }
@@ -155,16 +171,32 @@ class DoorRepositoryImpl(
         planLock.withLock {
             if (rereadPlan || planFrom != url) {
                 relayApi.getFloorPlan(url, deviceId, secret).onSuccess {
-                    _floorPlan.value = it
-                    planFrom = url
+                    // A refresh isn't cancelled by a server switch: an answer from the old server is dropped.
+                    if (connectionRepository.currentServerUrl.value == url) {
+                        _floorPlan.value = it
+                        planFrom = url
+                    }
                 }
             }
         }
         return relayApi.getDoors(url, deviceId, secret).map { snapshot ->
             state.withLock {
-                fromRelay = snapshot
-                publish()
+                if (connectionRepository.currentServerUrl.value == url) {
+                    fromRelay = snapshot
+                    publish()
+                }
             }
+        }
+    }
+
+    /**
+     * Takes back or lands an edit under [state], then publishes. Not cancellable, so an edit whose
+     * caller is cancelled can't stay laid over the doors after it.
+     */
+    private suspend fun settle(change: () -> Unit) = withContext(NonCancellable) {
+        state.withLock {
+            change()
+            publish()
         }
     }
 

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,7 +148,7 @@ internal fun DoorsFloorPlan(state: DoorsUiState, actions: DoorsPlanActions, onSh
             placing = state.placing,
             placingDoorId = state.placingDoorId,
             onPlaceAt = actions.onPlaceAt,
-            onDoorClick = if (state.placing) actions.onChoosePlacingDoor else onShowDoor,
+            onDoorClick = onShowDoor,
             onSelectFloor = actions.onSelectFloor,
         )
         plan.street?.let { street ->
@@ -184,6 +186,12 @@ internal fun DoorsFloorPlan(state: DoorsUiState, actions: DoorsPlanActions, onSh
  * One floor, drawn to fit the card's width and at most [PLAN_MAX_HEIGHT] tall, with its doors'
  * dots over it. Scaled to the whole [plan]'s frame rather than this floor's, so switching floors
  * keeps the house where it is. Stairs that lead to another floor open it ([onSelectFloor]).
+ *
+ * While [placing], the dots and stairs take no taps: every tap on the plan places the picked door,
+ * even one right on top of another door's dot (the chips under the plan pick which door).
+ *
+ * The drawing and the taps are in plain left-to-right pixels, so the dots and stairs over it are
+ * placed with absolute offsets from its top left, which a right-to-left layout doesn't mirror.
  */
 @Composable
 private fun FloorDrawing(
@@ -211,6 +219,7 @@ private fun FloorDrawing(
             with(density) { PlanTransform(bounds, maxWidth.toPx(), height.toPx(), PLAN_PADDING.toPx()) }
         }
         Box(
+            contentAlignment = AbsoluteAlignment.TopLeft,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(height)
@@ -260,7 +269,7 @@ private fun FloorDrawing(
                     val at = transform.toPx(stair.at)
                     Box(
                         modifier = Modifier
-                            .offset { IntOffset((at.x - DOT_TARGET.toPx() / 2).roundToInt(), (at.y - DOT_TARGET.toPx() / 2).roundToInt()) }
+                            .absoluteOffset { IntOffset((at.x - DOT_TARGET.toPx() / 2).roundToInt(), (at.y - DOT_TARGET.toPx() / 2).roundToInt()) }
                             .size(DOT_TARGET)
                             .clip(CircleShape)
                             .clickable(onClickLabel = stairLabels[i], role = Role.Button) { onSelectFloor(to.id) }
@@ -274,9 +283,9 @@ private fun FloorDrawing(
                 DoorDot(
                     door = door,
                     picked = placing && door.id == placingDoorId,
-                    onClick = { onDoorClick(door.id) },
+                    onClick = if (placing) null else ({ onDoorClick(door.id) }),
                     // The dot's centre on the spot: its 48dp target is centred on it too.
-                    modifier = Modifier.offset { IntOffset((at.x - DOT_TARGET.toPx() / 2).roundToInt(), (at.y - DOT_TARGET.toPx() / 2).roundToInt()) },
+                    modifier = Modifier.absoluteOffset { IntOffset((at.x - DOT_TARGET.toPx() / 2).roundToInt(), (at.y - DOT_TARGET.toPx() / 2).roundToInt()) },
                 )
             }
         }
@@ -352,9 +361,9 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStairs(center: 
     }
 }
 
-/** One door on the plan: a dot with its door, and its name under it. */
+/** One door on the plan: a dot with its door, and its name under it. With no [onClick] it lets taps through to the plan. */
 @Composable
-private fun DoorDot(door: Door, picked: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun DoorDot(door: Door, picked: Boolean, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
     val open = door.open == true
     val offline = door.online == false
     val state = stringResource(
@@ -366,6 +375,7 @@ private fun DoorDot(door: Door, picked: Boolean, onClick: () -> Unit, modifier: 
         },
     )
     val description = stringResource(Res.string.doors_plan_marker, door.name, state)
+    val action = stringResource(Res.string.doors_plan_marker_action)
     val ring = when {
         offline -> MaterialTheme.colorScheme.error
         picked -> MaterialTheme.colorScheme.primary
@@ -376,7 +386,7 @@ private fun DoorDot(door: Door, picked: Boolean, onClick: () -> Unit, modifier: 
             modifier = Modifier
                 .size(DOT_TARGET)
                 .clip(CircleShape)
-                .clickable(onClickLabel = stringResource(Res.string.doors_plan_marker_action), role = Role.Button, onClick = onClick)
+                .then(if (onClick != null) Modifier.clickable(onClickLabel = action, role = Role.Button, onClick = onClick) else Modifier)
                 .semantics { contentDescription = description },
             contentAlignment = Alignment.Center,
         ) {

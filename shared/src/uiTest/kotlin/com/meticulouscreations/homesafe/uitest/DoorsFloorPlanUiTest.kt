@@ -2,11 +2,14 @@ package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -14,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
@@ -136,5 +140,50 @@ class DoorsFloorPlanUiTest {
 
         onNodeWithContentDescription("Down to Basement").assertHeightIsAtLeast(48.dp).performClick()
         assertEquals("cellar", shown)
+    }
+
+    @Test
+    fun whilePlacingATapOnAnotherDoorsDotPlacesThePickedDoorThere() = runComposeUiTest {
+        var placed: Pair<Float, Float>? = null
+        var chosen: String? = null
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                Column(modifier = Modifier.width(400.dp)) {
+                    DoorsFloorPlan(
+                        DoorsUiState(doors = listOf(back, front), loaded = true, floorPlan = plan, floorId = "ground", placing = true, placingDoorId = "0x02"),
+                        DoorsPlanActions(onChoosePlacingDoor = { chosen = it }, onPlaceAt = { x, y -> placed = x to y }),
+                        onShowDoor = {},
+                    )
+                }
+            }
+        }
+
+        // The back door's dot sits at (10, 0); the front door goes right there.
+        onNodeWithContentDescription("Back door, Open").performTouchInput { click(center) }
+        assertEquals(null, chosen, "the dot doesn't pick its door: the chips do")
+        val (x, y) = assertNotNull(placed)
+        assertTrue(abs(x - 10f) < 0.5f && abs(y) < 0.5f, "on the back door's spot, was ($x, $y)")
+    }
+
+    @Test
+    fun rightToLeftKeepsADotOverItsSpot() = runComposeUiTest {
+        // Near the floor's left wall, so a mirrored dot would land near the right one.
+        val west = back.copy(spot = DoorSpot("ground", 2f, 10f))
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                FrigatePreview {
+                    Column(modifier = Modifier.width(400.dp)) {
+                        DoorsFloorPlan(DoorsUiState(doors = listOf(west), loaded = true, floorPlan = plan, floorId = "ground"), DoorsPlanActions(), onShowDoor = {})
+                    }
+                }
+            }
+        }
+
+        val drawing = onNodeWithTag(DOORS_PLAN_TEST_TAG).getBoundsInRoot()
+        val dot = onNodeWithContentDescription("Back door, Open").getBoundsInRoot()
+        val middle = (drawing.left + drawing.right) / 2
+        assertTrue((dot.left + dot.right) / 2 < middle, "the dot stays on the left, where the plan draws its spot")
     }
 }
