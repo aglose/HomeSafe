@@ -5,12 +5,16 @@ Measures how long a door opening or closing takes to reach the app, hop by hop.
     scripts/door-latency.py [--minutes 5] [--box andrew@100.99.163.71]
 
 Then open and close doors. For each change Zigbee2MQTT publishes, it prints how long after that
-publish (stamped on the box by mosquitto_sub) each reader saw it over the tailnet, as the phone
-would:
+publish (stamped on the box by mosquitto_sub) each reader first had it in the relay's history
+over the tailnet, as the phone would:
 
-  poll    reads /doors every 15 s, as the app did before the relay could hold a read open
+  probe   reads /doors every second: an upper bound on when the relay had it committed, and
+          any read slower than a second is printed as it happens (the relay was stuck)
   wait    holds /doors?since=<version>&wait=25 open, as the app does now (needs a relay with it)
-  relay   when the relay recorded the change (its door_events `at`), from the snapshot
+  poll    reads /doors every 15 s, as the app did before the relay could hold a read open
+
+Each change is matched to its entry in the relay's history (its `at` is stamped as the MQTT
+message arrives), so an opening shorter than a poll still counts, as the app's history shows it.
 
 The box's clock is compared with this machine's over ssh first and the offset taken off. What
 it can't see is the sensor's own radio hop (door moving to Zigbee2MQTT hearing it), a fraction
@@ -112,44 +116,38 @@ def clock_offset(box: str) -> tuple[float, float]:
 
 
 class Seen:
-    """When each reader first saw each door at each state: {(reader, door name, open): this machine's clock}."""
+    """When each reader first had each history entry: {(reader, door name, open, at): this machine's clock}."""
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.at: dict[tuple[str, str, bool], float] = {}
-        self.relay_at: dict[tuple[str, bool], list[float]] = {}
+        self.at: dict[tuple[str, str, bool, float], float] = {}
 
     def snapshot(self, reader: str, body: dict, now: float) -> None:
+        names = {d["id"]: d["name"] for d in body.get("doors", [])}
         with self.lock:
-            for door in body.get("doors", []):
-                if door.get("open") is None:
-                    continue
-                key = (reader, door["name"], bool(door["open"]))
-                last = self.at.get(key)
-                # A state seen again after the other one is a new sighting.
-                other = self.at.get((reader, door["name"], not door["open"]))
-                if last is None or (other is not None and other > last):
-                    self.at[key] = now
-            names = {d["id"]: d["name"] for d in body.get("doors", [])}
             for event in body.get("events", []):
-                self.relay_at.setdefault((names.get(event["door"], event["door"]), bool(event["open"])), [])
-                if event["at"] not in self.relay_at[(names.get(event["door"], event["door"]), bool(event["open"]))]:
-                    self.relay_at[(names.get(event["door"], event["door"]), bool(event["open"]))].append(event["at"])
+                key = (reader, names.get(event["door"], event["door"]), bool(event["open"]), event["at"])
+                self.at.setdefault(key, now)
 
-    def first_after(self, reader: str, name: str, is_open: bool, since: float) -> float | None:
+    def first(self, reader: str, name: str, is_open: bool, box_at: float) -> float | None:
+        """When [reader] first had the entry for this change, stamped within a second of [box_at] on the box's clock."""
         with self.lock:
-            at = self.at.get((reader, name, is_open))
-            return at if at is not None and at >= since else None
+            hits = [t for (r, n, o, at), t in self.at.items() if r == reader and n == name and o == is_open and abs(at - box_at) < 1]
+            return min(hits) if hits else None
 
 
-def poll(relay: Relay, seen: Seen, stop: threading.Event) -> None:
-    stop.wait(random.uniform(0, POLL_SECONDS))  # the app's phase is anyone's guess
+def every(seconds: float, reader: str, relay: Relay, seen: Seen, stop: threading.Event) -> None:
+    stop.wait(random.uniform(0, seconds))  # the app's phase is anyone's guess
     while not stop.is_set():
+        started = time.time()
         try:
-            seen.snapshot("poll", relay.doors(), time.time())
+            seen.snapshot(reader, relay.doors(), time.time())
+            took = time.time() - started
+            if reader == "probe" and took > 1:
+                print(f"  {time.strftime('%H:%M:%S')} probe: /doors took {took:.1f} s (the relay was stuck)")
         except Exception as e:
-            print(f"  poll failed: {e}", file=sys.stderr)
-        stop.wait(POLL_SECONDS)
+            print(f"  {reader} failed: {e}", file=sys.stderr)
+        stop.wait(max(0.0, seconds - (time.time() - started)))
 
 
 def wait(relay: Relay, seen: Seen, stop: threading.Event) -> None:
@@ -168,6 +166,9 @@ def wait(relay: Relay, seen: Seen, stop: threading.Event) -> None:
             stop.wait(1)
 
 
+READERS = ("probe", "wait", "poll")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--box", default="andrew@100.99.163.71")
@@ -181,8 +182,9 @@ def main() -> None:
     print(f"box clock {offset * 1000:+.0f} ms from this machine's (ssh round trip {trip * 1000:.0f} ms)")
 
     seen, stop = Seen(), threading.Event()
-    for reader in (poll, wait):
-        threading.Thread(target=reader, args=(relay, seen, stop), daemon=True).start()
+    threading.Thread(target=every, args=(1, "probe", relay, seen, stop), daemon=True).start()
+    threading.Thread(target=every, args=(POLL_SECONDS, "poll", relay, seen, stop), daemon=True).start()
+    threading.Thread(target=wait, args=(relay, seen, stop), daemon=True).start()
 
     # %U is the box's Unix time with nanoseconds as the broker handed the message over.
     sub = subprocess.Popen(
@@ -190,7 +192,7 @@ def main() -> None:
         stdout=subprocess.PIPE, text=True, bufsize=1,
     )
     contact: dict[str, bool] = {}
-    changes: list[tuple[str, bool, float]] = []
+    changes: list[tuple[str, bool, float, float]] = []
 
     def listen():
         for line in sub.stdout:
@@ -205,12 +207,12 @@ def main() -> None:
             is_open = not reading["contact"]
             if contact.get(name) is not None and contact[name] != is_open:
                 at = float(stamp) - offset  # on this machine's clock
-                changes.append((name, is_open, at))
+                changes.append((name, is_open, at, float(stamp)))
                 print(f"{time.strftime('%H:%M:%S')}  {name} {'opened' if is_open else 'closed'}")
             contact[name] = is_open
 
     threading.Thread(target=listen, daemon=True).start()
-    print(f"Listening for {args.minutes:g} min: open and close doors (each change needs ~{POLL_SECONDS + 5} s before the next for the poll reader to count it)")
+    print(f"Listening for {args.minutes:g} min: open and close doors")
     try:
         time.sleep(args.minutes * 60)
     except KeyboardInterrupt:
@@ -220,26 +222,23 @@ def main() -> None:
     sub.terminate()
 
     rows = []
-    for i, (name, is_open, at) in enumerate(changes):
-        nxt = changes[i + 1][2] if i + 1 < len(changes) else float("inf")
+    for name, is_open, at, box_at in changes:
         row = {"door": name, "open": is_open, "mqtt": at}
-        for reader in ("poll", "wait"):
-            t = seen.first_after(reader, name, is_open, at)
-            row[reader] = None if t is None or t > nxt + POLL_SECONDS else round(t - at, 3)
-        relay_ats = [a - offset for a in seen.relay_at.get((name, is_open), []) if abs(a - offset - at) < 5]
-        row["relay"] = round(min(relay_ats, key=lambda a: abs(a - at)) - at, 3) if relay_ats else None
+        for reader in READERS:
+            t = seen.first(reader, name, is_open, box_at)
+            row[reader] = None if t is None else round(t - at, 3)
         rows.append(row)
 
-    print(f"\n{'door':<22}{'':8}{'relay':>8}{'wait':>8}{'poll':>8}   (seconds after Zigbee2MQTT published)")
+    print(f"\n{'door':<22}{'':8}" + "".join(f"{r:>8}" for r in READERS) + "   (seconds after Zigbee2MQTT published)")
     for r in rows:
-        cells = "".join(f"{'-' if r[k] is None else format(r[k], '.2f'):>8}" for k in ("relay", "wait", "poll"))
+        cells = "".join(f"{'-' if r[k] is None else format(r[k], '.2f'):>8}" for k in READERS)
         print(f"{r['door']:<22}{'opened' if r['open'] else 'closed':<8}{cells}")
     print()
-    for reader in ("relay", "wait", "poll"):
+    for reader in READERS:
         values = sorted(r[reader] for r in rows if r[reader] is not None)
         if values:
             p95 = values[min(len(values) - 1, int(round(0.95 * (len(values) - 1))))]
-            print(f"{reader:<6} n={len(values):<3} median {statistics.median(values):6.2f} s   p95 {p95:6.2f} s   max {values[-1]:6.2f} s")
+            print(f"{reader:<6} n={len(values):<3} median {statistics.median(values):6.2f} s   mean {statistics.mean(values):6.2f} s   p95 {p95:6.2f} s   max {values[-1]:6.2f} s")
     if args.json:
         with open(args.json, "w") as f:
             json.dump({"offset": offset, "trip": trip, "changes": rows}, f, indent=1)

@@ -6417,6 +6417,19 @@ class DoorsTest(_ScratchDb):
         self.assertLess(woken, 1)
         self.assertGreaterEqual(quiet, 0.09)
 
+    def test_a_slow_database_call_is_logged_with_its_caller(self):
+        saved = relay.DB_SLOW_SECONDS
+        relay.DB_SLOW_SECONDS = 0.01
+        try:
+            def slow_one():
+                relay.with_db(lambda c: time.sleep(0.03))
+
+            with self.assertLogs(relay.log, "WARNING") as logged:
+                slow_one()
+            self.assertIn("by slow_one", logged.output[0])
+        finally:
+            relay.DB_SLOW_SECONDS = saved
+
     def test_every_waiting_request_wakes_on_one_change(self):
         import asyncio
 

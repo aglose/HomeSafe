@@ -43,6 +43,7 @@ import re
 import secrets
 import socket
 import sqlite3
+import sys
 from statistics import median
 import threading
 import time
@@ -435,9 +436,21 @@ DB_LOCK = threading.Lock()
 CONN = None
 
 
+# A call holding DB_LOCK longer than this is logged with its caller: every other thread (the door
+# sensors' among them) waits on it meanwhile.
+DB_SLOW_SECONDS = 1.0
+
+
 def with_db(fn):
     with DB_LOCK:
-        return fn(CONN)
+        started = time.monotonic()
+        try:
+            return fn(CONN)
+        finally:
+            held = time.monotonic() - started
+            if held > DB_SLOW_SECONDS:
+                caller = sys._getframe(1).f_code
+                log.warning("db: held %.1f s by %s (relay.py:%d)", held, caller.co_name, caller.co_firstlineno)
 
 
 def state_get(key: str) -> Any | None:
@@ -5321,6 +5334,9 @@ def door_receive(topic: str, payload: bytes, now: float) -> None:
         DOORS_CHANGES.bump()
     elif kind == "state":
         change = door_state(name, body, now)
+        late = time.time() - now
+        if late > 1:
+            log.warning("doors: a message from %s took %.1f s to record", name, late)
         if change is not None:
             # The app's waiting requests first: the push can take a second, and a phone with the
             # app open shouldn't wait on Firebase. A reading that changed nothing (the sensor says
