@@ -36,9 +36,18 @@ To measure it, open and close doors while this runs (it signs in with the test a
 scripts/door-latency.py --minutes 5
 ```
 
-It prints, for every change, how long after Zigbee2MQTT published it the relay recorded it, a
-reader holding the read open (the app now) saw it, and a reader polling every 15 s (the app
-before) saw it.
+It prints, for every change, how long after Zigbee2MQTT published it each reader first had it in
+the relay's history: one reading every second (an upper bound on when the relay had it), one
+holding the read open (the app now), and one polling every 15 s (the app before). It also prints
+any read slower than a second as it happens, which means the relay was stuck.
+
+On 2026-10-19, over the tailnet, for 6 openings and closings of the Front and Back doors, the held
+read had each one 0.01-0.03 s after Zigbee2MQTT published it; the 15 s poll took 0.3-13.1 s (mean
+4.8 s; 7.5 s expected over many). A ThirdReality sensor's own hop, from the door moving to
+Zigbee2MQTT hearing it, isn't in these numbers. In an earlier round, one 30 s stretch reached no
+reader, while the relay was apparently stuck. The relay now logs any call holding its database
+lock over a second (`db: held … by …`) and any door message recorded over a second late, so a
+stretch like that names what caused it.
 
 ## What pushes
 
