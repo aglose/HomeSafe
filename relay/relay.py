@@ -49,7 +49,7 @@ import zipfile
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
-from urllib.parse import parse_qs, quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 import requests
@@ -5428,9 +5428,10 @@ class NestPrimerWatch:
     """One hold's view of whether its stream is still getting video, from go2rtc's receiver byte counts."""
 
     def __init__(self, started: float):
-        self.bytes = 0
+        # The last count read, None before the first.
+        self.bytes: int | None = None
         self.moved_at = started
-        # Whether the counts moved after a first reading while held: the hold was a working stream.
+        # Whether the counts moved from one reading to the next while held: a working stream.
         self.flowed = False
         # Whether the watchdog dropped the hold.
         self.dropped = False
@@ -5438,34 +5439,23 @@ class NestPrimerWatch:
     def stalled(self, now: float, received: int | None) -> bool:
         """
         With [received] (the video bytes read now; None for no receivers, or no reading), whether
-        nothing has arrived for NEST_PRIMER_STALL_SECONDS. Any change counts as arriving, since a
-        reopened producer's counts start again from 0.
+        nothing has arrived for NEST_PRIMER_STALL_SECONDS. Any change to a count above 0 counts as
+        arriving, since a reopened producer's counts start again from 0.
         """
-        if received and received != self.bytes:
-            self.flowed = self.flowed or self.bytes > 0
-            self.bytes, self.moved_at = received, now
+        if received is not None and received != self.bytes:
+            if received > 0:
+                self.flowed = self.flowed or self.bytes is not None
+                self.moved_at = now
+            self.bytes = received
         return now - self.moved_at >= NEST_PRIMER_STALL_SECONDS
 
 
-def nest_primer_drop(response: Any) -> None:
+def nest_primer_watchdog(name: str, sock: socket.socket, watch: NestPrimerWatch, done: threading.Event) -> None:
     """
-    Ends a hold from the watchdog's thread. Its socket is shut down rather than closed: on Linux a
-    close doesn't wake the holding thread's blocked read, so the connection, and go2rtc's viewer,
-    would live on.
+    Drops [name]'s hold (its connection [sock]) once its video stops arriving, or stops watching at
+    [done]. The socket is shut down rather than closed: on Linux a close doesn't wake the holding
+    thread's blocked read, so the connection, and go2rtc's viewer, would live on.
     """
-    connection = getattr(response.raw, "connection", None) or getattr(response.raw, "_connection", None)
-    sock = getattr(connection, "sock", None)
-    if sock is None:
-        response.close()
-        return
-    try:
-        sock.shutdown(socket.SHUT_RDWR)
-    except OSError:
-        pass
-
-
-def nest_primer_watchdog(name: str, response: Any, watch: NestPrimerWatch, done: threading.Event) -> None:
-    """Drops [name]'s hold ([response]) once its video stops arriving, or stops watching at [done]."""
     while not done.wait(NEST_PRIMER_WATCH_SECONDS):
         try:
             received = nest_video_bytes(name)
@@ -5474,23 +5464,40 @@ def nest_primer_watchdog(name: str, response: Any, watch: NestPrimerWatch, done:
         if watch.stalled(time.monotonic(), received):
             log.info("nest primer: %s had no video for %d s; dropping it", name, NEST_PRIMER_STALL_SECONDS)
             watch.dropped = True
-            nest_primer_drop(response)
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             return
 
 
 def nest_primer_hold(name: str, watch: NestPrimerWatch) -> None:
     """
     Holds [name] as one viewer, its bytes read and dropped, for as long as go2rtc keeps the
-    connection and [watch] sees video arriving.
+    connection and [watch] sees video arriving. Over http.client, not requests, so the watchdog has
+    the socket from the moment it connects: go2rtc may not answer the viewer that starts a Nest
+    session at all, headers included, and that wait has to be watched too.
     """
-    with requests.get(f"{GO2RTC}/api/stream.mp4", params={"src": name}, stream=True, timeout=(5, None)) as response:
+    url = urlsplit(GO2RTC)
+    opener = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
+    connection = opener(url.hostname, url.port, timeout=5)
+    try:
+        connection.connect()
+        # No read timeout: the starting viewer gets nothing on purpose, so the watchdog decides.
+        connection.sock.settimeout(None)
         done = threading.Event()
-        threading.Thread(target=nest_primer_watchdog, args=(name, response, watch, done), name=f"nest-watchdog-{name}", daemon=True).start()
+        threading.Thread(target=nest_primer_watchdog, args=(name, connection.sock, watch, done), name=f"nest-watchdog-{name}", daemon=True).start()
         try:
-            for _ in response.iter_content(chunk_size=64 * 1024):
+            connection.request("GET", f"{url.path}/api/stream.mp4?{urlencode({'src': name})}")
+            response = connection.getresponse()
+            if response.status != 200:
+                raise http.client.HTTPException(f"HTTP {response.status}")
+            while response.read(64 * 1024):
                 pass
         finally:
             done.set()
+    finally:
+        connection.close()
 
 
 def nest_primer_held(watch: NestPrimerWatch, seconds: float) -> bool:
@@ -5529,7 +5536,8 @@ def nest_primer_stream(name: str, after: str | None = None) -> None:
         watch = NestPrimerWatch(started)
         try:
             nest_primer_hold(name, watch)
-            log.info("nest primer: %s closed; holding it again", name)
+            if not watch.dropped:
+                log.info("nest primer: %s closed; holding it again", name)
         except Exception as e:  # noqa: BLE001 - go2rtc restarting, Google refusing the camera
             # The watchdog's drop ends the read with an error of its own, already logged.
             if not watch.dropped:
