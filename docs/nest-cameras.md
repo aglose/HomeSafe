@@ -223,8 +223,36 @@ off, and the camera is back within that long of Google streaming it again. Friga
 streaming", came for the doorbell on 2026-10-17 (turned off in Google Home) and from 07:00 on
 2026-10-20; check the camera in the Google Home app.
 
+**The unavailable-camera push.** Only someone with the Google Home app can fix that, so the relay
+says so. When a Nest stream's holds have gone an hour without go2rtc ever having a session for
+it, the relay asks Google itself: the same `GenerateWebRtcStream` go2rtc sends, with a made-up
+offer and the credentials read from the stream's `nest:` source in go2rtc (`GET
+:1984/api/streams?src=<name>`). It never logs them, nor anything Google says that names them.
+
+- Google says "The camera is not available for streaming": one push, *Outdoor Doorbell isn't
+  streaming. Since 7:02 AM, Google says the camera isn't available for streaming. Check it in the
+  Google Home app.*
+- Google refuses some other way, or can't be asked: the same push, worded *No video from Google
+  since 7:02 AM.*
+- Google starts a session: the relay stops it again at once and pushes nothing, since the trouble
+  is between go2rtc and Google, not something the Google Home app can fix. It asks again an hour
+  later if the holds still have no session.
+
+The push is an ordinary alert: each phone's quiet hours and *only when away* apply. One no phone
+got is tried again at the next hold (within about 6 minutes), without asking Google again, so a
+phone in quiet hours hears of it once they end. It is never repeated while the outage lasts, even
+across a relay restart (the cameras told about are kept in relay.db, `state` key
+`nest_outage_alerted`). The first time the camera's video moves again, a second push, *Outdoor
+Doorbell is streaming again*, replaces the first (both carry `notif_id=nest-<name>`).
+
+The push's data carries `system=nest`, `camera`, `nest_camera_name`, `nest_event`
+(`unavailable` or `streaming`), `nest_reason` (`refused` or `unconfirmed`) and `nest_since`
+(epoch seconds), so an app can word it in its own language; until one does, phones show the
+relay's English title and body.
+
 The relay logs `nest primer: <name> had no video for 60 s; dropping it` for the first step and a
 warning `... restarting go2rtc` for the second (`docker logs homesafe-relay | grep "nest primer"`).
+The unavailable-camera push logs under `nest outage:`, with Google's answer.
 
 ### 7. Frigate cameras (recommended): always ready
 

@@ -6976,3 +6976,276 @@ class NestPrimerTest(unittest.TestCase):
 
         relay.requests.post = refused
         relay.go2rtc_restart("outdoor_doorbell")
+
+
+class NestOutageTest(unittest.TestCase):
+    """Telling the household when Google won't stream a Nest camera, once, and when it's back."""
+
+    HOUR = 3600
+    # A camera's `nest:` source in go2rtc: every value in it is a secret that must never be logged.
+    SECRETS = {"client_id": "id-sekrit", "client_secret": "secret-sekrit", "refresh_token": "token-sekrit", "project_id": "project-sekrit", "device_id": "device-sekrit"}
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._path, self._conn, self._outages = relay.DB_PATH, relay.CONN, relay.NEST_OUTAGES
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        relay.NEST_OUTAGES = relay.NestOutages()
+        self.pushes = []
+
+    def tearDown(self):
+        relay.CONN.close()
+        relay.DB_PATH, relay.CONN, relay.NEST_OUTAGES = self._path, self._conn, self._outages
+        self._dir.cleanup()
+
+    @staticmethod
+    def ended(dropped=True, flowed=False, session=False):
+        """A hold's watch as it ended; by default one Google refused: dropped with no session."""
+        watch = relay.NestPrimerWatch(0)
+        watch.dropped, watch.flowed, watch.session = dropped, flowed, session
+        return watch
+
+    def push(self, title, body, data):
+        self.pushes.append((title, body, data))
+        return {"sent": 1}
+
+    def refused_every_six_minutes(self, name, start, hours, check=lambda name: "refused", push=None):
+        """[hours] of holds of [name] Google refused, one every 6 minutes from [start]: how often Google was asked."""
+        asked = []
+
+        def asking(n):
+            asked.append(n)
+            return check(n)
+
+        for at in range(int(start), int(start + hours * self.HOUR), 360):
+            relay.nest_outage_hold_ended(name, self.ended(), at, check=asking, push=push or self.push)
+        return asked
+
+    def test_a_camera_google_refuses_for_an_hour_is_pushed_once_naming_it(self):
+        # 2026-10-20: the doorbell refused from 07:00 all day.
+        asked = self.refused_every_six_minutes("outdoor_doorbell", 1_792_400_000, 24)
+        self.assertEqual(["outdoor_doorbell"], asked)
+        self.assertEqual(1, len(self.pushes))
+        title, body, data = self.pushes[0]
+        self.assertEqual("Outdoor Doorbell isn't streaming", title)
+        self.assertIn("Google says the camera isn't available for streaming", body)
+        self.assertIn("Google Home app", body)
+        self.assertEqual({"system": "nest", "notif_id": "nest-outdoor_doorbell", "camera": "outdoor_doorbell", "nest_camera_name": "Outdoor Doorbell",
+                          "nest_event": "unavailable", "nest_reason": "refused", "nest_since": "1792400000"}, data)
+        self.assertEqual(["outdoor_doorbell"], relay.state_get(relay.NEST_OUTAGE_STATE_KEY))
+
+    def test_nothing_is_pushed_in_the_first_hour(self):
+        self.assertEqual([], self.refused_every_six_minutes("kitchen", 0, 0.99))
+        self.assertEqual([], self.pushes)
+        relay.nest_outage_hold_ended("kitchen", self.ended(), self.HOUR, check=lambda n: "refused", push=self.push)
+        self.assertEqual(1, len(self.pushes))
+
+    def test_a_hold_with_a_session_ends_the_outage_and_its_hour(self):
+        # Video moving, or a session go2rtc kept dead (the primer's restarts deal with that one).
+        for working in (self.ended(flowed=True, session=True), self.ended(session=True), self.ended(dropped=False, flowed=True)):
+            relay.NEST_OUTAGES = relay.NestOutages()
+            self.refused_every_six_minutes("kitchen", 0, 0.9)
+            relay.nest_outage_hold_ended("kitchen", working, 0.9 * self.HOUR, check=lambda n: "refused", push=self.push)
+            self.refused_every_six_minutes("kitchen", 0.95 * self.HOUR, 0.9)
+            self.assertEqual([], self.pushes)
+
+    def test_a_hold_that_fails_before_any_session_counts_too(self):
+        for at in range(0, self.HOUR + 1, 360):
+            relay.nest_outage_hold_ended("kitchen", self.ended(dropped=False), at, check=lambda n: "refused", push=self.push)
+        self.assertEqual(1, len(self.pushes))
+
+    def test_a_camera_google_does_stream_isn_t_pushed_and_its_hour_starts_over(self):
+        # Google answered with a session: the trouble is go2rtc's or the network's, not the Google Home app's.
+        asked = self.refused_every_six_minutes("kitchen", 0, 2.5, check=lambda n: None)
+        self.assertEqual(["kitchen", "kitchen"], asked)
+        self.assertEqual([], self.pushes)
+        self.assertIsNone(relay.state_get(relay.NEST_OUTAGE_STATE_KEY))
+
+    def test_a_push_no_phone_got_is_tried_again_without_asking_google_again(self):
+        sent = []
+        quiet = lambda title, body, data: (sent.append(title), {"sent": 0, "skipped_quiet": 2})[1]  # noqa: E731
+        asked = self.refused_every_six_minutes("kitchen", 0, 1.2, push=quiet)
+        self.assertEqual(["kitchen"], asked)
+        self.assertEqual(2, len(sent), "the hour's hold and the one after it")
+        # Quiet hours over: the next hold's push reaches a phone, and that's the last.
+        asked += self.refused_every_six_minutes("kitchen", 1.2 * self.HOUR, 5)
+        self.assertEqual(["kitchen"], asked)
+        self.assertEqual(1, len(self.pushes))
+        self.assertIn("Google says", self.pushes[0][1])
+
+    def test_an_unconfirmed_outage_is_pushed_in_other_words(self):
+        self.refused_every_six_minutes("kitchen", 0, 2, check=lambda n: "unconfirmed")
+        self.assertEqual(1, len(self.pushes))
+        title, body, data = self.pushes[0]
+        self.assertEqual("Kitchen isn't streaming", title)
+        self.assertTrue(body.startswith("No video from Google since "), body)
+        self.assertEqual("unconfirmed", data["nest_reason"])
+
+    def test_the_camera_coming_back_is_pushed_once(self):
+        self.refused_every_six_minutes("outdoor_doorbell", 0, 2)
+        for _ in range(5):
+            relay.nest_outage_streaming("outdoor_doorbell", push=self.push)
+        self.assertEqual(2, len(self.pushes))
+        title, body, data = self.pushes[1]
+        self.assertEqual("Outdoor Doorbell is streaming again", title)
+        self.assertEqual({"system": "nest", "notif_id": "nest-outdoor_doorbell", "camera": "outdoor_doorbell", "nest_camera_name": "Outdoor Doorbell", "nest_event": "streaming"}, data)
+        self.assertIsNone(relay.state_get(relay.NEST_OUTAGE_STATE_KEY))
+
+    def test_a_camera_that_was_never_pushed_coming_back_says_nothing(self):
+        self.refused_every_six_minutes("kitchen", 0, 0.5)
+        relay.nest_outage_streaming("kitchen", push=self.push)
+        self.assertEqual([], self.pushes)
+        # Its hour started over.
+        self.refused_every_six_minutes("kitchen", 0.6 * self.HOUR, 0.9)
+        self.assertEqual([], self.pushes)
+
+    def test_the_next_outage_is_pushed_again(self):
+        self.refused_every_six_minutes("kitchen", 0, 2)
+        relay.nest_outage_streaming("kitchen", push=self.push)
+        self.refused_every_six_minutes("kitchen", 10 * self.HOUR, 2)
+        self.assertEqual(["Kitchen isn't streaming", "Kitchen is streaming again", "Kitchen isn't streaming"], [p[0] for p in self.pushes])
+
+    def test_each_camera_has_its_own_outage(self):
+        self.refused_every_six_minutes("kitchen", 0, 0.5)
+        self.refused_every_six_minutes("kids_room", 0, 2)
+        self.assertEqual(["Kids Room isn't streaming"], [p[0] for p in self.pushes])
+
+    def test_a_relay_restarted_mid_outage_doesn_t_push_it_again_but_does_its_end(self):
+        self.refused_every_six_minutes("outdoor_doorbell", 0, 2)
+        relay.NEST_OUTAGES = relay.NestOutages()  # the relay restarts
+        relay.nest_outage_load()
+        self.refused_every_six_minutes("outdoor_doorbell", 2 * self.HOUR, 5)
+        relay.nest_outage_streaming("outdoor_doorbell", push=self.push)
+        self.assertEqual(["Outdoor Doorbell isn't streaming", "Outdoor Doorbell is streaming again"], [p[0] for p in self.pushes])
+
+    def test_a_check_already_running_isn_t_started_twice(self):
+        outages = relay.NestOutages()
+        self.assertFalse(outages.hold_ended("kitchen", self.ended(), 0))
+        self.assertTrue(outages.hold_ended("kitchen", self.ended(), self.HOUR))
+        self.assertFalse(outages.hold_ended("kitchen", self.ended(), self.HOUR + 1))
+
+    def test_the_push_is_an_ordinary_alert_through_broadcast(self):
+        calls = []
+        broadcast = relay.broadcast
+        self.addCleanup(setattr, relay, "broadcast", broadcast)
+        relay.broadcast = lambda title, body, data, **kw: (calls.append(kw), {"sent": 1})[1]
+        relay.nest_outage_push("kitchen", "refused", 0.0)
+        self.assertEqual([{}], calls, "not away: each phone's quiet hours and only-away apply")
+
+    # ------------------------------------------------ asking Google
+
+    def nest_stream(self, secrets=None):
+        query = "&".join(f"{k}={v}" for k, v in (self.SECRETS if secrets is None else secrets).items())
+        return {"producers": [{"url": f"nest:?{query}", "receivers": []}]}
+
+    def fake_google(self, stream, *answers):
+        """go2rtc answers [stream] (or raises it), and Google's token and executeCommand calls [answers] in turn; returns the posts."""
+        posts, answers = [], list(answers)
+        for name in ("get", "post"):
+            self.addCleanup(setattr, relay.requests, name, getattr(relay.requests, name))
+
+        def get(url, params=None, timeout=None):
+            if isinstance(stream, Exception):
+                raise stream
+            return types.SimpleNamespace(json=lambda: stream)
+
+        def post(url, data=None, json=None, headers=None, timeout=None):
+            posts.append((url, data, json, headers))
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            status, body = answer
+            return types.SimpleNamespace(ok=status < 400, status_code=status, json=lambda: body)
+
+        relay.requests.get, relay.requests.post = get, post
+        return posts
+
+    TOKEN = (200, {"access_token": "access-sekrit", "expires_in": 3599})
+    REFUSED = (400, {"error": {"code": 400, "message": "The camera is not available for streaming.", "status": "FAILED_PRECONDITION"}})
+
+    def checked(self, name="outdoor_doorbell"):
+        """nest_google_check([name]) and everything it logged, which must carry none of the secrets."""
+        with self.assertLogs("relay", level="INFO") as logs:
+            relay.log.info("checking")
+            result = relay.nest_google_check(name)
+        text = "\n".join(logs.output)
+        for secret in [*self.SECRETS.values(), "access-sekrit"]:
+            self.assertNotIn(secret, text)
+        return result, text
+
+    def test_google_saying_the_camera_isn_t_available_confirms_the_outage(self):
+        posts = self.fake_google(self.nest_stream(), self.TOKEN, self.REFUSED)
+        result, text = self.checked()
+        self.assertEqual("refused", result)
+        self.assertIn("The camera is not available for streaming", text)
+        (token_url, form, _, _), (command, _, body, headers) = posts
+        self.assertEqual(relay.NEST_TOKEN_URL, token_url)
+        self.assertEqual({"client_id": "id-sekrit", "client_secret": "secret-sekrit", "refresh_token": "token-sekrit", "grant_type": "refresh_token"}, form)
+        self.assertEqual(f"{relay.NEST_SDM_URL}/enterprises/project-sekrit/devices/device-sekrit:executeCommand", command)
+        self.assertEqual({"Authorization": "Bearer access-sekrit"}, headers)
+        self.assertEqual("sdm.devices.commands.CameraLiveStream.GenerateWebRtcStream", body["command"])
+
+    def test_a_camera_google_streams_has_its_session_stopped_and_nothing_to_tell(self):
+        started = (200, {"results": {"answerSdp": "v=0", "expiresAt": "2026-10-20T12:05:00Z", "mediaSessionId": "session-1"}})
+        posts = self.fake_google(self.nest_stream(), self.TOKEN, started, (200, {}))
+        result, _ = self.checked()
+        self.assertIsNone(result)
+        self.assertEqual({"command": "sdm.devices.commands.CameraLiveStream.StopWebRtcStream", "params": {"mediaSessionId": "session-1"}}, posts[2][2])
+
+    def test_any_other_answer_leaves_the_outage_unconfirmed(self):
+        cases = [
+            (self.TOKEN, (400, {"error": {"code": 400, "message": "Invalid SDP for project-sekrit/device-sekrit", "status": "INVALID_ARGUMENT"}})),
+            (self.TOKEN, (503, "not json")),
+            (self.TOKEN, (500, {"error": "backend sekrit-free"})),
+            ((401, {"error": "invalid_grant"}),),
+            (ConnectionError("https://oauth2.googleapis.com/token?refresh_token=token-sekrit"),),
+            (self.TOKEN, TimeoutError("device-sekrit")),
+        ]
+        for answers in cases:
+            self.fake_google(self.nest_stream(), *answers)
+            self.assertEqual("unconfirmed", self.checked()[0], answers)
+        self.fake_google(self.nest_stream({"device_id": "device-sekrit"}))
+        self.assertEqual("unconfirmed", self.checked()[0], "a source without the credentials")
+
+    def test_without_go2rtc_s_nest_source_there_is_nothing_to_tell(self):
+        for stream in (ConnectionError("go2rtc restarting"), {}, {"producers": [{"url": "ffmpeg:kitchen"}]}):
+            self.fake_google(stream)
+            with self.assertLogs("relay", level="INFO"):
+                relay.log.info("checking")
+                self.assertIsNone(relay.nest_google_check("kitchen"), stream)
+
+    def test_the_probe_offer_is_audio_then_video_then_a_data_channel(self):
+        offer = relay.nest_probe_offer()
+        self.assertTrue(offer.endswith("\r\n"))
+        media = [line.split()[0] for line in offer.split("\r\n") if line.startswith("m=")]
+        self.assertEqual(["m=audio", "m=video", "m=application"], media)
+        self.assertIn("a=rtpmap:96 H264/90000", offer)
+        self.assertNotEqual(offer, relay.nest_probe_offer(), "made up afresh each time")
+
+    def test_the_watchdog_pushes_the_end_of_an_outage_once_the_video_moves(self):
+        for name, seconds in (("NEST_PRIMER_WATCH_SECONDS", 0.01), ("NEST_PRIMER_STALL_SECONDS", 5)):
+            self.addCleanup(setattr, relay, name, getattr(relay, name))
+            setattr(relay, name, seconds)
+        counts = iter(range(1000, 10**9, 1000))
+        broadcast, get = relay.broadcast, relay.requests.get
+        self.addCleanup(setattr, relay, "broadcast", broadcast)
+        self.addCleanup(setattr, relay.requests, "get", get)
+        pushed = threading.Event()
+        relay.broadcast = lambda title, body, data, **kw: (self.pushes.append(title), pushed.set(), {"sent": 1})[2]
+        relay.requests.get = lambda url, params=None, timeout=None: types.SimpleNamespace(
+            json=lambda c=next(counts): {"producers": [{"receivers": [{"codec": {"codec_type": "video"}, "bytes": c}]}]}
+        )
+        relay.NEST_OUTAGES.alerted.add("outdoor_doorbell")
+        held, far = socket.socketpair()
+        self.addCleanup(held.close)
+        self.addCleanup(far.close)
+        watch, done = relay.NestPrimerWatch(time.monotonic()), threading.Event()
+        watchdog = threading.Thread(target=relay.nest_primer_watchdog, args=("outdoor_doorbell", held, watch, done), daemon=True)
+        watchdog.start()
+        self.assertTrue(pushed.wait(5), "the camera's return was never pushed")
+        time.sleep(0.2)
+        done.set()
+        watchdog.join(timeout=5)
+        self.assertEqual(["Outdoor Doorbell is streaming again"], self.pushes)
