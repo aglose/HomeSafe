@@ -223,7 +223,7 @@ class DoorRepositoryImplTest {
         assertNotNull(h.repository.floorPlan.value)
         h.planStatuses += HttpStatusCode.InternalServerError
         connection.currentServerUrl.value = "http://10.0.0.2:8971"
-        advanceUntilIdle()
+        eventually("the old server's plan forgotten") { h.repository.floorPlan.value == null }
         h.repository.refresh()
         assertNull(h.repository.floorPlan.value, "the old server's house isn't drawn under the new one's doors")
     }
@@ -237,7 +237,6 @@ class DoorRepositoryImplTest {
         val slow = async { h.repository.refresh() }
         eventually("the old server's plan asked for") { h.requests.lastOrNull() == "GET /floorplan" }
         connection.currentServerUrl.value = "http://10.0.0.2:8971"
-        advanceUntilIdle()
         gate.complete(Unit)
         slow.await()
         eventually("the switch settled") { h.repository.floorPlan.value == null }
