@@ -130,10 +130,15 @@ class Seen:
                 self.at.setdefault(key, now)
 
     def first(self, reader: str, name: str, is_open: bool, box_at: float) -> float | None:
-        """When [reader] first had the entry for this change, stamped within a second of [box_at] on the box's clock."""
+        """
+        When [reader] first had the entry for this change: the one stamped nearest [box_at] on the
+        box's clock (the relay stamps it as the message arrives, milliseconds after), within a
+        second. The nearest, not the earliest: a door opened twice within a second has two
+        entries, and each change must be timed by its own.
+        """
         with self.lock:
-            hits = [t for (r, n, o, at), t in self.at.items() if r == reader and n == name and o == is_open and abs(at - box_at) < 1]
-            return min(hits) if hits else None
+            hits = [(abs(at - box_at), t) for (r, n, o, at), t in self.at.items() if r == reader and n == name and o == is_open and abs(at - box_at) < 1]
+            return min(hits)[1] if hits else None
 
 
 def every(seconds: float, reader: str, relay: Relay, seen: Seen, stop: threading.Event) -> None:

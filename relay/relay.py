@@ -5227,6 +5227,11 @@ def door_by_name(name: str) -> tuple | None:
     return with_db(lambda c: c.execute("SELECT id, name, open, notify, last_push FROM doors WHERE name=? AND removed=0", (name,)).fetchone())
 
 
+def door_shown(name: str) -> tuple | None:
+    """How the app draws the door called [name]: whether it's open, and whether it's online."""
+    return with_db(lambda c: c.execute("SELECT open, online FROM doors WHERE name=? AND removed=0", (name,)).fetchone())
+
+
 def door_state(name: str, readings: dict[str, Any], now: float) -> dict[str, Any] | None:
     """
     Takes one message from a sensor: keeps its battery and signal, and when `contact` says the
@@ -5333,16 +5338,21 @@ def door_receive(topic: str, payload: bytes, now: float) -> None:
         with_db(lambda c: (c.execute("UPDATE doors SET online=? WHERE name=? AND removed=0", (int(body == "online"), name)), c.commit()))
         DOORS_CHANGES.bump()
     elif kind == "state":
+        before = door_shown(name)
         change = door_state(name, body, now)
         late = time.time() - now
         if late > 1:
             log.warning("doors: a message from %s took %.1f s to record", name, late)
-        if change is not None:
-            # The app's waiting requests first: the push can take a second, and a phone with the
-            # app open shouldn't wait on Firebase. A reading that changed nothing (the sensor says
-            # the same thing three times) wakes nobody; its battery shows at the next wait's end.
+        # The app's waiting requests first: the push can take a second, and a phone with the app
+        # open shouldn't wait on Firebase. Whatever moves how the door is drawn wakes them (an
+        # opening or closing, a sensor's first reading, one back online); a reading that changed
+        # neither (the sensor says the same thing three times) wakes nobody, and its battery shows
+        # at the next wait's end.
+        if change is not None or door_shown(name) != before:
             DOORS_CHANGES.bump()
-            door_announce(change, now, away_since() is not None)
+        # A push that reached a phone marks the history entry as notified: wake them again for that.
+        if change is not None and door_announce(change, now, away_since() is not None) is not None:
+            DOORS_CHANGES.bump()
 
 
 def doors_forever() -> None:

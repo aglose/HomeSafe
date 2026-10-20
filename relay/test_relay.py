@@ -6380,15 +6380,39 @@ class DoorsTest(_ScratchDb):
 
     def test_the_version_moves_when_a_door_changes_and_not_on_a_repeat(self):
         self.paired()
+        paired = self.version()
         relay.door_receive("zigbee2mqtt/Front door", b'{"contact": true}', self.T)
         start = self.version()
+        self.assertNotEqual(paired, start, "a first reading draws the door: closed, not unknown")
         relay.door_receive("zigbee2mqtt/Front door", b'{"contact": true, "battery": 90}', self.T + 1)
         self.assertEqual(start, self.version())
         relay.door_receive("zigbee2mqtt/Front door", b'{"contact": false}', self.T + 2)
         opened = self.version()
         self.assertNotEqual(start, opened)
         relay.door_receive("zigbee2mqtt/Front door/availability", b'{"state": "offline"}', self.T + 3)
-        self.assertNotEqual(opened, self.version())
+        offline = self.version()
+        self.assertNotEqual(opened, offline)
+        relay.door_receive("zigbee2mqtt/Front door", b'{"contact": false}', self.T + 4)
+        self.assertNotEqual(offline, self.version(), "a reading brings it back online, though it's still open")
+
+    def test_a_push_that_reached_a_phone_moves_the_version_again(self):
+        self.paired()
+        relay.door_receive("zigbee2mqtt/Front door", b'{"contact": true}', self.T)
+        relay.with_db(lambda c: (c.execute("UPDATE doors SET notify='always'"), c.commit()))
+        bumps = []
+        saved = relay.DOORS_CHANGES.bump, relay.broadcast
+        relay.DOORS_CHANGES.bump = lambda: bumps.append(1)
+        try:
+            relay.broadcast = lambda *args, **kwargs: {"sent": 1}
+            relay.door_receive("zigbee2mqtt/Front door", b'{"contact": false}', self.T + 1)
+            self.assertEqual(2, len(bumps), "once for the opening, once it's marked notified")
+            self.assertEqual("home", relay.doors_snapshot(self.T + 10)["events"][0]["pushed"])
+            relay.broadcast = lambda *args, **kwargs: {"sent": 0}
+            relay.door_receive("zigbee2mqtt/Front door", b'{"contact": true}', self.T + 2)
+            relay.door_receive("zigbee2mqtt/Front door", b'{"contact": false}', self.T + 200)
+            self.assertEqual(4, len(bumps), "a push no phone got marks nothing")
+        finally:
+            relay.DOORS_CHANGES.bump, relay.broadcast = saved
 
     def test_a_wait_returns_at_once_on_an_old_version_and_wakes_on_a_change(self):
         import asyncio
