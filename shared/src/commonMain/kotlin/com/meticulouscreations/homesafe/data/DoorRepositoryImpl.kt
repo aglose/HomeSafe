@@ -1,7 +1,9 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
+import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.DoorRepository
 import com.meticulouscreations.homesafe.network.PushRelayApi
@@ -10,6 +12,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +24,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Mirrors the relay's doors. Like [PresenceRepositoryImpl], the poll runs only while [doors] has
@@ -47,9 +52,21 @@ class DoorRepositoryImpl(
 
     /** Settings chosen here and not yet answered, by door: each with its number, so a later choice for the same door supersedes it. */
     private val pending = mutableMapOf<String, Pair<Long, DoorNotify>>()
+
+    /** Spots placed here and not yet answered, by door, the same way: a null spot is a door taken off the plan. */
+    private val pendingSpots = mutableMapOf<String, Pair<Long, DoorSpot?>>()
     private var edits = 0L
 
-    /** Guards [fromRelay], [pending] and [edits]: polls and saves land on different coroutines. */
+    private val _floorPlan = MutableStateFlow<FloorPlan?>(null)
+    override val floorPlan: StateFlow<FloorPlan?> = _floorPlan.asStateFlow()
+
+    /** The server [floorPlan] was read from; another server (or a refresh) reads it again. Guarded by [planLock]. */
+    private var planFrom: String? = null
+
+    /** One plan read at a time, so a refresh and a poll landing together read it once. */
+    private val planLock = Mutex()
+
+    /** Guards [fromRelay], [pending], [pendingSpots] and [edits]: polls and saves land on different coroutines. */
     private val state = Mutex()
 
     /** One save at a time, in the order they were chosen (a [Mutex] is fair), so the relay keeps the last one. */
@@ -57,14 +74,23 @@ class DoorRepositoryImpl(
 
     init {
         appScope.launch {
+            // Signing out, or switching straight to another server, forgets this one's doors and
+            // plan, so the next server's sensors are never drawn over this one's house.
+            var last: String? = null
             connectionRepository.currentServerUrl.collect { url ->
-                if (url == null) {
+                if (url == null || (last != null && url != last)) {
                     state.withLock {
                         pending.clear()
+                        pendingSpots.clear()
                         fromRelay = DoorsSnapshot.EMPTY
                         publish()
                     }
+                    planLock.withLock {
+                        planFrom = null
+                        _floorPlan.value = null
+                    }
                 }
+                last = url
             }
         }
         appScope.launch {
@@ -85,7 +111,7 @@ class DoorRepositoryImpl(
 
     override suspend fun refresh(): Result<Unit> {
         val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
-        return fetch(url)
+        return fetch(url, rereadPlan = true)
     }
 
     /**
@@ -102,30 +128,90 @@ class DoorRepositoryImpl(
             publish()
             edit
         }
-        val answer = writes.withLock { relayApi.setDoorNotify(url, doorId, notify) }
-        state.withLock {
+        val answer = try {
+            writes.withLock { relayApi.setDoorNotify(url, doorId, notify) }
+        } catch (cancelled: CancellationException) {
+            // The page closed while the choice waited its turn or its answer: it was never saved.
+            settle { if (pending[doorId]?.first == edit) pending.remove(doorId) }
+            throw cancelled
+        }
+        settle {
             if (pending[doorId]?.first == edit) pending.remove(doorId)
             // An answer from the server signed out of meanwhile is no one's doors now.
             answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
-            publish()
         }
         return answer.map { }
     }
 
-    private suspend fun fetch(url: String): Result<Unit> =
-        relayApi.getDoors(url, identity.deviceId(), identity.secret()).map { snapshot ->
-            state.withLock {
-                fromRelay = snapshot
-                publish()
+    override suspend fun setSpot(doorId: String, spot: DoorSpot?): Result<Unit> {
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
+        val edit = state.withLock {
+            val edit = ++edits
+            pendingSpots[doorId] = edit to spot
+            publish()
+            edit
+        }
+        val answer = try {
+            writes.withLock { relayApi.setDoorSpot(url, doorId, spot) }
+        } catch (cancelled: CancellationException) {
+            settle { if (pendingSpots[doorId]?.first == edit) pendingSpots.remove(doorId) }
+            throw cancelled
+        }
+        settle {
+            if (pendingSpots[doorId]?.first == edit) pendingSpots.remove(doorId)
+            answer.onSuccess { if (connectionRepository.currentServerUrl.value == url) fromRelay = it }
+        }
+        return answer.map { }
+    }
+
+    private suspend fun fetch(url: String, rereadPlan: Boolean = false): Result<Unit> {
+        val deviceId = identity.deviceId()
+        val secret = identity.secret()
+        // The plan barely ever changes: read once per server, and again on a refresh.
+        planLock.withLock {
+            if (rereadPlan || planFrom != url) {
+                relayApi.getFloorPlan(url, deviceId, secret).onSuccess {
+                    // A refresh isn't cancelled by a server switch: an answer from the old server is dropped.
+                    if (connectionRepository.currentServerUrl.value == url) {
+                        _floorPlan.value = it
+                        planFrom = url
+                    }
+                }
             }
         }
+        return relayApi.getDoors(url, deviceId, secret).map { snapshot ->
+            state.withLock {
+                if (connectionRepository.currentServerUrl.value == url) {
+                    fromRelay = snapshot
+                    publish()
+                }
+            }
+        }
+    }
+
+    /**
+     * Takes back or lands an edit under [state], then publishes. Not cancellable, so an edit whose
+     * caller is cancelled can't stay laid over the doors after it.
+     */
+    private suspend fun settle(change: () -> Unit) = withContext(NonCancellable) {
+        state.withLock {
+            change()
+            publish()
+        }
+    }
 
     /** [fromRelay] with every setting still on its way laid over it. Called holding [state]. */
     private fun publish() {
-        _doors.value = if (pending.isEmpty()) {
+        _doors.value = if (pending.isEmpty() && pendingSpots.isEmpty()) {
             fromRelay
         } else {
-            fromRelay.copy(doors = fromRelay.doors.map { door -> pending[door.id]?.let { door.copy(notify = it.second) } ?: door })
+            fromRelay.copy(
+                doors = fromRelay.doors.map { door ->
+                    val notify = pending[door.id]?.second ?: door.notify
+                    val spot = if (door.id in pendingSpots) pendingSpots.getValue(door.id).second else door.spot
+                    door.copy(notify = notify, spot = spot)
+                },
+            )
         }
     }
 

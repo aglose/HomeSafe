@@ -3,6 +3,15 @@ package com.meticulouscreations.homesafe.network
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorSpot
+import com.meticulouscreations.homesafe.domain.model.FloorPlan
+import com.meticulouscreations.homesafe.domain.model.PlanDoor
+import com.meticulouscreations.homesafe.domain.model.PlanFloor
+import com.meticulouscreations.homesafe.domain.model.PlanPoint
+import com.meticulouscreations.homesafe.domain.model.PlanRoom
+import com.meticulouscreations.homesafe.domain.model.PlanStairs
+import com.meticulouscreations.homesafe.domain.model.PlanWall
+import com.meticulouscreations.homesafe.domain.model.StairDirection
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -87,5 +96,52 @@ class PushRelayApiDoorsTest {
     @Test
     fun aRefusalFails() = runTest {
         assertTrue(api(status = HttpStatusCode.Unauthorized, respondWith = "{}").setDoorNotify("http://192.168.68.65:8971", "x", DoorNotify.AWAY).isFailure)
+    }
+
+    @Test
+    fun theFloorPlanIsReadAndAFloorWithNoOutlineOrAShortWallIsLeftOut() = runTest {
+        val seen = mutableListOf<Seen>()
+        val body = """{"floors": [{"id": "ground", "name": "Ground floor", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]],
+            "rooms": [{"name": "Kitchen", "x": 8, "y": 10.5}], "stairs": [[15, 18], {"x": 4, "y": 5, "direction": "down", "facing": "w", "flight": "cellar"}], "walls": [[0, 13, 14, 13], [1, 2]],
+            "doors": [{"name": "Back door", "from": [12, 0], "to": [15, 0], "swing": -1, "sensor": "0x01"}, {"from": [1], "to": [2, 0]}]},
+            {"id": "attic", "outline": [[0, 0]]}]}"""
+        val plan = api(respondWith = body, seen = seen).getFloorPlan("http://192.168.68.65:8971", "device-1", "secret-1").getOrThrow()
+        assertEquals("http://192.168.68.65:8787/floorplan?device=device-1", seen.single().url)
+        assertEquals(
+            FloorPlan(
+                listOf(
+                    PlanFloor(
+                        "ground",
+                        "Ground floor",
+                        listOf(PlanPoint(0f, 0f), PlanPoint(30f, 0f), PlanPoint(30f, 40f), PlanPoint(0f, 40f)),
+                        listOf(PlanRoom("Kitchen", PlanPoint(8f, 10.5f))),
+                        listOf(PlanStairs(PlanPoint(15f, 18f)), PlanStairs(PlanPoint(4f, 5f), StairDirection.DOWN, facingDegrees = 270, flight = "cellar")),
+                        listOf(PlanWall(PlanPoint(0f, 13f), PlanPoint(14f, 13f))),
+                        listOf(PlanDoor(PlanPoint(12f, 0f), PlanPoint(15f, 0f), swing = -1, name = "Back door", sensorId = "0x01")),
+                    ),
+                ),
+            ),
+            plan,
+        )
+    }
+
+    @Test
+    fun aBoxWithNoPlanAnswers404() = runTest {
+        assertEquals(null, api(status = HttpStatusCode.NotFound, respondWith = """{"detail": "No floor plan on this box"}""").getFloorPlan("http://192.168.68.65:8971").getOrThrow())
+    }
+
+    @Test
+    fun aDoorIsPlacedWithAPutAndTakenOffWithADelete() = runTest {
+        val seen = mutableListOf<Seen>()
+        val placed = api(respondWith = body.replace("\"notify\": \"always\"}", "\"notify\": \"always\", \"spot\": {\"floor\": \"ground\", \"x\": 12.5, \"y\": 39}}"), seen = seen)
+            .setDoorSpot("http://192.168.68.65:8971", "0x282c02bfffe6aa01", DoorSpot("ground", 12.5f, 39f)).getOrThrow()
+        assertEquals(HttpMethod.Put, seen.single().method)
+        assertEquals("http://192.168.68.65:8787/doors/0x282c02bfffe6aa01/spot", seen.single().url)
+        assertEquals("""{"floor":"ground","x":12.5,"y":39.0}""", seen.single().body)
+        assertEquals(DoorSpot("ground", 12.5f, 39f), placed.doors[0].spot)
+
+        seen.clear()
+        api(respondWith = body, seen = seen).setDoorSpot("http://192.168.68.65:8971", "0x282c02bfffe6aa01", null).getOrThrow()
+        assertEquals(HttpMethod.Delete, seen.single().method)
     }
 }

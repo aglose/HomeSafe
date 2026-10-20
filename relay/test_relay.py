@@ -6221,10 +6221,11 @@ FRONT = "0x282c02bfffe6aa01"
 class DoorsTest(_ScratchDb):
     """The door sensors: what Zigbee2MQTT says, what the relay keeps of it, and which openings push."""
 
-    NAMES = _ScratchDb.NAMES + ("away_since", "require_frigate_session")
+    NAMES = _ScratchDb.NAMES + ("away_since", "require_frigate_session", "FLOORPLAN_FILE", "authenticate")
 
     def setUp(self):
         super().setUp()
+        relay.FLOORPLAN_FILE = os.path.join(self._dir.name, "floorplan.json")
         self.away = False
         relay.away_since = lambda: 1.0 if self.away else None
         relay.require_frigate_session = lambda request: "alex"
@@ -6371,6 +6372,148 @@ class DoorsTest(_ScratchDb):
         self.paired()
         self.receive("zigbee2mqtt/Front door/availability", {"state": "offline"}, self.T)
         self.assertFalse(self.door()["online"])
+
+    # A made-up two-floor plan: the real one lives only on the box.
+    PLAN = {"floors": [
+        {"id": "ground", "name": "Ground floor", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]], "rooms": [{"name": "Kitchen", "x": 8, "y": 10}]},
+        {"id": "upper", "name": "Upper floor", "outline": [[0, 0], [30, 0], [30, 25], [0, 25]]},
+    ]}
+
+    def write_plan(self, plan):
+        with open(relay.FLOORPLAN_FILE, "w") as f:
+            f.write(plan if isinstance(plan, str) else json.dumps(plan))
+
+    def test_the_floor_plan_is_served_only_when_the_box_has_one(self):
+        request = types.SimpleNamespace(headers={})
+        relay.authenticate = lambda request, device=None: "alex"
+        with self.assertRaises(relay.HTTPException) as missing:
+            relay.get_floorplan(request)
+        self.assertEqual(404, missing.exception.status_code)
+        self.write_plan("not json")
+        with self.assertRaises(relay.HTTPException):
+            relay.get_floorplan(request)
+        self.write_plan({"floors": [{"name": "no id or outline"}]})
+        with self.assertRaises(relay.HTTPException):
+            relay.get_floorplan(request)
+        self.write_plan(self.PLAN)
+        self.assertEqual(self.PLAN, relay.get_floorplan(request))
+
+    def test_the_editor_saves_a_tidied_plan_and_keeps_the_one_it_replaced(self):
+        self.write_plan(self.PLAN)
+        edited = {"floors": [{"id": "ground", "name": "  Ground floor ", "outline": [[0, 0], [30.004, 0], [30, 40], [0, 40]],
+                              "rooms": [{"name": "Kitchen", "x": 8, "y": 10}], "walls": [[0, 13, 14, 13]], "extra": "dropped"}]}
+        saved = relay.put_floorplan(edited, types.SimpleNamespace(headers={}))
+        self.assertEqual({"id": "ground", "name": "Ground floor", "outline": [[0.0, 0.0], [30.0, 0.0], [30.0, 40.0], [0.0, 40.0]],
+                          "rooms": [{"name": "Kitchen", "x": 8.0, "y": 10.0}], "stairs": [], "walls": [[0.0, 13.0, 14.0, 13.0]], "doors": []}, saved["floors"][0])
+        self.assertEqual(saved, relay.floorplan())
+        history = os.path.join(self._dir.name, "floorplan-history")
+        kept = os.listdir(history)
+        self.assertEqual(1, len(kept))
+        with open(os.path.join(history, kept[0])) as f:
+            self.assertEqual(self.PLAN, json.load(f))
+
+    def test_a_doorway_linked_to_a_sensor_puts_the_sensor_at_its_middle(self):
+        self.paired()
+        plan = {"floors": [{"id": "ground", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]],
+                            "doors": [{"name": "Front door", "from": [10, 40], "to": [13, 40], "swing": -1, "sensor": FRONT},
+                                      {"from": [0, 5], "to": [0, 8], "swing": 7, "sensor": "0xnot-paired-yet"}]}]}
+        saved = relay.put_floorplan(plan, types.SimpleNamespace(headers={}))
+        self.assertEqual([{"from": [10.0, 40.0], "to": [13.0, 40.0], "swing": -1, "name": "Front door", "sensor": FRONT},
+                          {"from": [0.0, 5.0], "to": [0.0, 8.0], "swing": 1, "sensor": "0xnot-paired-yet"}], saved["floors"][0]["doors"])
+        self.assertEqual({"floor": "ground", "x": 11.5, "y": 40.0}, self.door()["spot"])
+
+    def test_a_sensor_links_to_one_doorway_and_a_doorway_has_width(self):
+        request = types.SimpleNamespace(headers={})
+        outline = [[0, 0], [30, 0], [30, 40], [0, 40]]
+        for doors in (
+            [{"from": [0, 0], "to": [3, 0], "sensor": FRONT}, {"from": [5, 0], "to": [8, 0], "sensor": FRONT}],
+            [{"from": [0, 0], "to": [0.2, 0]}],
+            [{"from": [0, 0]}],
+        ):
+            with self.assertRaises(relay.HTTPException) as refused:
+                relay.put_floorplan({"floors": [{"id": "ground", "outline": outline, "doors": doors}]}, request)
+            self.assertEqual(400, refused.exception.status_code)
+
+    def test_stairs_say_which_way_they_go_and_which_floor_they_join(self):
+        outline = [[0, 0], [30, 0], [30, 40], [0, 40]]
+        plan = {"street": " Elm St ", "floors": [
+            {"id": "ground", "outline": outline, "stairs": [{"x": 14, "y": 20, "direction": "down", "facing": "w", "flight": "cellar"}, [5, 5]]},
+            {"id": "cellar", "outline": outline, "stairs": [{"x": 14, "y": 20, "direction": "up", "facing": "sideways", "flight": "cellar"}]},
+        ]}
+        saved = relay.put_floorplan(plan, types.SimpleNamespace(headers={}))
+        self.assertEqual("Elm St", saved["street"])
+        self.assertEqual([{"x": 14.0, "y": 20.0, "direction": "down", "facing": "w", "flight": "cellar"}, {"x": 5.0, "y": 5.0, "facing": "n"}], saved["floors"][0]["stairs"])
+        self.assertEqual({"x": 14.0, "y": 20.0, "direction": "up", "facing": "n", "flight": "cellar"}, saved["floors"][1]["stairs"][0])
+
+    def test_linked_stairs_join_two_floors_going_opposite_ways(self):
+        request = types.SimpleNamespace(headers={})
+        outline = [[0, 0], [30, 0], [30, 40], [0, 40]]
+        up = {"x": 1, "y": 1, "direction": "up", "flight": "f"}
+        down = {"x": 1, "y": 1, "direction": "down", "flight": "f"}
+        for floors in (
+            [{"id": "a", "outline": outline, "stairs": [up]}, {"id": "b", "outline": outline, "stairs": [dict(up)]}],
+            [{"id": "a", "outline": outline, "stairs": [up, down]}],
+            [{"id": "a", "outline": outline, "stairs": [up]}, {"id": "b", "outline": outline, "stairs": [down]}, {"id": "c", "outline": outline, "stairs": [dict(down)]}],
+            [{"id": "a", "outline": outline, "stairs": [{"x": 1, "y": 1, "flight": "f"}]}, {"id": "b", "outline": outline, "stairs": [down]}],
+        ):
+            with self.assertRaises(relay.HTTPException, msg=str(floors)) as refused:
+                relay.put_floorplan({"floors": floors}, request)
+            self.assertEqual(400, refused.exception.status_code)
+
+    def test_a_plan_the_editor_got_wrong_is_refused(self):
+        request = types.SimpleNamespace(headers={})
+        bad = [
+            {},
+            {"floors": []},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, 1]]}, {"id": "a", "outline": [[0, 0], [1, 0], [1, 1]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, "x"]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, 1]], "walls": [[0, 0, 1]]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, 1]], "rooms": [{"name": " ", "x": 0, "y": 0}]}]},
+            {"floors": [{"id": "a", "outline": [[0, 0], [1, 0], [1, float("inf")]]}]},
+        ]
+        for plan in bad:
+            with self.assertRaises(relay.HTTPException, msg=str(plan)) as refused:
+                relay.put_floorplan(plan, request)
+            self.assertEqual(400, refused.exception.status_code)
+        self.assertFalse(os.path.exists(relay.FLOORPLAN_FILE), "nothing written")
+
+    def test_only_the_newest_replaced_plans_are_kept(self):
+        self.write_plan(self.PLAN)
+        for n in range(relay.FLOORPLAN_HISTORY + 5):
+            relay.save_floorplan(self.PLAN, 1_800_000_000 + n)
+        self.assertEqual(relay.FLOORPLAN_HISTORY, len(os.listdir(os.path.join(self._dir.name, "floorplan-history"))))
+
+    def test_the_editor_page_is_served(self):
+        page = relay.floorplan_editor()
+        self.assertIn("Floor plan editor", page.body)
+        self.assertEqual("text/html", page.media_type)
+
+    def test_a_door_is_placed_on_a_floor_and_taken_off_again(self):
+        self.paired()
+        self.write_plan(self.PLAN)
+        request = types.SimpleNamespace(headers={})
+        self.assertIsNone(self.door()["spot"])
+        placed = relay.set_door_spot(FRONT, types.SimpleNamespace(floor="ground", x=12.5, y=39.0), request)
+        self.assertEqual({"floor": "ground", "x": 12.5, "y": 39.0}, placed["doors"][0]["spot"])
+        self.assertIsNone(relay.clear_door_spot(FRONT, request)["doors"][0]["spot"])
+
+    def test_a_spot_must_be_on_a_floor_the_plan_has(self):
+        self.paired()
+        request = types.SimpleNamespace(headers={})
+        with self.assertRaises(relay.HTTPException) as no_plan:
+            relay.set_door_spot(FRONT, types.SimpleNamespace(floor="ground", x=1.0, y=1.0), request)
+        self.assertEqual(400, no_plan.exception.status_code)
+        self.write_plan(self.PLAN)
+        with self.assertRaises(relay.HTTPException) as attic:
+            relay.set_door_spot(FRONT, types.SimpleNamespace(floor="attic", x=1.0, y=1.0), request)
+        self.assertEqual(400, attic.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as nan:
+            relay.set_door_spot(FRONT, types.SimpleNamespace(floor="ground", x=float("nan"), y=1.0), request)
+        self.assertEqual(400, nan.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as nobody:
+            relay.set_door_spot("0xnobody", types.SimpleNamespace(floor="ground", x=1.0, y=1.0), request)
+        self.assertEqual(404, nobody.exception.status_code)
 
     def test_setting_a_door_checks_the_mode_and_the_door(self):
         self.paired()

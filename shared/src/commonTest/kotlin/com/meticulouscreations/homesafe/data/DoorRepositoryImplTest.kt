@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -36,6 +38,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -58,13 +62,19 @@ class DoorRepositoryImplTest {
 
     /**
      * A relay with two doors. Each PUT takes the next of [putGates] (when there is one) to wait on
-     * and the next of [putStatuses] (OK when there are none left), and keeps what it was sent.
+     * and the next of [putStatuses] (OK when there are none left), and keeps what it was sent. A
+     * plan read does the same with [planGates] and [planStatuses].
      */
     private class Harness(scope: TestScope, connection: ConnectionRepository) {
         val notify = mutableMapOf("0x01" to "away", "0x02" to "away")
         val putStatuses = ArrayDeque<HttpStatusCode>()
         val putGates = ArrayDeque<CompletableDeferred<Unit>>()
-        val requests = mutableListOf<String>()
+        val planStatuses = ArrayDeque<HttpStatusCode>()
+        val planGates = ArrayDeque<CompletableDeferred<Unit>>()
+
+        // Appended to by the engine on its own thread while the test reads it: swapped whole, never mutated.
+        private val requestLog = MutableStateFlow(emptyList<String>())
+        val requests: List<String> get() = requestLog.value
         private fun doors() = notify.entries.joinToString(",", """{"doors":[""", """],"events":[],"broker":true,"bridge":true}""") { (id, mode) ->
             """{"id":"$id","name":"Door $id","open":false,"notify":"$mode"}"""
         }
@@ -75,15 +85,23 @@ class DoorRepositoryImplTest {
                     val status = putStatuses.removeFirstOrNull() ?: HttpStatusCode.OK
                     val id = req.url.encodedPath.removePrefix("/doors/")
                     val mode = (req.body as TextContent).text.substringAfter("\"notify\":\"").substringBefore("\"")
-                    requests += "PUT $id $mode"
+                    requestLog.update { it + "PUT $id $mode" }
                     gate?.await()
                     if (status == HttpStatusCode.OK) notify[id] = mode
                     respond(if (status == HttpStatusCode.OK) doors() else "{}", status, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
                 else -> {
-                    requests += "GET ${req.url.encodedPath}"
-                    respond(doors(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                    requestLog.update { it + "GET ${req.url.encodedPath}" }
+                    if (req.url.encodedPath == "/floorplan") {
+                        val gate = planGates.removeFirstOrNull()
+                        val status = planStatuses.removeFirstOrNull() ?: HttpStatusCode.OK
+                        gate?.await()
+                        if (status != HttpStatusCode.OK) return@MockEngine respond("{}", status, headersOf(HttpHeaders.ContentType, "application/json"))
+                        respond("""{"floors":[{"id":"ground","name":"Ground floor","outline":[[0,0],[30,0],[30,40],[0,40]]}]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                    } else {
+                        respond(doors(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                    }
                 }
             }
         }
@@ -112,7 +130,7 @@ class DoorRepositoryImplTest {
         assertTrue(h.requests.isEmpty())
         backgroundScope.launch { h.repository.doors.collect {} }
         eventually("the first read") { h.repository.doors.value.doors.size == 2 }
-        assertEquals("GET /doors", h.requests.first())
+        assertEquals(listOf("GET /floorplan", "GET /doors"), h.requests.take(2), "the plan once, then the doors")
     }
 
     private fun Harness.shown(id: String) = repository.doors.value.doors.single { it.id == id }.notify
@@ -162,5 +180,67 @@ class DoorRepositoryImplTest {
         h.repository.refresh().getOrThrow()
         connection.currentServerUrl.value = null
         eventually("the doors forgotten") { h.repository.doors.value == DoorsSnapshot.EMPTY }
+    }
+
+    @Test
+    fun thePlanIsReadOncePerServerAndAgainOnARefresh() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.65:8971"))
+        h.repository.refresh().getOrThrow()
+        assertEquals("ground", h.repository.floorPlan.value?.floors?.single()?.id)
+        backgroundScope.launch { h.repository.doors.collect {} }
+        eventually("a poll or two") { h.requests.count { it == "GET /doors" } >= 3 }
+        assertEquals(1, h.requests.count { it == "GET /floorplan" }, "polls don't read the plan again")
+        h.repository.refresh().getOrThrow()
+        assertEquals(2, h.requests.count { it == "GET /floorplan" })
+    }
+
+    private fun Harness.spot(id: String) = repository.doors.value.doors.single { it.id == id }.spot
+
+    @Test
+    fun aPlacementCancelledWhileWaitingItsTurnIsTakenBack() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.65:8971"))
+        h.repository.refresh().getOrThrow()
+        val gate = CompletableDeferred<Unit>()
+        h.putGates += gate
+        val first = async { h.repository.setNotify("0x01", DoorNotify.ALWAYS) }
+        eventually("the first save on its way") { h.requests.lastOrNull() == "PUT 0x01 always" }
+        val placing = async { h.repository.setSpot("0x02", DoorSpot("ground", 5f, 5f)) }
+        eventually("the spot shown while it waits") { h.spot("0x02") != null }
+        placing.cancel()
+        eventually("the unsaved spot taken back") { h.spot("0x02") == null }
+        gate.complete(Unit)
+        assertTrue(first.await().isSuccess)
+        h.repository.refresh().getOrThrow()
+        assertNull(h.spot("0x02"), "a poll doesn't bring it back")
+        assertTrue(h.requests.none { it.startsWith("PUT 0x02") }, "it never reached the relay")
+    }
+
+    @Test
+    fun switchingToAServerWhosePlanFailsShowsNoPlan() = runTest {
+        val connection = FakeConnection("http://192.168.68.65:8971")
+        val h = Harness(this, connection)
+        h.repository.refresh().getOrThrow()
+        assertNotNull(h.repository.floorPlan.value)
+        h.planStatuses += HttpStatusCode.InternalServerError
+        connection.currentServerUrl.value = "http://10.0.0.2:8971"
+        eventually("the old server's plan forgotten") { h.repository.floorPlan.value == null }
+        h.repository.refresh()
+        assertNull(h.repository.floorPlan.value, "the old server's house isn't drawn under the new one's doors")
+    }
+
+    @Test
+    fun aSlowAnswerFromTheServerSwitchedAwayFromIsDropped() = runTest {
+        val connection = FakeConnection("http://192.168.68.65:8971")
+        val h = Harness(this, connection)
+        val gate = CompletableDeferred<Unit>()
+        h.planGates += gate
+        val slow = async { h.repository.refresh() }
+        eventually("the old server's plan asked for") { h.requests.lastOrNull() == "GET /floorplan" }
+        connection.currentServerUrl.value = "http://10.0.0.2:8971"
+        gate.complete(Unit)
+        slow.await()
+        eventually("the switch settled") { h.repository.floorPlan.value == null }
+        assertNull(h.repository.floorPlan.value)
+        assertEquals(DoorsSnapshot.EMPTY, h.repository.doors.value, "nor its doors")
     }
 }

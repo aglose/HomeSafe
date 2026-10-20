@@ -25,7 +25,7 @@ set -euo pipefail
 
 BOX=${HOMESAFE_BOX:-andrew@100.99.163.71}
 DIR=surveillance/relay
-FILES=(relay.py requirements.txt Dockerfile docker-compose.yml)
+FILES=(relay.py floorplan_editor.html requirements.txt Dockerfile docker-compose.yml)
 CHECK=0
 for arg in "$@"; do
   case $arg in
@@ -98,7 +98,8 @@ trap 'box "rmdir $DIR/.deploy-lock" >/dev/null 2>&1 || true' EXIT
 
 stamp=$(date +%Y%m%d-%H%M%S)
 backup="$DIR/deploys/$stamp-${deployed:0:8}"
-box "mkdir -p $backup && cp $(printf "$DIR/%s " "${FILES[@]}") $backup/ && { cp $DIR/DEPLOYED $backup/ 2>/dev/null || true; }"
+# A file this deploy adds (one the box never had) has nothing to back up.
+box "mkdir -p $backup && for f in ${FILES[*]} DEPLOYED; do if [ -e $DIR/\$f ]; then cp $DIR/\$f $backup/ || exit 1; fi; done"
 say "backed up to $BOX:$backup"
 
 tmp=$(mktemp -d)
@@ -117,7 +118,8 @@ healthy() {
 
 if ! healthy || [ "$(box "docker exec homesafe-relay md5sum /app/relay.py" | cut -c1-32)" != "$(local_md5 HEAD relay.py)" ]; then
   say "the new relay didn't come up healthy; restoring $backup"
-  box "cp $(printf "$backup/%s " "${FILES[@]}") $DIR/ && cd $DIR && docker compose up -d --build --no-deps homesafe-relay" >/dev/null 2>&1
+  # Each file as it was, and a file the failed deploy added gone again.
+  box "for f in ${FILES[*]}; do if [ -e $backup/\$f ]; then cp $backup/\$f $DIR/; else rm -f $DIR/\$f; fi; done && cd $DIR && docker compose up -d --build --no-deps homesafe-relay" >/dev/null 2>&1
   box "docker logs --since 5m homesafe-relay 2>&1 | tail -30" || true
   fail "rolled back to $deployed"
 fi

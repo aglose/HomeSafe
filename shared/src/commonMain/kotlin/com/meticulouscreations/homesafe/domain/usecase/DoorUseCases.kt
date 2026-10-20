@@ -1,7 +1,9 @@
 package com.meticulouscreations.homesafe.domain.usecase
 
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
+import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.repository.DoorRepository
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.StateFlow
@@ -22,4 +24,16 @@ class RefreshDoorsUseCase(private val doorRepository: DoorRepository) {
 @Inject
 class SetDoorNotifyUseCase(private val doorRepository: DoorRepository) {
     suspend operator fun invoke(doorId: String, notify: DoorNotify): Result<Unit> = doorRepository.setNotify(doorId, notify)
+}
+
+/** The house's floor plan, for the Doors page to draw the doors on; null while the box has none. */
+@Inject
+class ObserveFloorPlanUseCase(private val doorRepository: DoorRepository) {
+    operator fun invoke(): StateFlow<FloorPlan?> = doorRepository.floorPlan
+}
+
+/** Places one door on the floor plan, or with null takes it off. */
+@Inject
+class SetDoorSpotUseCase(private val doorRepository: DoorRepository) {
+    suspend operator fun invoke(doorId: String, spot: DoorSpot?): Result<Unit> = doorRepository.setSpot(doorId, spot)
 }

@@ -870,9 +870,9 @@ internal fun SettingsSection(title: String, icon: ImageVector, content: @Composa
 
 /** The card alone, for a page that is one section: its header already says which. */
 @Composable
-internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)

@@ -375,6 +375,12 @@ def db() -> sqlite3.Connection:
         " removed INTEGER NOT NULL DEFAULT 0)"
     )
     conn.execute("CREATE TABLE IF NOT EXISTS door_events (id INTEGER PRIMARY KEY AUTOINCREMENT, door TEXT NOT NULL, open INTEGER NOT NULL, at REAL NOT NULL, pushed TEXT)")
+    # Where each door is on the floor plan (see "floor plan"): the floor's id and the spot on it,
+    # in feet from the plan's origin. NULL until someone places it in the app.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(doors)")}
+    for column, declaration in (("spot_floor", "TEXT"), ("spot_x", "REAL"), ("spot_y", "REAL")):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE doors ADD COLUMN {column} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS door_events_at ON door_events (at)")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
@@ -5307,18 +5313,20 @@ def doors_forever() -> None:
 
 
 def door_json(row: tuple) -> dict[str, Any]:
-    door_id, name, model, is_open, changed, battery, battery_low, link, online, last_seen, notify = row
+    door_id, name, model, is_open, changed, battery, battery_low, link, online, last_seen, notify, spot_floor, spot_x, spot_y = row
     return {
         "id": door_id, "name": name, "model": model, "open": None if is_open is None else bool(is_open), "changed": changed,
         "battery": battery, "battery_low": None if battery_low is None else bool(battery_low), "link": link,
         "online": None if online is None else bool(online), "last_seen": last_seen, "notify": notify,
+        "spot": {"floor": spot_floor, "x": spot_x, "y": spot_y} if spot_floor is not None else None,
     }
 
 
 def doors_snapshot(now: float, days: float = 7) -> dict[str, Any]:
     """Every door sensor on the network and how it stands, and its openings and closings over the last [days], newest first."""
     rows = with_db(lambda c: c.execute(
-        "SELECT id, name, model, open, changed, battery, battery_low, link, online, last_seen, notify FROM doors WHERE removed=0 ORDER BY name COLLATE NOCASE"
+        "SELECT id, name, model, open, changed, battery, battery_low, link, online, last_seen, notify, spot_floor, spot_x, spot_y FROM doors"
+        " WHERE removed=0 ORDER BY name COLLATE NOCASE"
     ).fetchall())
     events = with_db(lambda c: c.execute(
         "SELECT e.door, e.open, e.at, e.pushed FROM door_events e JOIN doors d ON d.id=e.door WHERE d.removed=0 AND e.at >= ? ORDER BY e.at DESC LIMIT 500",
@@ -5355,6 +5363,274 @@ def set_door(door_id: str, patch: DoorPatch, request: Request) -> dict[str, Any]
     if not changed:
         raise HTTPException(status_code=404, detail="No such door")
     log.info("doors: %s set %s to notify %s", user, door_id, patch.notify)
+    return doors_snapshot(time.time())
+
+
+# ---------------------------------------------------------------- floor plan
+
+# The house's floor plan, for the app's Doors page to draw the doors on (docs/doors.md, "The floor
+# plan"). It lives only on the box, as FLOORPLAN_FILE (relay/data, gitignored): the repository is
+# public, and a plan with the door sensors on it says too much about the house. The shape:
+#   {"floors": [{"id": "first", "name": "First floor", "outline": [[x, y], ...],
+#                "rooms": [{"name": "Kitchen", "x": 5.5, "y": 18.5}], "stairs": [[x, y]],
+#                "walls": [[x1, y1, x2, y2]], "doors": [{"name": "Back door", "from": [x, y], "to": [x, y],
+#                "swing": 1, "sensor": "0x…"}], "stairs": [{"x": 14.5, "y": 24, "direction": "down",
+#                "facing": "n", "flight": "basement"}]}, ...], "street": "Central Ave"}
+# Every floor is drawn in the same frame, with the street side (`street`) at the bottom: stairs
+# that join two floors share a `flight` id, go up on one and down on the other, and sit in the
+# same spot on both.
+# in feet, y downward, each floor's outline one closed polygon. A door is a doorway along a wall,
+# hinged at `from`, swinging to the left of from→to (1) or the right (-1); one linked to a sensor
+# puts that sensor's spot at the doorway's middle when the plan is saved (`link_door_sensors`). Each door's spot on it is kept with
+# the door (`spot_floor`, `spot_x`, `spot_y`), placed from the app.
+
+FLOORPLAN_FILE = os.environ.get("FLOORPLAN_FILE", os.path.join(os.path.dirname(DB_PATH), "floorplan.json"))
+
+
+def floorplan() -> dict[str, Any] | None:
+    """The floor plan as the file has it, or None when there is none (or it can't be read: logged)."""
+    try:
+        with open(FLOORPLAN_FILE) as f:
+            plan = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        log.warning("floor plan: can't read %s: %s", FLOORPLAN_FILE, e)
+        return None
+    floors = plan.get("floors") if isinstance(plan, dict) else None
+    if not isinstance(floors, list) or not all(isinstance(f, dict) and f.get("id") and isinstance(f.get("outline"), list) for f in floors):
+        log.warning("floor plan: %s has no usable floors", FLOORPLAN_FILE)
+        return None
+    return plan
+
+
+class DoorSpot(BaseModel):
+    # Which floor of the plan, and where on it, in the plan's feet.
+    floor: str
+    x: float
+    y: float
+
+
+@app.get("/floorplan")
+def get_floorplan(request: Request, device: str | None = None) -> dict[str, Any]:
+    """The floor plan (see "floor plan"); 404 while the box has none. A signed-in user or a device."""
+    authenticate(request, device)
+    plan = floorplan()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No floor plan on this box")
+    return plan
+
+
+# Each plan the editor replaces is kept here, newest FLOORPLAN_HISTORY of them, so a bad edit can
+# be put back by copying one over floorplan.json.
+FLOORPLAN_HISTORY = 30
+
+
+def clean_floorplan(plan: Any) -> dict[str, Any]:
+    """
+    [plan] as the editor sent it, checked and tidied into the file's shape (numbers rounded to a
+    hundredth of a foot); raises ValueError saying what's wrong with it.
+    """
+    def number(value: Any) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError("Every position must be a number of feet")
+        return round(float(value), 2)
+
+    def point(value: Any) -> list[float]:
+        if not isinstance(value, list) or len(value) != 2:
+            raise ValueError("A point must be [x, y]")
+        return [number(value[0]), number(value[1])]
+
+    floors = plan.get("floors") if isinstance(plan, dict) else None
+    if not isinstance(floors, list) or not floors:
+        raise ValueError("The plan needs at least one floor")
+    seen: set[str] = set()
+    cleaned = []
+    for floor in floors:
+        if not isinstance(floor, dict):
+            raise ValueError("A floor must be an object")
+        floor_id = floor.get("id")
+        if not isinstance(floor_id, str) or not floor_id.strip() or floor_id in seen:
+            raise ValueError("Every floor needs its own id")
+        seen.add(floor_id)
+        outline = [point(p) for p in floor.get("outline") or []]
+        if len(outline) < 3:
+            raise ValueError(f"{floor_id}: the outline needs at least three corners")
+        rooms = []
+        for room in floor.get("rooms") or []:
+            if not isinstance(room, dict) or not isinstance(room.get("name"), str) or not room["name"].strip():
+                raise ValueError(f"{floor_id}: every room needs a name")
+            rooms.append({"name": room["name"].strip()[:60], "x": number(room.get("x")), "y": number(room.get("y"))})
+        walls = []
+        for wall in floor.get("walls") or []:
+            if not isinstance(wall, list) or len(wall) != 4:
+                raise ValueError(f"{floor_id}: a wall must be [x1, y1, x2, y2]")
+            walls.append([number(v) for v in wall])
+        doors = []
+        for door in floor.get("doors") or []:
+            if not isinstance(door, dict):
+                raise ValueError(f"{floor_id}: a door must be an object")
+            hinge, latch = point(door.get("from")), point(door.get("to"))
+            if math.hypot(latch[0] - hinge[0], latch[1] - hinge[1]) < 0.5:
+                raise ValueError(f"{floor_id}: a door must be at least half a foot wide")
+            cleaned_door: dict[str, Any] = {"from": hinge, "to": latch, "swing": -1 if door.get("swing") == -1 else 1}
+            if isinstance(door.get("name"), str) and door["name"].strip():
+                cleaned_door["name"] = door["name"].strip()[:60]
+            if isinstance(door.get("sensor"), str) and door["sensor"].strip():
+                cleaned_door["sensor"] = door["sensor"].strip()
+            doors.append(cleaned_door)
+        stairs = []
+        for stair in floor.get("stairs") or []:
+            # Plans from before stairs had a direction list each as a bare [x, y].
+            if isinstance(stair, list):
+                stair = {"x": stair[0] if stair else None, "y": stair[1] if len(stair) > 1 else None}
+            if not isinstance(stair, dict):
+                raise ValueError(f"{floor_id}: stairs must be an object")
+            cleaned_stair: dict[str, Any] = {"x": number(stair.get("x")), "y": number(stair.get("y"))}
+            if stair.get("direction") in ("up", "down"):
+                cleaned_stair["direction"] = stair["direction"]
+            cleaned_stair["facing"] = stair.get("facing") if stair.get("facing") in ("n", "e", "s", "w") else "n"
+            if isinstance(stair.get("flight"), str) and stair["flight"].strip():
+                cleaned_stair["flight"] = stair["flight"].strip()[:40]
+            stairs.append(cleaned_stair)
+        name = floor.get("name")
+        cleaned.append({
+            "id": floor_id,
+            "name": name.strip()[:60] if isinstance(name, str) and name.strip() else floor_id,
+            "outline": outline,
+            "rooms": rooms,
+            "stairs": stairs,
+            "walls": walls,
+            "doors": doors,
+        })
+    linked = [d["sensor"] for f in cleaned for d in f["doors"] if "sensor" in d]
+    if len(linked) != len(set(linked)):
+        raise ValueError("A door sensor can be linked to one door only")
+    # A flight of stairs joins two floors: its two ends share an id, one going up and one down.
+    ends: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for f in cleaned:
+        for stair in f["stairs"]:
+            if "flight" in stair:
+                ends.setdefault(stair["flight"], []).append((f["id"], stair))
+    for flight, pair in ends.items():
+        if len(pair) > 2:
+            raise ValueError("A flight of stairs joins two floors, no more")
+        if len(pair) == 2:
+            (floor_a, a), (floor_b, b) = pair
+            if floor_a == floor_b:
+                raise ValueError("Linked stairs must be on two different floors")
+            if {a.get("direction"), b.get("direction")} != {"up", "down"}:
+                raise ValueError("Linked stairs go up on one floor and down on the other")
+    plan_out: dict[str, Any] = {"floors": cleaned}
+    street = plan.get("street")
+    if isinstance(street, str) and street.strip():
+        plan_out["street"] = street.strip()[:60]
+    return plan_out
+
+
+def link_door_sensors(plan: dict[str, Any]) -> list[str]:
+    """
+    Puts each door sensor the plan links to a doorway at that doorway's middle, on its floor (the
+    spot the app draws its dot at), and answers the ids it moved. A link to a sensor this relay
+    doesn't know is left in the plan for when it's paired, and moves nothing.
+    """
+    moved = []
+    for floor in plan["floors"]:
+        for door in floor.get("doors") or []:
+            sensor = door.get("sensor")
+            if not sensor:
+                continue
+            x = round((door["from"][0] + door["to"][0]) / 2, 2)
+            y = round((door["from"][1] + door["to"][1]) / 2, 2)
+            changed = with_db(lambda c: (c.execute(
+                "UPDATE doors SET spot_floor=?, spot_x=?, spot_y=? WHERE id=? AND removed=0", (floor["id"], x, y, sensor)
+            ).rowcount, c.commit())[0])
+            if changed:
+                moved.append(sensor)
+    return moved
+
+
+def save_floorplan(plan: dict[str, Any], now: float) -> None:
+    """Writes [plan] as the floor plan, keeping the one it replaces in floorplan-history/."""
+    folder = os.path.dirname(FLOORPLAN_FILE) or "."
+    if os.path.exists(FLOORPLAN_FILE):
+        history = os.path.join(folder, "floorplan-history")
+        os.makedirs(history, exist_ok=True)
+        stamp = datetime.fromtimestamp(now, timezone.utc).strftime("%Y%m%d-%H%M%S")
+        with open(FLOORPLAN_FILE, "rb") as old, open(os.path.join(history, f"floorplan-{stamp}.json"), "wb") as kept:
+            kept.write(old.read())
+        for stale in sorted(os.listdir(history))[:-FLOORPLAN_HISTORY]:
+            os.remove(os.path.join(history, stale))
+    temporary = FLOORPLAN_FILE + ".tmp"
+    with open(temporary, "w") as f:
+        json.dump(plan, f, indent=1)
+    os.replace(temporary, FLOORPLAN_FILE)
+
+
+@app.put("/floorplan")
+def put_floorplan(plan: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Replaces the floor plan with the editor's (see "floor plan editor"). A signed-in user."""
+    user = require_frigate_session(request)
+    try:
+        cleaned = clean_floorplan(plan)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    save_floorplan(cleaned, time.time())
+    moved = link_door_sensors(cleaned)
+    log.info(
+        "floor plan: %s saved %s%s", user,
+        ", ".join(f"{f['id']} ({len(f['walls'])} walls, {len(f['doors'])} doors, {len(f['rooms'])} rooms)" for f in cleaned["floors"]),
+        f"; sensors placed at their doors: {', '.join(moved)}" if moved else "",
+    )
+    return cleaned
+
+
+# The floor plan editor: a page served from the box, at http://<box>:8787/floorplan/edit on the home
+# network or the tailnet, to draw the plan's inside walls and room names over the outline and Save
+# it straight into FLOORPLAN_FILE. Like /status, the page holds nothing: the plan rides on the
+# Frigate session cookie. Kept as its own file beside this one (floorplan_editor.html).
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "floorplan_editor.html")) as _editor:
+        FLOORPLAN_EDITOR_PAGE = _editor.read()
+except OSError:
+    FLOORPLAN_EDITOR_PAGE = "<!doctype html><p>The floor plan editor isn't installed with this relay.</p>"
+
+
+@app.get("/floorplan/edit")
+def floorplan_editor() -> Response:
+    """The floor plan editor (see "floor plan editor"). The page holds nothing: its plan rides on the Frigate session cookie."""
+    return Response(content=FLOORPLAN_EDITOR_PAGE, media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
+@app.put("/doors/{door_id}/spot")
+def set_door_spot(door_id: str, spot: DoorSpot, request: Request) -> dict[str, Any]:
+    """Places one door on the floor plan. A signed-in user."""
+    user = require_frigate_session(request)
+    plan = floorplan()
+    floors = {f["id"] for f in (plan or {}).get("floors", [])}
+    if spot.floor not in floors:
+        raise HTTPException(status_code=400, detail="No such floor on the plan")
+    if not (math.isfinite(spot.x) and math.isfinite(spot.y)):
+        raise HTTPException(status_code=400, detail="The spot must be a number of feet")
+    changed = with_db(lambda c: (c.execute(
+        "UPDATE doors SET spot_floor=?, spot_x=?, spot_y=? WHERE id=? AND removed=0", (spot.floor, spot.x, spot.y, door_id)
+    ).rowcount, c.commit())[0])
+    if not changed:
+        raise HTTPException(status_code=404, detail="No such door")
+    log.info("doors: %s placed %s on %s at (%.1f, %.1f)", user, door_id, spot.floor, spot.x, spot.y)
+    return doors_snapshot(time.time())
+
+
+@app.delete("/doors/{door_id}/spot")
+def clear_door_spot(door_id: str, request: Request) -> dict[str, Any]:
+    """Takes one door off the floor plan. A signed-in user."""
+    user = require_frigate_session(request)
+    changed = with_db(lambda c: (c.execute(
+        "UPDATE doors SET spot_floor=NULL, spot_x=NULL, spot_y=NULL WHERE id=? AND removed=0", (door_id,)
+    ).rowcount, c.commit())[0])
+    if not changed:
+        raise HTTPException(status_code=404, detail="No such door")
+    log.info("doors: %s took %s off the floor plan", user, door_id)
     return doors_snapshot(time.time())
 # ---------------------------------------------------------------- Nest primer
 
