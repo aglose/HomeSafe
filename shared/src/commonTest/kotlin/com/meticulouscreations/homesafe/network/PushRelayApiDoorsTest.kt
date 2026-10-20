@@ -72,6 +72,17 @@ class PushRelayApiDoorsTest {
     }
 
     @Test
+    fun aReadCanWaitForTheNextChange() = runTest {
+        val seen = mutableListOf<Seen>()
+        val versioned = body.replace(""""away": false}""", """"away": false, "version": 1792301831741}""")
+        val snapshot = api(respondWith = versioned, seen = seen)
+            .getDoors("http://100.99.163.71:8971", "device-1", "secret-1", since = 1_792_301_831_740, waitSeconds = 25).getOrThrow()
+        assertEquals("http://100.99.163.71:8787/doors?device=device-1&days=7&since=1792301831740&wait=25", seen.single().url)
+        assertEquals(1_792_301_831_741, snapshot.version)
+        assertEquals(null, api(respondWith = body).getDoors("http://100.99.163.71:8971").getOrThrow().version, "a relay from before the wait")
+    }
+
+    @Test
     fun aRelayFromBeforeDoorSensorsAnswers404() = runTest {
         val snapshot = api(status = HttpStatusCode.NotFound, respondWith = """{"detail": "Not Found"}""").getDoors("http://192.168.68.65:8971").getOrThrow()
         assertFalse(snapshot.supported)

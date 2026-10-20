@@ -6375,6 +6375,62 @@ class DoorsTest(_ScratchDb):
         self.receive("zigbee2mqtt/Front door/availability", {"state": "offline"}, self.T)
         self.assertFalse(self.door()["online"])
 
+    def version(self):
+        return relay.doors_snapshot(self.T + 10_000)["version"]
+
+    def test_the_version_moves_when_a_door_changes_and_not_on_a_repeat(self):
+        self.paired()
+        relay.door_receive("zigbee2mqtt/Front door", b'{"contact": true}', self.T)
+        start = self.version()
+        relay.door_receive("zigbee2mqtt/Front door", b'{"contact": true, "battery": 90}', self.T + 1)
+        self.assertEqual(start, self.version())
+        relay.door_receive("zigbee2mqtt/Front door", b'{"contact": false}', self.T + 2)
+        opened = self.version()
+        self.assertNotEqual(start, opened)
+        relay.door_receive("zigbee2mqtt/Front door/availability", b'{"state": "offline"}', self.T + 3)
+        self.assertNotEqual(opened, self.version())
+
+    def test_a_wait_returns_at_once_on_an_old_version_and_wakes_on_a_change(self):
+        import asyncio
+
+        changes = relay.DoorsChanges()
+        old = changes.version
+
+        async def waits():
+            changes.bump()
+            started = time.monotonic()
+            await changes.wait(old, 5)  # the app's version is already behind
+            behind = time.monotonic() - started
+            current = changes.version
+            started = time.monotonic()
+            # A door changes on the MQTT thread while the request waits.
+            threading.Timer(0.05, changes.bump).start()
+            await changes.wait(current, 5)
+            woken = time.monotonic() - started
+            started = time.monotonic()
+            await changes.wait(changes.version, 0.1)  # nothing changes: the wait runs out
+            return behind, woken, time.monotonic() - started
+
+        behind, woken, quiet = asyncio.run(waits())
+        self.assertLess(behind, 0.01)
+        self.assertGreaterEqual(woken, 0.04)
+        self.assertLess(woken, 1)
+        self.assertGreaterEqual(quiet, 0.09)
+
+    def test_every_waiting_request_wakes_on_one_change(self):
+        import asyncio
+
+        changes = relay.DoorsChanges()
+
+        async def waits():
+            current = changes.version
+            asyncio.get_running_loop().call_later(0.05, changes.bump)
+            started = time.monotonic()
+            await asyncio.gather(*(changes.wait(current, 5) for _ in range(3)))
+            return time.monotonic() - started
+
+        self.assertLess(asyncio.run(waits()), 1)
+
     # A made-up two-floor plan: the real one lives only on the box.
     PLAN = {"floors": [
         {"id": "ground", "name": "Ground floor", "outline": [[0, 0], [30, 0], [30, 40], [0, 40]], "rooms": [{"name": "Kitchen", "x": 8, "y": 10}]},

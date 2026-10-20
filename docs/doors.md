@@ -17,6 +17,29 @@ sensor ──Zigbee──▶ USB stick ──▶ Zigbee2MQTT ──MQTT──▶
 | Relay | `relay/relay.py`, "doors": keeps each door's state and 90 days of openings and closings in `relay.db`, answers `GET /doors`, and pushes |
 | App | Pills at the top of Home (each open or offline door, and a count of the closed ones) opening the Doors page, also at Settings › Doors: the floor plan with each door on it, each sensor's battery and signal, its push setting, and the last 7 days |
 
+## How fast the app sees a door
+
+While the app is open (Home's pills, the Doors page), it holds a read of `GET /doors` open
+rather than polling: each read carries the `version` of the snapshot it last got
+(`?since=<version>&wait=25`), and the relay answers it the moment a door changes, or after 25 s
+with nothing new, and the app asks again straight away. The version moves on every change the
+app draws: an opening or closing, a sensor going offline, the broker or Zigbee2MQTT dropping, a
+setting or spot saved. A reading that only repeats a door's state (a ThirdReality sensor says it
+three or four times) wakes nobody. The endpoint is async, so a held read costs the relay no
+worker thread. A relay from before this answers at once with no `version`, and the app polls it
+every 15 s as before.
+
+To measure it, open and close doors while this runs (it signs in with the test account in
+`local.credentials.properties`, and stamps each change where the broker hands it out):
+
+```bash
+scripts/door-latency.py --minutes 5
+```
+
+It prints, for every change, how long after Zigbee2MQTT published it the relay recorded it, a
+reader holding the read open (the app now) saw it, and a reader polling every 15 s (the app
+before) saw it.
+
 ## What pushes
 
 Each door has its own setting, chosen in the app (`PUT /doors/{id}` with `{"notify": …}`):

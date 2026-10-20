@@ -28,10 +28,14 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Mirrors the relay's doors. Like [PresenceRepositoryImpl], the poll runs only while [doors] has
- * a collector (the Home card, the Doors page) and restarts on every server change. A door can
- * change any second, so it polls more often than presence does; a push covers the openings that
- * matter while the app is closed.
+ * Mirrors the relay's doors. Like [PresenceRepositoryImpl], the reading runs only while [doors] has
+ * a collector (the Home card, the Doors page) and restarts on every server change; a push covers
+ * the openings that matter while the app is closed.
+ *
+ * A door should show the moment it opens, so rather than polling, each read hands the relay the
+ * version it last answered and the relay holds it open until a door changes (or [waitSeconds]
+ * pass), then the next read goes straight out. A relay from before that answers at once with no
+ * version, and is polled every [pollIntervalMs] instead.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -42,6 +46,8 @@ class DoorRepositoryImpl(
     private val connectionRepository: ConnectionRepository,
     appScope: CoroutineScope,
     private val pollIntervalMs: Long = POLL_INTERVAL_MS,
+    private val waitSeconds: Int = WAIT_SECONDS,
+    private val retryMs: Long = RETRY_MS,
 ) : DoorRepository {
 
     private val _doors = MutableStateFlow(DoorsSnapshot.EMPTY)
@@ -101,9 +107,15 @@ class DoorRepositoryImpl(
                 .distinctUntilChanged()
                 .collectLatest { url ->
                     if (url == null) return@collectLatest
+                    var version: Long? = null
                     while (true) {
-                        fetch(url)
-                        delay(pollIntervalMs)
+                        val answer = fetch(url, since = version)
+                        version = answer.getOrNull()?.version
+                        when {
+                            version != null -> Unit // straight back to waiting on the next change
+                            answer.isFailure -> delay(retryMs)
+                            else -> delay(pollIntervalMs)
+                        }
                     }
                 }
         }
@@ -111,7 +123,7 @@ class DoorRepositoryImpl(
 
     override suspend fun refresh(): Result<Unit> {
         val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
-        return fetch(url, rereadPlan = true)
+        return fetch(url, rereadPlan = true).map { }
     }
 
     /**
@@ -164,7 +176,8 @@ class DoorRepositoryImpl(
         return answer.map { }
     }
 
-    private suspend fun fetch(url: String, rereadPlan: Boolean = false): Result<Unit> {
+    /** Reads the doors, waiting for the next change when [since] is the version already shown. Answers what the relay said. */
+    private suspend fun fetch(url: String, rereadPlan: Boolean = false, since: Long? = null): Result<DoorsSnapshot> {
         val deviceId = identity.deviceId()
         val secret = identity.secret()
         // The plan barely ever changes: read once per server, and again on a refresh.
@@ -179,7 +192,8 @@ class DoorRepositoryImpl(
                 }
             }
         }
-        return relayApi.getDoors(url, deviceId, secret).map { snapshot ->
+        val waiting = if (since != null) waitSeconds else 0
+        return relayApi.getDoors(url, deviceId, secret, since = since, waitSeconds = waiting).onSuccess { snapshot ->
             state.withLock {
                 if (connectionRepository.currentServerUrl.value == url) {
                     fromRelay = snapshot
@@ -216,6 +230,16 @@ class DoorRepositoryImpl(
     }
 
     private companion object {
+        /** Against a relay that can't hold a read open. */
         const val POLL_INTERVAL_MS = 15_000L
+
+        /**
+         * How long the relay may hold a read open with nothing changing. Under the 30 s an idle
+         * connection lasts through most mobile carriers' NAT, and the relay's own cap.
+         */
+        const val WAIT_SECONDS = 25
+
+        /** After a read that failed: soon, since a door may change meanwhile, but not in a tight loop. */
+        const val RETRY_MS = 3_000L
     }
 }
