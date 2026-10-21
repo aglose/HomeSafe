@@ -6959,6 +6959,44 @@ class NestPrimerTest(unittest.TestCase):
         restarts.hold_ended("kitchen", self.ended(dropped=True), 9070 + cooldown)
         self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 9071 + cooldown))
 
+    def test_recovering_during_a_doubled_cooldown_shortens_the_wait_from_the_last_restart(self):
+        cooldown = relay.NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+        restarts = relay.NestGo2rtcRestarts()
+        dead = lambda at: restarts.hold_ended("kitchen", self.ended(dropped=True), at)  # noqa: E731
+        self.assertTrue(dead(0) or dead(1))
+        self.assertTrue(dead(cooldown + 1) or dead(cooldown + 2))  # the wait after it: two cooldowns
+        last = cooldown + 2
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(flowed=True), last + 100))
+        # Back, then dead again before the doubled wait ran out: one cooldown from the last restart.
+        self.assertFalse(dead(last + cooldown - 2) or dead(last + cooldown - 1))
+        self.assertTrue(dead(last + cooldown))
+
+    def test_two_cameras_dead_by_turns_back_off_like_one(self):
+        cooldown = relay.NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+        restarts = relay.NestGo2rtcRestarts()
+        at, waits, last = 0, [], None
+        for name in ["kitchen", "kids_room"] * 4:
+            # Each camera stalls again until its own restart comes.
+            while not (restarts.hold_ended(name, self.ended(dropped=True), at) or restarts.hold_ended(name, self.ended(dropped=True), at)):
+                at += 60
+            if last is not None:
+                waits.append(at - last)
+            last = at
+        self.assertEqual([1, 2, 4, 8, 8, 8, 8], [round(wait / cooldown) for wait in waits])
+
+    def test_the_cooldown_resets_only_once_every_restarted_stream_is_back(self):
+        cooldown = relay.NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+        restarts = relay.NestGo2rtcRestarts()
+        restarts.hold_ended("kitchen", self.ended(dropped=True), 0)
+        self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 1))
+        restarts.hold_ended("kids_room", self.ended(dropped=True), cooldown + 1)
+        self.assertTrue(restarts.hold_ended("kids_room", self.ended(dropped=True), cooldown + 2))
+        # kids_room comes back but kitchen doesn't: the doubled wait stands.
+        restarts.hold_ended("kids_room", self.ended(flowed=True), cooldown + 100)
+        restarts.hold_ended("kitchen", self.ended(dropped=True), 2 * cooldown + 2)
+        self.assertFalse(restarts.hold_ended("kitchen", self.ended(dropped=True), 3 * cooldown))
+        self.assertTrue(restarts.hold_ended("kitchen", self.ended(dropped=True), 3 * cooldown + 2))
+
     def test_go2rtc_is_restarted_through_its_api(self):
         posted = []
         post = relay.requests.post
