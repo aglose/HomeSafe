@@ -23,6 +23,15 @@
     <string name="notif_door_opened_away_title">Away: %1$s opened</string>
     <string name="notif_door_body">Door sensor</string>
     <string name="notif_door_away_body">Door sensor · nobody home</string>
+    <!-- A Nest camera Google stopped streaming for an hour, and its return; %1$s is the camera's name, e.g. "Backyard". -->
+    <string name="notif_nest_unavailable_title">%1$s isn\'t streaming</string>
+    <string name="notif_nest_streaming_title">%1$s is streaming again</string>
+    <!-- %1$s is the local clock time the outage began, e.g. "5:33 PM". -->
+    <string name="notif_nest_refused_body">Since %1$s, Google says the camera isn\'t available for streaming. Check it in the Google Home app.</string>
+    <string name="notif_nest_refused_body_no_time">Google says the camera isn\'t available for streaming. Check it in the Google Home app.</string>
+    <string name="notif_nest_unconfirmed_body">No video from Google since %1$s. Check the camera in the Google Home app.</string>
+    <string name="notif_nest_unconfirmed_body_no_time">No video from Google. Check the camera in the Google Home app.</string>
+    <string name="notif_nest_streaming_body">Google is sending its video again.</string>
     <!-- The name beside the app's in the header over each kind's notifications in the shade. -->
     <string name="notif_group_cameras">Cameras</string>
     <string name="notif_group_summaries">Camera summaries</string>
