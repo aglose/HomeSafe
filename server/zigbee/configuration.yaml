@@ -17,6 +17,11 @@ frontend:
 permit_join: false
 availability:
   enabled: true
+  # Battery sensors only speak, they can't be pinged. The ThirdReality ones check in every 10
+  # minutes, so 30 minutes of silence means one has stopped; the default waits 25 hours, and the
+  # app shows the last state it heard (an "open" door) all that time.
+  passive:
+    timeout: 30
 advanced:
   # 25 sits above the 2.4 GHz Wi-Fi channels 1, 6 and 11 overlap.
   channel: 25

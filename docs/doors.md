@@ -214,5 +214,6 @@ plug halfway; every plug relays for the sensors around it.
 - **App says it can't hear the sensors:** the relay isn't connected to the broker (`docker ps`
   should list `mosquitto`), or Zigbee2MQTT isn't running (`docker logs zigbee2mqtt`; the usual cause
   is the stick's path in `.env` after moving it to another port).
-- **A sensor shows offline:** Zigbee2MQTT hasn't heard from it in 25 hours. Check its battery, then
-  re-pair it.
+- **A sensor shows offline:** Zigbee2MQTT hasn't heard from it in 30 minutes (it checks in every
+  10). Open and close the door, press its button, or reseat its battery; if it stays silent, re-pair
+  it.

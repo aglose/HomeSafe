@@ -6375,6 +6375,16 @@ class DoorsTest(_ScratchDb):
         self.receive("zigbee2mqtt/Front door/availability", {"state": "offline"}, self.T)
         self.assertFalse(self.door()["online"])
 
+    def test_the_reading_zigbee2mqtt_resends_on_restart_keeps_a_silent_sensor_offline(self):
+        self.paired()
+        self.receive("zigbee2mqtt/Front door", {"contact": False, "linkquality": 132}, self.T)
+        self.receive("zigbee2mqtt/Front door/availability", {"state": "offline"}, self.T + 60)
+        self.receive("zigbee2mqtt/Front door", {"contact": False, "battery": 100}, self.T + 61)
+        door = self.door()
+        self.assertEqual((False, self.T, 100), (door["online"], door["last_seen"], door["battery"]))
+        self.receive("zigbee2mqtt/Front door", {"contact": True, "linkquality": 90}, self.T + 120)
+        self.assertEqual((True, self.T + 120), (self.door()["online"], self.door()["last_seen"]))
+
     def version(self):
         return relay.doors_snapshot(self.T + 10_000)["version"]
 
@@ -6392,7 +6402,7 @@ class DoorsTest(_ScratchDb):
         relay.door_receive("zigbee2mqtt/Front door/availability", b'{"state": "offline"}', self.T + 3)
         offline = self.version()
         self.assertNotEqual(opened, offline)
-        relay.door_receive("zigbee2mqtt/Front door", b'{"contact": false}', self.T + 4)
+        relay.door_receive("zigbee2mqtt/Front door", b'{"contact": false, "linkquality": 80}', self.T + 4)
         self.assertNotEqual(offline, self.version(), "a reading brings it back online, though it's still open")
 
     def test_a_push_that_reached_a_phone_moves_the_version_again(self):
