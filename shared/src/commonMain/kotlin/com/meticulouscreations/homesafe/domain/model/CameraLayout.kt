@@ -105,13 +105,15 @@ data class CameraFraming(val orientation: CameraOrientation = CameraOrientation.
 
 /**
  * How one camera sits on the Home page: where in its list ([position], null until arranged), which
- * way up ([orientation]), and how much of the picture shows ([crop]). The last two are its
- * framing, and apply wherever its video plays.
+ * way up ([orientation]), how much of the picture shows ([crop]), and whether it is left off the
+ * page altogether ([hidden]; it still shows in Arrange mode, where it is brought back). Orientation
+ * and crop are its framing, and apply wherever its video plays.
  */
 data class CameraLayout(
     val position: Int? = null,
     val orientation: CameraOrientation = CameraOrientation.UPRIGHT,
     val crop: CameraCrop = CameraCrop.WHOLE,
+    val hidden: Boolean = false,
 ) {
     val framing: CameraFraming get() = CameraFraming(orientation, crop)
 }

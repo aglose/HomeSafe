@@ -34,6 +34,7 @@ import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveCameraOrderUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraHiddenUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraOrientationUseCase
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -83,7 +84,15 @@ data class CameraTile(
     val crop: CameraCrop = CameraCrop.WHOLE,
     /** [posterUrl] is a last-seen still, taken by the card once its video plays, rather than Frigate's live snapshot. */
     val posterIsLastSeen: Boolean = false,
+    /** Left off the Home page: its card shows only in Arrange mode, where it is brought back (see [onHome]). */
+    val hidden: Boolean = false,
 )
+
+/**
+ * The cards the Home page shows of one list: the cameras not [CameraTile.hidden], or, while
+ * [arranging], every one of them, so a hidden camera can be put back.
+ */
+internal fun List<CameraTile>.onHome(arranging: Boolean): List<CameraTile> = if (arranging) this else filterNot { it.hidden }
 
 /** Whether these camera names, in this order, are the positions [layouts] has saved for them. */
 private fun List<String>.isSavedIn(layouts: Map<String, CameraLayout>): Boolean =
@@ -140,6 +149,7 @@ class HomeViewModel(
     observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
     private val saveCameraOrderUseCase: SaveCameraOrderUseCase,
     private val setCameraOrientationUseCase: SetCameraOrientationUseCase,
+    private val setCameraHiddenUseCase: SetCameraHiddenUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -243,6 +253,9 @@ class HomeViewModel(
     /** Quarter turns asked for and not yet read back, by camera, so the picture turns the moment the button is pressed. */
     private val orientationDrafts = MutableStateFlow<Map<String, CameraOrientation>>(emptyMap())
 
+    /** Cameras hidden or shown and not yet read back, so the card dims or brightens the moment it is pressed. */
+    private val hiddenDrafts = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+
     /**
      * The saved layouts as they are read back. A draft (above) is dropped only once these show it
      * saved, never merely when its write returns: the write landing and the read coming back are
@@ -253,6 +266,7 @@ class HomeViewModel(
         .onEach { layouts ->
             orderDrafts.update { drafts -> drafts.filterValues { order -> !order.isSavedIn(layouts) } }
             orientationDrafts.update { drafts -> drafts.filter { (name, orientation) -> layouts[name]?.orientation != orientation } }
+            hiddenDrafts.update { drafts -> drafts.filter { (name, hidden) -> (layouts[name]?.hidden ?: false) != hidden } }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
@@ -261,8 +275,9 @@ class HomeViewModel(
         savedLayouts,
         orderDrafts,
         orientationDrafts,
+        hiddenDrafts,
         ::Arrangement,
-    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Arrangement(emptyMap(), emptyMap(), emptyMap()))
+    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Arrangement(emptyMap(), emptyMap(), emptyMap(), emptyMap()))
 
     /** How the Nest cameras' pictures sit in their cards: the saved choice, whole until it is read. */
     private val nestFit: Flow<VideoFit> = observePlaybackPreferencesUseCase().map { it.nestFit }.onStart { emit(VideoFit.Fit) }.distinctUntilChanged()
@@ -326,9 +341,11 @@ class HomeViewModel(
     private val _arranging = MutableStateFlow(false)
 
     /**
-     * Arrange mode: the cards can be dragged into a new order and turned the right way up, and a
-     * tap opens a card's framing editor (`CameraFramingViewModel`). Saved as it goes (each drop,
-     * each turn), so leaving it any way loses nothing.
+     * Arrange mode: the cards can be dragged into a new order, turned the right way up, and hidden
+     * from the page or brought back, and a tap opens a card's framing editor
+     * (`CameraFramingViewModel`). Saved as it goes (each drop, each turn, each hide), so leaving it
+     * any way loses nothing. Hidden cameras are in the lists throughout, marked
+     * ([CameraTile.hidden]); the page leaves them out except here ([onHome]).
      */
     val arranging: StateFlow<Boolean> = _arranging.asStateFlow()
 
@@ -363,6 +380,13 @@ class HomeViewModel(
         saveOrientation(cameraName, arrangement.value.orientation(cameraName).turned(clockwise))
     }
 
+    /** Leaves [cameraName] off the Home page, or puts it back ([hidden] false), saved at once. */
+    fun setCameraHidden(cameraName: String, hidden: Boolean) {
+        hiddenDrafts.update { it + (cameraName to hidden) }
+        // The draft stays until the saved choice is read back (see savedLayouts).
+        viewModelScope.launch { setCameraHiddenUseCase(cameraName, hidden) }
+    }
+
     private fun saveOrientation(cameraName: String, orientation: CameraOrientation) {
         orientationDrafts.update { it + (cameraName to orientation) }
         // The draft stays until the saved turn is read back (see savedLayouts).
@@ -377,6 +401,7 @@ class HomeViewModel(
         val layouts: Map<String, CameraLayout>,
         val orders: Map<CameraPlacement, List<String>>,
         val orientations: Map<String, CameraOrientation>,
+        val hiddens: Map<String, Boolean>,
     ) {
         fun arranged(cameras: List<Camera>, placement: CameraPlacement): List<Camera> = arrangedCameras(cameras, layouts, orders[placement])
 
@@ -384,6 +409,8 @@ class HomeViewModel(
             orientations[cameraName] ?: layouts[cameraName]?.orientation ?: CameraOrientation.UPRIGHT
 
         fun crop(cameraName: String): CameraCrop = layouts[cameraName]?.crop ?: CameraCrop.WHOLE
+
+        fun hidden(cameraName: String): Boolean = hiddens[cameraName] ?: layouts[cameraName]?.hidden ?: false
     }
 
     private fun tile(camera: Camera, serverUrl: String?, nestFit: VideoFit, arrangement: Arrangement): CameraTile {
@@ -392,8 +419,9 @@ class HomeViewModel(
         val videoFit = nestFit.takeIf { camera.fromNest }
         val orientation = arrangement.orientation(camera.name)
         val crop = arrangement.crop(camera.name)
+        val hidden = arrangement.hidden(camera.name)
         if (serverUrl == null || !camera.enabled) {
-            return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit, orientation = orientation, crop = crop)
+            return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit, orientation = orientation, crop = crop, hidden = hidden)
         }
         // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
         // reserved for the single-camera detail view.
@@ -410,6 +438,7 @@ class HomeViewModel(
             orientation = orientation,
             crop = crop,
             posterIsLastSeen = nest,
+            hidden = hidden,
         )
     }
 

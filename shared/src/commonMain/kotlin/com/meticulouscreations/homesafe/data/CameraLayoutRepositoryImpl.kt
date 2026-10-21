@@ -53,6 +53,7 @@ class CameraLayoutRepositoryImpl(
                                 position = row.position,
                                 orientation = CameraOrientation(row.quarterTurns, row.tiltDegrees),
                                 crop = CameraCrop(row.cropZoom, row.cropCenterX, row.cropCenterY),
+                                hidden = row.hidden,
                             )
                         }
                     }
@@ -82,6 +83,8 @@ class CameraLayoutRepositoryImpl(
             cropCenterY = crop.centerY,
         )
     }
+
+    override suspend fun setHidden(cameraName: String, hidden: Boolean) = update(cameraName) { row -> row.copy(hidden = hidden) }
 
     /** [cameraName]'s row, or a new one, changed by [change]: everything else in it is kept as it was. */
     private suspend fun update(cameraName: String, change: (CameraLayoutEntity) -> CameraLayoutEntity) = writing.withLock {

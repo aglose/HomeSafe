@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
@@ -79,6 +80,37 @@ fun pictureBoxSize(boxWidth: Int, boxHeight: Int, aspect: Float?, fit: VideoFit?
         else -> IntSize((boxHeight * shown).roundToInt(), boxHeight)
     }
 }
+
+/**
+ * [crop] drawn by zooming [ShapedVideo]'s whole box rather than the picture inside it: the box
+ * [ZoomRest.scale] times larger about its middle and shifted by [ZoomRest.shift]. The same view as
+ * passing [crop] to [ShapedVideo], but with the rest of the picture still there around it, for a
+ * camera's page, where a pinch reaches past the crop to the whole picture.
+ *
+ * [boxAspect] is the shape of [ShapedVideo]'s box; [aspect], [fit] and [onItsSide] are the
+ * picture's, as [ShapedVideo] is given them (its measured shape, how it sits, and whether a
+ * quarter turn has stood it on its side).
+ */
+fun cropAsZoomRest(crop: CameraCrop, boxAspect: Float, aspect: Float?, fit: VideoFit?, onItsSide: Boolean): ZoomRest {
+    if (crop.isWhole || boxAspect <= 0f) return ZoomRest.NONE
+    // Any box of the right shape: the answer is in fractions of it. Large, so rounding the
+    // picture's box to whole pixels moves nothing.
+    val boxWidth = NOMINAL_BOX_WIDTH
+    val boxHeight = (boxWidth / boxAspect).roundToInt()
+    val (width, height) = pictureBoxSize(boxWidth, boxHeight, aspect.takeIf { fit != null }, fit, onItsSide)
+    // As pictureBox places it: the crop kept within this box's reach of the picture, then the
+    // picture's box scaled about its middle, which is this box's, and slid.
+    val shown = crop.clamped(boxWidth.toFloat() / width, boxHeight.toFloat() / height)
+    return ZoomRest(
+        scale = shown.zoom,
+        shift = Offset(
+            x = (0.5f - shown.centerX) * shown.zoom * width / boxWidth,
+            y = (0.5f - shown.centerY) * shown.zoom * height / boxHeight,
+        ),
+    )
+}
+
+private const val NOMINAL_BOX_WIDTH = 16_000
 
 /**
  * The box the picture is shown in, centred in this one. [aspect] is the picture's own shape

@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * How the cameras sit on the Home page, on this device, for the connected server: their order in
- * each list, and how each picture is framed. Kept by camera name, Frigate's and Nest's alike.
+ * each list, how each picture is framed, and which are hidden. Kept by camera name, Frigate's and Nest's alike.
  */
 interface CameraLayoutRepository {
     /** Each camera with a layout, by name; empty while signed out, or until anything has been arranged. */
@@ -21,4 +21,7 @@ interface CameraLayoutRepository {
 
     /** Frames [cameraName]'s picture: turned to [orientation] and cropped to [crop], leaving its place in the list as it was. */
     suspend fun setFraming(cameraName: String, orientation: CameraOrientation, crop: CameraCrop)
+
+    /** Leaves [cameraName] off the Home page ([hidden]) or puts it back, keeping its place and framing. */
+    suspend fun setHidden(cameraName: String, hidden: Boolean)
 }

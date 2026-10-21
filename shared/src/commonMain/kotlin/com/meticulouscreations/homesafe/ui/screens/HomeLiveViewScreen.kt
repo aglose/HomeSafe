@@ -20,6 +20,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -112,11 +114,14 @@ import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
+import com.meticulouscreations.homesafe.viewmodel.onHome
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.camera_frame_click_label
+import homesafe.shared.generated.resources.camera_hidden_badge
 import homesafe.shared.generated.resources.camera_move_earlier
 import homesafe.shared.generated.resources.camera_move_later
+import homesafe.shared.generated.resources.home_all_cameras_hidden
 import homesafe.shared.generated.resources.home_arrange_done
 import homesafe.shared.generated.resources.home_arrange_hint
 import homesafe.shared.generated.resources.home_away_back
@@ -174,10 +179,13 @@ fun HomeTabContent(
 
     val hasIndoor = !indoorCameras.isNullOrEmpty()
     val shownPlacement = shownPlacement(placement, indoorCameras)
-    val shown = if (shownPlacement == CameraPlacement.Indoor) indoorCameras else cameras
+    val listed = if (shownPlacement == CameraPlacement.Indoor) indoorCameras else cameras
+    // Hidden cameras stay out unless they're being arranged, which is where they come back.
+    val shown = listed?.onHome(arranging)
     HomeFeed(
         everyoneAway = everyoneAway,
         cameras = shown,
+        allHidden = !listed.isNullOrEmpty() && shown.isNullOrEmpty(),
         placement = placement.takeIf { hasIndoor },
         onPlacementChange = viewModel::showPlacement,
         arranging = arranging,
@@ -215,6 +223,7 @@ fun HomeTabContent(
             arranging = arranging,
             onTurn = { clockwise -> viewModel.turnCamera(name, clockwise) },
             onFrame = { onFrameCamera(tile) },
+            onHiddenChange = { hidden -> viewModel.setCameraHidden(name, hidden) },
             onMoveEarlier = names.getOrNull(index - 1)?.let { earlier -> { move(earlier) } },
             onMoveLater = names.getOrNull(index + 1)?.let { later -> { move(later) } },
         )
@@ -233,9 +242,9 @@ private fun shownPlacement(placement: CameraPlacement, indoorCameras: List<Camer
 internal data class ArrangeAction(val arranging: Boolean, val onToggle: () -> Unit)
 
 /**
- * Arrange mode's switch for the top bar's menu while the Home list has cameras to arrange, and
- * null while it has none, unless Arrange mode is on: the way out stays, even with the list
- * emptied under it. The shell draws the bar, so it reads Home's view model here: the same
+ * Arrange mode's switch for the top bar's menu while the Home list has cameras to arrange, hidden
+ * ones included (Arrange mode is the way back to them), and null while it has none, unless
+ * Arrange mode is on: the way out stays, even with the list emptied under it. The shell draws the bar, so it reads Home's view model here: the same
  * instance [HomeTabContent] has, as the root of Home's stack keeps the shell's view-model store
  * (only the pages pushed above it get their own: see [BackStackViewModelStores]).
  */
@@ -275,6 +284,8 @@ internal fun homeArrangeAction(): ArrangeAction? {
  *
  * The way into Arrange mode is in the top bar's menu (see [homeArrangeAction]). While [arranging],
  * a line heads the cameras saying how it works, with [onFinishArranging]'s Done beside it.
+ * [cameras] are only the ones shown: [allHidden] says the list is empty because every camera in
+ * it has been hidden, rather than because the server has none, and the page says how to get one back.
  *
  * [listTestTag] goes on the scrolling list itself, where a test can scroll it.
  *
@@ -299,6 +310,7 @@ internal fun HomeFeed(
     cameras: List<CameraTile>?,
     onAwayBack: () -> Unit,
     modifier: Modifier = Modifier,
+    allHidden: Boolean = false,
     inView: List<InViewItem> = emptyList(),
     onOpenInView: () -> Unit = {},
     doors: List<Door> = emptyList(),
@@ -422,7 +434,7 @@ internal fun HomeFeed(
                 } else if (loadedCameras.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(
-                            text = stringResource(Res.string.home_no_cameras),
+                            text = stringResource(if (allHidden) Res.string.home_all_cameras_hidden else Res.string.home_no_cameras),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -532,7 +544,8 @@ private fun PullToRefreshUnderTopBar(refreshing: Boolean, onRefresh: (() -> Unit
  * layer — the pinch, or the held finger's drag, continuing there without a lift of the fingers.
  *
  * In Arrange mode a tap is [onFrame] instead (the framing editor), and the card carries quick
- * quarter turns ([onTurn]) and the editor's button along its bottom.
+ * quarter turns ([onTurn]), the editor's button and the hide toggle ([onHiddenChange]) along its
+ * bottom. A [CameraTile.hidden] card, which only Arrange mode shows, is dimmed and says so.
  */
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -546,6 +559,7 @@ internal fun CameraCard(
     arranging: Boolean = false,
     onTurn: (clockwise: Boolean) -> Unit = {},
     onFrame: () -> Unit = {},
+    onHiddenChange: (Boolean) -> Unit = {},
     onMoveEarlier: (() -> Unit)? = null,
     onMoveLater: (() -> Unit)? = null,
 ) {
@@ -698,15 +712,44 @@ internal fun CameraCard(
             )
         }
 
+        if (tile.hidden) HiddenScrim(textColor = extraColors.textPrimary, pillColor = extraColors.glassFill)
+
         if (arranging) {
             CameraArrangeControls(
                 onTurn = onTurn,
                 onFrame = onFrame,
+                hidden = tile.hidden,
+                onHiddenChange = onHiddenChange,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
     }
 }
+
+/**
+ * Over a hidden camera's card (only Arrange mode shows one): the picture and its name dimmed,
+ * the Arrange controls left bright above it, and a pill in the middle saying the camera is hidden. Drawn over the video rather than
+ * fading it, as the iOS player is a native view that ignores Compose's alpha.
+ */
+@Composable
+private fun BoxScope.HiddenScrim(textColor: Color, pillColor: Color) {
+    Box(modifier = Modifier.matchParentSize().background(Color.Black.copy(alpha = HIDDEN_SCRIM_ALPHA)))
+    Row(
+        modifier = Modifier
+            .align(Alignment.Center)
+            .background(pillColor, CircleShape)
+            .border(1.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(imageVector = Icons.Filled.VisibilityOff, contentDescription = null, tint = textColor, modifier = Modifier.size(16.dp))
+        Text(text = stringResource(Res.string.camera_hidden_badge), style = MaterialTheme.typography.labelMedium, color = textColor)
+    }
+}
+
+/** How dark a hidden camera's picture is drawn in Arrange mode: still recognisable, plainly set aside. */
+private const val HIDDEN_SCRIM_ALPHA = 0.6f
 
 /**
  * Arrange mode's moves for a screen reader, which can't hold and drag: one place earlier or later

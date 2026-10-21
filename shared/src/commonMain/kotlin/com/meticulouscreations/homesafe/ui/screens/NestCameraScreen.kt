@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +56,7 @@ import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
+import com.meticulouscreations.homesafe.ui.components.cropAsZoomRest
 import com.meticulouscreations.homesafe.ui.components.isOnItsSide
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
@@ -89,7 +92,8 @@ import kotlin.math.abs
  * here) moves it to the one with sound, which go2rtc serves from the same connection to Google.
  * [warmStillUrl] is the card's last-seen still, for the moments before any frame.
  *
- * The picture is framed as the camera has been in Arrange mode: turned, and cropped.
+ * The picture is framed as the camera has been in Arrange mode: turned, and cropped, the crop
+ * being where the zoom rests, so pinching out from it shows the whole picture.
  *
  * Turned on its side the video takes the whole window, with the way back and the speaker over it.
  *
@@ -154,8 +158,9 @@ fun NestCameraScreen(
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
     val framing by remember(streamName) { viewModel.framing(streamName) }.collectAsStateWithLifecycle(CameraFraming.UNTOUCHED)
     val turnDegrees = framing.orientation.degrees
+    val pictureAspect = source?.let { MeasuredVideoShapes[it.url] }
     // The picture's shape as it is shown: stood on its side by a quarter turn, its inverse.
-    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }?.let { if (isOnItsSide(turnDegrees)) 1f / it else it }
+    val measuredAspect = pictureAspect?.let { if (isOnItsSide(turnDegrees)) 1f / it else it }
     val toggleSound = {
         wantedSound = true
         viewModel.toggleSound()
@@ -171,6 +176,20 @@ fun NestCameraScreen(
     // 16:9; full screen it is the window, which rarely is, so there the button shows once the
     // shape is known (a saved Fill would otherwise crop a 16:9 camera with no way back).
     val fitMatters = measuredAspect != null && (fullScreen || abs(measuredAspect - VIDEO_ASPECT) > FIT_ASPECT_TOLERANCE)
+    // The video's box: whole, the picture's own shape (16:9 until it is known); filling, the
+    // 16:9 frame, or full screen the window.
+    val window = LocalWindowInfo.current.containerSize
+    val boxAspect = when {
+        fit == VideoFit.Fit -> measuredAspect ?: VIDEO_ASPECT
+        fullScreen && window.height > 0 -> window.width.toFloat() / window.height
+        else -> VIDEO_ASPECT
+    }
+    // The crop is where the zoom rests rather than a cut of the picture, as on a Frigate
+    // camera's page: a pinch can pan past its edges or close out to the whole picture.
+    val zoomRest = remember(framing.crop, boxAspect, pictureAspect, fit, turnDegrees) {
+        cropAsZoomRest(framing.crop, boxAspect = boxAspect, aspect = pictureAspect, fit = fit, onItsSide = isOnItsSide(turnDegrees))
+    }
+    SideEffect { zoom.restOn(zoomRest) }
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     if (fullScreen && animatedVisibilityScope.transition.targetState == EnterExitState.Visible) ImmersiveSystemBars()
     val extraColors = LocalFrigateExtraColors.current
@@ -199,7 +218,6 @@ fun NestCameraScreen(
                     fit = fit,
                     modifier = Modifier.fillMaxSize().pinchZoomContent(zoom),
                     turnDegrees = turnDegrees,
-                    crop = { framing.crop },
                 ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         request = request,
@@ -228,11 +246,11 @@ fun NestCameraScreen(
 
     if (fullScreen) {
         Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
-            // Filling, the window is the frame; whole, the picture's own shape (16:9 until it is known), as large as the window allows.
+            // Filling, the window is the frame; whole, the picture's own shape, as large as the window allows.
             val box = if (fit == VideoFit.Fill) {
                 Modifier.fillMaxSize()
             } else {
-                Modifier.align(Alignment.Center).aspectRatio(measuredAspect ?: VIDEO_ASPECT, matchHeightConstraintsFirst = true)
+                Modifier.align(Alignment.Center).aspectRatio(boxAspect, matchHeightConstraintsFirst = true)
             }
             video(box)
             Row(modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
@@ -269,7 +287,6 @@ fun NestCameraScreen(
             SoundButton(soundOn = soundOn, onToggle = toggleSound, tint = MaterialTheme.colorScheme.primary)
         }
         // Whole, a tall picture gets a tall box, as large as the page leaves room for; filling, the 16:9 frame.
-        val boxAspect = if (fit == VideoFit.Fit) measuredAspect ?: VIDEO_ASPECT else VIDEO_ASPECT
         Box(modifier = Modifier.weight(1f, fill = false).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             video(Modifier.aspectRatio(boxAspect))
         }

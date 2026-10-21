@@ -75,7 +75,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         AtlasYearEntity::class,
         AtlasStateEntity::class,
     ],
-    version = 27,
+    version = 28,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -143,6 +143,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // default the whole picture) and a Nest camera's smaller stream for the cards
         // (NestCameraEntity.gridStreamName, default none).
         AutoMigration(from = 26, to = 27),
+        // 27 -> 28: whether a camera is left off the Home page (CameraLayoutEntity.hidden, default
+        // shown).
+        AutoMigration(from = 27, to = 28),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

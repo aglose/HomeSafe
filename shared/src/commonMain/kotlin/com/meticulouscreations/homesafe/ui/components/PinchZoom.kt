@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -39,6 +40,10 @@ import kotlin.math.abs
  * the same size, or the viewport may be larger — a 16:9 video letterboxed in a portrait screen —
  * in which case the content stays centred on an axis until it has grown past the viewport there,
  * and only then can be panned along it.
+ *
+ * Left alone the content sits at its [rest]: 1x and centred, unless told otherwise ([restOn]). A
+ * camera page rests on the crop the camera was framed with, drawn by this zoom rather than by
+ * cutting the picture down, so a pinch can still reach the whole picture around it.
  */
 @Stable
 class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
@@ -49,21 +54,48 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     var offset by mutableStateOf(Offset.Zero)
         private set
 
-    val isZoomed: Boolean get() = scale > 1f
+    /** Where the content sits when nothing has zoomed it. */
+    var rest by mutableStateOf(ZoomRest.NONE)
+        private set
+
+    /** Whether the content has been moved off its [rest]: pinched, tapped or held closer, or further out. */
+    val isZoomed: Boolean get() = abs(scale - rest.scale) > REST_SCALE_TOLERANCE || (offset - restOffset()).getDistance() > REST_OFFSET_TOLERANCE_PX
 
     // Layout sizes, not snapshot state: they're only read inside gesture and animation code.
-    // Either changing can leave the current pan past the new edge, so both re-clamp it.
+    // Either changing can leave the current pan past the new edge, so both re-clamp it, and
+    // content at rest stays at rest, wherever that now is.
     internal var viewportSize: IntSize = IntSize.Zero
         set(value) {
+            val resting = !isZoomed
             field = value
-            offset = offset.clampedFor(scale)
+            offset = if (resting) restOffset() else offset.clampedFor(scale)
         }
 
     internal var contentSize: IntSize = IntSize.Zero
         set(value) {
+            val resting = !isZoomed
             field = value
-            offset = offset.clampedFor(scale)
+            offset = if (resting) restOffset() else offset.clampedFor(scale)
         }
+
+    /**
+     * Rests the content at [rest] from now on. Content at its old rest moves straight to the new
+     * one; content zoomed somewhere else stays there, and goes back to the new rest when it goes back.
+     */
+    fun restOn(rest: ZoomRest) {
+        val clamped = rest.copy(scale = rest.scale.coerceIn(1f, maxScale))
+        if (clamped == this.rest) return
+        val resting = !isZoomed
+        this.rest = clamped
+        if (resting) {
+            scale = clamped.scale
+            offset = restOffset()
+        }
+    }
+
+    /** The [rest]'s shift in pixels, within the edges at its scale. */
+    private fun restOffset(): Offset =
+        Offset(rest.shift.x * contentSize.width, rest.shift.y * contentSize.height).clampedFor(rest.scale)
 
     // Drags that arrived during animateTo and haven't been folded into a frame of it yet.
     private var animating = false
@@ -92,13 +124,34 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         }
     }
 
-    suspend fun animateReset() = animateTo(1f, Offset.Zero)
+    /** Back to the [rest]. */
+    suspend fun animateReset() = animateTo(rest.scale, restOffset())
 
-    /** Straight back to 1x, no animation — for a surface that is about to be shown afresh. */
+    /** Straight back to the [rest], no animation — for a surface that is about to be shown afresh. */
     fun reset() {
-        scale = 1f
-        offset = Offset.Zero
+        scale = rest.scale
+        offset = restOffset()
         pendingPan = Offset.Zero
+    }
+
+    /**
+     * A double tap or a hold at rest: [DOUBLE_TAP_SCALE] times closer than the [rest], about
+     * [centroid]. Content resting as close as the zoom goes zooms out to the whole of it instead.
+     */
+    suspend fun animateZoomIn(centroid: Offset) {
+        val closer = (rest.scale * DOUBLE_TAP_SCALE).coerceAtMost(maxScale)
+        animateZoomTo(if (closer - rest.scale > REST_SCALE_TOLERANCE) closer else 1f, centroid)
+    }
+
+    /**
+     * The fingers lifted after a pinch: a [rest] closer than 1x is a stop on the way out, so a
+     * pinch let go near its scale settles back onto it rather than leaving the content just off
+     * it. A pinch carried on past it reaches the whole content. Resting at 1x needs no stop: a
+     * pinch outward ends there anyway.
+     */
+    suspend fun settleNearRest() {
+        if (rest.scale <= 1f || !isZoomed) return
+        if (abs(scale / rest.scale - 1f) <= REST_SNAP_FRACTION) animateReset()
     }
 
     /** Zooms to [targetScale] with the content under [centroid] (viewport-local) staying put — a double-tap zoom. */
@@ -147,6 +200,27 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     companion object {
         const val DEFAULT_MAX_SCALE = 5f
         const val DOUBLE_TAP_SCALE = 2.5f
+
+        /** How near the [rest] counts as at it: an animation back can end a hair off. */
+        private const val REST_SCALE_TOLERANCE = 0.001f
+        private const val REST_OFFSET_TOLERANCE_PX = 0.5f
+
+        /** How near the [rest]'s scale a pinch let go settles onto it ([settleNearRest]), as a fraction of that scale. */
+        private const val REST_SNAP_FRACTION = 0.1f
+    }
+}
+
+/**
+ * Where a [PinchZoomState]'s content sits when nothing has zoomed it: [scale] times its size, its
+ * middle shifted by [shift] from the viewport's, in fractions of the content's own (unscaled)
+ * width and height, positive right and down. In fractions so that it holds whatever size the
+ * content is laid out at.
+ */
+@Immutable
+data class ZoomRest(val scale: Float = 1f, val shift: Offset = Offset.Zero) {
+    companion object {
+        /** 1x and centred. */
+        val NONE = ZoomRest()
     }
 }
 
@@ -167,25 +241,32 @@ fun Modifier.pinchZoomContent(state: PinchZoomState): Modifier = onSizeChanged {
  * At 1x a single-finger drag is deliberately left alone so an enclosing scroll container still
  * scrolls over the surface. Taps are never consumed, so tap handlers on descendants keep working.
  *
- * [onPinchEnded] runs when the fingers lift after a pinch or pan this node handled.
+ * [onPinchEnded] runs when the fingers lift after a pinch or pan this node handled, as the
+ * content settles back onto its rest if it was let go near it ([PinchZoomState.settleNearRest]).
  */
 fun Modifier.pinchZoomGestures(state: PinchZoomState, onPinchEnded: () -> Unit = {}): Modifier =
     onSizeChanged { state.viewportSize = it }
         .pointerInput(state, onPinchEnded) {
-            detectPinch(
-                isZoomed = { state.isZoomed },
-                onPinchStarted = { true },
-                onPinch = state::transformBy,
-                onPinchEnded = onPinchEnded,
-            )
+            coroutineScope {
+                detectPinch(
+                    isZoomed = { state.isZoomed },
+                    onPinchStarted = { true },
+                    onPinch = state::transformBy,
+                    onPinchEnded = {
+                        launch { state.settleNearRest() }
+                        onPinchEnded()
+                    },
+                )
+            }
         }
 
 /**
  * The one-finger ways into a zoom, for a node that lies over the content and fills the viewport
  * of [state] (so its touches are viewport-local). A double tap zooms in on the tapped spot, or
- * back out. Holding a finger down zooms in on the held spot, and that finger can carry straight
- * on into dragging the picture without lifting; a hold on a picture already zoomed in only takes
- * hold of it to drag. A single tap is [onTap]'s.
+ * back to rest ([PinchZoomState.animateZoomIn], [PinchZoomState.animateReset]). Holding a
+ * finger down zooms in on the held spot, and that finger can carry straight on into dragging the
+ * picture without lifting; a hold on a picture already zoomed in only takes hold of it to drag.
+ * A single tap is [onTap]'s.
  *
  * [onHoldZoom] runs as a hold zooms in — the place for a haptic tick.
  *
@@ -230,7 +311,7 @@ fun Modifier.zoomTapGestures(
                 onDoubleTap = { tapAt ->
                     if (!takenByEdge(tapAt, 2)) {
                         launch {
-                            if (state.isZoomed) state.animateReset() else state.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt)
+                            if (state.isZoomed) state.animateReset() else state.animateZoomIn(tapAt)
                         }
                     }
                 },
@@ -238,7 +319,7 @@ fun Modifier.zoomTapGestures(
                     held = true
                     if (!state.isZoomed) {
                         onHoldZoom()
-                        launch { state.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, pressAt) }
+                        launch { state.animateZoomIn(pressAt) }
                     }
                 },
             )
