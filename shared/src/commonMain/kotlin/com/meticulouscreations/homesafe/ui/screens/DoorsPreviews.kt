@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorPairing
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.PlanDoor
@@ -13,11 +14,17 @@ import com.meticulouscreations.homesafe.domain.model.PlanRoom
 import com.meticulouscreations.homesafe.domain.model.PlanStairs
 import com.meticulouscreations.homesafe.domain.model.PlanWall
 import com.meticulouscreations.homesafe.domain.model.StairDirection
+import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryDay
 import com.meticulouscreations.homesafe.viewmodel.DoorHistoryEntry
+import com.meticulouscreations.homesafe.viewmodel.DoorJoinProgress
+import com.meticulouscreations.homesafe.viewmodel.DoorJoinRow
 import com.meticulouscreations.homesafe.viewmodel.DoorsUiState
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.doors_pairing_interviewing
+import homesafe.shared.generated.resources.doors_pairing_paired_unnamed
+import homesafe.shared.generated.resources.doors_pairing_rejoined
 import homesafe.shared.generated.resources.doors_subtitle
 import homesafe.shared.generated.resources.doors_title
 import org.jetbrains.compose.resources.stringResource
@@ -89,7 +96,7 @@ private fun DoorsPagePreviewContent(state: DoorsUiState) {
 @Preview(name = "Doors", widthDp = 412, heightDp = 1500)
 @Composable
 private fun DoorsPreview() {
-    DoorsPagePreviewContent(DoorsUiState(doors = previewDoors, history = previewHistory, nowMillis = PREVIEW_NOW, loaded = true))
+    DoorsPagePreviewContent(DoorsUiState(doors = previewDoors, history = previewHistory, nowMillis = PREVIEW_NOW, loaded = true, pairing = DoorPairing()))
 }
 
 /** The same doors over the house's plan: two placed on the ground floor, the garage's not yet. */
@@ -118,9 +125,42 @@ private fun DoorsPlacingPreview() {
     )
 }
 
+/** Pairing: the front door's sensor, which had dropped off, is back, and a new one is being set up. */
+@Preview(name = "Doors, pairing", widthDp = 412, heightDp = 1100)
+@Composable
+private fun DoorsPairingPreview() {
+    DoorsPagePreviewContent(
+        DoorsUiState(
+            doors = previewDoors,
+            nowMillis = PREVIEW_NOW,
+            loaded = true,
+            pairing = DoorPairing(open = true, untilMillis = PREVIEW_NOW + 4 * 60_000),
+            joined = listOf(
+                DoorJoinRow("0x02", UiText.of(Res.string.doors_pairing_rejoined, "Front door"), DoorJoinProgress.DONE),
+                DoorJoinRow("0x04", UiText.of(Res.string.doors_pairing_interviewing), DoorJoinProgress.WORKING),
+            ),
+        ),
+    )
+}
+
+/** Pairing over: the new sensor paired and is still called by its address, so its card asks for a name. */
+@Preview(name = "Doors, a new sensor to name", widthDp = 412, heightDp = 1300)
+@Composable
+private fun DoorsNewSensorPreview() {
+    DoorsPagePreviewContent(
+        DoorsUiState(
+            doors = listOf(Door("0xb40e060fffe1271f", "0xb40e060fffe1271f", open = false, battery = 100, linkQuality = 98, online = true)) + previewDoors,
+            nowMillis = PREVIEW_NOW,
+            loaded = true,
+            pairing = DoorPairing(),
+            joined = listOf(DoorJoinRow("0xb40e060fffe1271f", UiText.of(Res.string.doors_pairing_paired_unnamed), DoorJoinProgress.DONE)),
+        ),
+    )
+}
+
 /** No sensor paired yet, and the server not hearing the Zigbee network either. */
 @Preview(name = "Doors, none paired yet", widthDp = 412, heightDp = 915)
 @Composable
 private fun DoorsEmptyPreview() {
-    DoorsPagePreviewContent(DoorsUiState(nowMillis = PREVIEW_NOW, loaded = true, listening = false))
+    DoorsPagePreviewContent(DoorsUiState(nowMillis = PREVIEW_NOW, loaded = true, listening = false, pairing = DoorPairing()))
 }

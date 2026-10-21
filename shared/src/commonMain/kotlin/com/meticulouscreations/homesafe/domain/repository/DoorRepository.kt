@@ -22,4 +22,10 @@ interface DoorRepository {
 
     /** Places [doorId] on the floor plan, or with null takes it off; shown at once, like [setNotify]. */
     suspend fun setSpot(doorId: String, spot: DoorSpot?): Result<Unit>
+
+    /** Lets sensors join the Zigbee network for [seconds], or with 0 stops; [doors]' pairing reflects the relay's answer. */
+    suspend fun setPairing(seconds: Int): Result<Unit>
+
+    /** Renames [doorId]'s sensor, for the whole household; [doors] reflects the relay's answer. */
+    suspend fun rename(doorId: String, name: String): Result<Unit>
 }

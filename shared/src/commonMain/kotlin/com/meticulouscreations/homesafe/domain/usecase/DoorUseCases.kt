@@ -37,3 +37,15 @@ class ObserveFloorPlanUseCase(private val doorRepository: DoorRepository) {
 class SetDoorSpotUseCase(private val doorRepository: DoorRepository) {
     suspend operator fun invoke(doorId: String, spot: DoorSpot?): Result<Unit> = doorRepository.setSpot(doorId, spot)
 }
+
+/** Lets door sensors pair (or rejoin) for a while, or stops. */
+@Inject
+class SetDoorPairingUseCase(private val doorRepository: DoorRepository) {
+    suspend operator fun invoke(seconds: Int): Result<Unit> = doorRepository.setPairing(seconds)
+}
+
+/** Names one door's sensor: a sensor just paired is called by its address until it's named. */
+@Inject
+class RenameDoorUseCase(private val doorRepository: DoorRepository) {
+    suspend operator fun invoke(doorId: String, name: String): Result<Unit> = doorRepository.rename(doorId, name)
+}

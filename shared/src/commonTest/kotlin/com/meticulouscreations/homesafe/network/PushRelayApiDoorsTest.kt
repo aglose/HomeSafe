@@ -2,7 +2,10 @@ package com.meticulouscreations.homesafe.network
 
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
+import com.meticulouscreations.homesafe.domain.model.DoorJoin
+import com.meticulouscreations.homesafe.domain.model.DoorJoinStatus
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorPairing
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.PlanDoor
@@ -12,6 +15,12 @@ import com.meticulouscreations.homesafe.domain.model.PlanRoom
 import com.meticulouscreations.homesafe.domain.model.PlanStairs
 import com.meticulouscreations.homesafe.domain.model.PlanWall
 import com.meticulouscreations.homesafe.domain.model.StairDirection
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.doors_error_no_zigbee
+import homesafe.shared.generated.resources.doors_error_zigbee_silent
+import homesafe.shared.generated.resources.doors_rename_invalid
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -27,6 +36,7 @@ import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The door sensors, as relay.py's `/doors` answers. */
@@ -102,6 +112,55 @@ class PushRelayApiDoorsTest {
         assertEquals(HttpMethod.Put, seen.single().method)
         assertEquals("http://192.168.68.65:8787/doors/0x282c02bfffe6aa01", seen.single().url)
         assertEquals("""{"notify":"never"}""", seen.single().body)
+    }
+
+    @Test
+    fun pairingIsPostedAndItsWindowAndWhatJoinedAreRead() = runTest {
+        val seen = mutableListOf<Seen>()
+        val pairing = body.replace(
+            """"away": false}""",
+            """"away": false, "pairing": {"open": true, "until": 1792301900.5, "joined": [
+                {"id": "0x282c02bfffe6aa01", "name": "Front door", "status": "joined", "at": 1792301831.0},
+                {"id": "0x282c02bfffe6aa09", "name": "0x282c02bfffe6aa09", "status": "interviewing", "at": 1792301832.0},
+                {"id": "0x282c02bfffe6aa0a", "status": "leaving", "at": 1792301833.0}]}}""",
+        )
+        val snapshot = api(respondWith = pairing, seen = seen).setDoorPairing("http://192.168.68.65:8971", 254).getOrThrow()
+        assertEquals(HttpMethod.Post, seen.single().method)
+        assertEquals("http://192.168.68.65:8787/doors/pairing", seen.single().url)
+        assertEquals("""{"seconds":254}""", seen.single().body)
+        assertEquals(
+            DoorPairing(
+                open = true,
+                untilMillis = 1_792_301_900_500,
+                joined = listOf(
+                    DoorJoin("0x282c02bfffe6aa01", "Front door", DoorJoinStatus.JOINED, 1_792_301_831_000),
+                    DoorJoin("0x282c02bfffe6aa09", "0x282c02bfffe6aa09", DoorJoinStatus.INTERVIEWING, 1_792_301_832_000),
+                ),
+            ),
+            snapshot.pairing,
+            "a status this app doesn't know is left out",
+        )
+        assertNull(api(respondWith = body).getDoors("http://192.168.68.65:8971").getOrThrow().pairing, "a relay that can't pair")
+    }
+
+    @Test
+    fun aDoorIsRenamedWithAPut() = runTest {
+        val seen = mutableListOf<Seen>()
+        api(respondWith = body, seen = seen).renameDoor("http://192.168.68.65:8971", "0x282c02bfffe6aa01", "Porch door").getOrThrow()
+        assertEquals(HttpMethod.Put, seen.single().method)
+        assertEquals("http://192.168.68.65:8787/doors/0x282c02bfffe6aa01/name", seen.single().url)
+        assertEquals("""{"name":"Porch door"}""", seen.single().body)
+    }
+
+    @Test
+    fun whyZigbee2MqttCouldntIsSaid() = runTest {
+        suspend fun refusal(status: HttpStatusCode, detail: String) =
+            api(status = status, respondWith = """{"detail": "$detail"}""").setDoorPairing("http://192.168.68.65:8971", 254).exceptionOrNull() as LocalizedException
+        assertEquals(UiText.of(Res.string.doors_error_no_zigbee), refusal(HttpStatusCode.ServiceUnavailable, "The relay can't reach Zigbee2MQTT").text)
+        assertEquals(UiText.of(Res.string.doors_error_zigbee_silent), refusal(HttpStatusCode.GatewayTimeout, "Zigbee2MQTT didn't answer").text)
+        assertEquals(UiText.Verbatim("Zigbee2MQTT: Coordinator busy"), refusal(HttpStatusCode.BadGateway, "Zigbee2MQTT: Coordinator busy").text, "Zigbee2MQTT's own words")
+        val invalid = api(status = HttpStatusCode.BadRequest, respondWith = """{"detail": "no"}""").renameDoor("http://192.168.68.65:8971", "x", "a/b").exceptionOrNull()
+        assertEquals(UiText.of(Res.string.doors_rename_invalid), (invalid as LocalizedException).text)
     }
 
     @Test

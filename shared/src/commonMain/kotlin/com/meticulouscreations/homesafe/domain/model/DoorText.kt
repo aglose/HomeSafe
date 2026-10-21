@@ -13,6 +13,13 @@ import homesafe.shared.generated.resources.doors_detail_weak_signal
 import homesafe.shared.generated.resources.doors_notify_always
 import homesafe.shared.generated.resources.doors_notify_away
 import homesafe.shared.generated.resources.doors_notify_never
+import homesafe.shared.generated.resources.doors_pairing_interviewing
+import homesafe.shared.generated.resources.doors_pairing_join_failed
+import homesafe.shared.generated.resources.doors_pairing_joined
+import homesafe.shared.generated.resources.doors_pairing_paired
+import homesafe.shared.generated.resources.doors_pairing_paired_other
+import homesafe.shared.generated.resources.doors_pairing_paired_unnamed
+import homesafe.shared.generated.resources.doors_pairing_rejoined
 import homesafe.shared.generated.resources.doors_state_closed
 import homesafe.shared.generated.resources.doors_state_closed_days
 import homesafe.shared.generated.resources.doors_state_closed_hours
@@ -58,6 +65,25 @@ fun doorHealthText(door: Door): UiText? {
         if (door.weakSignal) add(UiText.of(Res.string.doors_detail_weak_signal))
     }
     return parts.takeIf { it.isNotEmpty() }?.let { UiText.Joined(it, UiText.of(Res.string.common_dot_separator)) }
+}
+
+/**
+ * What pairing says of a device that joined: [door] is the door it is, once the relay has it as
+ * one. A known door that joined is one that dropped off and is back; a new one is set up, then
+ * wants a name.
+ */
+fun doorJoinText(join: DoorJoin, door: Door?): UiText = when (join.status) {
+    DoorJoinStatus.JOINED -> if (door != null && !door.unnamed) UiText.of(Res.string.doors_pairing_rejoined, door.name) else UiText.of(Res.string.doors_pairing_joined)
+
+    DoorJoinStatus.INTERVIEWING -> UiText.of(Res.string.doors_pairing_interviewing)
+
+    DoorJoinStatus.PAIRED -> when {
+        door == null -> UiText.of(Res.string.doors_pairing_paired_other)
+        door.unnamed -> UiText.of(Res.string.doors_pairing_paired_unnamed)
+        else -> UiText.of(Res.string.doors_pairing_paired, door.name)
+    }
+
+    DoorJoinStatus.FAILED -> UiText.of(Res.string.doors_pairing_join_failed)
 }
 
 /** A history day's heading: "Today", "Yesterday", "3 days ago". [daysAgo] counts calendar days. */

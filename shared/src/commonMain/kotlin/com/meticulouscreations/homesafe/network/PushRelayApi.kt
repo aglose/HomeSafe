@@ -6,7 +6,10 @@ import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
+import com.meticulouscreations.homesafe.domain.model.DoorJoin
+import com.meticulouscreations.homesafe.domain.model.DoorJoinStatus
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorPairing
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
@@ -30,6 +33,9 @@ import com.meticulouscreations.homesafe.domain.model.UptimeState
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.doors_error_no_zigbee
+import homesafe.shared.generated.resources.doors_error_zigbee_silent
+import homesafe.shared.generated.resources.doors_rename_invalid
 import homesafe.shared.generated.resources.error_relay_answered
 import homesafe.shared.generated.resources.error_relay_no_secret
 import homesafe.shared.generated.resources.error_relay_no_spot
@@ -44,6 +50,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -357,6 +364,47 @@ class PushRelayApi(private val httpClient: HttpClient) {
     }
 
     /**
+     * Lets sensors join the Zigbee network for [seconds] (the relay caps it at 254), or with 0
+     * stops. A user action, so the session cookie. Answers the doors as they now stand, with
+     * [DoorsSnapshot.pairing] saying how the window is.
+     */
+    suspend fun setDoorPairing(serverUrl: String, seconds: Int): Result<DoorsSnapshot> = runCatching {
+        val response = httpClient.post(relayUrl(serverUrl, "/doors/pairing")) {
+            contentType(ContentType.Application.Json)
+            setBody(DoorPairingUpdate(seconds))
+        }
+        if (!response.status.isSuccess()) throw zigbeeRefused(response)
+        response.body<RelayDoors>().toDomain()
+    }
+
+    /** Renames [doorId]'s sensor in Zigbee2MQTT, for the whole household. A user action, so the session cookie. Answers the doors as they now stand. */
+    suspend fun renameDoor(serverUrl: String, doorId: String, name: String): Result<DoorsSnapshot> = runCatching {
+        val response = httpClient.put(relayUrl(serverUrl, "/doors/$doorId/name")) {
+            contentType(ContentType.Application.Json)
+            setBody(DoorRename(name))
+        }
+        if (!response.status.isSuccess()) throw zigbeeRefused(response)
+        response.body<RelayDoors>().toDomain()
+    }
+
+    /**
+     * Why the relay couldn't have Zigbee2MQTT do something: it can't reach it (503), it didn't
+     * answer (504), or it said no, in its own words (502, which are shown as they are).
+     */
+    private suspend fun zigbeeRefused(response: HttpResponse): Exception = when (response.status) {
+        HttpStatusCode.ServiceUnavailable -> FrigateResponseException(UiText.of(Res.string.doors_error_no_zigbee), technical = "Relay answered 503")
+
+        HttpStatusCode.GatewayTimeout -> FrigateResponseException(UiText.of(Res.string.doors_error_zigbee_silent), technical = "Relay answered 504")
+
+        HttpStatusCode.BadRequest -> FrigateResponseException(UiText.of(Res.string.doors_rename_invalid), technical = "Relay answered 400")
+
+        HttpStatusCode.BadGateway -> runCatching { response.body<RelayDetail>().detail }.getOrNull()?.ifBlank { null }
+            ?.let { FrigateResponseException(it) } ?: relayRefused(response.status)
+
+        else -> relayRefused(response.status)
+    }
+
+    /**
      * The house's floor plan (the relay's `/floorplan`, from a file kept only on the box). Null when
      * the box has none, or the relay predates it (both answer 404).
      */
@@ -636,6 +684,34 @@ internal data class RelayUptimeOutage(val check: String, val start: Double, val 
 internal data class DoorNotifyUpdate(val notify: String)
 
 @Serializable
+internal data class DoorPairingUpdate(val seconds: Int)
+
+@Serializable
+internal data class DoorRename(val name: String)
+
+/** FastAPI's error body. */
+@Serializable
+internal data class RelayDetail(val detail: String? = null)
+
+@Serializable
+internal data class RelayDoorPairing(
+    val open: Boolean = false,
+    val until: Double? = null,
+    val joined: List<RelayDoorJoin> = emptyList(),
+) {
+    fun toDomain() = DoorPairing(
+        open = open,
+        untilMillis = until?.takeIf { open }?.let { (it * 1000).toLong() },
+        joined = joined.mapNotNull { join ->
+            DoorJoinStatus.fromWire(join.status)?.let { DoorJoin(join.id, join.name?.ifBlank { null } ?: join.id, it, (join.at * 1000).toLong()) }
+        },
+    )
+}
+
+@Serializable
+internal data class RelayDoorJoin(val id: String, val name: String? = null, val status: String? = null, val at: Double = 0.0)
+
+@Serializable
 internal data class RelayDoors(
     val doors: List<RelayDoor> = emptyList(),
     val events: List<RelayDoorEvent> = emptyList(),
@@ -643,6 +719,8 @@ internal data class RelayDoors(
     val bridge: Boolean = false,
     /** Moves on every change; null from a relay that can't hold a request open for the next one. */
     val version: Long? = null,
+    /** Null from a relay that can't pair sensors. */
+    val pairing: RelayDoorPairing? = null,
 ) {
     fun toDomain() = DoorsSnapshot(
         doors = doors.map { it.toDomain() },
@@ -650,6 +728,7 @@ internal data class RelayDoors(
         listening = broker && bridge,
         answered = true,
         version = version,
+        pairing = pairing?.toDomain(),
     )
 }
 

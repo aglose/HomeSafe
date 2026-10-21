@@ -5,15 +5,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
+import com.meticulouscreations.homesafe.domain.model.DoorJoinStatus
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorPairing
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
+import com.meticulouscreations.homesafe.domain.model.doorJoinText
 import com.meticulouscreations.homesafe.domain.usecase.ObserveDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveFloorPlanUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshDoorsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RenameDoorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetDoorNotifyUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetDoorPairingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetDoorSpotUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
@@ -23,6 +28,8 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.doors_load_failed
+import homesafe.shared.generated.resources.doors_pairing_failed
+import homesafe.shared.generated.resources.doors_rename_failed
 import homesafe.shared.generated.resources.doors_save_failed
 import homesafe.shared.generated.resources.doors_spot_save_failed
 import kotlinx.coroutines.delay
@@ -49,6 +56,13 @@ data class DoorHistoryEntry(val doorName: String, val open: Boolean, val atMilli
 @Immutable
 data class DoorHistoryDay(val daysAgo: Int, val entries: List<DoorHistoryEntry>)
 
+/** How far one device that joined while pairing has got, as the pairing card shows it. */
+enum class DoorJoinProgress { WORKING, DONE, FAILED }
+
+/** One device that joined while pairing, as the pairing card says it: "Front door is back", "New sensor paired". */
+@Immutable
+data class DoorJoinRow(val id: String, val text: UiText, val progress: DoorJoinProgress)
+
 @Immutable
 data class DoorsUiState(
     val doors: List<Door> = emptyList(),
@@ -69,6 +83,12 @@ data class DoorsUiState(
     /** Placing doors on the plan: pick a door ([placingDoorId]), then tap where it is. */
     val placing: Boolean = false,
     val placingDoorId: String? = null,
+    /** Whether sensors may join now, and until when; null when the relay can't pair them from here. */
+    val pairing: DoorPairing? = null,
+    /** What joined while pairing was open, oldest first. */
+    val joined: List<DoorJoinRow> = emptyList(),
+    /** Pairing is being started or stopped. */
+    val pairingBusy: Boolean = false,
 ) {
     /** The floor the plan shows, as a floor of [floorPlan]. */
     val floor: PlanFloor? get() = floorPlan?.floor(floorId)
@@ -85,6 +105,8 @@ class DoorsViewModel(
     private val setDoorNotifyUseCase: SetDoorNotifyUseCase,
     observeFloorPlanUseCase: ObserveFloorPlanUseCase,
     private val setDoorSpotUseCase: SetDoorSpotUseCase,
+    private val setDoorPairingUseCase: SetDoorPairingUseCase,
+    private val renameDoorUseCase: RenameDoorUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -94,6 +116,7 @@ class DoorsViewModel(
         val floorId: String? = null,
         val placing: Boolean = false,
         val placingDoorId: String? = null,
+        val pairingBusy: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
@@ -122,6 +145,22 @@ class DoorsViewModel(
             floorId = floorId,
             placing = local.placing && plan != null,
             placingDoorId = placingDoor?.id,
+            pairing = snapshot.pairing,
+            joined = snapshot.pairing?.joined.orEmpty().map { join ->
+                val door = snapshot.doors.firstOrNull { it.id == join.id }
+                val progress = when (join.status) {
+                    DoorJoinStatus.FAILED -> DoorJoinProgress.FAILED
+
+                    DoorJoinStatus.PAIRED -> DoorJoinProgress.DONE
+
+                    // A door the relay already knows, by its name, rejoined: that's all it does.
+                    DoorJoinStatus.JOINED -> if (door != null && !door.unnamed) DoorJoinProgress.DONE else DoorJoinProgress.WORKING
+
+                    DoorJoinStatus.INTERVIEWING -> DoorJoinProgress.WORKING
+                }
+                DoorJoinRow(join.id, doorJoinText(join, door), progress)
+            },
+            pairingBusy = local.pairingBusy,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DoorsUiState())
 
@@ -137,6 +176,30 @@ class DoorsViewModel(
         viewModelScope.launch {
             val result = setDoorNotifyUseCase(doorId, notify)
             local.update { it.copy(error = result.exceptionOrNull()?.userMessage(Res.string.doors_save_failed)) }
+        }
+    }
+
+    /** Lets sensors join for as long as Zigbee allows: a new one pairs, one that dropped off rejoins. */
+    fun startPairing() = pair(PAIRING_SECONDS)
+
+    fun stopPairing() = pair(0)
+
+    private fun pair(seconds: Int) {
+        if (local.value.pairingBusy) return
+        local.update { it.copy(pairingBusy = true) }
+        viewModelScope.launch {
+            val result = setDoorPairingUseCase(seconds)
+            local.update { it.copy(pairingBusy = false, error = result.exceptionOrNull()?.userMessage(Res.string.doors_pairing_failed)) }
+        }
+    }
+
+    /** Names [doorId]'s sensor; a blank name or the same one changes nothing. */
+    fun rename(doorId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty() || uiState.value.doors.firstOrNull { it.id == doorId }?.name == trimmed) return
+        viewModelScope.launch {
+            val result = renameDoorUseCase(doorId, trimmed)
+            local.update { it.copy(error = result.exceptionOrNull()?.userMessage(Res.string.doors_rename_failed)) }
         }
     }
 
@@ -200,5 +263,8 @@ class DoorsViewModel(
 
     companion object {
         const val TICK_MS = 30_000L
+
+        /** Zigbee's longest permit-join window: long enough to walk to a door and press the sensor's button. */
+        const val PAIRING_SECONDS = 254
     }
 }

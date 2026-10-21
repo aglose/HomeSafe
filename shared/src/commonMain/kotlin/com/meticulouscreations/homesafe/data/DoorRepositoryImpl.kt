@@ -189,6 +189,25 @@ class DoorRepositoryImpl(
         return answer.map { }
     }
 
+    override suspend fun setPairing(seconds: Int): Result<Unit> = command { url -> relayApi.setDoorPairing(url, seconds) }
+
+    override suspend fun rename(doorId: String, name: String): Result<Unit> = command { url -> relayApi.renameDoor(url, doorId, name) }
+
+    /** Asks the relay to do something, in turn with the saves, and shows the doors it answers with. Nothing is shown before it answers. */
+    private suspend fun command(ask: suspend (url: String) -> Result<DoorsSnapshot>): Result<Unit> {
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
+        val answer = writes.withLock { ask(url) }
+        answer.onSuccess {
+            settle {
+                if (connectionRepository.currentServerUrl.value == url) {
+                    fromRelay = it
+                    doorsFrom = url
+                }
+            }
+        }
+        return answer.map { }
+    }
+
     /** Reads the doors, waiting for the next change when [since] is the version already shown. Answers what the relay said. */
     private suspend fun fetch(url: String, rereadPlan: Boolean = false, since: Long? = null): Result<DoorsSnapshot> {
         val deviceId = identity.deviceId()

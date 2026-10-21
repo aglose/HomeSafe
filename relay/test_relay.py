@@ -6220,10 +6220,28 @@ Z2M_DEVICES = [
 FRONT = "0x282c02bfffe6aa01"
 
 
+class FakeZigbee2Mqtt:
+    """The broker with Zigbee2MQTT behind it: answers each request on its response topic, or as [refuse] says."""
+
+    def __init__(self):
+        self.requests = []
+        self.refuse = None
+        self.silent = False
+
+    def publish(self, topic, payload):
+        what = topic.split("/bridge/request/", 1)[1]
+        body = json.loads(payload)
+        self.requests.append((what, {k: v for k, v in body.items() if k != "transaction"}))
+        if self.silent:
+            return
+        answer = {"data": {}, "status": "error", "error": self.refuse} if self.refuse else {"data": body, "status": "ok"}
+        relay.door_receive(f"zigbee2mqtt/bridge/response/{what}", json.dumps({**answer, "transaction": body["transaction"]}).encode(), time.time())
+
+
 class DoorsTest(_ScratchDb):
     """The door sensors: what Zigbee2MQTT says, what the relay keeps of it, and which openings push."""
 
-    NAMES = _ScratchDb.NAMES + ("away_since", "require_frigate_session", "FLOORPLAN_FILE", "authenticate")
+    NAMES = _ScratchDb.NAMES + ("away_since", "require_frigate_session", "FLOORPLAN_FILE", "authenticate", "DOORS_LINK", "DOORS_MQTT", "DOOR_PAIRING")
 
     def setUp(self):
         super().setUp()
@@ -6233,6 +6251,10 @@ class DoorsTest(_ScratchDb):
         relay.require_frigate_session = lambda request: "alex"
         self.pushes = []
         self.T = 1_800_000_000.0
+        relay.DOORS_LINK = {"broker": True, "bridge": True}
+        relay.DOOR_PAIRING = relay.DoorPairing()
+        self.zigbee = FakeZigbee2Mqtt()
+        relay.DOORS_MQTT = {"client": self.zigbee}
 
     def push(self, title, body, data, away=False):
         self.pushes.append((title, body, data, away))
@@ -6619,6 +6641,102 @@ class DoorsTest(_ScratchDb):
         with self.assertRaises(relay.HTTPException) as nobody:
             relay.set_door_spot("0xnobody", types.SimpleNamespace(floor="ground", x=1.0, y=1.0), request)
         self.assertEqual(404, nobody.exception.status_code)
+
+    def test_topics_for_pairing(self):
+        self.assertEqual(("info", None, {"permit_join": True}), relay.door_message("zigbee2mqtt/bridge/info", b'{"permit_join": true}'))
+        self.assertEqual("event", relay.door_message("zigbee2mqtt/bridge/event", b'{"type": "device_joined", "data": {}}')[0])
+        self.assertEqual(("response", "device/rename", {"status": "ok"}), relay.door_message("zigbee2mqtt/bridge/response/device/rename", b'{"status": "ok"}'))
+
+    def pairing(self):
+        return relay.doors_snapshot(self.T)["pairing"]
+
+    def test_pairing_opens_zigbee2mqtts_window_and_closes_it(self):
+        request = types.SimpleNamespace(headers={})
+        opened = relay.set_door_pairing(types.SimpleNamespace(seconds=1000), request)
+        self.assertEqual(("permit_join", {"time": relay.DOOR_PAIRING_SECONDS}), self.zigbee.requests[-1], "Zigbee's window is 254 s at most")
+        self.assertTrue(opened["pairing"]["open"])
+        self.assertAlmostEqual(time.time() + relay.DOOR_PAIRING_SECONDS, opened["pairing"]["until"], delta=5)
+        closed = relay.set_door_pairing(types.SimpleNamespace(seconds=0), request)
+        self.assertEqual(("permit_join", {"time": 0}), self.zigbee.requests[-1])
+        self.assertEqual({"open": False, "until": None, "joined": []}, closed["pairing"])
+
+    def test_pairing_says_why_when_zigbee2mqtt_cant(self):
+        request = types.SimpleNamespace(headers={})
+        self.zigbee.refuse = "Coordinator busy"
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.set_door_pairing(types.SimpleNamespace(seconds=254), request)
+        self.assertEqual((502, "Zigbee2MQTT: Coordinator busy"), (refused.exception.status_code, refused.exception.detail))
+        self.assertFalse(self.pairing()["open"])
+        relay.DOORS_LINK["bridge"] = False
+        with self.assertRaises(relay.HTTPException) as down:
+            relay.set_door_pairing(types.SimpleNamespace(seconds=254), request)
+        self.assertEqual(503, down.exception.status_code)
+        relay.DOORS_LINK["bridge"] = True
+        self.zigbee.refuse, self.zigbee.silent = None, True
+        saved = relay.Z2M_ANSWER_SECONDS
+        relay.Z2M_ANSWER_SECONDS = 0.05
+        try:
+            with self.assertRaises(relay.HTTPException) as quiet:
+                relay.set_door_pairing(types.SimpleNamespace(seconds=254), request)
+        finally:
+            relay.Z2M_ANSWER_SECONDS = saved
+        self.assertEqual(504, quiet.exception.status_code)
+
+    def test_the_window_follows_zigbee2mqtts_info(self):
+        version = self.version()
+        relay.door_receive("zigbee2mqtt/bridge/info", json.dumps({"permit_join": True, "permit_join_end": (self.T + 200) * 1000}).encode(), self.T)
+        self.assertEqual((True, self.T + 200), (self.pairing()["open"], self.pairing()["until"]))
+        moved = self.version()
+        self.assertNotEqual(version, moved)
+        relay.door_receive("zigbee2mqtt/bridge/info", json.dumps({"permit_join": True, "permit_join_end": (self.T + 200) * 1000, "version": "2.6.0"}).encode(), self.T + 1)
+        self.assertEqual(moved, self.version(), "info says the same again")
+        relay.door_receive("zigbee2mqtt/bridge/info", json.dumps({"permit_join": True, "permit_join_timeout": 100}).encode(), self.T)
+        self.assertEqual(self.T + 100, self.pairing()["until"], "Zigbee2MQTT 1.x counts the seconds left")
+        relay.door_receive("zigbee2mqtt/bridge/info", b'{"permit_join": false, "permit_join_end": null}', self.T + 250)
+        self.assertEqual((False, None), (self.pairing()["open"], self.pairing()["until"]))
+        relay.door_receive("zigbee2mqtt/bridge/info", b'{"permit_join": true}', self.T)
+        relay.door_receive("zigbee2mqtt/bridge/state", b'{"state": "offline"}', self.T)
+        self.assertFalse(self.pairing()["open"], "a window Zigbee2MQTT took down with it")
+
+    def event(self, kind, now, **data):
+        relay.door_receive("zigbee2mqtt/bridge/event", json.dumps({"type": kind, "data": data}).encode(), now)
+
+    def test_what_joins_while_pairing_is_listed_with_how_far_it_got(self):
+        new, back = "0x282c02bfffe6aa09", FRONT
+        self.event("device_joined", self.T, ieee_address=new, friendly_name=new)
+        self.assertEqual([], self.pairing()["joined"], "nothing was asked to pair")
+        relay.door_receive("zigbee2mqtt/bridge/info", b'{"permit_join": true, "permit_join_end": 1}', self.T)
+        self.event("device_joined", self.T + 1, ieee_address=back, friendly_name="Front door")
+        self.event("device_joined", self.T + 2, ieee_address=new, friendly_name=new)
+        self.event("device_interview", self.T + 3, ieee_address=new, friendly_name=new, status="started")
+        self.event("device_announce", self.T + 3, ieee_address=new, friendly_name=new)
+        self.assertEqual([(back, "Front door", "joined"), (new, new, "interviewing")], [(j["id"], j["name"], j["status"]) for j in self.pairing()["joined"]])
+        relay.door_receive("zigbee2mqtt/bridge/info", b'{"permit_join": false}', self.T + 4)
+        self.event("device_interview", self.T + 5, ieee_address=new, friendly_name=new, status="successful")
+        self.assertEqual("paired", self.pairing()["joined"][1]["status"], "an interview begun while pairing finishes after")
+        relay.door_receive("zigbee2mqtt/bridge/info", b'{"permit_join": true}', self.T + 60)
+        self.assertEqual([], self.pairing()["joined"], "pairing again starts afresh")
+
+    def test_a_door_is_renamed_in_zigbee2mqtt(self):
+        self.paired()
+        request = types.SimpleNamespace(headers={})
+        renamed = relay.rename_door(FRONT, types.SimpleNamespace(name="  Porch   door "), request)
+        self.assertEqual(("device/rename", {"from": FRONT, "to": "Porch door", "homeassistant_rename": False}), self.zigbee.requests[-1])
+        self.assertEqual("Porch door", renamed["doors"][0]["name"])
+        relay.rename_door(FRONT, types.SimpleNamespace(name="Porch door"), request)
+        self.assertEqual(1, len(self.zigbee.requests), "the same name again asks nothing")
+        for bad in ("", "   ", "Up/Down", "Door #2", "x" * 65):
+            with self.assertRaises(relay.HTTPException) as refused:
+                relay.rename_door(FRONT, types.SimpleNamespace(name=bad), request)
+            self.assertEqual(400, refused.exception.status_code, bad)
+        with self.assertRaises(relay.HTTPException) as missing:
+            relay.rename_door("0xnobody", types.SimpleNamespace(name="Shed"), request)
+        self.assertEqual(404, missing.exception.status_code)
+        self.zigbee.refuse = "friendly_name 'Back door' is already in use"
+        with self.assertRaises(relay.HTTPException) as taken:
+            relay.rename_door(FRONT, types.SimpleNamespace(name="Back door"), request)
+        self.assertEqual(502, taken.exception.status_code)
+        self.assertEqual("Porch door", self.door()["name"])
 
     def test_setting_a_door_checks_the_mode_and_the_door(self):
         self.paired()

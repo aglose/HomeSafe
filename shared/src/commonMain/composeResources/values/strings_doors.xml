@@ -101,4 +101,33 @@
     <string name="doors_plan_street">%1$s (street side)</string>
     <string name="doors_spot_save_failed">Couldn't save where that door is: %1$s</string>
     <string name="doors_save_failed">Couldn't change that door's alerts: %1$s</string>
+    <!-- Pairing on the Doors page: letting a new sensor join the server's Zigbee network, or one that dropped off rejoin. -->
+    <string name="doors_none_body_pair">Tap Pair a sensor, then hold the sensor's button until its light blinks. It shows up here within a few seconds.</string>
+    <string name="doors_pairing_start">Pair a sensor</string>
+    <string name="doors_pairing_start_caption">For a new sensor, or one that went offline and won't come back.</string>
+    <string name="doors_pairing_stop">Stop pairing</string>
+    <!-- %1$s is a time of day, e.g. "10:42 PM". -->
+    <string name="doors_pairing_open_until">Pairing until %1$s</string>
+    <string name="doors_pairing_open">Pairing</string>
+    <string name="doors_pairing_hint">Hold the sensor's button for 5 seconds, until its light blinks. A sensor that went offline rejoins under its old name.</string>
+    <string name="doors_pairing_joined">A sensor joined. Setting it up…</string>
+    <string name="doors_pairing_interviewing">Setting up a new sensor…</string>
+    <!-- %1$s is the door's name, e.g. "Front door". -->
+    <string name="doors_pairing_rejoined">%1$s is back</string>
+    <string name="doors_pairing_paired">%1$s paired</string>
+    <string name="doors_pairing_paired_unnamed">New sensor paired. Name it below.</string>
+    <string name="doors_pairing_paired_other">A new device paired. It isn't a door sensor, so it won't show here.</string>
+    <string name="doors_pairing_join_failed">A sensor couldn't be set up. Hold its button again to retry.</string>
+    <string name="doors_pairing_failed">Couldn't change pairing: %1$s</string>
+    <string name="doors_error_no_zigbee">The server can't reach Zigbee2MQTT</string>
+    <string name="doors_error_zigbee_silent">Zigbee2MQTT didn't answer</string>
+    <!-- Naming a door's sensor; one just paired is called by its address (e.g. "0xb40e060fffe1271f") until it's named. -->
+    <string name="doors_name_it">Name it</string>
+    <!-- For screen readers, on the pencil beside a door's name. %1$s is its name. -->
+    <string name="doors_rename_action">Rename %1$s</string>
+    <string name="doors_rename_title">Name this door</string>
+    <string name="doors_rename_label">Name</string>
+    <string name="doors_rename_placeholder">Front door</string>
+    <string name="doors_rename_invalid">A name can't be blank, be over 64 characters, or use / + or #</string>
+    <string name="doors_rename_failed">Couldn't rename that door: %1$s</string>
 </resources>
