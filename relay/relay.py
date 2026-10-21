@@ -5246,13 +5246,20 @@ def door_state(name: str, readings: dict[str, Any], now: float) -> dict[str, Any
     battery = readings.get("battery")
     link = readings.get("linkquality")
     battery_low = readings.get("battery_low")
+    # Only a reading with a signal strength came over the air. The one Zigbee2MQTT resends for each
+    # sensor on restart has none, and right after the restart's "offline" it would bring a silent
+    # sensor back online with its last state (an "open" door, as the front door's was 2026-10-20).
+    heard = isinstance(link, (int, float))
     with_db(lambda c: (c.execute(
-        "UPDATE doors SET battery=COALESCE(?, battery), link=COALESCE(?, link), battery_low=COALESCE(?, battery_low), last_seen=?, online=1 WHERE id=?",
+        "UPDATE doors SET battery=COALESCE(?, battery), link=COALESCE(?, link), battery_low=COALESCE(?, battery_low),"
+        " last_seen=CASE WHEN ? THEN ? ELSE last_seen END, online=CASE WHEN ? THEN 1 ELSE online END WHERE id=?",
         (
             int(battery) if isinstance(battery, (int, float)) else None,
-            int(link) if isinstance(link, (int, float)) else None,
+            int(link) if heard else None,
             int(battery_low) if isinstance(battery_low, bool) else None,
+            heard,
             now,
+            heard,
             door_id,
         ),
     ), c.commit()))
