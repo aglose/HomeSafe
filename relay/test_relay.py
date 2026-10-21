@@ -7158,6 +7158,104 @@ class NestOutageTest(unittest.TestCase):
         relay.nest_outage_streaming("outdoor_doorbell", push=self.push)
         self.assertEqual(["Outdoor Doorbell isn't streaming", "Outdoor Doorbell is streaming again"], [p[0] for p in self.pushes])
 
+    def test_a_return_no_phone_got_stays_owed_and_is_tried_again_later_not_at_every_reading(self):
+        self.refused_every_six_minutes("outdoor_doorbell", 0, 2)
+        tries = []
+        quiet = lambda title, body, data: (tries.append(title), {"sent": 0, "skipped_quiet": 2})[1]  # noqa: E731
+        back = 3 * self.HOUR
+        for at in range(back, back + 299, 15):  # the watchdog's readings for five minutes
+            relay.nest_outage_streaming("outdoor_doorbell", now=at, push=quiet)
+        self.assertEqual(1, len(tries))
+        self.assertEqual(["outdoor_doorbell"], relay.state_get(relay.NEST_OUTAGE_STATE_KEY), "still owed across a restart")
+        self.assertTrue(relay.NEST_OUTAGES.owed("outdoor_doorbell"))
+        # Quiet hours over: the next try reaches a phone, and that's the last.
+        for at in range(back + 300, back + 3600, 15):
+            relay.nest_outage_streaming("outdoor_doorbell", now=at, push=self.push)
+        self.assertEqual(["Outdoor Doorbell isn't streaming", "Outdoor Doorbell is streaming again"], [p[0] for p in self.pushes])
+        self.assertFalse(relay.NEST_OUTAGES.owed("outdoor_doorbell"))
+        self.assertIsNone(relay.state_get(relay.NEST_OUTAGE_STATE_KEY))
+
+    def test_a_return_whose_push_failed_is_tried_again(self):
+        self.refused_every_six_minutes("kitchen", 0, 2)
+
+        def failing(title, body, data):
+            raise ConnectionError("fcm down")
+
+        with self.assertLogs("relay", level="WARNING"):
+            relay.nest_outage_streaming("kitchen", now=3 * self.HOUR, push=failing)
+        self.assertFalse(relay.NEST_OUTAGES.busy, "a failed push leaves nothing in flight")
+        relay.nest_outage_streaming("kitchen", now=3 * self.HOUR + 300, push=self.push)
+        self.assertEqual(["Kitchen isn't streaming", "Kitchen is streaming again"], [p[0] for p in self.pushes])
+
+    def test_a_return_being_pushed_isn_t_pushed_twice(self):
+        outages = relay.NestOutages({"kitchen"})
+        self.assertTrue(outages.streaming("kitchen", 0))
+        self.assertFalse(outages.streaming("kitchen", 15), "the first push is still in flight")
+        outages.recovered("kitchen", True, 20)
+        self.assertFalse(outages.streaming("kitchen", 30))
+
+    def test_out_again_before_a_phone_heard_it_was_back_is_still_the_one_outage(self):
+        self.refused_every_six_minutes("kitchen", 0, 2)
+        quiet = lambda title, body, data: {"sent": 0, "skipped_quiet": 2}  # noqa: E731
+        relay.nest_outage_streaming("kitchen", now=3 * self.HOUR, push=quiet)
+        # Refused again all night: the phones still show the outage, so it isn't pushed again.
+        self.refused_every_six_minutes("kitchen", 3 * self.HOUR, 10)
+        relay.nest_outage_streaming("kitchen", now=14 * self.HOUR, push=self.push)
+        self.assertEqual(["Kitchen isn't streaming", "Kitchen is streaming again"], [p[0] for p in self.pushes])
+
+    def test_a_relay_restarted_before_a_return_was_told_still_tells_it(self):
+        self.refused_every_six_minutes("kitchen", 0, 2)
+        relay.nest_outage_streaming("kitchen", now=3 * self.HOUR, push=lambda title, body, data: {"sent": 0})
+        relay.NEST_OUTAGES = relay.NestOutages()  # the relay restarts
+        relay.nest_outage_load()
+        relay.nest_outage_streaming("kitchen", now=3 * self.HOUR + 60, push=self.push)
+        self.assertEqual(["Kitchen isn't streaming", "Kitchen is streaming again"], [p[0] for p in self.pushes])
+
+    def test_a_save_that_failed_is_saved_at_the_next_hold_without_pushing_again(self):
+        state_set = relay.state_set
+        self.addCleanup(setattr, relay, "state_set", state_set)
+
+        def locked(key, value):
+            raise relay.sqlite3.OperationalError("database is locked")
+
+        relay.state_set = locked
+        with self.assertLogs("relay", level="WARNING"):
+            self.refused_every_six_minutes("outdoor_doorbell", 0, 1.05)
+        self.assertTrue(relay.NEST_OUTAGES.dirty)
+        relay.state_set = state_set
+        self.refused_every_six_minutes("outdoor_doorbell", 1.1 * self.HOUR, 0.1)
+        self.assertFalse(relay.NEST_OUTAGES.dirty)
+        self.assertEqual(["outdoor_doorbell"], relay.state_get(relay.NEST_OUTAGE_STATE_KEY))
+        self.assertEqual(1, len(self.pushes))
+
+    def test_saves_land_in_the_order_they_read_the_state(self):
+        # A save that read only kitchen must not land after one that read kitchen and the doorbell.
+        state_set = relay.state_set
+        self.addCleanup(setattr, relay, "state_set", state_set)
+        first_writing, release, written = threading.Event(), threading.Event(), []
+
+        def slow(key, value):
+            if not written:
+                first_writing.set()
+                release.wait(5)
+            written.append(value)
+            state_set(key, value)
+
+        relay.state_set = slow
+        relay.NEST_OUTAGES.alerted.add("kitchen")
+        first = threading.Thread(target=relay.nest_outage_save, daemon=True)
+        first.start()
+        self.assertTrue(first_writing.wait(5))
+        relay.NEST_OUTAGES.alerted.add("outdoor_doorbell")
+        second = threading.Thread(target=relay.nest_outage_save, daemon=True)
+        second.start()
+        time.sleep(0.05)
+        release.set()
+        first.join(5)
+        second.join(5)
+        self.assertEqual([["kitchen"], ["kitchen", "outdoor_doorbell"]], written)
+        self.assertEqual(["kitchen", "outdoor_doorbell"], relay.state_get(relay.NEST_OUTAGE_STATE_KEY))
+
     def test_a_check_already_running_isn_t_started_twice(self):
         outages = relay.NestOutages()
         self.assertFalse(outages.hold_ended("kitchen", self.ended(), 0))

@@ -5792,6 +5792,8 @@ NEST_OUTAGE_ALERT_SECONDS = 3600
 # The cameras whose outage was pushed, kept in relay.db so a relay restarted during the outage
 # doesn't push it again, and does push when the camera is back.
 NEST_OUTAGE_STATE_KEY = "nest_outage_alerted"
+# How long after a push of a camera's return that no phone got (quiet hours, say) it's tried again.
+NEST_OUTAGE_RETRY_SECONDS = 300
 NEST_TOKEN_URL = "https://oauth2.googleapis.com/token"
 NEST_SDM_URL = "https://smartdevicemanagement.googleapis.com/v1"
 
@@ -5868,7 +5870,7 @@ def nest_primer_watchdog(name: str, sock: socket.socket, watch: NestPrimerWatch,
         except Exception:  # noqa: BLE001 - go2rtc restarting: nothing seen arriving
             received = None
         stalled = watch.stalled(time.monotonic(), received)
-        if watch.flowed and name in NEST_OUTAGES.alerted:
+        if watch.flowed and NEST_OUTAGES.owed(name):
             # Off the watchdog's thread: a push takes as long as FCM does.
             threading.Thread(target=nest_outage_streaming, args=(name,), name=f"nest-outage-{name}", daemon=True).start()
         if stalled:
@@ -6053,7 +6055,7 @@ def nest_primer_forever() -> None:
 
 
 class NestOutages:
-    """Per Nest stream, since when its holds have had no go2rtc session, and whether that was pushed."""
+    """Per Nest stream, since when its holds have had no go2rtc session, and what the household was told of it."""
 
     def __init__(self, alerted: set[str] | None = None):
         self.lock = threading.Lock()
@@ -6062,10 +6064,29 @@ class NestOutages:
         # Per stream, what Google said this outage, once asked: kept while no phone has been told,
         # so the next try pushes without asking Google again.
         self.reasons: dict[str, str] = {}
-        # The streams whose outage was pushed and not yet its end.
+        # The streams whose outage was pushed, while they're still out.
         self.alerted: set[str] = set(alerted or ())
+        # The streams whose outage was pushed and that are back, until a phone is told so: until
+        # then, a phone may still be showing the outage.
+        self.recovering: set[str] = set()
+        # Per recovering stream, when (epoch seconds) a push of its return may be tried again
+        # after one no phone got (quiet hours): not at every watchdog reading.
+        self.retry_at: dict[str, float] = {}
         # The streams being asked about or pushed right now.
         self.busy: set[str] = set()
+        # Taken around each save, from reading the state to writing it, so saves land in order.
+        self.save_lock = threading.Lock()
+        # Whether what was told hasn't been saved yet (a save failed): the next hold or reading saves it.
+        self.dirty = False
+
+    def told_about(self) -> list[str]:
+        """The streams an outage was pushed for and whose return wasn't: what relay.db keeps."""
+        with self.lock:
+            return sorted(self.alerted | self.recovering)
+
+    def owed(self, name: str) -> bool:
+        """Whether a phone may be showing [name]'s outage: its return is to be pushed once its video moves."""
+        return name in self.alerted or name in self.recovering
 
     def hold_ended(self, name: str, watch: NestPrimerWatch, now: float) -> bool:
         """
@@ -6080,6 +6101,11 @@ class NestOutages:
                 self.reasons.pop(name, None)
                 return False
             since = self.since.setdefault(name, now)
+            if name in self.recovering and name not in self.busy:
+                # Out again before any phone heard it was back: the outage on the phones still stands.
+                self.recovering.discard(name)
+                self.retry_at.pop(name, None)
+                self.alerted.add(name)
             if name in self.alerted or name in self.busy or now - since < NEST_OUTAGE_ALERT_SECONDS:
                 return False
             self.busy.add(name)
@@ -6103,15 +6129,31 @@ class NestOutages:
                 else:
                     self.reasons[name] = reason
 
-    def streaming(self, name: str) -> bool:
-        """[name]'s video moved: its outage, if any, is over. Whether its end is to be pushed (its start was)."""
+    def streaming(self, name: str, now: float) -> bool:
+        """
+        [name]'s video moved: its outage, if any, is over. Whether its return is to be pushed
+        now: its outage was, and no push of its return is in flight or waiting out a retry.
+        """
         with self.lock:
             self.since.pop(name, None)
             self.reasons.pop(name, None)
-            if name not in self.alerted:
+            if name in self.alerted and name not in self.busy:
+                self.alerted.discard(name)
+                self.recovering.add(name)
+            if name not in self.recovering or name in self.busy or now < self.retry_at.get(name, 0.0):
                 return False
-            self.alerted.discard(name)
+            self.busy.add(name)
             return True
+
+    def recovered(self, name: str, sent: bool, now: float) -> None:
+        """After pushing [name]'s return: done once some phone got it ([sent]), else tried again later."""
+        with self.lock:
+            self.busy.discard(name)
+            if sent:
+                self.recovering.discard(name)
+                self.retry_at.pop(name, None)
+            elif name in self.recovering:
+                self.retry_at[name] = now + NEST_OUTAGE_RETRY_SECONDS
 
 
 NEST_OUTAGES = NestOutages()
@@ -6241,7 +6283,18 @@ def nest_outage_push(name: str, reason: str | None, since: float | None, push: C
 
 
 def nest_outage_save() -> None:
-    state_set(NEST_OUTAGE_STATE_KEY, sorted(NEST_OUTAGES.alerted) or None)
+    """
+    Keeps what was told in relay.db. Read and written under one lock, so a save that read the
+    state earlier can't land after one that read it later; one that fails is tried again at the
+    next hold or reading (see `nest_outage_hold_ended`), without pushing anything again.
+    """
+    with NEST_OUTAGES.save_lock:
+        NEST_OUTAGES.dirty = True
+        try:
+            state_set(NEST_OUTAGE_STATE_KEY, NEST_OUTAGES.told_about() or None)
+            NEST_OUTAGES.dirty = False
+        except Exception as e:  # noqa: BLE001 - relay.db busy: saved at the next hold
+            log.warning("nest outage: what was told not saved (%s)", type(e).__name__)
 
 
 def nest_outage_load() -> None:
@@ -6254,6 +6307,8 @@ def nest_outage_load() -> None:
 
 def nest_outage_hold_ended(name: str, watch: NestPrimerWatch, now: float, check: Callable[[str], str | None] | None = None, push: Callable[..., dict[str, int]] | None = None) -> None:
     """After [name]'s hold ended ([watch]): when its outage is due, asks Google why and pushes it. `check` and `push` stand in for Google and `broadcast` in tests."""
+    if NEST_OUTAGES.dirty:
+        nest_outage_save()
     if not NEST_OUTAGES.hold_ended(name, watch, now):
         return
     reason, sent = NEST_OUTAGES.reasons.get(name), False
@@ -6267,11 +6322,25 @@ def nest_outage_hold_ended(name: str, watch: NestPrimerWatch, now: float, check:
         nest_outage_save()
 
 
-def nest_outage_streaming(name: str, push: Callable[..., dict[str, int]] | None = None) -> None:
-    """[name]'s video moved: when its outage was pushed, pushes that it's back."""
-    if NEST_OUTAGES.streaming(name):
+def nest_outage_streaming(name: str, now: float | None = None, push: Callable[..., dict[str, int]] | None = None) -> None:
+    """
+    [name]'s video moved (at [now]): when its outage was pushed, pushes that it's back. A push
+    no phone got, or one that failed, stays owed and is tried again NEST_OUTAGE_RETRY_SECONDS on.
+    """
+    now = time.time() if now is None else now
+    if NEST_OUTAGES.dirty:
         nest_outage_save()
-        nest_outage_push(name, None, None, push)
+    if not NEST_OUTAGES.streaming(name, now):
+        return
+    sent = False
+    try:
+        sent = bool(nest_outage_push(name, None, None, push).get("sent"))
+    except Exception as e:  # noqa: BLE001 - FCM or relay.db: tried again later
+        log.warning("nest outage: %s's return not pushed (%s)", name, type(e).__name__)
+    finally:
+        NEST_OUTAGES.recovered(name, sent, now)
+    if sent:
+        nest_outage_save()
 
 
 # ---------------------------------------------------------------- Google Home

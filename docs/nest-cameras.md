@@ -243,7 +243,9 @@ got is tried again at the next hold (within about 6 minutes), without asking Goo
 phone in quiet hours hears of it once they end. It is never repeated while the outage lasts, even
 across a relay restart (the cameras told about are kept in relay.db, `state` key
 `nest_outage_alerted`). The first time the camera's video moves again, a second push, *Outdoor
-Doorbell is streaming again*, replaces the first (both carry `notif_id=nest-<name>`).
+Doorbell is streaming again*, replaces the first (both carry `notif_id=nest-<name>`). That one
+too stays owed until a phone gets it, tried again every 5 minutes, and across a restart; a
+camera out again before then is still the one outage, so it isn't pushed twice.
 
 The push's data carries `system=nest`, `camera`, `nest_camera_name`, `nest_event`
 (`unavailable` or `streaming`), `nest_reason` (`refused` or `unconfirmed`) and `nest_since`
