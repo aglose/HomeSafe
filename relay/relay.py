@@ -5926,11 +5926,13 @@ class NestGo2rtcRestarts:
         self.lock = threading.Lock()
         # Per stream, the drops in a row with no video between them.
         self.drops: dict[str, int] = {}
-        # When a restart may come again (monotonic), and how long the next wait is.
-        self.allowed_at = 0.0
+        # When go2rtc was last restarted (monotonic), and the least wait after it before the next.
+        self.restarted_at: float | None = None
         self.cooldown = NEST_PRIMER_RESTART_COOLDOWN_SECONDS
-        # The stream the last restart was for, until its video moves again.
-        self.restarted_for: str | None = None
+        # The streams restarts were for whose video hasn't moved since. While any is left, a restart
+        # (for whichever stream) hasn't helped, so the wait after the next one doubles: two cameras
+        # dead by turns back off like one.
+        self.unhealed: set[str] = set()
 
     def hold_ended(self, name: str, watch: NestPrimerWatch, now: float) -> bool:
         """
@@ -5943,21 +5945,26 @@ class NestGo2rtcRestarts:
         on 2026-10-20) a restart can't change that.
         """
         with self.lock:
-            if watch.flowed and self.restarted_for == name:
-                # That restart brought it back: the next one may come at the first wait again.
-                self.restarted_for, self.cooldown = None, NEST_PRIMER_RESTART_COOLDOWN_SECONDS
+            if watch.flowed and name in self.unhealed:
+                self.unhealed.discard(name)
+                if not self.unhealed:
+                    # The restarts brought every stream back: the wait is the first one again,
+                    # counted from the last restart like any other.
+                    self.cooldown = NEST_PRIMER_RESTART_COOLDOWN_SECONDS
             if not (watch.dropped and watch.session):
                 self.drops[name] = 0
                 return False
             self.drops[name] = 1 if watch.flowed else self.drops.get(name, 0) + 1
-            if self.drops[name] < NEST_PRIMER_RESTART_AFTER_DROPS or now < self.allowed_at:
+            if self.drops[name] < NEST_PRIMER_RESTART_AFTER_DROPS:
+                return False
+            if self.restarted_at is not None and now < self.restarted_at + self.cooldown:
                 return False
             self.drops.clear()
-            if self.restarted_for == name:
-                # The last restart, for this same stream, didn't bring it back.
+            if self.unhealed:
+                # An earlier restart hasn't brought its stream back.
                 self.cooldown = min(NEST_PRIMER_MAX_RESTART_COOLDOWN_SECONDS, self.cooldown * 2)
-            self.allowed_at = now + self.cooldown
-            self.restarted_for = name
+            self.restarted_at = now
+            self.unhealed.add(name)
             return True
 
 
