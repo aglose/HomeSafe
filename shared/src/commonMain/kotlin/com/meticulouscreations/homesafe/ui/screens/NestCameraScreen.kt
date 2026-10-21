@@ -58,6 +58,7 @@ import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
 import com.meticulouscreations.homesafe.ui.components.cropAsZoomRest
 import com.meticulouscreations.homesafe.ui.components.isOnItsSide
+import com.meticulouscreations.homesafe.ui.components.pictureInBox
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
@@ -185,11 +186,16 @@ fun NestCameraScreen(
         else -> VIDEO_ASPECT
     }
     // The crop is where the zoom rests rather than a cut of the picture, as on a Frigate
-    // camera's page: a pinch can pan past its edges or close out to the whole picture.
-    val zoomRest = remember(framing.crop, boxAspect, pictureAspect, fit, turnDegrees) {
-        cropAsZoomRest(framing.crop, boxAspect = boxAspect, aspect = pictureAspect, fit = fit, onItsSide = isOnItsSide(turnDegrees))
+    // camera's page: a pinch can pan past its edges, as far as the picture's own, or close out
+    // to the whole picture.
+    val onItsSide = isOnItsSide(turnDegrees)
+    val zoomRest = remember(framing.crop, boxAspect, pictureAspect, fit, onItsSide) {
+        cropAsZoomRest(framing.crop, boxAspect = boxAspect, aspect = pictureAspect, fit = fit, onItsSide = onItsSide)
     }
-    SideEffect { zoom.restOn(zoomRest) }
+    val picture = remember(boxAspect, pictureAspect, fit, onItsSide) {
+        pictureInBox(boxAspect = boxAspect, aspect = pictureAspect, fit = fit, onItsSide = onItsSide)
+    }
+    SideEffect { zoom.restOn(zoomRest, picture) }
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     if (fullScreen && animatedVisibilityScope.transition.targetState == EnterExitState.Visible) ImmersiveSystemBars()
     val extraColors = LocalFrigateExtraColors.current
@@ -218,6 +224,8 @@ fun NestCameraScreen(
                     fit = fit,
                     modifier = Modifier.fillMaxSize().pinchZoomContent(zoom),
                     turnDegrees = turnDegrees,
+                    // Filling, the picture spills past its box: kept, for the zoom to pan to, and clipped by the viewport around it.
+                    clip = false,
                 ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         request = request,

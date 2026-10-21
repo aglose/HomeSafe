@@ -4,9 +4,11 @@
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -129,6 +131,22 @@ fun StatusBadgePreview() {
             StatusBadge(enabled = true, status = LiveStreamStatus.Connecting, textColor = Color.White, pillColor = Color.Black)
             StatusBadge(enabled = true, status = LiveStreamStatus.Buffering, textColor = Color.White, pillColor = Color.Black)
             StatusBadge(enabled = false, status = LiveStreamStatus.Connecting, textColor = Color.White, pillColor = Color.Black)
+        }
+    }
+}
+
+/**
+ * A card's Arrange controls on the narrowest card the landscape grid makes (200dp), where the
+ * labelled Frame button gives way, a 236dp one, and a phone's full-width card.
+ */
+@Preview(name = "Arrange controls, narrow to wide")
+@Composable
+private fun CameraArrangeControlsPreview() {
+    FrigateTheme {
+        Column(modifier = Modifier.background(Color.DarkGray).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (width in listOf(200, 236, 380)) {
+                CameraArrangeControls(onTurn = {}, onFrame = {}, hidden = width == 236, onHiddenChange = {}, modifier = Modifier.width(width.dp))
+            }
         }
     }
 }

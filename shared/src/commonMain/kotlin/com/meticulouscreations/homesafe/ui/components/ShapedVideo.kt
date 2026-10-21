@@ -7,6 +7,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
@@ -82,33 +83,48 @@ fun pictureBoxSize(boxWidth: Int, boxHeight: Int, aspect: Float?, fit: VideoFit?
 }
 
 /**
- * [crop] drawn by zooming [ShapedVideo]'s whole box rather than the picture inside it: the box
- * [ZoomRest.scale] times larger about its middle and shifted by [ZoomRest.shift]. The same view as
- * passing [crop] to [ShapedVideo], but with the rest of the picture still there around it, for a
- * camera's page, where a pinch reaches past the crop to the whole picture.
+ * The size of the picture [ShapedVideo] draws in its box, beside the box, on each axis: 1 where
+ * it is the box (a stretched picture), more where it spills past it (filling a box of another
+ * shape), less where it sits between bars (shown whole). For a [PinchZoomState], whose pans then
+ * stop at the picture's edges ([PinchZoomState.restOn]).
  *
  * [boxAspect] is the shape of [ShapedVideo]'s box; [aspect], [fit] and [onItsSide] are the
  * picture's, as [ShapedVideo] is given them (its measured shape, how it sits, and whether a
  * quarter turn has stood it on its side).
  */
+fun pictureInBox(boxAspect: Float, aspect: Float?, fit: VideoFit?, onItsSide: Boolean): Size {
+    if (boxAspect <= 0f) return PinchZoomState.WHOLE_BOX
+    val (boxWidth, boxHeight) = nominalBox(boxAspect)
+    val (width, height) = pictureBoxSize(boxWidth, boxHeight, aspect.takeIf { fit != null }, fit, onItsSide)
+    return Size(width.toFloat() / boxWidth, height.toFloat() / boxHeight)
+}
+
+/**
+ * [crop] drawn by zooming [ShapedVideo]'s whole box rather than the picture inside it: the box
+ * [ZoomRest.scale] times larger about its middle and shifted by [ZoomRest.shift]. The same view as
+ * passing [crop] to [ShapedVideo], but with the rest of the picture still there around it, for a
+ * camera's page, where a pinch reaches past the crop to the whole picture. The [ShapedVideo] must
+ * then not clip, so that a picture larger than its box is all there to pan to.
+ *
+ * The box and the picture are described as for [pictureInBox].
+ */
 fun cropAsZoomRest(crop: CameraCrop, boxAspect: Float, aspect: Float?, fit: VideoFit?, onItsSide: Boolean): ZoomRest {
     if (crop.isWhole || boxAspect <= 0f) return ZoomRest.NONE
-    // Any box of the right shape: the answer is in fractions of it. Large, so rounding the
-    // picture's box to whole pixels moves nothing.
-    val boxWidth = NOMINAL_BOX_WIDTH
-    val boxHeight = (boxWidth / boxAspect).roundToInt()
-    val (width, height) = pictureBoxSize(boxWidth, boxHeight, aspect.takeIf { fit != null }, fit, onItsSide)
-    // As pictureBox places it: the crop kept within this box's reach of the picture, then the
-    // picture's box scaled about its middle, which is this box's, and slid.
-    val shown = crop.clamped(boxWidth.toFloat() / width, boxHeight.toFloat() / height)
+    val picture = pictureInBox(boxAspect, aspect, fit, onItsSide)
+    // As pictureBox places it: the crop kept within the box's reach of the picture, then the
+    // picture's box scaled about its middle, which is the box's, and slid.
+    val shown = crop.clamped(1f / picture.width, 1f / picture.height)
     return ZoomRest(
         scale = shown.zoom,
         shift = Offset(
-            x = (0.5f - shown.centerX) * shown.zoom * width / boxWidth,
-            y = (0.5f - shown.centerY) * shown.zoom * height / boxHeight,
+            x = (0.5f - shown.centerX) * shown.zoom * picture.width,
+            y = (0.5f - shown.centerY) * shown.zoom * picture.height,
         ),
     )
 }
+
+/** Any box of [boxAspect]'s shape: the answers are in fractions of it. Large, so rounding the picture's box to whole pixels moves nothing. */
+private fun nominalBox(boxAspect: Float): IntSize = IntSize(NOMINAL_BOX_WIDTH, (NOMINAL_BOX_WIDTH / boxAspect).roundToInt())
 
 private const val NOMINAL_BOX_WIDTH = 16_000
 

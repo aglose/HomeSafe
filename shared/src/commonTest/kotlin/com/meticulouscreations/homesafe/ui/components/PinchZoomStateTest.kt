@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.ui.components
 import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
+import com.meticulouscreations.homesafe.domain.model.VideoFit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -201,6 +203,37 @@ class PinchZoomStateTest {
         state.restOn(ZoomRest(scale = PinchZoomState.DEFAULT_MAX_SCALE))
         withContext(FrameClock) { state.animateZoomIn(Offset(500f, 281f)) }
         assertEquals(1f, state.scale)
+    }
+
+    @Test
+    fun aFillCropRestsWhereItWasSavedThoughThePictureSpillsPastTheFrame() {
+        // A 4:3 Nest picture filling a 1600x900 frame is 1600x1200, a 150 px band cut off above
+        // and below. Twice as close, low down: its middle 0.8 of the way down the picture.
+        val crop = CameraCrop(zoom = 2f, centerY = 0.8f)
+        val picture = pictureInBox(boxAspect = 16f / 9f, aspect = 4f / 3f, fit = VideoFit.Fill, onItsSide = false)
+        val state = PinchZoomState().apply {
+            viewportSize = IntSize(1600, 900)
+            contentSize = IntSize(1600, 900)
+            restOn(cropAsZoomRest(crop, boxAspect = 16f / 9f, aspect = 4f / 3f, fit = VideoFit.Fill, onItsSide = false), picture)
+        }
+        // (0.5 - 0.8) x 2 x 1200: the picture slid 720 px up, past what the frame alone allows.
+        assertEquals(-720f, state.offset.y, 0.5f)
+        assertFalse(state.isZoomed)
+
+        state.panBy(Offset(0f, -5000f))
+        assertEquals(-750f, state.offset.y, 0.5f, "a drag stops at the picture's bottom edge, (2400 - 900) / 2 up")
+    }
+
+    @Test
+    fun aPictureBetweenBarsIsNotPannedIntoThem() {
+        // A 4:3 picture shown whole in a 16:9 strip is 0.75 of its width: at 2x, 1500 of 1000 wide.
+        val state = PinchZoomState().apply {
+            viewportSize = IntSize(1000, 562)
+            contentSize = IntSize(1000, 562)
+            restOn(ZoomRest.NONE, pictureInBox(boxAspect = 1000f / 562f, aspect = 4f / 3f, fit = VideoFit.Fit, onItsSide = false))
+        }
+        state.transformBy(zoomChange = 2f, pan = Offset(5000f, 0f), centroid = Offset(500f, 281f))
+        assertEquals(250f, state.offset.x, 1f)
     }
 
     /** Frames every 16ms of the test's virtual time. */

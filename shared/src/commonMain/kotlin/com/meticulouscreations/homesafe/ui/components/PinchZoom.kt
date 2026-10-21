@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToDown
@@ -44,6 +45,10 @@ import kotlin.math.abs
  * Left alone the content sits at its [rest]: 1x and centred, unless told otherwise ([restOn]). A
  * camera page rests on the crop the camera was framed with, drawn by this zoom rather than by
  * cutting the picture down, so a pinch can still reach the whole picture around it.
+ *
+ * The edges a pan stops at are the picture's: the content's own box unless [restOn] says the
+ * picture drawn in it is larger (a picture filling a box of another shape, spilling past it) or
+ * smaller (one shown whole between bars).
  */
 @Stable
 class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
@@ -79,17 +84,28 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         }
 
     /**
-     * Rests the content at [rest] from now on. Content at its old rest moves straight to the new
-     * one; content zoomed somewhere else stays there, and goes back to the new rest when it goes back.
+     * The picture's size beside the content's box, on each axis (see [restOn]). Not snapshot
+     * state: only read where the pan is bounded.
      */
-    fun restOn(rest: ZoomRest) {
+    private var picture: Size = WHOLE_BOX
+
+    /**
+     * Rests the content at [rest] from now on, with a [picture] that size beside the content's box
+     * on each axis (1 where it is the box; see [cropAsZoomRest] and [pictureInBox]). Content at its
+     * old rest moves straight to the new one; content zoomed somewhere else stays there, kept
+     * within the picture, and goes back to the new rest when it goes back.
+     */
+    fun restOn(rest: ZoomRest, picture: Size = WHOLE_BOX) {
         val clamped = rest.copy(scale = rest.scale.coerceIn(1f, maxScale))
-        if (clamped == this.rest) return
+        if (clamped == this.rest && picture == this.picture) return
         val resting = !isZoomed
         this.rest = clamped
+        this.picture = picture
         if (resting) {
             scale = clamped.scale
             offset = restOffset()
+        } else {
+            offset = offset.clampedFor(scale)
         }
     }
 
@@ -190,8 +206,8 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     }
 
     private fun Offset.clampedFor(scale: Float): Offset {
-        val maxX = ((contentSize.width * scale - viewportSize.width) / 2f).coerceAtLeast(0f)
-        val maxY = ((contentSize.height * scale - viewportSize.height) / 2f).coerceAtLeast(0f)
+        val maxX = ((contentSize.width * picture.width * scale - viewportSize.width) / 2f).coerceAtLeast(0f)
+        val maxY = ((contentSize.height * picture.height * scale - viewportSize.height) / 2f).coerceAtLeast(0f)
         return Offset(x.coerceIn(-maxX, maxX), y.coerceIn(-maxY, maxY))
     }
 
@@ -200,6 +216,9 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     companion object {
         const val DEFAULT_MAX_SCALE = 5f
         const val DOUBLE_TAP_SCALE = 2.5f
+
+        /** A picture that is its content's box exactly. */
+        val WHOLE_BOX = Size(1f, 1f)
 
         /** How near the [rest] counts as at it: an animation back can end a hair off. */
         private const val REST_SCALE_TOLERANCE = 0.001f
