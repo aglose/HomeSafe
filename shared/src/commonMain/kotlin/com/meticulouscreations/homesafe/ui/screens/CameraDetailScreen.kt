@@ -52,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.IntState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -101,12 +102,16 @@ import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
+import com.meticulouscreations.homesafe.ui.components.MeasuredVideoShapes
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.TapEdge
 import com.meticulouscreations.homesafe.ui.components.VideoSource
+import com.meticulouscreations.homesafe.ui.components.cropAsZoomRest
+import com.meticulouscreations.homesafe.ui.components.isOnItsSide
+import com.meticulouscreations.homesafe.ui.components.pictureInBox
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
@@ -507,6 +512,19 @@ private fun PlayerSurface(
     val shapeUrl = (uiState as? CameraDetailUiState.Found)?.streamUrl ?: warmStreamUrl
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
+    // The crop the camera was framed with is where the zoom rests, rather than a cut of the
+    // picture: the page opens on the same view, and a pinch can pan past the crop's edges, as far
+    // as the picture's own, or close out to the whole picture. Its shape is read here, so it rests
+    // anew once it is known.
+    val pictureAspect = shapeUrl?.let { MeasuredVideoShapes[it] }
+    val onItsSide = isOnItsSide(turnDegrees)
+    val zoomRest = remember(crop, pictureAspect, videoFit, onItsSide) {
+        cropAsZoomRest(crop, boxAspect = VIDEO_ASPECT, aspect = pictureAspect, fit = videoFit, onItsSide = onItsSide)
+    }
+    val picture = remember(pictureAspect, videoFit, onItsSide) {
+        pictureInBox(boxAspect = VIDEO_ASPECT, aspect = pictureAspect, fit = videoFit, onItsSide = onItsSide)
+    }
+    SideEffect { zoom.restOn(zoomRest, picture) }
     val haptic = LocalHapticFeedback.current
     // Read by the tap handler, which must not restart on a rotation.
     val isFullScreen by rememberUpdatedState(fullScreen)
@@ -629,9 +647,11 @@ private fun PlayerSurface(
                 val shownRequest = request ?: warmRequest
                 if (shownRequest != null) {
                     // Framed the way the camera was in Arrange mode: turned (on its side, it fits the
-                    // 16:9 box at the inverse shape, see ShapedVideo) and cropped, recordings as well as live.
+                    // 16:9 box at the inverse shape, see ShapedVideo), recordings as well as live,
+                    // and cropped by the zoom's rest (above) rather than here, so all of it is there to zoom out to:
+                    // unclipped, so a picture filling the box past its edges keeps them, for the viewport to clip.
                     // A Nest camera's picture shows at its own shape ([videoFit]); every other camera's is stretched to the box.
-                    ShapedVideo(streamUrl = shapeUrl, fit = videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees, crop = { crop }) { pictureModifier, measure ->
+                    ShapedVideo(streamUrl = shapeUrl, fit = videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees, clip = false) { pictureModifier, measure ->
                         // Same playerKey as the grid card: this binds to the player the card was already
                         // running, so live video is on screen before the shared-element transition ends.
                         CameraStreamPlayer(
@@ -675,7 +695,7 @@ private fun PlayerSurface(
                 // pre-seek frame lingering while the new position buffers.
                 val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
                 if (previewEpoch != null) {
-                    ShapedVideo(streamUrl = shapeUrl, fit = videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees, crop = { crop }) { pictureModifier, _ ->
+                    ShapedVideo(streamUrl = shapeUrl, fit = videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees, clip = false) { pictureModifier, _ ->
                         Box(modifier = pictureModifier.clipToBounds()) {
                             SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize().turned(turnDegrees))
                         }

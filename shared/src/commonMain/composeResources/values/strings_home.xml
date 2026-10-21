@@ -20,18 +20,25 @@
     </plurals>
 
     <string name="home_no_cameras">No cameras found on this server.</string>
+    <!-- Home with every camera in the list hidden in Arrange mode. "Arrange cameras" is the menu item (home_arrange_menu). -->
+    <string name="home_all_cameras_hidden">Every camera here is hidden. Choose Arrange cameras in the menu to bring one back.</string>
     <!-- The Home page's switch between the Frigate cameras outside and the Nest cameras inside. -->
     <string name="home_placement_outdoor">Outdoor</string>
     <string name="home_placement_indoor">Indoor</string>
-    <!-- Arrange mode: the cameras dragged into order and turned the right way up. -->
+    <!-- Arrange mode: the cameras dragged into order, turned the right way up, and hidden from Home or brought back. -->
     <string name="home_arrange_menu">Arrange cameras</string>
     <string name="home_arrange_menu_done">Done arranging</string>
     <string name="home_arrange_done">Done</string>
-    <string name="home_arrange_hint">Hold a camera to drag it. Tap it to straighten, zoom or crop its picture.</string>
+    <string name="home_arrange_hint">Hold a camera to drag it. Tap it to straighten, zoom or crop its picture. Hidden cameras show only here.</string>
     <string name="camera_move_earlier">Move earlier</string>
     <string name="camera_move_later">Move later</string>
     <string name="camera_turn_left">Turn left</string>
     <string name="camera_turn_right">Turn right</string>
+    <!-- On a camera card in Arrange mode: leaves the camera off the Home page, or puts a hidden one back. -->
+    <string name="camera_hide">Hide from Home</string>
+    <string name="camera_show">Show on Home</string>
+    <!-- Over a hidden camera's card in Arrange mode. -->
+    <string name="camera_hidden_badge">Hidden</string>
     <!-- On a camera card in Arrange mode: opens the framing editor. Short: it sits between the two turn buttons. -->
     <string name="camera_frame_button">Frame</string>
     <!-- Accessibility label for tapping a camera card in Arrange mode, which opens the framing editor. -->

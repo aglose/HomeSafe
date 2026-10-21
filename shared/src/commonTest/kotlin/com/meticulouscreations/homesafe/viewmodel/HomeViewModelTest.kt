@@ -51,6 +51,7 @@ import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveCameraOrderUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraHiddenUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraOrientationUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
@@ -238,6 +239,7 @@ class HomeViewModelTest {
             observeCameraLayoutsUseCase = ObserveCameraLayoutsUseCase(layouts),
             saveCameraOrderUseCase = SaveCameraOrderUseCase(layouts),
             setCameraOrientationUseCase = SetCameraOrientationUseCase(layouts),
+            setCameraHiddenUseCase = SetCameraHiddenUseCase(layouts),
             clock = object : Clock {
                 // 18:00 UTC, a couple of hours after [tesla] arrived and the same day wherever the
                 // test runs, so the card's arrival never reads "yesterday".
@@ -418,6 +420,9 @@ class HomeViewModelTest {
         override suspend fun setFraming(cameraName: String, orientation: CameraOrientation, crop: CameraCrop) {
             saved[cameraName] = (saved[cameraName] ?: CameraLayout()).copy(orientation = orientation, crop = crop)
         }
+        override suspend fun setHidden(cameraName: String, hidden: Boolean) {
+            saved[cameraName] = (saved[cameraName] ?: CameraLayout()).copy(hidden = hidden)
+        }
         fun deliver() {
             observed.value = saved.toMap()
         }
@@ -507,6 +512,41 @@ class HomeViewModelTest {
         val saved = h.layouts.observeLayouts().first()["backyard"]
         assertEquals(CameraOrientation(1, 2.5f), saved?.orientation)
         assertEquals(crop, saved?.crop)
+    }
+
+    @Test
+    fun aHiddenCameraIsMarkedAtOnceSavedAndLeftOffTheHomePageOutsideArrangeMode() = runTest {
+        val slow = SlowLayouts()
+        val h = Harness(cameras = three, layoutRepository = slow)
+        tiles(h.viewModel)
+
+        h.viewModel.setCameraHidden("backyard", hidden = true)
+        runCurrent()
+        val listed = h.viewModel.cameras.value.orEmpty()
+        assertEquals(listOf(false, true, false), listed.map { it.hidden }, "marked before the save is read back")
+        assertEquals(listOf("front_door", "driveway"), listed.onHome(arranging = false).map { it.camera.name }, "off the page")
+        assertEquals(listOf("front_door", "backyard", "driveway"), listed.onHome(arranging = true).map { it.camera.name }, "but there to bring back while arranging")
+
+        slow.deliver()
+        advanceUntilIdle()
+        assertEquals(listOf(false, true, false), h.viewModel.cameras.value?.map { it.hidden }, "and still hidden once read back")
+    }
+
+    @Test
+    fun aHiddenCameraKeepsItsPlaceAndFramingAndComesBack() = runTest {
+        val h = Harness(cameras = three)
+        val crop = CameraCrop(zoom = 2f, centerX = 0.3f)
+        h.layouts.saveOrder(listOf("driveway", "backyard", "front_door"))
+        h.layouts.setFraming("backyard", CameraOrientation(quarterTurns = 1), crop)
+        tiles(h.viewModel)
+
+        h.viewModel.setCameraHidden("backyard", hidden = true)
+        advanceUntilIdle()
+        assertEquals(CameraLayout(position = 1, orientation = CameraOrientation(quarterTurns = 1), crop = crop, hidden = true), h.layouts.observeLayouts().first()["backyard"])
+
+        h.viewModel.setCameraHidden("backyard", hidden = false)
+        advanceUntilIdle()
+        assertEquals(listOf("driveway", "backyard", "front_door"), h.viewModel.cameras.value?.onHome(arranging = false)?.map { it.camera.name }, "back where it was")
     }
 
     @Test

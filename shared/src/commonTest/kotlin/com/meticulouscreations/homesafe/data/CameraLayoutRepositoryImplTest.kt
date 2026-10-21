@@ -75,6 +75,24 @@ class CameraLayoutRepositoryImplTest {
         )
     }
 
+    @Test
+    fun hidingKeepsThePlaceAndFramingAndAnOrderOrAFramingKeepsItHidden() = runTest {
+        val repository = CameraLayoutRepositoryImpl(InMemoryCameraListDao(), FakeConnection(server))
+        val crop = CameraCrop(zoom = 2f, centerX = 0.4f)
+
+        repository.saveOrder(listOf("kitchen", "kids_room"))
+        repository.setHidden("kids_room", hidden = true)
+        repository.setFraming("kids_room", CameraOrientation(quarterTurns = 1), crop)
+        repository.saveOrder(listOf("kids_room", "kitchen"))
+
+        assertEquals(
+            CameraLayout(position = 0, orientation = CameraOrientation(quarterTurns = 1), crop = crop, hidden = true),
+            repository.observeLayouts().first()["kids_room"],
+        )
+        repository.setHidden("kids_room", hidden = false)
+        assertEquals(false, repository.observeLayouts().first()["kids_room"]?.hidden)
+    }
+
     /**
      * Reads that take a moment to come back, as a database's do: the rows as they were when asked
      * for, handed over a little later. Two saves begun together both read before either writes.

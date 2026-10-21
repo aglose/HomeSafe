@@ -44,6 +44,7 @@ class CameraFramingViewModelTest {
             saves += CameraFraming(orientation, crop)
             layouts.update { it + (cameraName to (it[cameraName] ?: CameraLayout()).copy(orientation = orientation, crop = crop)) }
         }
+        override suspend fun setHidden(cameraName: String, hidden: Boolean) = Unit
     }
 
     private val saved = CameraFraming(CameraOrientation(quarterTurns = 1, tiltDegrees = -2.5f), CameraCrop(zoom = 2f, centerX = 0.4f))

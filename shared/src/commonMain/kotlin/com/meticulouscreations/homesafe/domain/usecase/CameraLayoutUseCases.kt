@@ -25,6 +25,12 @@ class SetCameraOrientationUseCase(private val repository: CameraLayoutRepository
     suspend operator fun invoke(cameraName: String, orientation: CameraOrientation) = repository.setOrientation(cameraName, orientation)
 }
 
+/** See [CameraLayoutRepository.setHidden]: Arrange mode leaving a camera off the Home page, or putting it back. */
+@Inject
+class SetCameraHiddenUseCase(private val repository: CameraLayoutRepository) {
+    suspend operator fun invoke(cameraName: String, hidden: Boolean) = repository.setHidden(cameraName, hidden)
+}
+
 /** See [CameraLayoutRepository.setFraming]: a camera's picture turned and cropped in the framing editor. */
 @Inject
 class SetCameraFramingUseCase(private val repository: CameraLayoutRepository) {

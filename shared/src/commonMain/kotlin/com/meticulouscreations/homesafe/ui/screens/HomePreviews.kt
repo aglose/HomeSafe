@@ -4,9 +4,11 @@
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,12 +63,27 @@ fun HomeFeedIndoorPreview() {
     HomeFeedPreviewContent(everyoneAway = false, cameras = previewIndoorTiles, inView = previewInView, placement = CameraPlacement.Indoor)
 }
 
-/** Arrange mode on the indoor cameras: the hint and Done heading them, each card with its turn and tilt controls, the nursery's picture set crooked. */
+/**
+ * Arrange mode on the indoor cameras: the hint and Done heading them, each card with its turn,
+ * framing and hide controls, the nursery's picture set crooked and the living room hidden.
+ */
 @Preview(name = "Home, arranging", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedArrangingPreview() {
-    val tiles = previewIndoorTiles.map { if (it.camera.name == "nursery") it.copy(orientation = CameraOrientation(quarterTurns = 1, tiltDegrees = -8f)) else it }
+    val tiles = previewIndoorTiles.map {
+        when (it.camera.name) {
+            "nursery" -> it.copy(orientation = CameraOrientation(quarterTurns = 1, tiltDegrees = -8f))
+            else -> it.copy(hidden = true)
+        }
+    }
     HomeFeedPreviewContent(everyoneAway = false, cameras = tiles, inView = emptyList(), placement = CameraPlacement.Indoor, arranging = true)
+}
+
+/** Every camera in the list hidden: the page says how to bring one back rather than that the server has none. */
+@Preview(name = "Home, every camera hidden", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+private fun HomeFeedAllHiddenPreview() {
+    HomeFeedPreviewContent(everyoneAway = false, cameras = emptyList(), inView = previewInView, allHidden = true)
 }
 
 @Preview(name = "Home, loading", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
@@ -118,6 +135,22 @@ fun StatusBadgePreview() {
     }
 }
 
+/**
+ * A card's Arrange controls on the narrowest card the landscape grid makes (200dp), where the
+ * labelled Frame button gives way, a 236dp one, and a phone's full-width card.
+ */
+@Preview(name = "Arrange controls, narrow to wide")
+@Composable
+private fun CameraArrangeControlsPreview() {
+    FrigateTheme {
+        Column(modifier = Modifier.background(Color.DarkGray).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (width in listOf(200, 236, 380)) {
+                CameraArrangeControls(onTurn = {}, onFrame = {}, hidden = width == 236, onHiddenChange = {}, modifier = Modifier.width(width.dp))
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun HomeFeedPreviewContent(
@@ -129,6 +162,7 @@ private fun HomeFeedPreviewContent(
     placement: CameraPlacement? = null,
     arranging: Boolean = false,
     doors: List<Door> = emptyList(),
+    allHidden: Boolean = false,
 ) {
     FrigatePreview {
         SharedTransitionPreview {
@@ -137,6 +171,7 @@ private fun HomeFeedPreviewContent(
                 everyoneAway = everyoneAway,
                 cameras = cameras,
                 onAwayBack = {},
+                allHidden = allHidden,
                 inView = inView,
                 doors = doors,
                 refreshing = refreshing,
