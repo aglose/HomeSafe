@@ -5783,6 +5783,19 @@ NEST_PRIMER_RESTART_AFTER_DROPS = 2
 # camera that sends nothing for reasons of its own doesn't blip every stream all day.
 NEST_PRIMER_RESTART_COOLDOWN_SECONDS = 30 * 60
 NEST_PRIMER_MAX_RESTART_COOLDOWN_SECONDS = 4 * 3600
+# A camera Google won't stream ("The camera is not available for streaming": turned off in Google
+# Home, offline, or Google's own trouble) gets no session at all, so nothing above can heal it,
+# and only someone with the Google Home app can (the doorbell on 2026-10-17, and from 07:00 on
+# 2026-10-20, with nobody told). Once a Nest stream's holds have gone this long without go2rtc
+# ever having a session, the relay asks Google itself why and pushes once (see "Nest outages").
+NEST_OUTAGE_ALERT_SECONDS = 3600
+# The cameras whose outage was pushed, kept in relay.db so a relay restarted during the outage
+# doesn't push it again, and does push when the camera is back.
+NEST_OUTAGE_STATE_KEY = "nest_outage_alerted"
+# How long after a push of a camera's return that no phone got (quiet hours, say) it's tried again.
+NEST_OUTAGE_RETRY_SECONDS = 300
+NEST_TOKEN_URL = "https://oauth2.googleapis.com/token"
+NEST_SDM_URL = "https://smartdevicemanagement.googleapis.com/v1"
 
 
 def nest_stream_names(streams: dict[str, Any]) -> list[str]:
@@ -5856,7 +5869,11 @@ def nest_primer_watchdog(name: str, sock: socket.socket, watch: NestPrimerWatch,
             received = nest_video_bytes(name)
         except Exception:  # noqa: BLE001 - go2rtc restarting: nothing seen arriving
             received = None
-        if watch.stalled(time.monotonic(), received):
+        stalled = watch.stalled(time.monotonic(), received)
+        if watch.flowed and NEST_OUTAGES.owed(name):
+            # Off the watchdog's thread: a push takes as long as FCM does.
+            threading.Thread(target=nest_outage_streaming, args=(name,), name=f"nest-outage-{name}", daemon=True).start()
+        if stalled:
             log.info("nest primer: %s had no video for %d s; dropping it", name, NEST_PRIMER_STALL_SECONDS)
             watch.dropped = True
             try:
@@ -6003,11 +6020,17 @@ def nest_primer_stream(name: str, after: str | None = None) -> None:
         if after is None and NEST_GO2RTC_RESTARTS.hold_ended(name, watch, time.monotonic()):
             go2rtc_restart(name)
             failures = 0
+        if after is None:
+            try:
+                nest_outage_hold_ended(name, watch, time.time())
+            except Exception as e:  # noqa: BLE001 - FCM or relay.db: the next hold tries again
+                log.warning("nest outage: %s not pushed (%s)", name, type(e).__name__)
         time.sleep(nest_primer_delay(failures))
 
 
 def nest_primer_forever() -> None:
     held: dict[str, threading.Thread] = {}
+    nest_outage_load()
     while True:
         try:
             streams = requests.get(f"{GO2RTC}/api/streams", timeout=10).json()
@@ -6020,6 +6043,304 @@ def nest_primer_forever() -> None:
         except Exception as e:  # noqa: BLE001 - go2rtc not up yet
             log.info("nest primer: go2rtc's streams not read (%s)", e)
         time.sleep(NEST_PRIMER_SCAN_SECONDS)
+
+
+# ---------------------------------------------------------------- Nest outages
+
+# Telling the household when Google won't stream a Nest camera (see NEST_OUTAGE_ALERT_SECONDS).
+# A hold with no go2rtc session at all, whether the watchdog dropped it or it failed outright, is
+# a camera go2rtc couldn't open; a whole hour of those, and Google saying why, is one push naming
+# the camera. A second push says it's back, the first time its video moves again. Nothing in
+# between: the primer keeps asking every few minutes, and the outage is told once.
+
+
+class NestOutages:
+    """Per Nest stream, since when its holds have had no go2rtc session, and what the household was told of it."""
+
+    def __init__(self, alerted: set[str] | None = None):
+        self.lock = threading.Lock()
+        # Per stream in an outage, when (epoch seconds) the first hold with no session ended.
+        self.since: dict[str, float] = {}
+        # Per stream, what Google said this outage, once asked: kept while no phone has been told,
+        # so the next try pushes without asking Google again.
+        self.reasons: dict[str, str] = {}
+        # The streams whose outage was pushed, while they're still out.
+        self.alerted: set[str] = set(alerted or ())
+        # The streams whose outage was pushed and that are back, until a phone is told so: until
+        # then, a phone may still be showing the outage.
+        self.recovering: set[str] = set()
+        # Per recovering stream, when (epoch seconds) a push of its return may be tried again
+        # after one no phone got (quiet hours): not at every watchdog reading.
+        self.retry_at: dict[str, float] = {}
+        # The streams being asked about or pushed right now.
+        self.busy: set[str] = set()
+        # Taken around each save, from reading the state to writing it, so saves land in order.
+        self.save_lock = threading.Lock()
+        # Whether what was told hasn't been saved yet (a save failed): the next hold or reading saves it.
+        self.dirty = False
+
+    def told_about(self) -> list[str]:
+        """The streams an outage was pushed for and whose return wasn't: what relay.db keeps."""
+        with self.lock:
+            return sorted(self.alerted | self.recovering)
+
+    def owed(self, name: str) -> bool:
+        """Whether a phone may be showing [name]'s outage: its return is to be pushed once its video moves."""
+        return name in self.alerted or name in self.recovering
+
+    def hold_ended(self, name: str, watch: NestPrimerWatch, now: float) -> bool:
+        """
+        With how [name]'s hold just ended ([watch]), whether its outage is due to be pushed now:
+        an hour of holds with no session, not pushed yet. A hold that had a session (video moving
+        or not) ends any outage: go2rtc reached Google, and anything after that is the primer's
+        to heal (see NestGo2rtcRestarts).
+        """
+        with self.lock:
+            if watch.flowed or watch.session:
+                self.since.pop(name, None)
+                self.reasons.pop(name, None)
+                return False
+            since = self.since.setdefault(name, now)
+            if name in self.recovering and name not in self.busy:
+                # Out again before any phone heard it was back: the outage on the phones still stands.
+                self.recovering.discard(name)
+                self.retry_at.pop(name, None)
+                self.alerted.add(name)
+            if name in self.alerted or name in self.busy or now - since < NEST_OUTAGE_ALERT_SECONDS:
+                return False
+            self.busy.add(name)
+            return True
+
+    def told(self, name: str, reason: str | None, sent: bool, now: float) -> None:
+        """
+        After asking Google ([reason], None when Google does stream it) and pushing when it
+        didn't (whether some phone got it, [sent]). Google streaming it starts the hour over: the
+        trouble is between go2rtc and Google, not one the Google Home app can fix. A push no phone
+        got (quiet hours, only-away phones) is tried again at the next hold.
+        """
+        with self.lock:
+            self.busy.discard(name)
+            if sent:
+                self.alerted.add(name)
+            elif name in self.since:
+                if reason is None:
+                    self.since[name] = now
+                    self.reasons.pop(name, None)
+                else:
+                    self.reasons[name] = reason
+
+    def streaming(self, name: str, now: float) -> bool:
+        """
+        [name]'s video moved: its outage, if any, is over. Whether its return is to be pushed
+        now: its outage was, and no push of its return is in flight or waiting out a retry.
+        """
+        with self.lock:
+            self.since.pop(name, None)
+            self.reasons.pop(name, None)
+            if name in self.alerted and name not in self.busy:
+                self.alerted.discard(name)
+                self.recovering.add(name)
+            if name not in self.recovering or name in self.busy or now < self.retry_at.get(name, 0.0):
+                return False
+            self.busy.add(name)
+            return True
+
+    def recovered(self, name: str, sent: bool, now: float) -> None:
+        """After pushing [name]'s return: done once some phone got it ([sent]), else tried again later."""
+        with self.lock:
+            self.busy.discard(name)
+            if sent:
+                self.recovering.discard(name)
+                self.retry_at.pop(name, None)
+            elif name in self.recovering:
+                self.retry_at[name] = now + NEST_OUTAGE_RETRY_SECONDS
+
+
+NEST_OUTAGES = NestOutages()
+
+
+def nest_source(name: str) -> dict[str, str] | None:
+    """The parameters of [name]'s `nest:` source in go2rtc (its credentials among them: never log them), or None for none."""
+    stream = requests.get(f"{GO2RTC}/api/streams", params={"src": name}, timeout=5).json() or {}
+    for producer in stream.get("producers") or []:
+        url = str((producer or {}).get("url") or "")
+        if url.startswith("nest:"):
+            return {key: values[0] for key, values in parse_qs(url.partition("?")[2]).items()}
+    return None
+
+
+def nest_probe_offer() -> str:
+    """
+    A WebRTC offer of the shape Google asks a Nest camera's viewer for (audio, then video, then a
+    data channel), to learn whether Google will stream the camera. Nothing ever connects to it:
+    its ICE credentials and DTLS fingerprint are made up.
+    """
+    fingerprint = ":".join(f"{b:02X}" for b in secrets.token_bytes(32))
+    common = ["c=IN IP4 0.0.0.0", f"a=ice-ufrag:{secrets.token_hex(4)}", f"a=ice-pwd:{secrets.token_hex(12)}", f"a=fingerprint:sha-256 {fingerprint}", "a=setup:actpass"]
+    lines = [
+        "v=0", f"o=- {secrets.randbelow(10**12)} 2 IN IP4 127.0.0.1", "s=-", "t=0 0", "a=group:BUNDLE 0 1 2", "a=msid-semantic: WMS",
+        "m=audio 9 UDP/TLS/RTP/SAVPF 111", *common, "a=mid:0", "a=recvonly", "a=rtcp-mux", "a=rtpmap:111 opus/48000/2",
+        "m=video 9 UDP/TLS/RTP/SAVPF 96", *common, "a=mid:1", "a=recvonly", "a=rtcp-mux", "a=rtpmap:96 H264/90000",
+        "a=fmtp:96 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+        "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", *common, "a=mid:2", "a=sctp-port:5000",
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
+def nest_google_check(name: str) -> str | None:
+    """
+    Asks Google whether it will stream [name], the way go2rtc does (`GenerateWebRtcStream`, with
+    the credentials in go2rtc's `nest:` source): "refused" when Google says the camera is not
+    available for streaming, "unconfirmed" for any other refusal or none heard, and None when
+    there's nothing to tell (Google starts a session, stopped again at once, or go2rtc has no
+    `nest:` source to read). The credentials, and anything that could carry them (a URL, an
+    exception's text), are never logged.
+    """
+    try:
+        source = nest_source(name)
+    except Exception as e:  # noqa: BLE001 - go2rtc restarting: the next hold asks again
+        log.info("nest outage: %s's go2rtc stream not read (%s)", name, type(e).__name__)
+        return None
+    if source is None:
+        return None
+    keys = ("client_id", "client_secret", "refresh_token", "project_id", "device_id")
+    if not all(source.get(key) for key in keys):
+        log.info("nest outage: %s's nest: source lacks what asking Google takes", name)
+        return "unconfirmed"
+
+    def scrub(text: str) -> str:
+        for key in keys:
+            text = text.replace(source[key], "…")
+        return text[:200]
+
+    try:
+        token = requests.post(NEST_TOKEN_URL, data={
+            "client_id": source["client_id"], "client_secret": source["client_secret"],
+            "refresh_token": source["refresh_token"], "grant_type": "refresh_token",
+        }, timeout=10)
+        if not token.ok:
+            log.warning("nest outage: Google gave no token to ask about %s (HTTP %d)", name, token.status_code)
+            return "unconfirmed"
+        headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
+        command = f"{NEST_SDM_URL}/enterprises/{quote(source['project_id'])}/devices/{quote(source['device_id'])}:executeCommand"
+        answer = requests.post(command, headers=headers, json={
+            "command": "sdm.devices.commands.CameraLiveStream.GenerateWebRtcStream", "params": {"offerSdp": nest_probe_offer()},
+        }, timeout=15)
+    except Exception as e:  # noqa: BLE001 - Google unreachable: say what was seen, unconfirmed
+        log.warning("nest outage: Google not asked about %s (%s)", name, type(e).__name__)
+        return "unconfirmed"
+    try:
+        body = answer.json()
+    except Exception:  # noqa: BLE001 - not JSON: its status says enough
+        body = None
+    body = body if isinstance(body, dict) else {}
+    if answer.ok:
+        session = (body.get("results") or {}).get("mediaSessionId")
+        if session:
+            try:
+                requests.post(command, headers=headers, json={
+                    "command": "sdm.devices.commands.CameraLiveStream.StopWebRtcStream", "params": {"mediaSessionId": session},
+                }, timeout=15)
+            except Exception as e:  # noqa: BLE001 - Google ends an unused session on its own
+                log.info("nest outage: the session asked of Google for %s not stopped (%s)", name, type(e).__name__)
+        log.info("nest outage: Google does stream %s; its holds' trouble is on this side", name)
+        return None
+    error = body.get("error")
+    message = scrub(str((error.get("message") if isinstance(error, dict) else error) or ""))
+    log.info("nest outage: Google won't stream %s (HTTP %d: %s)", name, answer.status_code, message)
+    return "refused" if "not available for streaming" in message.lower() else "unconfirmed"
+
+
+def nest_outage_text(camera: str, reason: str | None, since: str) -> tuple[str, str]:
+    """
+    A push's title and body in English, for a phone whose app doesn't word them itself from the
+    push's data: [camera] out since [since] (a clock time) for [reason] ("refused", Google said
+    the camera isn't available; "unconfirmed"), or streaming again for None.
+    """
+    if reason is None:
+        return f"{camera} is streaming again", "Google is sending its video again."
+    if reason == "refused":
+        return f"{camera} isn't streaming", f"Since {since}, Google says the camera isn't available for streaming. Check it in the Google Home app."
+    return f"{camera} isn't streaming", f"No video from Google since {since}. Check the camera in the Google Home app."
+
+
+def nest_outage_push(name: str, reason: str | None, since: float | None, push: Callable[..., dict[str, int]] | None = None) -> dict[str, int]:
+    """
+    Pushes [name]'s outage (for [reason], since [since]) or, with no reason, its end, as an
+    ordinary alert: each phone's quiet hours and "only when away" apply. Both share one
+    notification, so the second replaces the first. `push` stands in for `broadcast` in tests.
+    """
+    camera = camera_name(name)
+    title, body = nest_outage_text(camera, reason, clock_text(since, household_zone()) if since is not None else "")
+    data = {"system": "nest", "notif_id": f"nest-{name}", "camera": name, "nest_camera_name": camera, "nest_event": "streaming" if reason is None else "unavailable"}
+    if reason is not None:
+        data["nest_reason"] = reason
+    if since is not None:
+        data["nest_since"] = f"{since:.0f}"
+    result = (push or broadcast)(title, body, data)
+    log.info("nest outage: %s %s -> push: %s", name, data["nest_event"], result)
+    return result
+
+
+def nest_outage_save() -> None:
+    """
+    Keeps what was told in relay.db. Read and written under one lock, so a save that read the
+    state earlier can't land after one that read it later; one that fails is tried again at the
+    next hold or reading (see `nest_outage_hold_ended`), without pushing anything again.
+    """
+    with NEST_OUTAGES.save_lock:
+        NEST_OUTAGES.dirty = True
+        try:
+            state_set(NEST_OUTAGE_STATE_KEY, NEST_OUTAGES.told_about() or None)
+            NEST_OUTAGES.dirty = False
+        except Exception as e:  # noqa: BLE001 - relay.db busy: saved at the next hold
+            log.warning("nest outage: what was told not saved (%s)", type(e).__name__)
+
+
+def nest_outage_load() -> None:
+    """The outages pushed before the relay restarted: not pushed again, and their end still is."""
+    try:
+        NEST_OUTAGES.alerted |= set(state_get(NEST_OUTAGE_STATE_KEY) or [])
+    except Exception as e:  # noqa: BLE001 - a camera's return goes untold, nothing worse
+        log.warning("nest outage: the outages already pushed not read (%s)", e)
+
+
+def nest_outage_hold_ended(name: str, watch: NestPrimerWatch, now: float, check: Callable[[str], str | None] | None = None, push: Callable[..., dict[str, int]] | None = None) -> None:
+    """After [name]'s hold ended ([watch]): when its outage is due, asks Google why and pushes it. `check` and `push` stand in for Google and `broadcast` in tests."""
+    if NEST_OUTAGES.dirty:
+        nest_outage_save()
+    if not NEST_OUTAGES.hold_ended(name, watch, now):
+        return
+    reason, sent = NEST_OUTAGES.reasons.get(name), False
+    try:
+        reason = reason or (check or nest_google_check)(name)
+        if reason is not None:
+            sent = bool(nest_outage_push(name, reason, NEST_OUTAGES.since.get(name), push).get("sent"))
+    finally:
+        NEST_OUTAGES.told(name, reason, sent, now)
+    if sent:
+        nest_outage_save()
+
+
+def nest_outage_streaming(name: str, now: float | None = None, push: Callable[..., dict[str, int]] | None = None) -> None:
+    """
+    [name]'s video moved (at [now]): when its outage was pushed, pushes that it's back. A push
+    no phone got, or one that failed, stays owed and is tried again NEST_OUTAGE_RETRY_SECONDS on.
+    """
+    now = time.time() if now is None else now
+    if NEST_OUTAGES.dirty:
+        nest_outage_save()
+    if not NEST_OUTAGES.streaming(name, now):
+        return
+    sent = False
+    try:
+        sent = bool(nest_outage_push(name, None, None, push).get("sent"))
+    except Exception as e:  # noqa: BLE001 - FCM or relay.db: tried again later
+        log.warning("nest outage: %s's return not pushed (%s)", name, type(e).__name__)
+    finally:
+        NEST_OUTAGES.recovered(name, sent, now)
+    if sent:
+        nest_outage_save()
 
 
 # ---------------------------------------------------------------- Google Home
