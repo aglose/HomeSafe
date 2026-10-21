@@ -115,6 +115,23 @@ should say `doors: listening to zigbee2mqtt on 127.0.0.1:1883`.
 
 ## Pairing a sensor
 
+From the app: Doors page › **Pair a sensor**, then hold the sensor's button for 5 seconds (or
+pull its battery tab) until the light blinks. The page says when pairing ends (Zigbee's longest
+window, 254 s), and lists each device that joins as it goes: a sensor that had dropped off and
+rejoins under its old name ("Front door is back"), or a new one being set up, then "New sensor
+paired". A new sensor is called by its address until it's named: its card has **Name it**, and
+every door's pencil renames it later (`PUT /doors/{id}/name`, through Zigbee2MQTT's
+`bridge/request/device/rename`), keeping its history, setting and spot. **Stop pairing** closes
+the window early.
+
+The relay does this over MQTT (`POST /doors/pairing` with `{"seconds": 254}`, 0 to stop, sends
+`bridge/request/permit_join`) and waits for Zigbee2MQTT's answer, so a refusal shows in the app
+with Zigbee2MQTT's reason. It follows the window from `bridge/info` (`permit_join`,
+`permit_join_end`) and what joins from `bridge/event` (`device_joined`, `device_interview`), and
+hands both to the app in `GET /doors` as `pairing`.
+
+From the pairing page instead:
+
 1. Open `http://100.99.163.71:8080` (or `http://192.168.68.65:8080` at home) and sign in with the
    token in `~/surveillance/zigbee/zigbee.env`.
 2. **Permit join (All)**, then pull the sensor's battery tab (or hold its button for 5 seconds
@@ -215,5 +232,5 @@ plug halfway; every plug relays for the sensors around it.
   should list `mosquitto`), or Zigbee2MQTT isn't running (`docker logs zigbee2mqtt`; the usual cause
   is the stick's path in `.env` after moving it to another port).
 - **A sensor shows offline:** Zigbee2MQTT hasn't heard from it in 30 minutes (it checks in every
-  10). Open and close the door, press its button, or reseat its battery; if it stays silent, re-pair
-  it.
+  10). Open and close the door, press its button, or reseat its battery; if it stays silent, tap
+  **Pair a sensor** and hold its button: it rejoins under its old name.

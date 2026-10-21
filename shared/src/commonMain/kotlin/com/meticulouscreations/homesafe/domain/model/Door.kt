@@ -42,6 +42,9 @@ data class Door(
     /** Battery low enough to swap: the sensor says so, or reports a fifth or less. */
     val needsBattery: Boolean get() = batteryLow || (battery != null && battery <= LOW_BATTERY_PERCENT)
 
+    /** Still called by its address, as Zigbee2MQTT names a device it has just paired. */
+    val unnamed: Boolean get() = name == id
+
     /** Link quality this low drops messages; a Zigbee plug between it and the stick helps. */
     val weakSignal: Boolean get() = linkQuality != null && linkQuality < WEAK_LINK_QUALITY
 
@@ -57,6 +60,45 @@ data class DoorEvent(
     val open: Boolean,
     val atMillis: Long,
     val pushed: String? = null,
+)
+
+/** How far a device that joined while pairing has got (the relay's `pairing.joined[].status`). */
+enum class DoorJoinStatus(val wire: String) {
+    /** On the network. A sensor that dropped off and rejoined goes no further: it's back. */
+    JOINED("joined"),
+
+    /** A new device, being asked what it is. */
+    INTERVIEWING("interviewing"),
+
+    /** A new device, set up. */
+    PAIRED("paired"),
+
+    /** A new device that couldn't be set up; pairing it again usually works. */
+    FAILED("failed"),
+    ;
+
+    companion object {
+        fun fromWire(value: String?): DoorJoinStatus? = entries.firstOrNull { it.wire == value }
+    }
+}
+
+/** A device that joined the Zigbee network while pairing was open. */
+data class DoorJoin(
+    /** Its IEEE address, the same as a [Door.id] once it's a door. */
+    val id: String,
+    /** Its name in Zigbee2MQTT when it joined: its address, for a new one. */
+    val name: String,
+    val status: DoorJoinStatus,
+    val atMillis: Long,
+)
+
+/** Whether the Zigbee network is letting sensors join, and what has while it was. */
+data class DoorPairing(
+    val open: Boolean = false,
+    /** When the window closes by itself, in epoch millis; null when it's closed or the relay didn't say. */
+    val untilMillis: Long? = null,
+    /** Oldest first. Kept after the window closes, until it's opened again. */
+    val joined: List<DoorJoin> = emptyList(),
 )
 
 /** Everything the relay says about the doors. */
@@ -75,6 +117,8 @@ data class DoorsSnapshot(
      * relay that can't (it's then polled).
      */
     val version: Long? = null,
+    /** Pairing sensors from the app; null from a relay that can't (one from before it). */
+    val pairing: DoorPairing? = null,
 ) {
     companion object {
         val EMPTY = DoorsSnapshot()

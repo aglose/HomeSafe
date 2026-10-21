@@ -5105,6 +5105,13 @@ DOOR_HISTORY_DAYS = 90
 DOORS_LINK = {"broker": False, "bridge": False}
 # How long one GET /doors may be held open waiting for a change (see DoorsChanges).
 DOORS_WAIT_MAX = 30.0
+# The relay's connection to the broker, once doors_forever has made it, for asking Zigbee2MQTT
+# things (see z2m_ask).
+DOORS_MQTT: dict[str, Any] = {"client": None}
+# Zigbee's longest permit-join window, which the app's "Pair a sensor" opens.
+DOOR_PAIRING_SECONDS = 254
+# How long a request to Zigbee2MQTT may take to be answered.
+Z2M_ANSWER_SECONDS = 10.0
 
 
 class DoorsChanges:
@@ -5157,6 +5164,124 @@ class DoorsChanges:
 DOORS_CHANGES = DoorsChanges()
 
 
+class DoorPairing:
+    """
+    Whether Zigbee2MQTT is letting sensors join (its permit-join window, opened from the app's
+    Doors page or the pairing page), until when, and what joined while it was open: each device
+    by IEEE address with its name and how far it got, "joined", "interviewing", "paired" or
+    "failed". A sensor that dropped off and rejoins under its old name only joins; a new one is
+    interviewed. Opening the window again starts the list afresh.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.open = False
+        self.until: float | None = None
+        self.joined: dict[str, dict[str, Any]] = {}
+
+    def window(self, is_open: bool, until: float | None) -> bool:
+        """Zigbee2MQTT's window as it now stands; answers whether that changed what the app draws."""
+        until = until if is_open else None
+        with self._lock:
+            if is_open and not self.open:
+                self.joined = {}
+            changed = is_open != self.open or (until is None) != (self.until is None) or (until is not None and abs(until - self.until) > 2)
+            self.open, self.until = is_open, until
+            return changed
+
+    def info(self, info: Any, now: float) -> bool:
+        """
+        Takes Zigbee2MQTT's `bridge/info`, which it publishes again whenever the window opens or
+        closes: `permit_join`, and when it ends as `permit_join_end` (2.x, epoch millis) or
+        `permit_join_timeout` (1.x, seconds left).
+        """
+        if not isinstance(info, dict) or "permit_join" not in info:
+            return False
+        end, left = info.get("permit_join_end"), info.get("permit_join_timeout")
+        until = end / 1000 if isinstance(end, (int, float)) else now + left if isinstance(left, (int, float)) and left > 0 else None
+        return self.window(bool(info["permit_join"]), until)
+
+    def event(self, event: Any, now: float) -> bool:
+        """Takes one of Zigbee2MQTT's `bridge/event`s: a device joining, or how its interview went. Answers whether it was one to show."""
+        if not isinstance(event, dict) or not isinstance(event.get("data"), dict):
+            return False
+        data = event["data"]
+        ieee = data.get("ieee_address")
+        if not ieee:
+            return False
+        kind = event.get("type")
+        if kind == "device_joined":
+            status = "joined"
+        elif kind == "device_interview":
+            status = {"started": "interviewing", "successful": "paired", "failed": "failed"}.get(data.get("status"))
+        else:
+            status = None
+        with self._lock:
+            # Only while the window is open, or to finish an interview that began in it: a sensor
+            # rejoining through another router on its own isn't something the app asked for.
+            if status is None or (not self.open and ieee not in self.joined):
+                return False
+            self.joined[ieee] = {"id": ieee, "name": data.get("friendly_name") or ieee, "status": status, "at": now}
+            return True
+
+    def json(self) -> dict[str, Any]:
+        with self._lock:
+            return {"open": self.open, "until": self.until, "joined": [dict(j) for j in self.joined.values()]}
+
+
+DOOR_PAIRING = DoorPairing()
+
+
+class Z2mRequests:
+    """
+    Asking Zigbee2MQTT to do something and waiting for its answer: a request goes to
+    `bridge/request/<what>` with a `transaction` id, and the answer comes back on
+    `bridge/response/<what>` carrying it, `status` "ok" or "error" (with `error`).
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._waiting: dict[str, tuple[threading.Event, dict[str, Any]]] = {}
+
+    def ask(self, publish: Callable[[str, str], Any], what: str, payload: dict[str, Any], timeout: float) -> dict[str, Any] | None:
+        """Sends one request through [publish] and answers Zigbee2MQTT's response, or None if it didn't answer within [timeout] seconds."""
+        transaction = secrets.token_hex(8)
+        done, answer = threading.Event(), {}
+        with self._lock:
+            self._waiting[transaction] = (done, answer)
+        try:
+            publish(f"{Z2M_TOPIC}/bridge/request/{what}", json.dumps({**payload, "transaction": transaction}))
+            return answer if done.wait(timeout) else None
+        finally:
+            with self._lock:
+                self._waiting.pop(transaction, None)
+
+    def answer(self, response: Any) -> None:
+        if not isinstance(response, dict):
+            return
+        with self._lock:
+            waiting = self._waiting.get(str(response.get("transaction")))
+        if waiting is not None:
+            waiting[1].update(response)
+            waiting[0].set()
+
+
+Z2M_REQUESTS = Z2mRequests()
+
+
+def z2m_ask(what: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Asks Zigbee2MQTT to do [what] and answers its response's `data`; an HTTP error the app can show when it can't, won't or doesn't answer."""
+    client = DOORS_MQTT["client"]
+    if client is None or not DOORS_LINK["broker"] or not DOORS_LINK["bridge"]:
+        raise HTTPException(status_code=503, detail="The relay can't reach Zigbee2MQTT")
+    answer = Z2M_REQUESTS.ask(lambda topic, body: client.publish(topic, body), what, payload, Z2M_ANSWER_SECONDS)
+    if answer is None:
+        raise HTTPException(status_code=504, detail="Zigbee2MQTT didn't answer")
+    if answer.get("status") != "ok":
+        raise HTTPException(status_code=502, detail=f"Zigbee2MQTT: {answer.get('error') or 'refused'}")
+    return answer.get("data") if isinstance(answer.get("data"), dict) else {}
+
+
 def has_contact(exposes: Any) -> bool:
     """Whether a device's `exposes` (Zigbee2MQTT's description of what it reports, nested in `features`) includes `contact`."""
     for expose in exposes or []:
@@ -5183,8 +5308,9 @@ def contact_sensors(devices: Any) -> dict[str, dict[str, Any]]:
 def door_message(topic: str, payload: bytes) -> tuple[str, str | None, Any] | None:
     """
     What one broker message is: ("devices", None, the device list), ("bridge", None, "online" or
-    "offline"), ("availability", name, "online" or "offline"), ("state", name, readings), or None
-    for anything else. Zigbee2MQTT 2 sends availability as `{"state": "online"}`, 1.x as plain text.
+    "offline"), ("info", None, Zigbee2MQTT's info), ("event", None, a device joining or being
+    interviewed), ("response", what, the answer to a request), ("availability", name, "online" or
+    "offline"), ("state", name, readings), or None for anything else. Zigbee2MQTT 2 sends availability as `{"state": "online"}`, 1.x as plain text.
     """
     prefix = Z2M_TOPIC + "/"
     if not topic.startswith(prefix):
@@ -5199,6 +5325,12 @@ def door_message(topic: str, payload: bytes) -> tuple[str, str | None, Any] | No
         return ("devices", None, body)
     if rest == "bridge/state":
         return ("bridge", None, body.get("state") if isinstance(body, dict) else body)
+    if rest == "bridge/info":
+        return ("info", None, body)
+    if rest == "bridge/event":
+        return ("event", None, body)
+    if rest.startswith("bridge/response/"):
+        return ("response", rest[len("bridge/response/"):], body)
     if rest.startswith("bridge/"):
         return None
     if rest.endswith("/availability"):
@@ -5340,7 +5472,17 @@ def door_receive(topic: str, payload: bytes, now: float) -> None:
         log.info("doors: %d sensor(s) on the Zigbee network: %s", len(sensors), ", ".join(sorted(s["name"] for s in sensors.values())) or "none")
     elif kind == "bridge":
         DOORS_LINK["bridge"] = body == "online"
+        if not DOORS_LINK["bridge"]:
+            DOOR_PAIRING.window(False, None)
         DOORS_CHANGES.bump()
+    elif kind == "info":
+        if DOOR_PAIRING.info(body, now):
+            DOORS_CHANGES.bump()
+    elif kind == "event":
+        if DOOR_PAIRING.event(body, now):
+            DOORS_CHANGES.bump()
+    elif kind == "response":
+        Z2M_REQUESTS.answer(body)
     elif kind == "availability":
         with_db(lambda c: (c.execute("UPDATE doors SET online=? WHERE name=? AND removed=0", (int(body == "online"), name)), c.commit()))
         DOORS_CHANGES.bump()
@@ -5381,6 +5523,7 @@ def doors_forever() -> None:
 
     def on_disconnect(client, userdata, flags, reason_code, properties):
         DOORS_LINK["broker"] = DOORS_LINK["bridge"] = False
+        DOOR_PAIRING.window(False, None)
         DOORS_CHANGES.bump()
 
     def on_message(client, userdata, message):
@@ -5391,6 +5534,7 @@ def doors_forever() -> None:
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="homesafe-relay")
     client.on_connect, client.on_disconnect, client.on_message = on_connect, on_disconnect, on_message
+    DOORS_MQTT["client"] = client
     client.reconnect_delay_set(min_delay=1, max_delay=60)
     warned = False
     while True:
@@ -5434,6 +5578,7 @@ def doors_snapshot(now: float, days: float = 7) -> dict[str, Any]:
         "broker": DOORS_LINK["broker"],
         "bridge": DOORS_LINK["bridge"],
         "away": away_since() is not None,
+        "pairing": DOOR_PAIRING.json(),
         "version": version,
     }
 
@@ -5468,6 +5613,62 @@ def set_door(door_id: str, patch: DoorPatch, request: Request) -> dict[str, Any]
         raise HTTPException(status_code=404, detail="No such door")
     DOORS_CHANGES.bump()
     log.info("doors: %s set %s to notify %s", user, door_id, patch.notify)
+    return doors_snapshot(time.time())
+
+
+class DoorPairingRequest(BaseModel):
+    # How long to let sensors join, up to DOOR_PAIRING_SECONDS; 0 stops pairing.
+    seconds: int = DOOR_PAIRING_SECONDS
+
+
+@app.post("/doors/pairing")
+def set_door_pairing(body: DoorPairingRequest, request: Request) -> dict[str, Any]:
+    """
+    Opens Zigbee2MQTT's permit-join window for [seconds], so a new sensor can pair or one that
+    dropped off can rejoin, or with 0 closes it. A signed-in user. Answers the doors with
+    `pairing` as Zigbee2MQTT now has it, and what joins shows there as it happens.
+    """
+    user = require_frigate_session(request)
+    seconds = max(0, min(int(body.seconds), DOOR_PAIRING_SECONDS))
+    z2m_ask("permit_join", {"time": seconds})
+    now = time.time()
+    # Zigbee2MQTT's bridge/info says the same (with its own clock's end) a moment later.
+    if DOOR_PAIRING.window(seconds > 0, now + seconds if seconds else None):
+        DOORS_CHANGES.bump()
+    log.info("doors: %s %s", user, f"let sensors pair for {seconds} s" if seconds else "stopped pairing")
+    return doors_snapshot(now)
+
+
+class DoorRename(BaseModel):
+    name: str
+
+
+# The longest name the app may give a door.
+DOOR_NAME_MAX = 64
+
+
+@app.put("/doors/{door_id}/name")
+def rename_door(door_id: str, body: DoorRename, request: Request) -> dict[str, Any]:
+    """
+    Renames one door's sensor in Zigbee2MQTT, as renaming it on the pairing page does: a sensor
+    just paired is called by its address until it's named. A signed-in user. The door keeps its
+    history, its setting and its spot.
+    """
+    user = require_frigate_session(request)
+    name = " ".join(body.name.split())
+    # A name is the sensor's MQTT topic: no wildcards, and no topic levels of its own.
+    if not name or len(name) > DOOR_NAME_MAX or any(c in name for c in "/+#"):
+        raise HTTPException(status_code=400, detail=f"A name is 1-{DOOR_NAME_MAX} characters, without / + or #")
+    row = with_db(lambda c: c.execute("SELECT name FROM doors WHERE id=? AND removed=0", (door_id,)).fetchone())
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such door")
+    if row[0] != name:
+        z2m_ask("device/rename", {"from": door_id, "to": name, "homeassistant_rename": False})
+        # Zigbee2MQTT publishes its device list again with the new name, which door_sync takes the
+        # same way; this has it in the answer already.
+        with_db(lambda c: (c.execute("UPDATE doors SET name=? WHERE id=?", (name, door_id)), c.commit()))
+        DOORS_CHANGES.bump()
+        log.info("doors: %s renamed %s from %s to %s", user, door_id, row[0], name)
     return doors_snapshot(time.time())
 
 

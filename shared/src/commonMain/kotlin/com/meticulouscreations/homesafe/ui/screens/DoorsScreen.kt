@@ -13,17 +13,23 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DoorFront
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,11 +55,14 @@ import homesafe.shared.generated.resources.doors_history_empty
 import homesafe.shared.generated.resources.doors_history_notified
 import homesafe.shared.generated.resources.doors_history_opened
 import homesafe.shared.generated.resources.doors_history_title
+import homesafe.shared.generated.resources.doors_name_it
 import homesafe.shared.generated.resources.doors_none_body
+import homesafe.shared.generated.resources.doors_none_body_pair
 import homesafe.shared.generated.resources.doors_none_title
 import homesafe.shared.generated.resources.doors_not_listening
 import homesafe.shared.generated.resources.doors_notify_caption
 import homesafe.shared.generated.resources.doors_notify_title
+import homesafe.shared.generated.resources.doors_rename_action
 import homesafe.shared.generated.resources.doors_subtitle
 import homesafe.shared.generated.resources.doors_title
 import homesafe.shared.generated.resources.doors_unsupported
@@ -93,19 +102,40 @@ fun DoorsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 onPlaceAt = viewModel::placeAt,
                 onRemoveFromPlan = viewModel::removeFromPlan,
             ),
+            pairing = DoorsPairingActions(
+                onStartPairing = viewModel::startPairing,
+                onStopPairing = viewModel::stopPairing,
+                onRename = viewModel::rename,
+            ),
         )
     }
 }
 
 /**
  * The page under its header: the floor plan with the doors on it when the box has one
- * ([DoorsFloorPlan], [plan]), each door's card, and the history. A door's dot on the plan scrolls
- * its card into view.
+ * ([DoorsFloorPlan], [plan]), pairing a sensor ([DoorPairingCard]), each door's card, and the
+ * history. A door's dot on the plan scrolls its card into view.
  */
 @Composable
-internal fun DoorsContent(state: DoorsUiState, onNotify: (doorId: String, notify: DoorNotify) -> Unit, plan: DoorsPlanActions = DoorsPlanActions()) {
+internal fun DoorsContent(
+    state: DoorsUiState,
+    onNotify: (doorId: String, notify: DoorNotify) -> Unit,
+    plan: DoorsPlanActions = DoorsPlanActions(),
+    pairing: DoorsPairingActions = DoorsPairingActions(),
+) {
     val cards = remember { mutableMapOf<String, BringIntoViewRequester>() }
     val scope = rememberCoroutineScope()
+    var renaming by rememberSaveable { mutableStateOf<String?>(null) }
+    state.doors.firstOrNull { it.id == renaming }?.let { door ->
+        DoorRenameDialog(
+            door = door,
+            onDismiss = { renaming = null },
+            onSave = { name ->
+                pairing.onRename(door.id, name)
+                renaming = null
+            },
+        )
+    }
     state.error?.let { SettingsCaption(it.resolve(), error = true) }
     when {
         !state.supported -> SettingsCard { SettingsCaption(stringResource(Res.string.doors_unsupported)) }
@@ -115,10 +145,11 @@ internal fun DoorsContent(state: DoorsUiState, onNotify: (doorId: String, notify
         else -> {
             if (!state.listening) SettingsCaption(stringResource(Res.string.doors_not_listening), error = true)
             DoorsFloorPlan(state = state, actions = plan, onShowDoor = { id -> scope.launch { cards[id]?.bringIntoView() } })
+            DoorPairingCard(state = state, actions = pairing)
             if (state.doors.isEmpty()) {
                 SettingsCard {
                     Text(stringResource(Res.string.doors_none_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                    SettingsCaption(stringResource(Res.string.doors_none_body))
+                    SettingsCaption(stringResource(if (state.pairing != null) Res.string.doors_none_body_pair else Res.string.doors_none_body))
                 }
             } else {
                 state.doors.forEach { door ->
@@ -126,6 +157,8 @@ internal fun DoorsContent(state: DoorsUiState, onNotify: (doorId: String, notify
                         door = door,
                         nowMillis = state.nowMillis,
                         onNotify = { onNotify(door.id, it) },
+                        // Renaming goes through Zigbee2MQTT, which only a relay that can pair asks.
+                        onRename = if (state.pairing != null) ({ renaming = door.id }) else null,
                         modifier = Modifier.bringIntoViewRequester(cards.getOrPut(door.id) { BringIntoViewRequester() }),
                     )
                 }
@@ -143,7 +176,7 @@ private fun doorTint(open: Boolean?): Color =
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DoorCard(door: Door, nowMillis: Long, onNotify: (DoorNotify) -> Unit, modifier: Modifier = Modifier) {
+private fun DoorCard(door: Door, nowMillis: Long, onNotify: (DoorNotify) -> Unit, onRename: (() -> Unit)?, modifier: Modifier = Modifier) {
     SettingsCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Icon(
@@ -161,6 +194,14 @@ private fun DoorCard(door: Door, nowMillis: Long, onNotify: (DoorNotify) -> Unit
                 )
                 doorHealthText(door)?.let { SettingsCaption(it.resolve(), error = door.online == false || door.needsBattery) }
             }
+            if (onRename != null && !door.unnamed) {
+                IconButton(onClick = onRename) {
+                    Icon(Icons.Filled.Edit, contentDescription = stringResource(Res.string.doors_rename_action, door.name), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        if (onRename != null && door.unnamed) {
+            FilledTonalButton(onClick = onRename) { Text(stringResource(Res.string.doors_name_it)) }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(stringResource(Res.string.doors_notify_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

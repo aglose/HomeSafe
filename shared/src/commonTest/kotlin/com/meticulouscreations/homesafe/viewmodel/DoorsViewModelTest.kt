@@ -2,7 +2,10 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
+import com.meticulouscreations.homesafe.domain.model.DoorJoin
+import com.meticulouscreations.homesafe.domain.model.DoorJoinStatus
 import com.meticulouscreations.homesafe.domain.model.DoorNotify
+import com.meticulouscreations.homesafe.domain.model.DoorPairing
 import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
@@ -12,11 +15,18 @@ import com.meticulouscreations.homesafe.domain.repository.DoorRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveFloorPlanUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshDoorsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RenameDoorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetDoorNotifyUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetDoorPairingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetDoorSpotUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.doors_load_failed
+import homesafe.shared.generated.resources.doors_pairing_failed
+import homesafe.shared.generated.resources.doors_pairing_interviewing
+import homesafe.shared.generated.resources.doors_pairing_paired_unnamed
+import homesafe.shared.generated.resources.doors_pairing_rejoined
+import homesafe.shared.generated.resources.doors_rename_failed
 import homesafe.shared.generated.resources.doors_save_failed
 import homesafe.shared.generated.resources.doors_spot_save_failed
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +82,24 @@ internal class FakeDoorRepository(snapshot: DoorsSnapshot = DoorsSnapshot.EMPTY,
         doors.value = doors.value.copy(doors = doors.value.doors.map { if (it.id == doorId) it.copy(notify = notify) else it })
         return Result.success(Unit)
     }
+
+    val pairings = mutableListOf<Int>()
+
+    override suspend fun setPairing(seconds: Int): Result<Unit> {
+        saveFailure?.let { return Result.failure(it) }
+        pairings += seconds
+        doors.value = doors.value.copy(pairing = DoorPairing(open = seconds > 0))
+        return Result.success(Unit)
+    }
+
+    val renames = mutableListOf<Pair<String, String>>()
+
+    override suspend fun rename(doorId: String, name: String): Result<Unit> {
+        saveFailure?.let { return Result.failure(it) }
+        renames += doorId to name
+        doors.value = doors.value.copy(doors = doors.value.doors.map { if (it.id == doorId) it.copy(name = name) else it })
+        return Result.success(Unit)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
@@ -101,6 +129,8 @@ class DoorsViewModelTest {
         SetDoorNotifyUseCase(repo),
         ObserveFloorPlanUseCase(repo),
         SetDoorSpotUseCase(repo),
+        SetDoorPairingUseCase(repo),
+        RenameDoorUseCase(repo),
         object : Clock {
             override fun now(): Instant = noon
         },
@@ -110,6 +140,70 @@ class DoorsViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         runCurrent()
         return viewModel.uiState
+    }
+
+    @Test
+    fun pairingStartsForZigbeesLongestWindowAndStops() = runTest(dispatcher) {
+        val repo = FakeDoorRepository(DoorsSnapshot(doors = listOf(front), listening = true, answered = true, pairing = DoorPairing()))
+        val viewModel = viewModel(repo)
+        val state = collecting(viewModel)
+        viewModel.startPairing()
+        runCurrent()
+        assertTrue(state.value.pairing!!.open)
+        viewModel.stopPairing()
+        runCurrent()
+        assertEquals(listOf(DoorsViewModel.PAIRING_SECONDS, 0), repo.pairings)
+        assertFalse(state.value.pairingBusy)
+        repo.saveFailure = IllegalStateException("Zigbee2MQTT didn't answer")
+        viewModel.startPairing()
+        runCurrent()
+        assertEquals(UiText.of(Res.string.doors_pairing_failed, "Zigbee2MQTT didn't answer"), state.value.error)
+    }
+
+    @Test
+    fun whatJoinedIsSaidByWhetherItsADoorAlready() = runTest(dispatcher) {
+        val fresh = Door("0x09", "0x09", open = null)
+        val repo = FakeDoorRepository(
+            DoorsSnapshot(
+                doors = listOf(front, fresh),
+                listening = true,
+                answered = true,
+                pairing = DoorPairing(
+                    open = true,
+                    joined = listOf(
+                        DoorJoin("0x01", "Front door", DoorJoinStatus.JOINED, 0),
+                        DoorJoin("0x09", "0x09", DoorJoinStatus.PAIRED, 0),
+                        DoorJoin("0x0a", "0x0a", DoorJoinStatus.INTERVIEWING, 0),
+                    ),
+                ),
+            ),
+        )
+        val joined = collecting(viewModel(repo)).value.joined
+        assertEquals(
+            listOf(
+                DoorJoinRow("0x01", UiText.of(Res.string.doors_pairing_rejoined, "Front door"), DoorJoinProgress.DONE),
+                DoorJoinRow("0x09", UiText.of(Res.string.doors_pairing_paired_unnamed), DoorJoinProgress.DONE),
+                DoorJoinRow("0x0a", UiText.of(Res.string.doors_pairing_interviewing), DoorJoinProgress.WORKING),
+            ),
+            joined,
+        )
+    }
+
+    @Test
+    fun aDoorIsRenamedAndABlankOrSameNameAsksNothing() = runTest(dispatcher) {
+        val repo = FakeDoorRepository(DoorsSnapshot(doors = listOf(front), listening = true, answered = true, pairing = DoorPairing()))
+        val viewModel = viewModel(repo)
+        val state = collecting(viewModel)
+        viewModel.rename("0x01", "  ")
+        viewModel.rename("0x01", "Front door ")
+        viewModel.rename("0x01", " Porch door ")
+        runCurrent()
+        assertEquals(listOf("0x01" to "Porch door"), repo.renames)
+        assertEquals("Porch door", state.value.doors.single().name)
+        repo.saveFailure = IllegalStateException("name in use")
+        viewModel.rename("0x01", "Back door")
+        runCurrent()
+        assertEquals(UiText.of(Res.string.doors_rename_failed, "name in use"), state.value.error)
     }
 
     @Test

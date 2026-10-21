@@ -990,13 +990,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.DismissQuickLookWhenHom
     - cardZoom: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.DoorCard(door: com.meticulouscreations.homesafe.domain.model.Door, nowMillis: kotlin.Long, onNotify: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.DoorNotify, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.DoorCard(door: com.meticulouscreations.homesafe.domain.model.Door, nowMillis: kotlin.Long, onNotify: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.DoorNotify, kotlin.Unit>, onRename: kotlin.Function0<kotlin.Unit>?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - door: STABLE (class with no mutable properties)
     - nowMillis: STABLE (primitive type)
     - onNotify: STABLE (function type)
+    - onRename: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -1024,6 +1025,21 @@ private fun com.meticulouscreations.homesafe.ui.screens.DoorHistoryRow(entry: co
     - entry: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.DoorJoinLine(join: com.meticulouscreations.homesafe.viewmodel.DoorJoinRow): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - join: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.DoorPairingCard(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, actions: com.meticulouscreations.homesafe.ui.screens.DoorsPairingActions): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - actions: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.DoorPills(doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenDoors: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -1032,13 +1048,23 @@ private fun com.meticulouscreations.homesafe.ui.screens.DoorPills(doors: kotlin.
     - onOpenDoors: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.DoorsContent(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, onNotify: kotlin.Function2<@[ParameterName(name = \, plan: com.meticulouscreations.homesafe.ui.screens.DoorsPlanActions): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.DoorRenameDialog(door: com.meticulouscreations.homesafe.domain.model.Door, onDismiss: kotlin.Function0<kotlin.Unit>, onSave: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - door: STABLE (class with no mutable properties)
+    - onDismiss: STABLE (function type)
+    - onSave: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.DoorsContent(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, onNotify: kotlin.Function2<@[ParameterName(name = \, plan: com.meticulouscreations.homesafe.ui.screens.DoorsPlanActions, pairing: com.meticulouscreations.homesafe.ui.screens.DoorsPairingActions): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onNotify: STABLE (function type)
     - plan: STABLE (marked @Stable or @Immutable)
+    - pairing: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.DoorsFloorPlan(state: com.meticulouscreations.homesafe.viewmodel.DoorsUiState, actions: com.meticulouscreations.homesafe.ui.screens.DoorsPlanActions, onShowDoor: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
