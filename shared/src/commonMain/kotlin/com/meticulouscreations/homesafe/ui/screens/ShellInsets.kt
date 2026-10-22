@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
@@ -124,21 +125,38 @@ internal fun bottomNavClearance(): Dp {
 
 /**
  * The gutter either side of a screen's content: [TAB_CONTENT_HORIZONTAL_PADDING] on a phone
- * held upright, and once the shell's content area is wider than [maxWidth], whatever centres a
- * column that wide in it — never less than [min]. A gutter rather than a narrower list, so the
- * whole width still scrolls — on a phone on its side the thumbs are at the edges.
+ * held upright, and once the width [available] is wider than [maxWidth], whatever centres a column
+ * that wide in it — never less than [min]. A gutter rather than a narrower list, so the whole width
+ * still scrolls — on a phone on its side the thumbs are at the edges.
  *
- * Worked out from the window rather than measured: the shell's content area is the window less
- * what the system draws at its sides and less the side nav, when that is up (see ShellScaffold).
+ * [available] is the shell's content area ([shellContentWidth]), or the pane the screen is drawn in
+ * where the content area is split ([LocalPaneWidth]). Worked out from the window rather than measured.
  */
 @Composable
-internal fun contentGutter(maxWidth: Dp = READABLE_CONTENT_WIDTH, min: Dp = TAB_CONTENT_HORIZONTAL_PADDING): Dp {
+internal fun contentGutter(
+    maxWidth: Dp = READABLE_CONTENT_WIDTH,
+    min: Dp = TAB_CONTENT_HORIZONTAL_PADDING,
+    available: Dp = LocalPaneWidth.current ?: shellContentWidth(),
+): Dp = ((available - maxWidth) / 2).coerceAtLeast(min)
+
+/**
+ * How wide the shell's content area is: the window less what the system draws at its sides and
+ * less the side nav, when that is up (see ShellScaffold).
+ */
+@Composable
+internal fun shellContentWidth(): Dp {
     val direction = LocalLayoutDirection.current
     val safe = WindowInsets.safeDrawing.asPaddingValues()
     val rail = if (showsNavRail()) NAV_RAIL_CLEARANCE else 0.dp
-    val available = windowWidth() - safe.calculateStartPadding(direction) - safe.calculateEndPadding(direction) - rail
-    return ((available - maxWidth) / 2).coerceAtLeast(min)
+    return windowWidth() - safe.calculateStartPadding(direction) - safe.calculateEndPadding(direction) - rail
 }
+
+/**
+ * The width of the pane a screen is drawn in, where the content area is split in two ([showsTwoPanes]:
+ * Settings' list beside its page); null where the screen has the whole content area. What
+ * [contentGutter] centres a column in.
+ */
+internal val LocalPaneWidth = compositionLocalOf<Dp?> { null }
 
 /**
  * Content padding for a tab's scrolling list. Applied as *content* padding (not a modifier on

@@ -6,8 +6,10 @@ import androidx.compose.ui.window.ComposeUIViewController
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
+import com.meticulouscreations.homesafe.ui.screens.InnerApp
 import com.meticulouscreations.homesafe.ui.screens.LocalNativeTabBar
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
+import com.meticulouscreations.homesafe.ui.screens.ShellAppTab
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellTab
 import kotlinx.coroutines.MainScope
@@ -44,6 +46,12 @@ import platform.UIKit.UIViewController
  * The screens that want the whole display — the clip editor, car tagging — hide the Compose nav
  * through [ShellNavigation.showsBottomNav]; here the bar is SwiftUI's, so the same answer goes
  * to Swift through [onTabBarVisibilityChange] and the `TabView` hides its bar.
+ *
+ * On an iPad the `TabView` adapts into a sidebar, and the apps from the drawer — weather, the
+ * atlas, fitness, finance — are listed there as destinations of their own, each a Compose view
+ * controller from [appViewController]. Swift says when that is so through [appsInSidebar] (a
+ * window narrowed to a phone's width has no sidebar, and the drawer comes back); Compose asks
+ * for an app's tab, when a notification or a share opens one, through [onSelectApp].
  */
 class IosShell {
     /** Set by Swift: called on the main thread when Compose wants [IosTab] up — the SwiftUI selection follows. */
@@ -62,8 +70,25 @@ class IosShell {
         }
     private var tabBarVisible = true
 
-    private val nav = ShellNavigation(onTabSelected = { route -> onSelectTab?.invoke(IosTab.of(route)) })
+    /** Set by Swift: called on the main thread when Compose wants an app's own tab up (see [appsInSidebar]). */
+    var onSelectApp: ((IosAppTab) -> Unit)? = null
+
+    /**
+     * Set by Swift: whether the apps are in the sidebar, as tabs of their own, rather than behind
+     * the drawer. True on an iPad in a regular-width window; the shell then offers no drawer.
+     */
+    var appsInSidebar: Boolean
+        get() = nav.appsInSidebar
+        set(value) {
+            nav.appsInSidebar = value
+        }
+
+    private val nav = ShellNavigation(
+        onTabSelected = { route -> onSelectTab?.invoke(IosTab.of(route)) },
+        onAppSelected = { app -> onSelectApp?.invoke(IosAppTab.of(app)) },
+    )
     private val controllers = HashMap<IosTab, UIViewController>()
+    private val appControllers = HashMap<IosAppTab, UIViewController>()
 
     init {
         IosAppVisibility.install(IosApp.graph)
@@ -96,6 +121,30 @@ class IosShell {
                 }
             }
         }
+    }
+
+    /** The view controller for [app]'s tab in the sidebar, made on first ask and kept, as [viewController]'s are. */
+    fun appViewController(app: IosAppTab): UIViewController = appControllers.getOrPut(app) {
+        ComposeUIViewController {
+            AppChrome(IosApp.graph) {
+                CompositionLocalProvider(LocalNativeTabBar provides true) {
+                    ShellAppTab(nav, app.app)
+                }
+            }
+        }
+    }
+}
+
+/** The apps from the drawer as tabs in an iPad's sidebar, in the order the drawer lists them. */
+enum class IosAppTab(internal val app: InnerApp) {
+    WEATHER(InnerApp.WEATHER),
+    ATLAS(InnerApp.ATLAS),
+    FITNESS(InnerApp.FITNESS),
+    FINANCE(InnerApp.FINANCE),
+    ;
+
+    internal companion object {
+        fun of(app: InnerApp): IosAppTab = entries.first { it.app == app }
     }
 }
 

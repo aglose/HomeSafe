@@ -25,11 +25,11 @@
         <error line="19" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/CameraDetailScreen.kt">
-        <error line="186" column="5" source="compose:modifier-missing-check" />
-        <error line="490" column="5" source="compose:state-param-check" />
-        <error line="493" column="5" source="compose:lambda-param-in-effect" />
-        <error line="493" column="5" source="compose:parameter-naming" />
-        <error line="834" column="47" source="compose:lambda-param-in-effect" />
+        <error line="193" column="5" source="compose:modifier-missing-check" />
+        <error line="529" column="5" source="compose:state-param-check" />
+        <error line="532" column="5" source="compose:lambda-param-in-effect" />
+        <error line="532" column="5" source="compose:parameter-naming" />
+        <error line="873" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
         <error line="142" column="5" source="compose:modifier-missing-check" />
@@ -57,10 +57,10 @@
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsScreen.kt">
         <error line="202" column="5" source="compose:modifier-missing-check" />
-        <error line="822" column="14" source="compose:param-order-check" />
+        <error line="825" column="14" source="compose:param-order-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
-        <error line="107" column="5" source="compose:modifier-missing-check" />
+        <error line="227" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
         <error line="78" column="14" source="compose:compositionlocal-allowlist" />

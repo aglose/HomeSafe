@@ -34,12 +34,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,17 +88,27 @@ internal fun SettingsRowDivider(modifier: Modifier = Modifier) {
     )
 }
 
-/** A row that opens a page of its own: an icon, what it is, how it stands ([summary]), and a chevron. */
+/**
+ * A row that opens a page of its own: an icon, what it is, how it stands ([summary]), and a chevron.
+ * [opens] is that page's route: while the page is open beside the list ([LocalOpenSettingsPage],
+ * Settings in two panes) the row is marked as the one showing.
+ */
 @Composable
-internal fun SettingsNavRow(icon: ImageVector, title: String, summary: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SettingsNavRow(icon: ImageVector, title: String, summary: String, onClick: () -> Unit, modifier: Modifier = Modifier, opens: Any? = null) {
+    val showing = opens != null && opens == LocalOpenSettingsPage.current
     SettingsRowLayout(
         icon = icon,
         title = title,
         summary = summary,
         trailing = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .then(if (showing) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)).semantics { selected = true } else Modifier)
+            .clickable(onClick = onClick),
     )
 }
+
+/** The route of the page open beside the Settings list, where Settings is in two panes; null otherwise. */
+internal val LocalOpenSettingsPage = compositionLocalOf<Any?> { null }
 
 /**
  * A row that opens out in place: tapping it shows or hides [content] beneath it, inside the same
