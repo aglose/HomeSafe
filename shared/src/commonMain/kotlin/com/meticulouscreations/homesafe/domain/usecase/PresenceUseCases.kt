@@ -25,13 +25,7 @@ class SetAwayUseCase(private val presenceRepository: PresenceRepository) {
     suspend operator fun invoke(away: Boolean): Result<Unit> = presenceRepository.setThisDeviceAway(away)
 }
 
-/** "This phone decides home/away": makes this phone the presence authority, or steps it down. */
-@Inject
-class SetDecidesPresenceUseCase(private val presenceRepository: PresenceRepository) {
-    suspend operator fun invoke(decides: Boolean): Result<Unit> = presenceRepository.setDecidesPresence(decides)
-}
-
-/** Forgets another install the relay still lists — typically an old one a reinstall left behind. */
+/** Forgets a tracked phone — one that was replaced — so the next release phone of its platform takes its place. */
 @Inject
 class RemoveHouseholdDeviceUseCase(private val presenceRepository: PresenceRepository) {
     suspend operator fun invoke(deviceId: String): Result<Unit> = presenceRepository.removeDevice(deviceId)

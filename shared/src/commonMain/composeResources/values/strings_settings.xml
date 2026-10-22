@@ -91,12 +91,12 @@
     <!-- %1$s, %2$s: times of day, e.g. "10:00 PM" and "7:00 AM". -->
     <string name="settings_alerts_summary_quiet">quiet %1$s – %2$s</string>
     <string name="settings_alerts_summary_strangers">strangers only</string>
-    <string name="settings_away_subtitle">Who's home and who decides</string>
+    <string name="settings_away_subtitle">Who's home, by the two phones</string>
     <string name="settings_away_summary_unreachable">Can't reach the relay</string>
     <string name="settings_away_summary_checking">Checking who's home…</string>
     <string name="settings_away_summary_nobody_home">Nobody home</string>
-    <!-- The relay lists the household's phones, but not this install. -->
-    <string name="settings_away_summary_not_registered">This phone isn't registered with the relay</string>
+    <!-- The relay tracks the household's two phones, and this install isn't one of them. -->
+    <string name="settings_away_summary_not_tracked">This phone isn't tracked</string>
     <string name="settings_away_summary_leaving">This phone is leaving</string>
     <string name="settings_away_summary_away">This phone is away</string>
     <string name="settings_away_summary_home">This phone is home</string>
@@ -283,25 +283,23 @@
     <string name="presence_title">Away mode</string>
     <string name="presence_im_away">I'm away</string>
     <string name="presence_im_away_relay_unreachable">The push relay on the Frigate box can't be reached, so presence can't be changed right now.</string>
-    <!-- %1$s: the name of the phone that decides, e.g. "Apple iPhone". -->
-    <string name="presence_im_away_other_decides">%1$s decides whether the house is empty, so this switch only speaks for this phone.</string>
-    <string name="presence_im_away_debug">This is a debug build, so its switch doesn't decide whether the house is empty.</string>
     <string name="presence_im_away_leaving">This phone has left home; it counts as away in a few minutes unless it comes back.</string>
     <string name="presence_im_away_away">This phone counts as out of the house.</string>
     <string name="presence_im_away_home">This phone counts as home.</string>
     <!-- The relay hasn't said who's home yet. -->
     <string name="presence_im_away_checking">Checking with the relay…</string>
-    <!-- The relay lists the household's phones, but not this install. -->
-    <string name="presence_im_away_not_registered">This phone isn't registered with the relay yet, so it doesn't count as home or away.</string>
-    <string name="presence_decides">This phone decides home/away</string>
-    <string name="presence_decides_on">On — only this phone's location says whether the house is empty. Every phone still gets notifications.</string>
-    <string name="presence_decides_other">%1$s decides now. Turn this on to make it this phone instead. Every phone still gets notifications.</string>
-    <string name="presence_decides_off">Only this phone's location says whether the house is empty. Every phone still gets notifications.</string>
+    <!-- Why this install isn't one of the two phones away mode follows, in place of its switch's description. -->
+    <string name="presence_not_tracked_debug">This is a debug build. Away mode follows only the release app on the household's Android phone and iPhone, so this one is never home or away.</string>
+    <string name="presence_not_tracked_emulator">This is an emulator. Away mode follows only the household's real Android phone and iPhone.</string>
+    <string name="presence_not_tracked_other_phone">Another phone of this kind is the tracked one. Remove it below if this phone replaces it.</string>
+    <string name="presence_not_tracked_unknown">The relay doesn't track this phone yet, so it doesn't count as home or away.</string>
     <string name="presence_nobody_home">Nobody home — alerts are escalated on both phones.</string>
-    <string name="presence_caption">When everyone is away, every person seen on any camera notifies loudly on both phones — on its own "Away alerts" channel, whatever the rules under Alerts say. Flip the switch back when you're home.</string>
+    <string name="presence_caption">Once both phones have left home, every person seen on any camera notifies loudly on both — on its own "Away alerts" channel, whatever the rules under Alerts say. It ends by itself when either phone comes home.</string>
+    <string name="presence_no_android_phone">No Android phone is tracked yet. One joins when the release app opens on it.</string>
+    <string name="presence_no_iphone">No iPhone is tracked yet. One joins when a Release build opens on it.</string>
     <string name="presence_automatic">Automatic</string>
     <string name="presence_automatic_unsupported">Not available on this platform. The switch above is manual here.</string>
-    <string name="presence_automatic_off">Let a geofence around home and your home Wi-Fi flip the switch for you.</string>
+    <string name="presence_automatic_not_tracked">Only the two tracked phones follow home on their own.</string>
     <string name="presence_automatic_needs_always">Needs location set to "Always" so the fence can notice you leaving with the app closed.</string>
     <string name="presence_automatic_needs_home">Set where home is, from a phone standing in it.</string>
     <string name="presence_automatic_on">Leaving home marks this phone away after a few minutes; arriving — by the fence, or by reaching your cameras over Wi-Fi — marks it home at once.</string>
@@ -313,31 +311,18 @@
     <string name="presence_clear_home">Clear</string>
     <string name="presence_home_not_set">Home isn't set yet.</string>
     <!-- %1$d: the geofence's radius in metres. -->
-    <string name="presence_home_set">Home is set — a %1$d m circle every phone in the household watches.</string>
+    <string name="presence_home_set">Home is set — a %1$d m circle both phones watch.</string>
     <!-- %1$s: a device's name. -->
     <string name="presence_remove_title">Remove %1$s?</string>
-    <string name="presence_remove_body">It stops getting alerts and no longer counts for away mode. If HomeSafe is still installed on it, it comes back the next time the app opens.</string>
+    <string name="presence_remove_body">It stops getting alerts and away mode stops following it. The next phone of its kind to open the release app takes its place; if HomeSafe is still on this one, it comes back the next time the app opens.</string>
     <string name="presence_remove">Remove</string>
     <string name="presence_remove_device">Remove %1$s</string>
-    <plurals name="presence_other_devices">
-        <item quantity="one">%1$d other device</item>
-        <item quantity="other">%1$d other devices</item>
-    </plurals>
-    <string name="presence_other_devices_none_counted">Debug builds, and installs not heard from in a week. None of them count for away mode.</string>
-    <plurals name="presence_other_devices_counted">
-        <item quantity="one">Debug builds, and installs not heard from in a week. One still counts for away mode — remove it if nobody uses it.</item>
-        <item quantity="other">Debug builds, and installs not heard from in a week. %1$d still count for away mode — remove the ones nobody uses.</item>
-    </plurals>
-    <string name="presence_hide_other_devices">Hide other devices</string>
-    <string name="presence_show_other_devices">Show other devices</string>
-    <!-- A device row's details, joined with " · ": "this phone · away since 4:12 PM · decides home/away". -->
+    <!-- A device row's details, joined with " · ": "this phone · away since 4:12 PM". -->
     <string name="presence_status_away_since">away since %1$s</string>
     <string name="presence_status_away">away</string>
     <string name="presence_status_leaving">leaving…</string>
     <string name="presence_status_home">home</string>
     <string name="presence_detail_this_phone">this phone</string>
-    <string name="presence_detail_decides">decides home/away</string>
-    <string name="presence_detail_debug">debug, not counted</string>
     <string name="presence_unnamed_device">Unnamed device</string>
     <string name="presence_last_seen_just_now">seen just now</string>
     <plurals name="presence_last_seen_minutes">

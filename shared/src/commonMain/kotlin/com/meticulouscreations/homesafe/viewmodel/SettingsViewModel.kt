@@ -39,7 +39,6 @@ import com.meticulouscreations.homesafe.domain.usecase.SendTestNotificationUseCa
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
-import com.meticulouscreations.homesafe.domain.usecase.SetDecidesPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
@@ -92,13 +91,11 @@ data class SettingsUiState(
     val presence: HouseholdPresence = HouseholdPresence.EMPTY,
     /** True while the "I'm away" switch is mid-flight. */
     val awayBusy: Boolean = false,
-    /** True while the "This phone decides home/away" switch is mid-flight. */
-    val decidesBusy: Boolean = false,
     /** Why the relay couldn't be read or told, e.g. it's down. */
     val awayError: UiText? = null,
     /** The device being removed from the relay, by id; its row's remove button waits for the answer. */
     val removingDevice: String? = null,
-    /** Automatic presence: whether a geofence is possible on this platform at all... */
+    /** Automatic presence, always on for a tracked phone: whether a geofence is possible on this platform at all... */
     val geofenceSupported: Boolean = false,
     /** ...and how much location the phone lets us see. Only [LocationAccess.ALWAYS] makes the fence useful. */
     val locationAccess: LocationAccess = LocationAccess.UNAVAILABLE,
@@ -132,18 +129,15 @@ data class SettingsUiState(
             camera.zones.map { AlertZone(camera.name, it.name) } + AlertZone(camera.name, null)
         }
 
-    /** The user's wish; see [automaticPresenceActive] for whether it can actually do anything. */
-    val automaticPresence: Boolean get() = alerts.automaticPresence
-
-    /** Everything the fence needs is in place: switched on, location "always", and a home to draw it around. */
+    /**
+     * Everything the fence needs is in place: this is one of the tracked phones, location
+     * "always", and a home to draw it around. There is no switch; this is only what's missing.
+     */
     val automaticPresenceActive: Boolean
-        get() = automaticPresence && locationAccess == LocationAccess.ALWAYS && presence.home != null
+        get() = presence.thisDevice != null && geofenceSupported && locationAccess == LocationAccess.ALWAYS && presence.home != null
 
     /** This phone's switch. Optimistically nothing until the relay has listed this device. */
     val thisDeviceAway: Boolean get() = presence.thisDevice?.away == true
-
-    /** This phone is the presence authority: its switch alone says whether the house is empty. */
-    val thisDeviceDecides: Boolean get() = presence.thisDevice?.decides == true
 
     /** The push switch is effectively on only when the OS also allows it. */
     val pushNotificationsActive: Boolean
@@ -158,7 +152,6 @@ private data class LocalState(
     val testNotificationSent: Boolean = false,
     val classifiers: List<ClassifierModel> = emptyList(),
     val awayBusy: Boolean = false,
-    val decidesBusy: Boolean = false,
     val awayError: UiText? = null,
     val removingDevice: String? = null,
     val homeBusy: Boolean = false,
@@ -188,7 +181,6 @@ class SettingsViewModel(
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
     private val setAwayUseCase: SetAwayUseCase,
-    private val setDecidesPresenceUseCase: SetDecidesPresenceUseCase,
     private val removeHouseholdDeviceUseCase: RemoveHouseholdDeviceUseCase,
     observeLocationAccessUseCase: ObserveLocationAccessUseCase,
     private val requestLocationAccessUseCase: RequestLocationAccessUseCase,
@@ -232,7 +224,6 @@ class SettingsViewModel(
                 testNotificationSent = local.testNotificationSent,
                 classifiers = local.classifiers,
                 awayBusy = local.awayBusy,
-                decidesBusy = local.decidesBusy,
                 awayError = local.awayError,
                 removingDevice = local.removingDevice,
                 geofenceSupported = geofenceSupported,
@@ -410,21 +401,8 @@ class SettingsViewModel(
     }
 
     /**
-     * "This phone decides home/away": makes this phone the presence authority, or hands the
-     * decision back. Like the away switch, it shows what the relay answered, not what was asked.
-     */
-    fun setDecidesPresence(decides: Boolean) {
-        if (local.value.decidesBusy) return
-        local.update { it.copy(decidesBusy = true, awayError = null) }
-        viewModelScope.launch {
-            val result = setDecidesPresenceUseCase(decides)
-            local.update { it.copy(decidesBusy = false, awayError = result.exceptionOrNull()?.let(::friendlyAwayError)) }
-        }
-    }
-
-    /**
-     * Forgets another install ([deviceId]) on the relay — an old one a reinstall left behind, or a
-     * debug build. The Settings row asks first; this just does it.
+     * Forgets a tracked phone ([deviceId]) on the relay — one that was replaced — so the next
+     * release phone of its platform takes its place. The Settings row asks first; this just does it.
      */
     fun removeDevice(deviceId: String) {
         if (local.value.removingDevice != null) return
@@ -432,18 +410,6 @@ class SettingsViewModel(
         viewModelScope.launch {
             val result = removeHouseholdDeviceUseCase(deviceId)
             local.update { it.copy(removingDevice = null, awayError = result.exceptionOrNull()?.let(::friendlyAwayError)) }
-        }
-    }
-
-    /**
-     * Automatic presence. Turning it on also asks for the location access it needs, since a
-     * switch that's on but can't see the phone leave would do nothing quietly; the section's
-     * captions say what's still missing after the prompt.
-     */
-    fun setAutomaticPresence(enabled: Boolean) {
-        viewModelScope.launch {
-            updateSettingsUseCase(settings.value.copy(automaticPresence = enabled))
-            if (enabled && locationAccess.value != LocationAccess.ALWAYS) requestLocationAccessUseCase()
         }
     }
 

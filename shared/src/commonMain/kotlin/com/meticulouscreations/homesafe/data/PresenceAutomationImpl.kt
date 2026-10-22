@@ -4,12 +4,12 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PresenceSource
+import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.GeofenceMonitor
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceAutomation
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
-import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
@@ -26,21 +26,20 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * See [PresenceAutomation]. Three collectors while the app runs:
+ * See [PresenceAutomation]. On an install that can be tracked ([DeviceInfo.canBeTracked]), three
+ * collectors while the app runs; on any other, only the home cache, and the fence stays down:
  *
  * 1. **LAN → home.** The connection repository already probes the server's LAN address on every
  *    network change and records which route won. Landing on [ConnectionRoute.LOCAL_NETWORK]
  *    while this phone is away (or armed to be) is proof enough to say home — no permission, no
  *    fix, no fence.
- * 2. **The fence follows its inputs.** Automation on, location "always", and a home from the
- *    relay: watch it. Any of those gone: stop. Idempotent, so it also re-arms after the OS
- *    dropped the fence.
+ * 2. **The fence follows its inputs.** Location "always" and a home from the relay: watch it.
+ *    Either gone: stop. Idempotent, so it also re-arms after the OS dropped the fence.
  * 3. **Cache home.** So [resyncGeofence] can re-arm after a reboot with no relay in reach.
  *
  * Crossings arrive through [onGeofenceTransition] from whatever the OS woke.
@@ -50,7 +49,7 @@ import kotlinx.coroutines.launch
 @ContributesBinding(AppScope::class)
 class PresenceAutomationImpl(
     private val presenceRepository: PresenceRepository,
-    private val settingsRepository: SettingsRepository,
+    private val deviceInfo: DeviceInfo,
     private val connectionRepository: ConnectionRepository,
     private val geofenceMonitor: GeofenceMonitor,
     private val identity: DeviceIdentityStore,
@@ -63,25 +62,27 @@ class PresenceAutomationImpl(
 
     private var job: Job? = null
 
-    private fun enabled(): Flow<Boolean> = settingsRepository.observeSettings().map { it.automaticPresence }.distinctUntilChanged()
+    /** A debug build, an emulator: the relay ignores what it says, so it never watches or reports. */
+    private val tracked: Boolean get() = deviceInfo.canBeTracked
 
     override fun start() {
         if (job?.isActive == true) return
         job = appScope.launch {
-            launch {
-                combine(connectionRepository.activeConnection, enabled()) { connection, on ->
-                    on && connection?.route == ConnectionRoute.LOCAL_NETWORK
+            if (tracked) {
+                launch {
+                    connectionRepository.activeConnection
+                        .map { it?.route == ConnectionRoute.LOCAL_NETWORK }
+                        .distinctUntilChanged()
+                        .filter { it }
+                        .collect { comeHomeViaLan() }
                 }
-                    .distinctUntilChanged()
-                    .filter { it }
-                    .collect { comeHomeViaLan() }
-            }
-            launch {
-                combine(enabled(), geofenceMonitor.access, home()) { on, access, home ->
-                    home.takeIf { on && access == LocationAccess.ALWAYS }
+                launch {
+                    combine(geofenceMonitor.access, home()) { access, home -> home.takeIf { access == LocationAccess.ALWAYS } }
+                        .distinctUntilChanged()
+                        .collect { geofenceMonitor.watch(it) }
                 }
-                    .distinctUntilChanged()
-                    .collect { geofenceMonitor.watch(it) }
+            } else {
+                geofenceMonitor.watch(null) // a fence armed back when this build could switch it on
             }
             launch {
                 presenceRepository.presence
@@ -122,7 +123,7 @@ class PresenceAutomationImpl(
     override suspend fun clearHome(): Result<Unit> = presenceRepository.setHome(null)
 
     override suspend fun onGeofenceTransition(exited: Boolean) {
-        if (!settingsRepository.observeSettings().first().automaticPresence) return
+        if (!tracked) return
         if (exited) {
             presenceRepository.setThisDeviceAway(true, PresenceSource.GEOFENCE, dwellSeconds)
         } else {
@@ -131,9 +132,8 @@ class PresenceAutomationImpl(
     }
 
     override suspend fun resyncGeofence() {
-        val on = settingsRepository.observeSettings().first().automaticPresence
         val home = identity.cachedHome()
-        geofenceMonitor.watch(home.takeIf { on && geofenceMonitor.access.value == LocationAccess.ALWAYS })
+        geofenceMonitor.watch(home.takeIf { tracked && geofenceMonitor.access.value == LocationAccess.ALWAYS })
     }
 
     companion object {

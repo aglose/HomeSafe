@@ -18,11 +18,6 @@ data class AlertSettings(
      * person the zone rules want notifies, named or not.
      */
     val quietFamiliarPeople: Boolean = false,
-    /**
-     * Automatic presence: let the home geofence and the LAN flip this phone's away switch, so
-     * nobody has to remember to. Off by default — it needs location access the user must grant.
-     */
-    val automaticPresence: Boolean = false,
     /** A nightly window in which ordinary alerts stay quiet; Away alerts still come through. */
     val quietHours: QuietHours = QuietHours.DEFAULT,
     /**

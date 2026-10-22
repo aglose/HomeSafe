@@ -283,50 +283,168 @@ class QuietHours(unittest.TestCase):
 
 
 class Devices(unittest.TestCase):
-    """The presence snapshot and device removal, against a scratch database."""
+    """The tracked phones, the presence snapshot and device removal, against a scratch database."""
 
     def setUp(self):
         import tempfile
 
         self._dir = tempfile.TemporaryDirectory()
-        self._path, self._conn, self._auth = relay.DB_PATH, relay.CONN, relay.authenticate
+        self._path, self._conn, self._auth, self._profile = relay.DB_PATH, relay.CONN, relay.authenticate, relay.frigate_profile
         relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
         relay.CONN = relay.db()
         # Stands in for the cookie: a signed-in user, who may act on any device.
         relay.authenticate = lambda request, device=None: "andrew"
+        relay.frigate_profile = lambda request: None
 
     def tearDown(self):
         relay.CONN.close()
-        relay.DB_PATH, relay.CONN, relay.authenticate = self._path, self._conn, self._auth
+        relay.DB_PATH, relay.CONN, relay.authenticate, relay.frigate_profile = self._path, self._conn, self._auth, self._profile
         self._dir.cleanup()
 
-    def add(self, device_id, name, build="release", last_seen=1000.0):
+    def add(self, device_id, name, platform="android", build="release", hardware_id="hw", emulator=False, last_seen=None):
+        last_seen = time.time() if last_seen is None else last_seen
         relay.with_db(lambda c: (c.execute(
-            "INSERT INTO devices (device_id, platform, name, created, last_seen, build) VALUES (?,?,?,?,?,?)",
-            (device_id, "android", name, last_seen, last_seen, build),
+            "INSERT INTO devices (device_id, platform, name, created, last_seen, build, hardware_id, emulator) VALUES (?,?,?,?,?,?,?,?)",
+            (device_id, platform, name, last_seen, last_seen, build, hardware_id, int(emulator)),
         ), c.commit()))
 
-    def test_the_snapshot_names_each_device_and_when_it_was_last_seen(self):
-        self.add("pixel", "Google Pixel 10 Pro XL", last_seen=1000.0)
-        self.add("emulator", "Google sdk_gphone64_arm64", build="debug", last_seen=2000.0)
-        devices = relay.presence_snapshot("pixel")["devices"]
-        self.assertEqual(["pixel", "emulator"], [d["id"] for d in devices])
-        self.assertEqual([1000.0, 2000.0], [d["last_seen"] for d in devices])
-        self.assertEqual([True, False], [d["this_device"] for d in devices])
+    def household(self):
+        """The Pixel and the iPhone, release builds on real phones, and the installs that must never count."""
+        self.add("pixel", "Google Pixel 10 Pro XL", hardware_id="pixel-hw")
+        self.add("iphone", "Apple iPhone", platform="ios", hardware_id="iphone-hw")
+        self.add("pixel-debug", "Google Pixel 10 Pro XL", build="debug", hardware_id="pixel-debug-hw")
+        self.add("emulator", "Google sdk_gphone64_arm64", hardware_id="emu-hw", emulator=True)
+        self.add("old-app", "Google Pixel 10 Pro XL", hardware_id=None)
+        self.add("iphone-debug", "Apple iPhone", platform="ios", build="debug", hardware_id="iphone-hw-2")
+        relay.assign_tracked_phones()
+
+    def away(self, device_id, away=True, at=5000.0):
+        relay.with_db(lambda c: (c.execute("UPDATE devices SET away=?, away_updated=? WHERE device_id=?", (int(away), at, device_id)), c.commit()))
+
+    def register(self, device_id, hardware_id, platform="android", build="release", emulator=False):
+        device = types.SimpleNamespace(
+            device_id=device_id, token=None, platform=platform, name="Phone", quiet_familiar=False, build=build, quiet_start=None,
+            quiet_end=None, only_away=False, tz=None, utc_offset=None, hardware_id=hardware_id, emulator=emulator,
+        )
+        return relay.register(device, types.SimpleNamespace(headers={}))
+
+    def ids(self, this_device=None):
+        return [d["id"] for d in relay.presence_snapshot(this_device)["devices"]]
+
+    def test_only_one_release_phone_of_each_platform_is_listed_android_first(self):
+        self.household()
+        self.assertEqual(["pixel", "iphone"], self.ids())
+        self.assertEqual({"android": "pixel", "ios": "iphone"}, relay.assign_tracked_phones())
+
+    def test_the_house_is_empty_once_both_phones_are_away_and_not_before(self):
+        self.household()
+        self.away("pixel", at=5000.0)
+        self.away("pixel-debug")
+        self.away("emulator")
+        self.assertFalse(relay.presence_snapshot()["everyone_away"])
+        self.assertIsNone(relay.away_since())
+        self.away("iphone", at=6000.0)
+        self.assertTrue(relay.presence_snapshot()["everyone_away"])
+        self.assertEqual(6000.0, relay.away_since(), "when the last one left")
+        self.away("old-app", away=False)
+        self.away("iphone-debug", away=False)
+        self.assertEqual(6000.0, relay.away_since(), "an install that isn't tracked has no say")
+
+    def test_one_phone_alone_decides_while_it_is_the_only_one_tracked(self):
+        self.add("pixel", "Google Pixel 10 Pro XL", hardware_id="pixel-hw")
+        self.add("iphone-debug", "Apple iPhone", platform="ios", build="debug", hardware_id="iphone-hw")
+        relay.assign_tracked_phones()
+        self.away("pixel")
+        self.assertTrue(relay.presence_snapshot()["everyone_away"])
+
+    def test_nothing_tracked_is_never_away(self):
+        self.add("emulator", "Google sdk_gphone64_arm64", hardware_id="emu-hw", emulator=True)
+        self.away("emulator")
+        self.assertFalse(relay.presence_snapshot()["everyone_away"])
+        self.assertIsNone(relay.away_since())
+
+    def test_an_install_that_is_not_listed_is_told_why(self):
+        self.household()
+        self.add("second-pixel", "Google Pixel 9", hardware_id="other-hw")
+        reasons = {d: relay.presence_snapshot(d)["not_tracked"] for d in ("pixel", "pixel-debug", "emulator", "old-app", "second-pixel", "nobody")}
+        self.assertEqual(
+            {"pixel": None, "pixel-debug": "debug", "emulator": "emulator", "old-app": "old_app", "second-pixel": "taken", "nobody": "unregistered"},
+            reasons,
+        )
+        self.assertEqual([True, False], [d["this_device"] for d in relay.presence_snapshot("pixel")["devices"]])
+
+    def test_a_reinstall_takes_over_its_old_row_and_its_place(self):
+        self.register("pixel-1", "pixel-hw")
+        relay.set_presence("pixel-1", types.SimpleNamespace(away=True, source="manual", dwell_seconds=0), request=None)
+        self.register("pixel-2", "pixel-hw")
+        snapshot = relay.presence_snapshot("pixel-2")
+        self.assertEqual(["pixel-2"], [d["id"] for d in snapshot["devices"]])
+        self.assertTrue(snapshot["devices"][0]["away"], "the reinstall keeps the presence it had")
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT count(*) FROM devices").fetchone()[0]))
+
+    def test_a_second_release_phone_waits_while_the_first_is_in_use_and_takes_over_once_it_goes_quiet(self):
+        week = relay.TRACKED_STALE_SECONDS
+        self.add("pixel", "Google Pixel 10 Pro XL", hardware_id="pixel-hw", last_seen=time.time() - 3600)
+        self.assertEqual(["pixel"], self.ids())
+        self.register("new-pixel", "new-hw")
+        self.assertEqual(["pixel"], self.ids(), "two phones in use can't take turns")
+        relay.with_db(lambda c: (c.execute("UPDATE devices SET last_seen=? WHERE device_id='pixel'", (time.time() - week - 60,)), c.commit()))
+        self.assertEqual(["new-pixel"], self.ids())
+
+    def test_a_stale_phone_keeps_its_place_when_nothing_fresher_wants_it(self):
+        self.add("pixel", "Google Pixel 10 Pro XL", hardware_id="pixel-hw", last_seen=time.time() - relay.TRACKED_STALE_SECONDS - 60)
+        self.assertEqual(["pixel"], self.ids())
+
+    def test_removing_the_tracked_phone_hands_its_place_to_the_other(self):
+        self.add("pixel", "Google Pixel 10 Pro XL", hardware_id="pixel-hw")
+        self.add("new-pixel", "Google Pixel 11", hardware_id="new-hw", last_seen=time.time() - 60)
+        self.away("new-pixel")
+        self.assertEqual(["pixel"], self.ids())
+        self.assertEqual({"ok": True}, relay.unregister("pixel", request=None))
+        snapshot = relay.presence_snapshot()
+        self.assertEqual(["new-pixel"], [d["id"] for d in snapshot["devices"]])
+        self.assertFalse(snapshot["everyone_away"], "a phone that takes the place starts at home")
+
+    def test_a_phone_that_becomes_a_debug_build_gives_up_its_place(self):
+        self.register("iphone", "iphone-hw", platform="ios")
+        self.assertEqual(["iphone"], self.ids())
+        self.register("iphone", "iphone-hw", platform="ios", build="debug")
+        self.assertEqual([], self.ids())
+
+    def test_presence_from_an_install_that_is_not_tracked_is_ignored(self):
+        self.household()
+        snapshot = relay.set_presence("pixel-debug", types.SimpleNamespace(away=True, source="manual", dwell_seconds=0), request=None)
+        self.assertEqual("debug", snapshot["not_tracked"])
+        away = relay.with_db(lambda c: c.execute("SELECT away FROM devices WHERE device_id='pixel-debug'").fetchone()[0])
+        self.assertEqual(0, away)
+        relay.set_presence("nobody", types.SimpleNamespace(away=True, source="geofence", dwell_seconds=600), request=None)
+        self.assertIsNone(relay.find_device("nobody"), "no row is made for an install the relay doesn't know")
+
+    def test_a_tracked_phone_leaving_is_armed_then_promoted(self):
+        self.household()
+        relay.set_presence("pixel", types.SimpleNamespace(away=True, source="geofence", dwell_seconds=600), request=None)
+        self.assertTrue(relay.presence_snapshot()["devices"][0]["pending_away"])
+        relay.with_db(lambda c: (c.execute("UPDATE devices SET away_pending_since=away_pending_since-601 WHERE device_id='pixel'"), c.commit()))
+        relay.promote_pending()
+        self.assertTrue(relay.presence_snapshot()["devices"][0]["away"])
+
+    def test_installs_not_tracked_and_long_silent_are_forgotten(self):
+        long_ago = time.time() - relay.UNTRACKED_FORGET_SECONDS - 60
+        self.add("pixel", "Google Pixel 10 Pro XL", hardware_id="pixel-hw", last_seen=long_ago)
+        self.add("old-1", "Google Pixel 10 Pro XL", hardware_id=None, last_seen=long_ago)
+        self.add("old-2", "Apple iPhone", platform="ios", build="debug", last_seen=long_ago)
+        self.add("recent-debug", "Google sdk_gphone64_arm64", build="debug")
+        self.assertEqual(2, relay.forget_untracked())
+        left = relay.with_db(lambda c: [r[0] for r in c.execute("SELECT device_id FROM devices ORDER BY device_id")])
+        self.assertEqual(["pixel", "recent-debug"], left, "the tracked phone stays, however quiet")
 
     def test_a_phone_reading_presence_is_seen_and_the_others_are_not(self):
-        self.add("pixel", "Google Pixel 10 Pro XL", last_seen=1000.0)
-        self.add("old-pixel", "Google Pixel 10 Pro XL", last_seen=1000.0)
+        self.add("pixel", "Google Pixel 10 Pro XL", hardware_id="pixel-hw", last_seen=1000.0)
+        self.add("iphone", "Apple iPhone", platform="ios", hardware_id="iphone-hw", last_seen=1000.0)
         snapshot = relay.get_presence(request=None, device="pixel")
         seen = {d["id"]: d["last_seen"] for d in snapshot["devices"]}
         self.assertGreater(seen["pixel"], time.time() - 60)
-        self.assertEqual(1000.0, seen["old-pixel"])
-
-    def test_a_signed_in_user_can_remove_another_device(self):
-        self.add("pixel", "Google Pixel 10 Pro XL")
-        self.add("old-iphone", "Apple iPhone")
-        self.assertEqual({"ok": True}, relay.unregister("old-iphone", request=None))
-        self.assertEqual(["pixel"], [d["id"] for d in relay.presence_snapshot("pixel")["devices"]])
+        self.assertEqual(1000.0, seen["iphone"])
 
 
 class PushMessageTest(unittest.TestCase):
@@ -349,11 +467,13 @@ class PushMessageTest(unittest.TestCase):
         aps = relay.push_message("tok", "Person in the driveway", "Front Yard", self.DATA)["message"]["apns"]["payload"]["aps"]
         self.assertEqual({"title": "Person in the driveway", "body": "Front Yard"}, aps["alert"])
         self.assertNotIn("interruption-level", aps)
+        self.assertNotIn("sound", aps, "HomeSafe never makes a sound")
 
     def test_away_is_marked_for_both(self):
         message = relay.push_message("tok", "Away: Person", "Front Yard · nobody home", {**self.DATA, "away": "1"}, away=True)["message"]
         self.assertEqual("1", message["data"]["away"], "the app picks the loud channel from this")
         self.assertEqual("time-sensitive", message["apns"]["payload"]["aps"]["interruption-level"])
+        self.assertNotIn("sound", message["apns"]["payload"]["aps"], "not even while nobody is home")
 
 
     def test_a_visits_follow_up_is_quiet_and_lands_on_the_same_notification(self):
@@ -366,9 +486,8 @@ class PushMessageTest(unittest.TestCase):
         self.assertEqual("passive", aps["interruption-level"])
         self.assertEqual("r0", message["apns"]["headers"]["apns-collapse-id"])
 
-    def test_a_sounding_push_collapses_by_its_own_review_without_a_visit(self):
+    def test_a_push_outside_a_visit_collapses_by_its_own_review(self):
         message = relay.push_message("tok", "Front Yard", "Person in the driveway", self.DATA)["message"]
-        self.assertEqual("default", message["apns"]["payload"]["aps"]["sound"])
         self.assertEqual("r1", message["apns"]["headers"]["apns-collapse-id"])
 
 
@@ -2404,69 +2523,6 @@ class PhantomTest(_FakeFrigate):
             relay.authenticate = saved
         self.assertEqual(["amcrest_1", "hikvision_2"], [s["camera"] for s in answer["spots"]])
         self.assertEqual(relay.PHANTOM_IOU, answer["iou"])
-
-
-class PresenceAuthorityTest(Devices):
-    """One phone decides whether the house is empty; the rest are listed but have no say."""
-
-    def setUp(self):
-        super().setUp()
-        self._env, relay.PRESENCE_DEVICE = relay.PRESENCE_DEVICE, ""
-
-    def tearDown(self):
-        relay.PRESENCE_DEVICE = self._env
-        super().tearDown()
-
-    def away(self, device_id, away=True, at=5000.0):
-        relay.with_db(lambda c: (c.execute("UPDATE devices SET away=?, away_updated=? WHERE device_id=?", (int(away), at, device_id)), c.commit()))
-
-    def household(self):
-        # 2026-09-29: the Pixel, a release build on the emulator and an old iPhone debug install, all voting.
-        self.add("pixel", "Google Pixel 10 Pro XL")
-        self.add("emulator", "Google sdk_gphone64_arm64")
-        relay.with_db(lambda c: (c.execute(
-            "INSERT INTO devices (device_id, platform, name, created, last_seen, build) VALUES ('iphone','ios','Apple iPhone',1,1,'debug')"
-        ), c.commit()))
-
-    def test_without_an_authority_a_stale_install_holds_the_house_occupied(self):
-        self.household()
-        self.away("pixel")
-        self.assertFalse(relay.presence_snapshot()["everyone_away"])
-        self.assertIsNone(relay.away_since())
-
-    def test_the_authority_alone_decides(self):
-        self.household()
-        relay.set_presence_authority(types.SimpleNamespace(device_id="pixel"), request=None)
-        self.assertEqual("pixel", relay.presence_authority())
-        snapshot = relay.presence_snapshot("pixel")
-        self.assertEqual({"pixel": True, "emulator": False, "iphone": False}, {d["id"]: d["counts"] for d in snapshot["devices"]})
-        self.assertFalse(snapshot["everyone_away"])
-        self.away("pixel", at=5000.0)
-        self.assertTrue(relay.presence_snapshot()["everyone_away"])
-        self.assertEqual(5000.0, relay.away_since())
-        self.away("emulator", away=False)
-        self.assertEqual(5000.0, relay.away_since(), "the others have no say")
-
-    def test_the_environment_names_it_until_the_app_does(self):
-        self.household()
-        relay.PRESENCE_DEVICE = "emulator"
-        self.assertEqual("emulator", relay.presence_authority())
-        relay.state_set(relay.PRESENCE_KEY, "pixel")
-        self.assertEqual("pixel", relay.presence_authority())
-        relay.clear_presence_authority(request=None)
-        self.assertEqual("emulator", relay.presence_authority())
-
-    def test_an_authority_that_is_not_registered_is_refused(self):
-        with self.assertRaises(relay.HTTPException) as refused:
-            relay.set_presence_authority(types.SimpleNamespace(device_id="nobody"), request=None)
-        self.assertEqual(404, refused.exception.status_code)
-
-    def test_a_missing_authority_means_home(self):
-        self.household()
-        relay.state_set(relay.PRESENCE_KEY, "gone")
-        self.away("pixel")
-        self.away("emulator")
-        self.assertIsNone(relay.away_since())
 
 
 class PolicyTest(_FakeFrigate):
@@ -5229,7 +5285,8 @@ class DeviceOwnerTest(_ScratchDb):
 
     def register(self, **headers):
         device = types.SimpleNamespace(device_id="d1", token="token-1", platform="android", name="Pixel", quiet_familiar=False, build="release",
-                                       quiet_start=None, quiet_end=None, only_away=False, tz="America/Los_Angeles", utc_offset=-420)
+                                       quiet_start=None, quiet_end=None, only_away=False, tz="America/Los_Angeles", utc_offset=-420,
+                                       hardware_id="hw-1", emulator=False)
         return relay.register(device, types.SimpleNamespace(headers=headers))
 
     def owner(self):

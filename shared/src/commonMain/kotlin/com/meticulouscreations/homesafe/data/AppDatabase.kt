@@ -40,6 +40,13 @@ class CategorySwitchesMovedToZones : AutoMigrationSpec
 @DeleteTable(tableName = "HomeLayoutEntity")
 class PropertyPlanDropped : AutoMigrationSpec
 
+/**
+ * 28 -> 29: automatic presence stopped being a switch. A tracked phone (a release build on a real
+ * phone) always follows the geofence and the LAN, so the "Automatic" choice has nothing to keep.
+ */
+@DeleteColumn(tableName = "SettingsEntity", columnName = "automaticPresence")
+class AutomaticPresenceSwitchDropped : AutoMigrationSpec
+
 @Database(
     entities = [
         ConnectionHistoryEntity::class,
@@ -75,7 +82,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         AtlasYearEntity::class,
         AtlasStateEntity::class,
     ],
-    version = 28,
+    version = 29,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -146,6 +153,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 27 -> 28: whether a camera is left off the Home page (CameraLayoutEntity.hidden, default
         // shown).
         AutoMigration(from = 27, to = 28),
+        AutoMigration(from = 28, to = 29, spec = AutomaticPresenceSwitchDropped::class),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

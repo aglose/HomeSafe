@@ -34,11 +34,9 @@ import platform.UserNotifications.UNNotificationAttachment
 import platform.UserNotifications.UNNotificationInterruptionLevel
 import platform.UserNotifications.UNNotificationPresentationOptionBanner
 import platform.UserNotifications.UNNotificationPresentationOptionList
-import platform.UserNotifications.UNNotificationPresentationOptionSound
 import platform.UserNotifications.UNNotificationPresentationOptions
 import platform.UserNotifications.UNNotificationRequest
 import platform.UserNotifications.UNNotificationResponse
-import platform.UserNotifications.UNNotificationSound
 import platform.UserNotifications.UNUserNotificationCenter
 import platform.UserNotifications.UNUserNotificationCenterDelegateProtocol
 import platform.darwin.NSObject
@@ -58,7 +56,7 @@ private const val THREAD_SUMMARY = "summary"
  * while it's in front, and that one was tapped.
  *
  * iOS hides a local notification while its app is in the foreground unless told otherwise, so
- * the first post of a detection asks for the banner and sound — a detection is worth seeing
+ * the first post of a detection asks for the banner (never a sound) — a detection is worth seeing
  * whichever tab is open — and its updates (picture, clip) only refresh the entry in the list.
  *
  * A tap hands the detection to [MomentDeepLinks], which the shell opens full screen, and a door's
@@ -99,7 +97,7 @@ private class NotificationCenterDelegate :
             if (isUpdate) {
                 UNNotificationPresentationOptionList
             } else {
-                UNNotificationPresentationOptionBanner or UNNotificationPresentationOptionSound or UNNotificationPresentationOptionList
+                UNNotificationPresentationOptionBanner or UNNotificationPresentationOptionList
             },
         )
     }
@@ -168,8 +166,7 @@ private class IosAlertNotifier : AlertNotifier {
         val content = UNMutableNotificationContent().apply {
             setTitle(notification.title)
             setBody(notification.body)
-            // Only the first post sounds; a picture or clip arriving is an update, not a second alert.
-            if (!isUpdate && !notification.silent && !notification.summary) setSound(UNNotificationSound.defaultSound)
+            // No sound, ever: HomeSafe's notifications light the screen but keep the phone quiet.
             // Each camera's alerts stack together in Notification Centre, as the relay's pushes do (`thread-id`).
             setThreadIdentifier(notification.target?.cameraName ?: if (notification.summary) THREAD_SUMMARY else "")
             // Someone seen while nobody is home breaks through a Focus (where the app has that

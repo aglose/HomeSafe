@@ -104,6 +104,8 @@ class DeviceRegistrar(
             name = deviceInfo.name,
             quietFamiliar = preferences.quietFamiliar,
             build = deviceInfo.build,
+            hardwareId = deviceInfo.hardwareId.ifBlank { null },
+            emulator = deviceInfo.emulator,
             quietStart = preferences.quietHours?.startMinute,
             quietEnd = preferences.quietHours?.endMinute,
             onlyAway = preferences.onlyWhenAway,

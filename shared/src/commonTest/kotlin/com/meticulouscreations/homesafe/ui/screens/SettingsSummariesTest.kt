@@ -35,7 +35,7 @@ import homesafe.shared.generated.resources.settings_away_summary_checking
 import homesafe.shared.generated.resources.settings_away_summary_home
 import homesafe.shared.generated.resources.settings_away_summary_leaving
 import homesafe.shared.generated.resources.settings_away_summary_nobody_home
-import homesafe.shared.generated.resources.settings_away_summary_not_registered
+import homesafe.shared.generated.resources.settings_away_summary_not_tracked
 import homesafe.shared.generated.resources.settings_away_summary_unreachable
 import homesafe.shared.generated.resources.settings_cameras_loading
 import homesafe.shared.generated.resources.settings_cameras_summary_all
@@ -151,9 +151,9 @@ class SettingsSummariesTest {
     // ---- Away mode ------------------------------------------------------------------------------
 
     private fun thisPhone(away: Boolean = false, pendingAway: Boolean = false) =
-        PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = away, isThisDevice = true, pendingAway = pendingAway, id = "pixel", build = "release")
+        PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = away, isThisDevice = true, pendingAway = pendingAway, id = "pixel")
 
-    private val otherPhone = PresenceDevice(name = "Apple iPhone", platform = "ios", away = true, id = "iphone", build = "release")
+    private val otherPhone = PresenceDevice(name = "Apple iPhone", platform = "ios", away = true, id = "iphone")
 
     private fun household(me: PresenceDevice = thisPhone(), everyoneAway: Boolean = false, home: HomeLocation? = null) =
         HouseholdPresence(devices = listOf(me, otherPhone), everyoneAway = everyoneAway, home = home)
@@ -182,14 +182,13 @@ class SettingsSummariesTest {
     }
 
     @Test
-    fun aHouseholdListedWithoutThisPhoneIsNotTakenForThisPhoneBeingHome() {
+    fun aHouseholdTrackedWithoutThisPhoneIsNotTakenForThisPhoneBeingHome() {
         val others = HouseholdPresence(devices = listOf(otherPhone.copy(away = false)), everyoneAway = false, home = HomeLocation(40.0, -75.0, 150.0))
-        assertEquals(summary(text(Res.string.settings_away_summary_not_registered)), awaySummary(SettingsUiState(presence = others)))
-        // Nor is anything "automatic" for a phone the relay has no switch for.
-        val wanted = AlertSettings(pushNotificationsEnabled = false, automaticPresence = true)
+        assertEquals(summary(text(Res.string.settings_away_summary_not_tracked)), awaySummary(SettingsUiState(presence = others)))
+        // Nor is anything "automatic" for a phone the relay doesn't track.
         assertEquals(
-            summary(text(Res.string.settings_away_summary_not_registered)),
-            awaySummary(SettingsUiState(alerts = wanted, presence = others, locationAccess = LocationAccess.ALWAYS)),
+            summary(text(Res.string.settings_away_summary_not_tracked)),
+            awaySummary(SettingsUiState(geofenceSupported = true, presence = others, locationAccess = LocationAccess.ALWAYS)),
         )
         // The household's answer still comes first.
         assertEquals(
@@ -200,20 +199,19 @@ class SettingsSummariesTest {
 
     @Test
     fun theAwayRowSaysAutomaticOnlyOnceTheFenceCanWork() {
-        val wanted = AlertSettings(pushNotificationsEnabled = false, automaticPresence = true)
         val home = HomeLocation(latitude = 40.0, longitude = -75.0, radiusMeters = 150.0)
         assertEquals(
             summary(text(Res.string.settings_away_summary_home), text(Res.string.settings_away_summary_automatic)),
-            awaySummary(SettingsUiState(alerts = wanted, presence = household(home = home), locationAccess = LocationAccess.ALWAYS)),
+            awaySummary(SettingsUiState(geofenceSupported = true, presence = household(home = home), locationAccess = LocationAccess.ALWAYS)),
         )
-        // Switched on, but no home to draw the fence around, or no leave to watch it with the app closed.
+        // No home to draw the fence around, or no leave to watch it with the app closed.
         assertEquals(
             summary(text(Res.string.settings_away_summary_home)),
-            awaySummary(SettingsUiState(alerts = wanted, presence = household(), locationAccess = LocationAccess.ALWAYS)),
+            awaySummary(SettingsUiState(geofenceSupported = true, presence = household(), locationAccess = LocationAccess.ALWAYS)),
         )
         assertEquals(
             summary(text(Res.string.settings_away_summary_home)),
-            awaySummary(SettingsUiState(alerts = wanted, presence = household(home = home), locationAccess = LocationAccess.WHILE_IN_USE)),
+            awaySummary(SettingsUiState(geofenceSupported = true, presence = household(home = home), locationAccess = LocationAccess.WHILE_IN_USE)),
         )
     }
 

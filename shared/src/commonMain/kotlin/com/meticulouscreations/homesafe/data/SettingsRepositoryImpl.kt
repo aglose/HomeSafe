@@ -23,7 +23,6 @@ class SettingsRepositoryImpl(private val settingsDao: SettingsDao) : SettingsRep
                 pushNotificationsEnabled = entity?.pushNotificationsEnabled ?: AlertSettings.DEFAULT.pushNotificationsEnabled,
                 zoneRules = rules.associate { it.toDomain() },
                 quietFamiliarPeople = entity?.quietFamiliarPeople ?: AlertSettings.DEFAULT.quietFamiliarPeople,
-                automaticPresence = entity?.automaticPresence ?: AlertSettings.DEFAULT.automaticPresence,
                 quietHours = entity?.let { QuietHours(it.quietHoursEnabled, it.quietHoursStartMinute, it.quietHoursEndMinute) }
                     ?: AlertSettings.DEFAULT.quietHours,
                 onlyWhenAway = entity?.onlyWhenAway ?: AlertSettings.DEFAULT.onlyWhenAway,
@@ -35,7 +34,6 @@ class SettingsRepositoryImpl(private val settingsDao: SettingsDao) : SettingsRep
             SettingsEntity(
                 pushNotificationsEnabled = settings.pushNotificationsEnabled,
                 quietFamiliarPeople = settings.quietFamiliarPeople,
-                automaticPresence = settings.automaticPresence,
                 quietHoursEnabled = settings.quietHours.enabled,
                 quietHoursStartMinute = settings.quietHours.startMinute,
                 quietHoursEndMinute = settings.quietHours.endMinute,

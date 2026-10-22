@@ -259,7 +259,7 @@ internal class SettingsRobot(private val journey: AppJourney) {
         const val ALERTS_ROW_TITLE = "Alerts"
         const val ALERTS_PAGE_SUBTITLE = "What this phone hears about, and when"
         const val AWAY_ROW_TITLE = "Away mode"
-        const val AWAY_PAGE_SUBTITLE = "Who's home and who decides"
+        const val AWAY_PAGE_SUBTITLE = "Who's home, by the two phones"
         const val CAMERAS_ROW_TITLE = "Cameras"
         const val FACES_ROW_TITLE = "Faces"
         const val VIEWER_CAPTION = "Signed in as a viewer: the switches below are read-only. An admin account can change them."
