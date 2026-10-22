@@ -1,7 +1,8 @@
 # Notifications
 
-What sounds depends on whether anyone is home, and the Pixel decides that alone (see
-[away-mode.md](away-mode.md), "The presence authority"). The relay (`relay/relay.py`,
+What sounds depends on whether anyone is home, and the house is empty once both tracked phones —
+the Android phone and the iPhone — have left (see [away-mode.md](away-mode.md), "The two tracked
+phones"). The relay (`relay/relay.py`,
 "notification policy" and "car presence") makes the call; the phone just shows what it's sent.
 
 ## Why

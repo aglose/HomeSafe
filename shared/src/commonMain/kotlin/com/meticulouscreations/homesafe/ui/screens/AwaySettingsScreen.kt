@@ -13,7 +13,7 @@ import homesafe.shared.generated.resources.settings_away_subtitle
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * Away mode, one tap below Settings: this phone's "I'm away" switch, who decides, the household's
+ * Away mode, one tap below Settings: this phone's "I'm away" switch, the household's two tracked
  * phones, and automatic presence ([AwaySection]). The main page carries the one-line [awaySummary].
  */
 @Composable
@@ -36,8 +36,6 @@ fun AwaySettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         AwaySection(
             state = state,
             onAway = viewModel::setAway,
-            onDecides = viewModel::setDecidesPresence,
-            onAutomatic = viewModel::setAutomaticPresence,
             onRequestLocation = viewModel::requestLocationAccess,
             onSetHomeHere = viewModel::setHomeHere,
             onClearHome = viewModel::clearHome,

@@ -2,8 +2,9 @@
 
 The same detection means something different depending on whether anyone is home. A person in
 the driveway at 4 PM is a delivery when someone's in; when both phones say their owners are out,
-it's the one thing worth a loud alert. Household presence is shared between the two phones, so
-the push relay on the Frigate box (`relay/relay.py`) is the source of truth.
+it's the one thing worth a loud alert. Away mode follows exactly two phones — the household's
+Android phone and its iPhone — and the house is empty once both have left. Presence is shared
+between them, so the push relay on the Frigate box (`relay/relay.py`) is the source of truth.
 
 ## Relay contract
 
@@ -19,7 +20,7 @@ Registration answers with the id and a **device secret**:
 
 | Route | Auth | Body | Answer |
 | --- | --- | --- | --- |
-| `POST /devices` | cookie, or bearer | `{"device_id","token"?, "platform","name","quiet_familiar","build"}` | `{"ok", "device_id", "secret"}` |
+| `POST /devices` | cookie, or bearer | `{"device_id","token"?, "platform","name","quiet_familiar","build","hardware_id","emulator"}` | `{"ok", "device_id", "secret"}` |
 | `DELETE /devices/{id}` | cookie (any device), or bearer (itself) | — | `{"ok"}` |
 | `PUT /devices/{id}/presence` | cookie, or bearer | `{"away": bool, "source": "manual"\|"geofence"\|"lan", "dwell_seconds": n}` | presence snapshot |
 | `GET /presence?device={id}` | cookie, or bearer | — | presence snapshot |
@@ -40,8 +41,12 @@ returned on every registration.
 ```json
 {"devices":[{"id","name","platform","away","away_updated","this_device","build","counts","pending_away","last_seen"}],
  "everyone_away": bool,
- "home": {"lat","lng","radius_m","updated","by"} | null}
+ "home": {"lat","lng","radius_m","updated","by"} | null,
+ "not_tracked": "debug" | "emulator" | "taken" | "old_app" | "platform" | "unregistered" | null}
 ```
+
+`devices` holds the tracked phones alone (below), Android first; `counts` is always true and
+only kept for older apps. `not_tracked` says why the install the request named isn't listed.
 
 - `this_device` is true on the entry whose `device_id` (or, for old apps, token) matches the
   `?device=` query or the `PUT` path.
@@ -50,16 +55,15 @@ returned on every registration.
   the device it names (the app polls that about once a minute while open), so an install nobody
   uses any more stops moving. Both are absent from relays before 2026-09-22; the app then offers
   no remove button and folds nothing away for staleness.
-- `everyone_away` = at least one **counting** device (below) **and** all of those away.
+- `everyone_away` = at least one **tracked** phone (below) **and** all of those away.
   `pending_away` devices are not away.
 - `POST /devices` (re-registration on every connect and LAN/Tailscale flip) never touches
   `away`/`away_updated`/pending. `token` belongs to exactly one install: registering it moves it
   off any other row. An app upgrading from token-only identity brings its old row along — the row
   keyed by its token is re-keyed to the new `device_id`, presence intact.
 - Old apps that send only `token` get `device_id = token`, as before. `?token=` still works.
-- `PUT .../presence` on an unknown id creates the row (so a presence change can't race
-  registration); such a row has `platform="unknown"`, `build="unknown"` and no name — so it
-  doesn't count — until `POST /devices` fills them in.
+- `PUT .../presence` from an install that isn't tracked (or isn't known) changes nothing and
+  answers the snapshot, whose `not_tracked` says why.
 - **Dwell.** `away: true` with `dwell_seconds > 0` only *arms*: `away_pending_since` is set and
   `promote_pending()` — every poll, so within `POLL_SECONDS` — marks the device away once the
   dwell has run out. A second arm while pending doesn't restart the clock. `away: false` is always
@@ -72,48 +76,39 @@ returned on every registration.
   `token TEXT UNIQUE` (nullable), plus `secret`, `away_pending_since`, `away_pending_dwell`;
   existing rows get `device_id = token`. `broadcast()` skips rows with no token.
 
-### The presence authority
+### The two tracked phones
 
-One phone decides. With a **presence authority** set, `everyone_away` is that one install's
-away switch and nothing else: every other row is listed with `counts: false`, whatever its build.
-It replaced "every release phone votes" on 2026-09-29, when three stale iPhone debug rows and a
-release build on an emulator — none of which will ever say away — had kept away mode from firing
-at all. The household's authority is Andrew's release Pixel.
+Away mode follows exactly two phones: one Android phone and one iPhone, each a **release build on
+real hardware**. Everything else — a debug build (an emulator, the `.debug` app beside the real
+one, an Xcode Debug install), a release build on an emulator or simulator, an app from before
+`hardware_id` — still registers and still gets pushes, but isn't tracked: it isn't listed, its
+presence writes are ignored, and it can never hold away mode open or empty the house. This
+replaced the presence authority (one phone deciding alone, 2026-09-29 to 2026-10-22), which had
+itself replaced "every release phone votes" after stale installs kept the house occupied: on
+2026-10-22 the relay listed dozens of old Pixel installs, emulators and an iPhone debug install.
 
-| Route | Auth | Body | Answer |
-| --- | --- | --- | --- |
-| `PUT /presence/authority` | cookie, or the named device's bearer | `{"device_id"}` | presence snapshot |
-| `DELETE /presence/authority?device={id}` | cookie, or the authority's own bearer | — | presence snapshot |
-
-- Chosen in the app (kept in `state` as `presence_device`), else by the relay's `PRESENCE_DEVICE`
-  environment variable (set on the box in `relay/presence.env`, never in the repo), else nobody —
-  and then the build rule below applies, as before.
-- The snapshot carries `"authority": <device_id> | null`.
-- An authority whose row is gone (uninstalled, removed in Settings) means **home**: nothing counts,
-  so `everyone_away` is false. Away mode fails quiet rather than loud.
-
-### Which phones count (no authority set)
-
-Only the household's real phones may decide the house is empty. `POST /devices` carries
-`build` — `"release"` or `"debug"` — and `counts_for_away(platform, build)` is the one place that
-rule lives:
-
-```python
-AWAY_BUILDS = {"release"}
-AWAY_DEBUG_PLATFORMS = {"ios"}      # no iOS release channel yet; drop "ios" the day one ships
-```
-
-- A debug install — an emulator, the `.debug` app sitting beside the real one, a phone on a dev
-  branch — still registers, still receives every push, and still has its own switch. It just
-  isn't part of `everyone_away` and can't hold away mode open by claiming to be home.
-- iOS is exempt while the only iOS build is a debug IPA: the household iPhone counts on any
-  build. (It has no relay row at all until iOS push registration lands — see **Not done**.)
-- Rows written before the `build` column existed stay `"unknown"` and don't count. The real
-  phones re-register on their next connect and become `"release"` again on their own, so this
-  self-heals; a leftover emulator row never does, which is the point.
-- Each entry in the presence snapshot carries its `build` and a `counts` boolean, so the Settings
-  list can show a debug install greyed out as "· debug, not counted". `GET /devices` reports the
-  same as `counts_for_away`.
+- **Identity.** `POST /devices` carries `hardware_id`, which outlives a reinstall: Android's
+  `ANDROID_ID` (one per app signing key, so the release app's isn't the debug app's) and, on iOS,
+  a UUID the app keeps in the Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`), which
+  survives deleting the app but not a restore to a new phone. Not a MAC address, which iOS
+  randomises. A registration whose `hardware_id` matches other rows of its platform folds them in:
+  they're deleted, and the newest hands the new row its presence and its tracked place. A
+  reinstall never leaves a ghost.
+- **`not_tracked_reason(platform, build, emulator, hardware_id)`** is the one place the rule lives:
+  platform `android` or `ios`, `build == "release"`, not an emulator, and a `hardware_id`.
+- **Places.** `assign_tracked_phones()` keeps `tracked_android` / `tracked_ios` in `state`, each a
+  device_id. A phone keeps its place while it is eligible, unless it has gone quiet for
+  `TRACKED_STALE_SECONDS` (a week) and another eligible phone of its platform hasn't; an empty
+  place goes to the eligible install heard from most recently. Two phones in use can't take turns:
+  the first keeps it, and removing it in Settings (`DELETE /devices/{id}`) hands it over at once.
+  A phone that takes a place starts at home. It runs on every snapshot and every poll, so a stale
+  phone is replaced without anyone registering.
+- **Cleanup.** `forget_untracked()` deletes installs that aren't tracked and haven't been heard
+  from in `UNTRACKED_FORGET_SECONDS` (two weeks), on startup and every registration. One still in
+  use re-registers the next time it connects. The old `presence_device` state key is cleared on
+  startup, and `PRESENCE_DEVICE` / `presence.env` are no longer read.
+- `GET /devices` (cookie) still lists every install, with `tracked` and `not_tracked`, for looking
+  into from the box.
 
 ## Automatic presence
 
@@ -127,16 +122,19 @@ Two signals, one per direction, chosen for how they fail:
   so the mailbox, the bins and a chat at the kerb aren't departures; any "home" in between
   cancels it. A false "away" would turn every delivery into an alarm, hence the caution.
 
-The manual switch keeps working throughout as the override. Off by default
-(`AlertSettings.automaticPresence`, Room schema 9); inert without location "Always" and a home.
+The manual switch keeps working throughout as the override. **Always on, with no switch**, on a
+tracked phone (`DeviceInfo.canBeTracked`: a release build that isn't an emulator); a debug build
+or an emulator never watches the fence or reports, and takes down any fence it armed before.
+Inert without location "Always" and a home. (Until 2026-10-22 it was an "Automatic" switch, off by
+default; Room schema 29 drops `SettingsEntity.automaticPresence`.)
 
 **Home** is a 150 m circle (`DEFAULT_RADIUS_METERS`; Android won't fire reliably much under 100 m)
 set once from a phone standing in it — Settings → Away mode → "Set home here" — and shared through
-the relay, so the second phone only has to switch automation on. Each phone also caches it
+the relay, so the second phone only has to allow location "Always". Each phone also caches it
 (`DeviceIdentityEntity.home*`) so the fence can be re-armed with no relay in reach.
 
 **Ports.** `GeofenceMonitor` (`access: StateFlow<LocationAccess>`, `requestAccess()`,
-`currentLocation()`, `watch(home?)`) and `DeviceInfo` (`platform`, `name`, `build`), both with
+`currentLocation()`, `watch(home?)`) and `DeviceInfo` (`platform`, `name`, `build`, `hardwareId`, `emulator`), both with
 `createX(platformContext)` actuals; desktop and web are unavailable no-ops.
 
 - **Android** — Play Services `GeofencingClient` (`play-services-location`), one fence, ENTER|EXIT,
@@ -159,18 +157,18 @@ the relay, so the second phone only has to switch automation on. Each phone also
   crossing queued for it isn't lost. "Always" is asked in two steps too (When In Use, then
   Always); `Info.plist` carries both usage strings. No background mode is needed for region
   monitoring.
-- **Common** — `PresenceAutomationImpl` runs three collectors while the app runs: LAN → home
-  (asks the relay first, reports only if away or pending); the fence follows *automation on ∧
-  access ALWAYS ∧ home*, starting from the cached home and then following the relay — "the relay
+- **Common** — `PresenceAutomationImpl` runs three collectors while the app runs on a tracked
+  phone: LAN → home (asks the relay first, reports only if away or pending); the fence follows
+  *access ALWAYS ∧ home*, starting from the cached home and then following the relay — "the relay
   hasn't answered yet" is never read as "no home", or a background launch would tear the fence
   down; and the home cache follows the relay. `DeviceRegistrar` (common, replaces most of the
   Android `PushRegistrar`) registers on every server change / preference change / token rotation
   and stores the returned secret; Android's `onNewToken` reaches it through `BackgroundGraph`, so
   a rotation with the app closed still lands (bearer auth).
-- **Settings** — Away mode gained an "Automatic" switch (turning it on also asks for location),
-  one button per missing piece ("Allow location always" / "Allow location in system settings",
-  "Set home here" / "Move home here" + "Clear"), and a caption saying what's watching. Device
-  rows show `· leaving…` while pending.
+- **Settings** — Away mode says what "Automatic" still needs, with one button per missing piece
+  ("Allow location always" / "Allow location in system settings", "Set home here" / "Move home
+  here" + "Clear"), and a caption saying what's watching. Device rows show `· leaving…` while
+  pending.
 
 ### Escalation
 
@@ -203,7 +201,8 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
 
 ## App
 
-- `domain/model/HouseholdPresence.kt` — `PresenceDevice`, `HouseholdPresence` (+ `EMPTY`, `thisDevice`).
+- `domain/model/HouseholdPresence.kt` — `PresenceDevice`, `HouseholdPresence` (+ `EMPTY`, `thisDevice`,
+  `thisDeviceNotTracked: NotTrackedReason?`).
 - `domain/platform/PushTokenProvider` — `isSupported`, `suspend fun token()`: where to push,
   nothing more. Android answers with `FirebaseMessaging.getInstance().token`; iOS, desktop and web
   actuals return null, and registration proceeds without one.
@@ -221,8 +220,9 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
   `setPresence(url, deviceId, secret?, away, source, dwellSeconds)`; `getPresence(url, deviceId,
   secret?)`; `setHome(url, home?)`; `removeDevice(url, deviceId)` (cookie only) — internal
   `@Serializable` DTOs, `Authorization: Bearer` when a secret is known. `DeviceInfo.build` is read off the installed app (`FLAG_DEBUGGABLE` on Android,
-  `Platform.isDebugBinary` on iOS); `PresenceDevice.countsForAway` / `pendingAway` carry the
-  relay's verdict back (defaulting to true / false, so an older relay behaves as it did).
+  `Platform.isDebugBinary` on iOS, so the iPhone must run a Release build to be tracked);
+  `DeviceInfo.hardwareId` is `ANDROID_ID` or the Keychain UUID, `DeviceInfo.emulator` the stock
+  emulator fingerprints or the simulator's `SIMULATOR_UDID`.
 - `DetectionAlertService` (the in-app 15 s poller; paused while the relay has this phone's push
   token, since it hears the relay's escalated pushes instead) collects presence while polling; when
   `everyoneAway` and the event is `PEOPLE`, it notifies regardless of zone rules with
@@ -231,18 +231,14 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.
 - Settings tab: an "Away mode" row after Alerts, saying in a line where this phone stands
   (`awaySummary`), which opens the Away mode page (`AwaySettingsScreen`, route `AwayRoute`) —
-  "I'm away" switch for this phone, then the
-  devices as `HouseholdDeviceList` splits them: counted phones heard from in the last week first,
-  and this phone (even a debug build), each with its status (`away since 4:12 PM` / `home` /
-  `leaving…`), when it was last seen, and `debug, not counted` greyed out for a device the relay
-  doesn't count. Debug installs and anything silent for a week fold under "N other devices",
-  which says how many of them still count — an old install of a real phone keeps voting "home"
-  until it's removed. Every row but this phone's has a remove button (with a confirmation) that
-  calls `DELETE /devices/{id}` on the session cookie; an install that's still in use re-registers
-  on its next connect. Then a caption explaining the escalation. Disabled with a caption when push isn't supported on the platform or the relay
-  couldn't be reached. `SettingsViewModel` carries `presence`, `awayBusy`, `awayError`,
-  `locationAccess`, `geofenceSupported`, `homeBusy`, `homeError`; presence is refreshed in the
-  tab's and the page's `LifecycleResumeEffect`.
+  "I'm away" switch for this phone (locked, with the reason, on an install that isn't tracked),
+  then the two tracked phones, each with its status (`away since 4:12 PM` / `home` / `leaving…`)
+  and when it was last seen, and a line for whichever platform has no tracked phone yet. Every
+  row but this phone's has a remove button (with a confirmation) that calls `DELETE /devices/{id}`
+  on the session cookie — how a replaced phone hands its place to the new one. Then "Automatic"
+  and what it still needs, and a caption explaining the escalation. `SettingsViewModel` carries
+  `presence`, `awayBusy`, `awayError`, `locationAccess`, `geofenceSupported`, `homeBusy`,
+  `homeError`; presence is refreshed in the tab's and the page's `LifecycleResumeEffect`.
 - Home tab: a slim "Away mode · nobody home · alerts escalated" banner with an "I'm back" button
   (`SetAwayUseCase(false)`) while `everyoneAway`; the status line reads "Away Mode" instead of
   "System Secure".

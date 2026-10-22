@@ -12,8 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
  * - **Away** — leaving the geofence. Only *armed*: the relay waits a dwell before marking the
  *   phone away, and any "home" in between cancels it, so a walk to the mailbox isn't a departure.
  *
- * Off until the user turns it on in Settings, and inert without [LocationAccess.ALWAYS] and a
- * home location. The manual switch keeps working throughout as the override.
+ * Always on — there is no switch — on an install that can be one of the household's two tracked
+ * phones (`DeviceInfo.canBeTracked`: a release build on a real phone), and inert on any other.
+ * Needs [LocationAccess.ALWAYS] and a home location to watch the fence; the LAN half needs
+ * neither. The manual switch keeps working throughout as the override.
  */
 interface PresenceAutomation {
     /** Whether this platform can watch a geofence at all. */
@@ -34,7 +36,7 @@ interface PresenceAutomation {
     /** Forgets the household's home; every phone stops watching. */
     suspend fun clearHome(): Result<Unit>
 
-    /** The OS says this phone crossed the fence. Ignored while automation is off. */
+    /** The OS says this phone crossed the fence. Ignored on an install that can't be tracked. */
     suspend fun onGeofenceTransition(exited: Boolean)
 
     /**

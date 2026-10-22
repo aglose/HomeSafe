@@ -292,7 +292,7 @@ class SettingsJourneyTest {
 
         settings.openAway()
         awaitText("I'm away")
-        awaitText("This phone decides home/away")
+        awaitText("Automatic")
         settings.backFromAway()
         awaitNode(SettingsRobot.ALERTS_ROW, "the Alerts row")
     }

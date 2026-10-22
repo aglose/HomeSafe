@@ -14,12 +14,14 @@ import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.CameraZone
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
+import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.model.RetentionPolicy
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.StorageUsage
+import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
@@ -78,8 +80,8 @@ private val previewSettings = SettingsUiState(
     appIconsSupported = true,
     presence = HouseholdPresence(
         devices = listOf(
-            PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel", build = "release"),
-            PresenceDevice(name = "Apple iPhone", platform = "ios", away = true, updatedEpochSeconds = 1_732_650_000.0, id = "iphone", build = "release"),
+            PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel"),
+            PresenceDevice(name = "Apple iPhone", platform = "ios", away = true, updatedEpochSeconds = 1_732_650_000.0, id = "iphone"),
         ),
         everyoneAway = false,
     ),
@@ -172,10 +174,13 @@ private fun AwayPagePreview() {
     FrigatePreview {
         SettingsPage(title = stringResource(Res.string.presence_title), subtitle = stringResource(Res.string.settings_away_subtitle), onBack = {}) {
             AwaySection(
-                state = previewSettings,
+                // A phone that can watch the fence, with home set and location "always": the usual state.
+                state = previewSettings.copy(
+                    geofenceSupported = true,
+                    locationAccess = LocationAccess.ALWAYS,
+                    presence = previewSettings.presence.copy(home = HomeLocation(latitude = 40.0, longitude = -75.0, radiusMeters = 150.0)),
+                ),
                 onAway = {},
-                onDecides = {},
-                onAutomatic = {},
                 onRequestLocation = {},
                 onSetHomeHere = {},
                 onClearHome = {},

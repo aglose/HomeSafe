@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.NotTrackedReason
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
@@ -126,36 +127,6 @@ class PushRelayApi(private val httpClient: HttpClient) {
     /** Who's home. The relay flags [deviceId]'s own entry, so the app knows which switch is its own. */
     suspend fun getPresence(serverUrl: String, deviceId: String, secret: String? = null): Result<HouseholdPresence> = runCatching {
         val response = httpClient.get(relayUrl(serverUrl, "/presence")) {
-            parameter("device", deviceId)
-            bearer(secret)
-        }
-        if (!response.status.isSuccess()) throw relayRefused(response.status)
-        response.body<RelayPresence>().toDomain()
-    }
-
-    /**
-     * Makes this install ([deviceId]) the household's presence authority: from then on its away
-     * switch alone says whether the house is empty, and every other phone's is only its own. An
-     * install may choose itself, so this bears its [secret] (the session cookie also works). The
-     * relay answers with the household's presence, [HouseholdPresence.authorityDeviceId] now this one.
-     */
-    suspend fun setPresenceAuthority(serverUrl: String, deviceId: String, secret: String?): Result<HouseholdPresence> = runCatching {
-        val response = httpClient.put(relayUrl(serverUrl, "/presence/authority")) {
-            contentType(ContentType.Application.Json)
-            bearer(secret)
-            setBody(AuthorityUpdate(deviceId = deviceId))
-        }
-        if (!response.status.isSuccess()) throw relayRefused(response.status)
-        response.body<RelayPresence>().toDomain()
-    }
-
-    /**
-     * Hands the decision back from the presence authority — to the box's configured phone if it
-     * has one, or else to every counting phone. The authority may step down on its own [secret],
-     * [deviceId] naming it; any other install needs the session cookie. Answers the new presence.
-     */
-    suspend fun clearPresenceAuthority(serverUrl: String, deviceId: String, secret: String?): Result<HouseholdPresence> = runCatching {
-        val response = httpClient.delete(relayUrl(serverUrl, "/presence/authority")) {
             parameter("device", deviceId)
             bearer(secret)
         }
@@ -476,6 +447,10 @@ data class DeviceRegistration(
     val name: String,
     @SerialName("quiet_familiar") val quietFamiliar: Boolean = false,
     val build: String = "unknown",
+    /** The phone it runs on, kept across reinstalls (`DeviceInfo.hardwareId`): what the relay tracks a phone by. */
+    @SerialName("hardware_id") val hardwareId: String? = null,
+    /** An emulator or simulator, which is never tracked whatever its build. */
+    val emulator: Boolean = false,
     /** Quiet hours, in minutes after local midnight; both null when they're off. */
     @SerialName("quiet_start") val quietStart: Int? = null,
     @SerialName("quiet_end") val quietEnd: Int? = null,
@@ -505,23 +480,24 @@ internal data class PresenceUpdate(
 )
 
 @Serializable
-internal data class AuthorityUpdate(@SerialName("device_id") val deviceId: String)
-
-@Serializable
 internal data class HomeUpdate(
     val lat: Double,
     val lng: Double,
     @SerialName("radius_m") val radiusMeters: Double,
 )
 
-/** The relay's `GET /presence` (and `PUT .../presence`, `PUT /home`, `PUT`/`DELETE /presence/authority`) body. */
+/** The relay's `GET /presence` (and `PUT .../presence`, `PUT`/`DELETE /home`) body. */
 @Serializable
 internal data class RelayPresence(
+    /** The tracked phones alone: one Android phone and one iPhone at most. */
     val devices: List<RelayPresenceDevice> = emptyList(),
     @SerialName("everyone_away") val everyoneAway: Boolean = false,
     val home: RelayHome? = null,
-    /** The device_id whose away switch alone decides away mode; null while every counting phone votes, and from older relays. */
-    val authority: String? = null,
+    /**
+     * Why the install the request named isn't listed: "debug", "emulator", "taken" (another phone
+     * of its platform is tracked), "old_app", "platform" or "unregistered"; null when it is listed.
+     */
+    @SerialName("not_tracked") val notTracked: String? = null,
 ) {
     fun toDomain() = HouseholdPresence(
         devices = devices.map {
@@ -531,17 +507,20 @@ internal data class RelayPresence(
                 away = it.away,
                 updatedEpochSeconds = it.awayUpdated,
                 isThisDevice = it.thisDevice,
-                countsForAway = it.counts,
                 pendingAway = it.pendingAway,
                 id = it.id,
                 lastSeenEpochSeconds = it.lastSeen,
-                build = it.build,
-                decides = authority != null && it.id == authority,
             )
         },
         everyoneAway = everyoneAway,
         home = home?.let { HomeLocation(it.lat, it.lng, it.radiusMeters) },
-        authorityDeviceId = authority,
+        thisDeviceNotTracked = when (notTracked) {
+            null -> null
+            "debug" -> NotTrackedReason.DEBUG_BUILD
+            "emulator" -> NotTrackedReason.EMULATOR
+            "taken" -> NotTrackedReason.ANOTHER_PHONE
+            else -> NotTrackedReason.UNKNOWN
+        },
     )
 }
 
@@ -559,14 +538,10 @@ internal data class RelayPresenceDevice(
     val away: Boolean = false,
     @SerialName("away_updated") val awayUpdated: Double? = null,
     @SerialName("this_device") val thisDevice: Boolean = false,
-    /** Older relays don't send this; treat their devices as counting, which is what they did. */
-    val counts: Boolean = true,
     @SerialName("pending_away") val pendingAway: Boolean = false,
     /** The device_id; older relays don't send it, and their devices can't be removed from the app. */
     val id: String? = null,
     @SerialName("last_seen") val lastSeen: Double? = null,
-    /** "release" or "debug", as the install registered; older relays don't send it. */
-    val build: String? = null,
 )
 
 /** The relay's `GET /cars/profiles` body. */

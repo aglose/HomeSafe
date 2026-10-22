@@ -66,7 +66,6 @@ class PresenceRepositoryImplTest {
     private class Harness(scope: TestScope, connection: ConnectionRepository, failOn: Set<String> = emptySet()) {
         val away = mutableMapOf("dev-pixel" to false, "dev-iphone" to true)
         var home: HomeLocation? = null
-        var authority: String? = null
         val requests = mutableListOf<String>()
         val authorizations = mutableListOf<String?>()
         var bodies = mutableListOf<String>()
@@ -82,17 +81,6 @@ class PresenceRepositoryImplTest {
                     val body = req.bodyText().also { bodies += it }
                     away[id] = "\"away\":true" in body
                     respond(presenceJson(id), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
-                }
-
-                req.method == HttpMethod.Put && req.url.encodedPath == "/presence/authority" -> {
-                    val body = req.bodyText().also { bodies += it }
-                    authority = away.keys.first { "\"device_id\":\"$it\"" in body }
-                    respond(presenceJson(authority), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
-                }
-
-                req.method == HttpMethod.Delete && req.url.encodedPath == "/presence/authority" -> {
-                    authority = null
-                    respond(presenceJson(req.url.parameters["device"]), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
                 req.method == HttpMethod.Put && req.url.encodedPath == "/home" -> {
@@ -119,14 +107,12 @@ class PresenceRepositoryImplTest {
         }
 
         private fun presenceJson(thisDevice: String?): String {
-            val counts = { id: String -> authority == null || id == authority }
             val devices = away.entries.joinToString(",") { (id, isAway) ->
-                """{"id":"$id","name":"${if (id == "dev-pixel") "Google Pixel" else "iPhone"}","platform":"${if (id == "dev-pixel") "android" else "ios"}","away":$isAway,"away_updated":${if (isAway) "1700000000.5" else "null"},"this_device":${id == thisDevice},"counts":${counts(id)}}"""
+                """{"id":"$id","name":"${if (id == "dev-pixel") "Google Pixel" else "iPhone"}","platform":"${if (id == "dev-pixel") "android" else "ios"}","away":$isAway,"away_updated":${if (isAway) "1700000000.5" else "null"},"this_device":${id == thisDevice}}"""
             }
             val homeJson = home?.let { """{"lat":${it.latitude},"lng":${it.longitude},"radius_m":${it.radiusMeters}}""" } ?: "null"
-            val everyoneAway = away.filterKeys(counts).values.let { it.isNotEmpty() && it.all { away -> away } }
-            val authorityJson = authority?.let { "\"$it\"" } ?: "null"
-            return """{"devices":[$devices],"everyone_away":$everyoneAway,"home":$homeJson,"authority":$authorityJson}"""
+            val everyoneAway = away.values.let { it.isNotEmpty() && it.all { away -> away } }
+            return """{"devices":[$devices],"everyone_away":$everyoneAway,"home":$homeJson}"""
         }
 
         private fun HttpRequestData.bodyText(): String = (body as TextContent).text
@@ -257,48 +243,6 @@ class PresenceRepositoryImplTest {
         assertEquals("DELETE 192.168.68.55/devices/dev-iphone", h.requests[1])
         assertNull(h.authorizations[1], "another install's row: the cookie, since this install's secret only speaks for itself")
         assertEquals(listOf("dev-pixel"), h.repository.presence.value.devices.map { it.id })
-    }
-
-    @Test
-    fun decidingPutsThisDeviceAsTheAuthorityOnItsSecretAndAdoptsTheAnswer() = runTest {
-        val h = Harness(this, FakeConnection("http://192.168.68.55:8971")).registered()
-        assertTrue(h.repository.refresh().isSuccess)
-        assertFalse(h.repository.presence.value.everyoneAway, "the Pixel is home, so the house isn't empty")
-
-        // The Pixel decides alone now: the iPhone's "away" no longer matters, and the Pixel is home.
-        assertTrue(h.repository.setDecidesPresence(true).isSuccess)
-        assertEquals("PUT 192.168.68.55/presence/authority", h.requests.last())
-        assertEquals("""{"device_id":"dev-pixel"}""", h.bodies.last())
-        assertEquals("Bearer s3cret", h.authorizations.last(), "an install may choose itself, on its own secret")
-        val presence = h.repository.presence.value
-        assertEquals("dev-pixel", presence.authorityDeviceId)
-        assertTrue(presence.thisDevice!!.decides)
-        assertEquals(listOf("dev-pixel"), presence.countingDevices.map { it.id })
-
-        // Leaving now empties the house on the Pixel's word alone.
-        assertTrue(h.repository.setThisDeviceAway(true).isSuccess)
-        assertTrue(h.repository.presence.value.everyoneAway)
-    }
-
-    @Test
-    fun steppingDownDeletesTheAuthorityNamingThisDevice() = runTest {
-        val h = Harness(this, FakeConnection("http://192.168.68.55:8971")).registered()
-        h.authority = "dev-pixel"
-        assertTrue(h.repository.setDecidesPresence(false).isSuccess)
-        assertEquals("DELETE 192.168.68.55/presence/authority?device=dev-pixel", h.requests.single())
-        assertEquals("Bearer s3cret", h.authorizations.single())
-        val presence = h.repository.presence.value
-        assertNull(presence.authorityDeviceId)
-        assertFalse(presence.thisDevice!!.decides)
-        assertEquals(2, presence.countingDevices.size, "every counting phone votes again")
-    }
-
-    @Test
-    fun decidingNeedsALiveServer() = runTest {
-        val recent = ConnectionRecord(serverUrl = "http://100.99.163.71:8971", localUrl = null, connectedAtEpochMillis = 0)
-        val h = Harness(this, FakeConnection(url = null, recent = recent)).registered()
-        assertTrue(h.repository.setDecidesPresence(true).isFailure, "a Settings action: no background fallback to the last server")
-        assertTrue(h.requests.isEmpty())
     }
 
     @Test

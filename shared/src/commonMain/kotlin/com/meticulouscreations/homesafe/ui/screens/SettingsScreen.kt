@@ -2,7 +2,6 @@ package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,8 +23,6 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DoorFront
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
@@ -62,8 +59,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.appicon.AppIcon
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
-import com.meticulouscreations.homesafe.domain.model.HouseholdDeviceList
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.NotTrackedReason
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.formatLastSeen
@@ -97,41 +94,33 @@ import homesafe.shared.generated.resources.presence_allow_location_settings
 import homesafe.shared.generated.resources.presence_automatic
 import homesafe.shared.generated.resources.presence_automatic_needs_always
 import homesafe.shared.generated.resources.presence_automatic_needs_home
-import homesafe.shared.generated.resources.presence_automatic_off
+import homesafe.shared.generated.resources.presence_automatic_not_tracked
 import homesafe.shared.generated.resources.presence_automatic_on
 import homesafe.shared.generated.resources.presence_automatic_unsupported
 import homesafe.shared.generated.resources.presence_caption
 import homesafe.shared.generated.resources.presence_clear_home
-import homesafe.shared.generated.resources.presence_decides
-import homesafe.shared.generated.resources.presence_decides_off
-import homesafe.shared.generated.resources.presence_decides_on
-import homesafe.shared.generated.resources.presence_decides_other
-import homesafe.shared.generated.resources.presence_detail_debug
-import homesafe.shared.generated.resources.presence_detail_decides
 import homesafe.shared.generated.resources.presence_detail_this_phone
-import homesafe.shared.generated.resources.presence_hide_other_devices
 import homesafe.shared.generated.resources.presence_home_not_set
 import homesafe.shared.generated.resources.presence_home_set
 import homesafe.shared.generated.resources.presence_im_away
 import homesafe.shared.generated.resources.presence_im_away_away
 import homesafe.shared.generated.resources.presence_im_away_checking
-import homesafe.shared.generated.resources.presence_im_away_debug
 import homesafe.shared.generated.resources.presence_im_away_home
 import homesafe.shared.generated.resources.presence_im_away_leaving
-import homesafe.shared.generated.resources.presence_im_away_not_registered
-import homesafe.shared.generated.resources.presence_im_away_other_decides
 import homesafe.shared.generated.resources.presence_im_away_relay_unreachable
 import homesafe.shared.generated.resources.presence_move_home_here
+import homesafe.shared.generated.resources.presence_no_android_phone
+import homesafe.shared.generated.resources.presence_no_iphone
 import homesafe.shared.generated.resources.presence_nobody_home
-import homesafe.shared.generated.resources.presence_other_devices
-import homesafe.shared.generated.resources.presence_other_devices_counted
-import homesafe.shared.generated.resources.presence_other_devices_none_counted
+import homesafe.shared.generated.resources.presence_not_tracked_debug
+import homesafe.shared.generated.resources.presence_not_tracked_emulator
+import homesafe.shared.generated.resources.presence_not_tracked_other_phone
+import homesafe.shared.generated.resources.presence_not_tracked_unknown
 import homesafe.shared.generated.resources.presence_remove
 import homesafe.shared.generated.resources.presence_remove_body
 import homesafe.shared.generated.resources.presence_remove_device
 import homesafe.shared.generated.resources.presence_remove_title
 import homesafe.shared.generated.resources.presence_set_home_here
-import homesafe.shared.generated.resources.presence_show_other_devices
 import homesafe.shared.generated.resources.presence_status_away
 import homesafe.shared.generated.resources.presence_status_away_since
 import homesafe.shared.generated.resources.presence_status_home
@@ -199,7 +188,6 @@ import homesafe.shared.generated.resources.settings_storage_unreported
 import homesafe.shared.generated.resources.settings_storage_used
 import homesafe.shared.generated.resources.settings_value_missing
 import homesafe.shared.generated.resources.tone_settings_title
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 import kotlin.time.Clock
@@ -581,16 +569,14 @@ private fun CameraPipelineRows(
 }
 
 /**
- * The Away mode page's one card ([AwaySettingsScreen]): this phone's "I'm away" switch, whether this phone alone decides (the relay's
- * presence authority), the household's phones, automatic presence, and what happens once the
- * last one leaves. The relay on the Frigate box keeps the answer, so both phones see the same thing.
+ * The Away mode page's one card ([AwaySettingsScreen]): this phone's "I'm away" switch, the
+ * household's two tracked phones, what keeps them up to date on their own, and what happens once
+ * both have left. The relay on the Frigate box keeps the answer, so both phones see the same thing.
  */
 @Composable
 internal fun AwaySection(
     state: SettingsUiState,
     onAway: (Boolean) -> Unit,
-    onDecides: (Boolean) -> Unit,
-    onAutomatic: (Boolean) -> Unit,
     onRequestLocation: () -> Unit,
     onSetHomeHere: () -> Unit,
     onClearHome: () -> Unit,
@@ -598,43 +584,24 @@ internal fun AwaySection(
 ) {
     SettingsCard {
         val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
-        val switchEnabled = !state.awayBusy && !relayUnreachable
         val me = state.presence.thisDevice
-        // The name of another phone deciding alone; null when it is this one, or when every counting phone votes.
-        val otherDecider = state.presence.decidingDevice?.takeIf { !it.isThisDevice }?.let { presenceDeviceName(it) }
-        // A debug install may still flip its own switch — the relay simply doesn't count it.
-        val thisDeviceCounts = me?.countsForAway != false
         // Without this phone's entry there is nothing to say where it counts as being: the relay
-        // either hasn't answered yet, or lists the household without this install (see awaySummary).
+        // either hasn't answered yet, or doesn't track this install, and says why.
         SettingsToggleRow(
             title = stringResource(Res.string.presence_im_away),
             description = when {
                 relayUnreachable -> stringResource(Res.string.presence_im_away_relay_unreachable)
                 me == null && state.presence == HouseholdPresence.EMPTY -> stringResource(Res.string.presence_im_away_checking)
-                me == null -> stringResource(Res.string.presence_im_away_not_registered)
-                !thisDeviceCounts && otherDecider != null -> stringResource(Res.string.presence_im_away_other_decides, otherDecider)
-                !thisDeviceCounts -> stringResource(Res.string.presence_im_away_debug)
+                me == null -> notTrackedText(state.presence)
                 me.pendingAway -> stringResource(Res.string.presence_im_away_leaving)
                 state.thisDeviceAway -> stringResource(Res.string.presence_im_away_away)
                 else -> stringResource(Res.string.presence_im_away_home)
             },
             checked = state.thisDeviceAway,
-            enabled = switchEnabled,
+            enabled = !state.awayBusy && !relayUnreachable && me != null,
             onCheckedChange = onAway,
         )
-        SettingsToggleRow(
-            title = stringResource(Res.string.presence_decides),
-            description = when {
-                state.thisDeviceDecides -> stringResource(Res.string.presence_decides_on)
-                otherDecider != null -> stringResource(Res.string.presence_decides_other, otherDecider)
-                else -> stringResource(Res.string.presence_decides_off)
-            },
-            checked = state.thisDeviceDecides,
-            // An older relay lists no ids, and has no presence authority to set either.
-            enabled = !state.decidesBusy && !relayUnreachable && me?.id != null,
-            onCheckedChange = onDecides,
-        )
-        if (state.presence.devices.isNotEmpty()) {
+        if (state.presence != HouseholdPresence.EMPTY) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             PresenceDeviceList(state, onRemoveDevice)
             if (state.presence.everyoneAway) {
@@ -644,21 +611,30 @@ internal fun AwaySection(
         state.awayError?.let { SettingsCaption(it.resolve(), error = true) }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-        AutomaticPresenceRows(state, onAutomatic, onRequestLocation, onSetHomeHere, onClearHome)
+        AutomaticPresenceRows(state, onRequestLocation, onSetHomeHere, onClearHome)
 
         SettingsCaption(stringResource(Res.string.presence_caption))
     }
 }
 
+/** Why the relay doesn't track this install, in a sentence. */
+@Composable
+private fun notTrackedText(presence: HouseholdPresence): String = when (presence.thisDeviceNotTracked) {
+    NotTrackedReason.DEBUG_BUILD -> stringResource(Res.string.presence_not_tracked_debug)
+    NotTrackedReason.EMULATOR -> stringResource(Res.string.presence_not_tracked_emulator)
+    NotTrackedReason.ANOTHER_PHONE -> stringResource(Res.string.presence_not_tracked_other_phone)
+    NotTrackedReason.UNKNOWN, null -> stringResource(Res.string.presence_not_tracked_unknown)
+}
+
 /**
- * The switch, then whatever it still needs, in the order the user has to supply it: location
- * access, then a home to draw the fence around. Each missing piece gets one button. Once all
- * three are in place the caption says what's watching.
+ * What keeps this phone's presence up to date without the switch — always on for a tracked
+ * phone, so there is no switch for it — then whatever it still needs, in the order the user has
+ * to supply it: location access, then a home to draw the fence around. Each missing piece gets
+ * one button.
  */
 @Composable
 private fun AutomaticPresenceRows(
     state: SettingsUiState,
-    onAutomatic: (Boolean) -> Unit,
     onRequestLocation: () -> Unit,
     onSetHomeHere: () -> Unit,
     onClearHome: () -> Unit,
@@ -667,35 +643,39 @@ private fun AutomaticPresenceRows(
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         val home = state.presence.home
         val access = state.locationAccess
-        SettingsToggleRow(
-            title = stringResource(Res.string.presence_automatic),
-            description = stringResource(
-                when {
-                    !state.geofenceSupported -> Res.string.presence_automatic_unsupported
-                    !state.automaticPresence -> Res.string.presence_automatic_off
-                    access != LocationAccess.ALWAYS -> Res.string.presence_automatic_needs_always
-                    home == null -> Res.string.presence_automatic_needs_home
-                    else -> Res.string.presence_automatic_on
-                },
-            ),
-            checked = state.automaticPresence && state.geofenceSupported,
-            enabled = state.geofenceSupported,
-            onCheckedChange = onAutomatic,
-        )
-        if (state.automaticPresence && state.geofenceSupported) {
-            if (access != LocationAccess.ALWAYS) {
-                OutlinedButton(onClick = onRequestLocation) {
-                    Text(
-                        stringResource(
-                            when (access) {
-                                LocationAccess.WHILE_IN_USE -> Res.string.presence_allow_location_always
-                                LocationAccess.DENIED -> Res.string.presence_allow_location_settings
-                                else -> Res.string.presence_allow_location
-                            },
-                        ),
-                    )
-                }
+        val tracked = state.presence.thisDevice != null
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = stringResource(Res.string.presence_automatic),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            SettingsCaption(
+                stringResource(
+                    when {
+                        !state.geofenceSupported -> Res.string.presence_automatic_unsupported
+                        !tracked -> Res.string.presence_automatic_not_tracked
+                        access != LocationAccess.ALWAYS -> Res.string.presence_automatic_needs_always
+                        home == null -> Res.string.presence_automatic_needs_home
+                        else -> Res.string.presence_automatic_on
+                    },
+                ),
+            )
+        }
+        if (state.geofenceSupported && tracked && access != LocationAccess.ALWAYS) {
+            OutlinedButton(onClick = onRequestLocation) {
+                Text(
+                    stringResource(
+                        when (access) {
+                            LocationAccess.WHILE_IN_USE -> Res.string.presence_allow_location_always
+                            LocationAccess.DENIED -> Res.string.presence_allow_location_settings
+                            else -> Res.string.presence_allow_location
+                        },
+                    ),
+                )
             }
+        }
+        if (state.geofenceSupported) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onSetHomeHere, enabled = !state.homeBusy && access != LocationAccess.NOT_ASKED && access != LocationAccess.DENIED) {
                     Text(stringResource(if (home == null) Res.string.presence_set_home_here else Res.string.presence_move_home_here))
@@ -704,18 +684,17 @@ private fun AutomaticPresenceRows(
                     TextButton(onClick = onClearHome, enabled = !state.homeBusy) { Text(stringResource(Res.string.presence_clear_home)) }
                 }
             }
-            SettingsCaption(
-                if (home == null) stringResource(Res.string.presence_home_not_set) else stringResource(Res.string.presence_home_set, home.radiusMeters.toInt()),
-            )
-            state.homeError?.let { SettingsCaption(it.resolve(), error = true) }
         }
+        SettingsCaption(
+            if (home == null) stringResource(Res.string.presence_home_not_set) else stringResource(Res.string.presence_home_set, home.radiusMeters.toInt()),
+        )
+        state.homeError?.let { SettingsCaption(it.resolve(), error = true) }
     }
 }
 
 /**
- * The phones the relay knows, as [HouseholdDeviceList] splits them: the ones that decide away
- * mode up front, and old installs and debug builds folded under "N other devices". Any device
- * but this one can be removed, after a confirmation — the usual cleanup after a reinstall.
+ * The household's two tracked phones, Android first, and a line for whichever isn't tracked yet.
+ * Either can be removed, after a confirmation — how a replaced phone hands its place to the new one.
  */
 @OptIn(ExperimentalTime::class)
 @Composable
@@ -723,21 +702,17 @@ private fun PresenceDeviceList(state: SettingsUiState, onRemove: (String) -> Uni
     val devices = state.presence.devices
     // Read once per snapshot: "seen 5 days ago" doesn't need to tick while the page is open.
     val now = remember(devices) { Clock.System.now().epochSeconds.toDouble() }
-    val list = remember(devices, now) { HouseholdDeviceList.of(devices, now) }
-    var showOthers by rememberSaveable { mutableStateOf(false) }
     var confirming by remember { mutableStateOf<PresenceDevice?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        list.primary.forEach { device ->
+        devices.forEach { device ->
             PresenceDeviceRow(device, now, removing = device.id == state.removingDevice, onRemove = { confirming = device })
         }
-        if (list.others.isNotEmpty()) {
-            OtherDevicesToggle(count = list.others.size, counted = list.countedOthers, expanded = showOthers, onToggle = { showOthers = !showOthers })
-            if (showOthers) {
-                list.others.forEach { device ->
-                    PresenceDeviceRow(device, now, removing = device.id == state.removingDevice, onRemove = { confirming = device })
-                }
-            }
+        if (devices.none { it.platform.equals("android", ignoreCase = true) }) {
+            SettingsCaption(stringResource(Res.string.presence_no_android_phone))
+        }
+        if (devices.none { it.platform.equals("ios", ignoreCase = true) }) {
+            SettingsCaption(stringResource(Res.string.presence_no_iphone))
         }
     }
 
@@ -757,42 +732,9 @@ private fun PresenceDeviceList(state: SettingsUiState, onRemove: (String) -> Uni
     }
 }
 
-/** "4 other devices", and what they are; tapping shows or hides them. */
-@Composable
-private fun OtherDevicesToggle(count: Int, counted: Int, expanded: Boolean, onToggle: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onToggle).padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = pluralStringResource(Res.plurals.presence_other_devices, count, count),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            SettingsCaption(
-                if (counted == 0) {
-                    stringResource(Res.string.presence_other_devices_none_counted)
-                } else {
-                    pluralStringResource(Res.plurals.presence_other_devices_counted, counted, counted)
-                },
-            )
-        }
-        Icon(
-            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-            contentDescription = stringResource(if (expanded) Res.string.presence_hide_other_devices else Res.string.presence_show_other_devices),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
 /**
- * "Google Pixel 10 Pro XL", then "away since 4:12 PM" / "home" / "leaving…", when the relay last
- * heard from it, and whether it counts. The phone that decides home/away alone says so. A debug
- * install is greyed out and says so: it hears the alerts but doesn't get a vote. Under a deciding
- * phone the others' dots are greyed too — their switches don't count — but they are still the
- * household's phones, named as such. Every row but this phone's has a remove button.
+ * "Google Pixel 10 Pro XL", then "away since 4:12 PM" / "home" / "leaving…" and when the relay
+ * last heard from it. Every row but this phone's has a remove button.
  */
 @Composable
 private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, removing: Boolean, onRemove: () -> Unit) {
@@ -807,28 +749,21 @@ private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, r
             UiText.of(Res.string.presence_detail_this_phone).takeIf { device.isThisDevice },
             status,
             device.lastSeenEpochSeconds?.takeIf { !device.isThisDevice }?.let { formatLastSeen(it, nowEpochSeconds) },
-            UiText.of(Res.string.presence_detail_decides).takeIf { device.decides },
-            UiText.of(Res.string.presence_detail_debug).takeIf { !device.countsForAway && device.isTestInstall },
         ),
         separator = UiText.of(Res.string.common_dot_separator),
     ).resolve()
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PulsingDot(
             color = when {
-                !device.countsForAway -> MaterialTheme.colorScheme.outline
                 device.away -> MaterialTheme.colorScheme.primary
                 device.pendingAway -> MaterialTheme.colorScheme.tertiary
                 else -> MaterialTheme.colorScheme.secondary
             },
             size = 6.dp,
-            pulsing = (device.away || device.pendingAway) && device.countsForAway,
+            pulsing = device.away || device.pendingAway,
         )
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = presenceDeviceName(device),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (device.isTestInstall) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-            )
+            Text(text = presenceDeviceName(device), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             SettingsCaption(details)
         }
         when {

@@ -23,7 +23,7 @@ import homesafe.shared.generated.resources.settings_away_summary_checking
 import homesafe.shared.generated.resources.settings_away_summary_home
 import homesafe.shared.generated.resources.settings_away_summary_leaving
 import homesafe.shared.generated.resources.settings_away_summary_nobody_home
-import homesafe.shared.generated.resources.settings_away_summary_not_registered
+import homesafe.shared.generated.resources.settings_away_summary_not_tracked
 import homesafe.shared.generated.resources.settings_away_summary_unreachable
 import homesafe.shared.generated.resources.settings_cameras_loading
 import homesafe.shared.generated.resources.settings_cameras_summary_all
@@ -77,8 +77,8 @@ internal fun alertsSummary(state: SettingsUiState): UiText {
 /**
  * The Away mode row: the household first — "Nobody home" outranks anything about one phone —
  * then this phone as the relay has it, and "automatic" once the geofence is doing the flipping.
- * The relay can list the household without this install in it (presence is read whether or not
- * the device has registered), and then the row says so rather than guess where the phone is.
+ * The relay lists only the two tracked phones, so a debug build or a second phone isn't in it,
+ * and then the row says so rather than guess where the phone is.
  */
 internal fun awaySummary(state: SettingsUiState): UiText {
     val presence = state.presence
@@ -87,7 +87,7 @@ internal fun awaySummary(state: SettingsUiState): UiText {
         presence == HouseholdPresence.EMPTY && state.awayError != null -> Res.string.settings_away_summary_unreachable
         presence == HouseholdPresence.EMPTY -> Res.string.settings_away_summary_checking
         presence.everyoneAway -> Res.string.settings_away_summary_nobody_home
-        me == null -> Res.string.settings_away_summary_not_registered
+        me == null -> Res.string.settings_away_summary_not_tracked
         me.pendingAway -> Res.string.settings_away_summary_leaving
         me.away -> Res.string.settings_away_summary_away
         else -> Res.string.settings_away_summary_home

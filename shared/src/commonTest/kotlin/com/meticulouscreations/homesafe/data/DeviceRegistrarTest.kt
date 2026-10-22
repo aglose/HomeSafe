@@ -75,7 +75,13 @@ class DeviceRegistrarTest {
         override suspend fun token() = value
     }
 
-    private class FakeInfo(override val platform: String, override val name: String, override val build: String) : DeviceInfo {
+    private class FakeInfo(
+        override val platform: String,
+        override val name: String,
+        override val build: String,
+        override val hardwareId: String = "a1b2c3",
+        override val emulator: Boolean = false,
+    ) : DeviceInfo {
         override val appVersion = "1.0 (1)"
     }
 
@@ -197,6 +203,16 @@ class DeviceRegistrarTest {
         assertEquals(3, h.posts.size)
         assertTrue(""""token":"fcm-1"""" in h.posts[2], h.posts[2])
         assertTrue(h.registrar.pushRegistered.value)
+    }
+
+    @Test
+    fun registrationSaysWhichPhoneThisIsSoTheRelayCanTellAReinstallFromASecondPhone() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.55:8971"), info = FakeInfo("android", "Google Pixel", "release", emulator = true))
+        h.registrar.start()
+        settle()
+        val body = h.posts.single()
+        assertTrue(""""hardware_id":"a1b2c3"""" in body, body)
+        assertTrue(""""emulator":true""" in body, body)
     }
 
     @Test

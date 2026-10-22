@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.network
 
+import com.meticulouscreations.homesafe.domain.model.NotTrackedReason
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -18,9 +19,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The relay decides which phones may declare the house empty (release installs, plus iOS while
- * there's no iOS release channel). The app only has to carry that verdict faithfully — and tell
- * the relay who it is, and which build, in the first place.
+ * The relay decides which two phones away mode follows (one Android phone and one iPhone, each a
+ * release build on real hardware). The app only has to carry that verdict faithfully — and tell
+ * the relay who it is, which phone, and which build, in the first place.
  */
 class PushRelayApiPresenceTest {
 
@@ -68,24 +69,56 @@ class PushRelayApiPresenceTest {
     }
 
     @Test
-    fun aDebugPhoneComesBackFlaggedAndDoesNotDecidePresence() = runTest {
+    fun registrationSaysWhichPhoneThisIsAndWhetherItIsAnEmulator() = runTest {
+        val (api, seen) = api("""{"ok":true,"device_id":"dev-1","secret":"s3cret"}""")
+        val registration = DeviceRegistration(
+            deviceId = "dev-1",
+            token = null,
+            platform = "android",
+            name = "Pixel 10",
+            build = "release",
+            hardwareId = "a1b2c3",
+            emulator = true,
+        )
+        api.registerDevice("http://frigate:8971", registration).getOrThrow()
+        val body = seen.bodies.single()
+        assertTrue(""""hardware_id":"a1b2c3"""" in body, body)
+        assertTrue(""""emulator":true""" in body, body)
+    }
+
+    @Test
+    fun theTrackedPhonesComeBackWithThisOneFlagged() = runTest {
         val (api, seen) = api(
             """{"devices":[
-                 {"name":"Google Pixel 10 Pro XL","platform":"android","away":true,"away_updated":1.0,"this_device":true,"counts":true},
-                 {"name":"Google sdk_gphone64_arm64","platform":"android","away":false,"this_device":false,"counts":false,"pending_away":true}
-               ],"everyone_away":true,"home":{"lat":40.5,"lng":-80.25,"radius_m":150}}""",
+                 {"id":"dev-1","name":"Google Pixel 10 Pro XL","platform":"android","away":true,"away_updated":1.0,"this_device":true,"counts":true},
+                 {"id":"dev-2","name":"Apple iPhone","platform":"ios","away":false,"this_device":false,"counts":true,"pending_away":true}
+               ],"everyone_away":false,"home":{"lat":40.5,"lng":-80.25,"radius_m":150},"not_tracked":null}""",
         )
         val presence = api.getPresence("http://frigate:8971", "dev-1", secret = "s3cret").getOrThrow()
-        assertEquals(2, presence.devices.size)
-        assertTrue(presence.everyoneAway, "the relay's verdict stands: the emulator doesn't hold the house open")
-        assertTrue(presence.thisDevice!!.countsForAway)
-        val emulator = presence.devices.single { it.name.startsWith("Google sdk") }
-        assertFalse(emulator.countsForAway)
-        assertTrue(emulator.pendingAway)
-        assertEquals(listOf("Google Pixel 10 Pro XL"), presence.countingDevices.map { it.name })
+        assertEquals(listOf("dev-1", "dev-2"), presence.devices.map { it.id })
+        assertTrue(presence.thisDevice!!.away)
+        assertTrue(presence.devices.single { it.id == "dev-2" }.pendingAway)
+        assertNull(presence.thisDeviceNotTracked)
         assertEquals(40.5, presence.home?.latitude)
         assertEquals(150.0, presence.home?.radiusMeters)
         assertEquals("Bearer s3cret", seen.authorizations.single())
+    }
+
+    @Test
+    fun anInstallTheRelayDoesNotTrackIsToldWhy() = runTest {
+        val reasons = mapOf(
+            "debug" to NotTrackedReason.DEBUG_BUILD,
+            "emulator" to NotTrackedReason.EMULATOR,
+            "taken" to NotTrackedReason.ANOTHER_PHONE,
+            "old_app" to NotTrackedReason.UNKNOWN,
+            "unregistered" to NotTrackedReason.UNKNOWN,
+        )
+        reasons.forEach { (wire, reason) ->
+            val (api, _) = api("""{"devices":[{"id":"dev-1","name":"Pixel","platform":"android","away":false}],"everyone_away":false,"not_tracked":"$wire"}""")
+            val presence = api.getPresence("http://frigate:8971", "dev-debug").getOrThrow()
+            assertNull(presence.thisDevice)
+            assertEquals(reason, presence.thisDeviceNotTracked, wire)
+        }
     }
 
     @Test
@@ -99,83 +132,17 @@ class PushRelayApiPresenceTest {
         assertEquals(1_700_000_000.5, device.lastSeenEpochSeconds)
     }
 
-    /** The household on 2026-09-29: the release Pixel decides alone, Sarah's iPhone and a debug install don't. */
-    private val authoritySnapshot =
-        """{"devices":[
-             {"id":"dev-pixel","name":"Google Pixel 10 Pro XL","platform":"android","build":"release","away":false,"this_device":true,"counts":true},
-             {"id":"dev-iphone","name":"Apple iPhone","platform":"ios","build":"debug","away":true,"this_device":false,"counts":false},
-             {"id":"dev-emu","name":"Google sdk_gphone64_arm64","platform":"android","build":"debug","away":false,"this_device":false,"counts":false}
-           ],"everyone_away":false,"authority":"dev-pixel"}"""
-
-    @Test
-    fun theAuthorityIsCarriedAndItsDeviceDecides() = runTest {
-        val (api, _) = api(authoritySnapshot)
-        val presence = api.getPresence("http://frigate:8971", "dev-pixel").getOrThrow()
-        assertEquals("dev-pixel", presence.authorityDeviceId)
-        assertEquals(listOf(true, false, false), presence.devices.map { it.decides })
-        assertEquals("dev-pixel", presence.decidingDevice?.id)
-        assertTrue(presence.thisDevice!!.decides)
-        assertEquals(listOf("dev-pixel"), presence.countingDevices.map { it.id }, "the authority alone counts")
-        val iphone = presence.devices.single { it.id == "dev-iphone" }
-        assertFalse(iphone.isTestInstall, "an iPhone someone carries, just not the one that decides")
-        assertEquals("debug", iphone.build)
-        assertTrue(presence.devices.single { it.id == "dev-emu" }.isTestInstall)
-    }
-
-    @Test
-    fun withNoAuthorityNobodyDecides() = runTest {
-        val (api, _) = api(
-            """{"devices":[{"id":"dev-pixel","name":"Pixel","platform":"android","away":false,"this_device":true,"counts":true}],
-               "everyone_away":false,"authority":null}""",
-        )
-        val presence = api.getPresence("http://frigate:8971", "dev-pixel").getOrThrow()
-        assertNull(presence.authorityDeviceId)
-        assertNull(presence.decidingDevice)
-        assertFalse(presence.devices.single().decides)
-    }
-
-    @Test
-    fun becomingTheAuthorityPutsThisDevicesIdBearingItsSecret() = runTest {
-        val (api, seen) = api(authoritySnapshot)
-        val presence = api.setPresenceAuthority("http://frigate:8971", "dev-pixel", secret = "s3cret").getOrThrow()
-        assertEquals(listOf("PUT /presence/authority"), seen.requests)
-        assertEquals("""{"device_id":"dev-pixel"}""", seen.bodies.single())
-        assertEquals("Bearer s3cret", seen.authorizations.single())
-        assertTrue(presence.thisDevice!!.decides)
-    }
-
-    @Test
-    fun steppingDownDeletesTheAuthorityNamingThisDevice() = runTest {
-        val (api, seen) = api(
-            """{"devices":[{"id":"dev-pixel","name":"Pixel","platform":"android","away":false,"this_device":true,"counts":true}],
-               "everyone_away":false,"authority":null}""",
-        )
-        val presence = api.clearPresenceAuthority("http://frigate:8971", "dev-pixel", secret = "s3cret").getOrThrow()
-        assertEquals(listOf("DELETE /presence/authority?device=dev-pixel"), seen.requests)
-        assertEquals("Bearer s3cret", seen.authorizations.single(), "the authority may step down on its own secret")
-        assertNull(presence.authorityDeviceId)
-        assertFalse(presence.thisDevice!!.decides)
-    }
-
-    @Test
-    fun aRelayWithoutTheAuthorityRouteFailsTheCall() = runTest {
-        val engine = MockEngine { respond("", HttpStatusCode.NotFound) }
-        val api = PushRelayApi(HttpClient(engine) { install(ContentNegotiation) { json(json) } })
-        assertTrue(api.setPresenceAuthority("http://frigate:8971", "dev-pixel", secret = "s3cret").isFailure)
-        assertTrue(api.clearPresenceAuthority("http://frigate:8971", "dev-pixel", secret = "s3cret").isFailure)
-    }
-
     @Test
     fun aRelayThatPredatesTheNewFieldsStillWorks() = runTest {
-        val (api, _) = api("""{"devices":[{"name":"Pixel","platform":"android","away":false,"this_device":true}],"everyone_away":false}""")
+        val (api, _) = api(
+            """{"devices":[{"name":"Pixel","platform":"android","away":false,"this_device":true,"counts":false,"build":"debug"}],
+               "everyone_away":false,"authority":null}""",
+        )
         val presence = api.getPresence("http://frigate:8971", "dev-1").getOrThrow()
-        assertTrue(presence.devices.single().countsForAway)
         assertFalse(presence.devices.single().pendingAway)
         assertEquals(null, presence.devices.single().id, "no id: the row simply can't be removed from the app")
         assertEquals(null, presence.devices.single().lastSeenEpochSeconds)
         assertEquals(null, presence.home)
-        assertEquals(null, presence.authorityDeviceId)
-        assertFalse(presence.devices.single().decides)
-        assertFalse(presence.devices.single().isTestInstall, "no build said: a counted phone is taken for a real one")
+        assertNull(presence.thisDeviceNotTracked)
     }
 }
