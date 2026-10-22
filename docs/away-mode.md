@@ -181,8 +181,8 @@ the moment the last person left (so flipping the switch never replays the aftern
 
 - title `Away: Person in the driveway` (via `sentence()`), body `Front Yard · nobody home`;
 - data `away="1"` plus the usual `review_id`, `camera`, `event_id`, `zones`, `start_time`;
-- Android `channel_id: "away_alerts"`, `priority: high`; APNs `sound: default`,
-  `interruption-level: time-sensitive`;
+- Android `priority: high` (the app posts it on its Away channel, `away_alerts_v2`); APNs
+  `interruption-level: time-sensitive`, and no `sound` (HomeSafe never makes one);
 - never folded into a visit: no `notif_id`, never `silent` (ordinary alerts are, see `Visits` in
   relay.py), so each one sounds on its own notification.
 
@@ -227,7 +227,8 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
   token, since it hears the relay's escalated pushes instead) collects presence while polling; when
   `everyoneAway` and the event is `PEOPLE`, it notifies regardless of zone rules with
   `AlertNotification.urgent = true` and title prefix `Away: `. `AlertNotifier.android.kt` posts
-  urgent ones on the new `away_alerts` channel (IMPORTANCE_HIGH, alarm sound, `CATEGORY_ALARM`);
+  urgent ones on the `away_alerts_v2` channel (IMPORTANCE_HIGH, vibration, no sound, `CATEGORY_ALARM`;
+  the first `away_alerts` rang the phone's alarm and is deleted, since a channel's sound can't change);
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.
 - Settings tab: an "Away mode" row after Alerts, saying in a line where this phone stands
   (`awaySummary`), which opens the Away mode page (`AwaySettingsScreen`, route `AwayRoute`) —

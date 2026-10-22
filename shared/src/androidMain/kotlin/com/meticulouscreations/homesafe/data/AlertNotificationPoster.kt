@@ -2,7 +2,6 @@ package com.meticulouscreations.homesafe.data
 
 import android.Manifest
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -12,8 +11,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Movie
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -40,7 +37,8 @@ import kotlinx.coroutines.withContext
  * Draws an [AlertNotification] in Android's shade, for both the in-app alerts
  * (AlertNotifier.android.kt) and the relay's pushes (HomeSafeMessagingService), so the two look
  * and behave alike: one notification per detection, updated in place as its picture and clip
- * arrive, sounding only for the first post, and opening the detection full screen when tapped.
+ * arrive, alerting only for the first post (heads-up, never a sound: see [createSilentChannel]),
+ * and opening the detection full screen when tapped.
  *
  * The clip: Android can't play video or an animated image in a notification — the shade shows
  * a still Bitmap — so the preview GIF is shown by re-posting the notification through a handful
@@ -49,11 +47,14 @@ import kotlinx.coroutines.withContext
  * notification animates at a time.
  */
 object AlertNotificationPoster {
-    /** Shared with the relay (`send_push`'s old `channel_id`) and the user's channel settings. */
-    const val CHANNEL_ID = "detections"
+    /** The cameras' alerts. "_v2" because the first "detections" channel sounded (see [createSilentChannel]). */
+    const val CHANNEL_ID = "detections_v2"
 
-    /** The loud channel for people seen while nobody is home (docs/away-mode.md). */
-    const val AWAY_CHANNEL_ID = "away_alerts"
+    /** The channel for people seen while nobody is home (docs/away-mode.md): heads-up and a buzz, never the alarm "away_alerts" rang. */
+    const val AWAY_CHANNEL_ID = "away_alerts_v2"
+
+    /** The channels [CHANNEL_ID] and [AWAY_CHANNEL_ID] replace. */
+    private val RETIRED_CHANNEL_IDS = arrayOf("detections", "away_alerts")
 
     /** The quiet channel for the relay's summaries of what the cameras saw while someone was home. */
     const val SUMMARY_CHANNEL_ID = "summaries"
@@ -109,25 +110,25 @@ object AlertNotificationPoster {
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_detections_name), NotificationManager.IMPORTANCE_HIGH).apply {
-                description = context.getString(R.string.notif_channel_detections_description)
-            },
+        manager.retireChannels(*RETIRED_CHANNEL_IDS)
+        manager.createSilentChannel(
+            CHANNEL_ID,
+            context.getString(R.string.notif_channel_detections_name),
+            context.getString(R.string.notif_channel_detections_description),
+            NotificationManager.IMPORTANCE_HIGH,
         )
-        manager.createNotificationChannel(
-            NotificationChannel(AWAY_CHANNEL_ID, context.getString(R.string.notif_channel_away_name), NotificationManager.IMPORTANCE_HIGH).apply {
-                description = context.getString(R.string.notif_channel_away_description)
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
-                )
-                enableVibration(true)
-            },
+        manager.createSilentChannel(
+            AWAY_CHANNEL_ID,
+            context.getString(R.string.notif_channel_away_name),
+            context.getString(R.string.notif_channel_away_description),
+            NotificationManager.IMPORTANCE_HIGH,
+            vibrate = true,
         )
-        manager.createNotificationChannel(
-            NotificationChannel(SUMMARY_CHANNEL_ID, context.getString(R.string.notif_channel_summaries_name), NotificationManager.IMPORTANCE_LOW).apply {
-                description = context.getString(R.string.notif_channel_summaries_description)
-            },
+        manager.createSilentChannel(
+            SUMMARY_CHANNEL_ID,
+            context.getString(R.string.notif_channel_summaries_name),
+            context.getString(R.string.notif_channel_summaries_description),
+            NotificationManager.IMPORTANCE_LOW,
         )
     }
 

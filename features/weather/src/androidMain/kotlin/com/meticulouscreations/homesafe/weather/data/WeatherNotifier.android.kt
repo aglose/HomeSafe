@@ -2,7 +2,6 @@ package com.meticulouscreations.homesafe.weather.data
 
 import android.Manifest
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -26,6 +25,8 @@ import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.appicon.appLaunchIntent
 import com.meticulouscreations.homesafe.data.BackgroundGraph
 import com.meticulouscreations.homesafe.data.NotificationGroupSummary
+import com.meticulouscreations.homesafe.data.createSilentChannel
+import com.meticulouscreations.homesafe.data.retireChannels
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import com.meticulouscreations.homesafe.ui.notification.drawableRes
@@ -43,11 +44,14 @@ import kotlin.math.roundToInt
 
 private const val TAG = "HomeSafeWeather"
 
-/** The everyday channel: rain on the way, the morning's and evening's outlook. */
-internal const val CHANNEL_ID = "weather"
+/** The everyday channel: rain on the way, the morning's and evening's outlook. "_v2" because the first "weather" channel sounded (see `createSilentChannel`). */
+internal const val CHANNEL_ID = "weather_v2"
 
 /** Government warnings, on a channel of their own so they can be let through when the rest are silenced. */
-internal const val SEVERE_CHANNEL_ID = "weather_severe"
+internal const val SEVERE_CHANNEL_ID = "weather_severe_v2"
+
+/** The channels [CHANNEL_ID] and [SEVERE_CHANNEL_ID] replace. */
+private val RETIRED_CHANNEL_IDS = arrayOf("weather", "weather_severe")
 
 /**
  * One group for the weather's notifications, so Android never bundles a shower in with the
@@ -110,15 +114,18 @@ private class AndroidWeatherNotifier(private val context: Context) : WeatherNoti
     }
 
     private fun ensureChannels() {
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_weather_name), NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = context.getString(R.string.notif_channel_weather_description)
-            },
+        manager.retireChannels(*RETIRED_CHANNEL_IDS)
+        manager.createSilentChannel(
+            CHANNEL_ID,
+            context.getString(R.string.notif_channel_weather_name),
+            context.getString(R.string.notif_channel_weather_description),
+            NotificationManager.IMPORTANCE_DEFAULT,
         )
-        manager.createNotificationChannel(
-            NotificationChannel(SEVERE_CHANNEL_ID, context.getString(R.string.notif_channel_weather_severe_name), NotificationManager.IMPORTANCE_HIGH).apply {
-                description = context.getString(R.string.notif_channel_weather_severe_description)
-            },
+        manager.createSilentChannel(
+            SEVERE_CHANNEL_ID,
+            context.getString(R.string.notif_channel_weather_severe_name),
+            context.getString(R.string.notif_channel_weather_severe_description),
+            NotificationManager.IMPORTANCE_HIGH,
         )
     }
 }

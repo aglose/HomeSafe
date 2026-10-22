@@ -4,6 +4,12 @@ What sounds depends on whether anyone is home, and the Pixel decides that alone 
 [away-mode.md](away-mode.md), "The presence authority"). The relay (`relay/relay.py`,
 "notification policy" and "car presence") makes the call; the phone just shows what it's sent.
 
+"Sounds" below means *alerts*: a heads-up banner (and a buzz on the Away channel). No HomeSafe
+notification plays a sound, on either phone. Android fixes a channel's sound when it is first
+created, so the channels that used to sound (`detections`, `away_alerts`, which rang the phone's
+alarm, `weather`, `weather_severe`, `budget`) are deleted and replaced by silent `…_v2` ones
+(`SilentChannels.kt`); the relay's APNs pushes carry no `sound`.
+
 ## Why
 
 2026-09-26 to 29: **802 pushes in three days.** Two thirds were "… in the driveway" on the Front
