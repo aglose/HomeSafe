@@ -72,25 +72,49 @@ struct LiquidGlassShell: View {
 
 /// Which tab is up. SwiftUI owns it (the bar is native); the shared module asks for a change
 /// through `IosShell.onSelectTab` when Compose navigates across tabs — a detection on the
-/// Moments tab opening its camera on Home.
-@available(iOS 26.0, *)
-@Observable
-final class ShellCoordinator {
-    enum Selection: Hashable {
-        case home, moments, settings
+/// Moments tab opening its camera on Home — and through `IosShell.onSelectApp` when a
+/// notification or a share opens one of the apps that an iPad's sidebar lists.
+///
+/// Outside the iOS 26 shell because the menu bar's commands (`ShellCommands`) name it too.
+enum ShellSelection: Hashable {
+    case home, moments, settings
+    case weather, atlas, fitness, finance
 
-        init(_ tab: IosTab) {
-            if tab == IosTab.moments {
-                self = .moments
-            } else if tab == IosTab.settings {
-                self = .settings
-            } else {
-                self = .home
-            }
+    init(_ tab: IosTab) {
+        if tab == IosTab.moments {
+            self = .moments
+        } else if tab == IosTab.settings {
+            self = .settings
+        } else {
+            self = .home
         }
     }
 
-    var selection: Selection = .home
+    init(_ app: IosAppTab) {
+        if app == IosAppTab.weather {
+            self = .weather
+        } else if app == IosAppTab.atlas {
+            self = .atlas
+        } else if app == IosAppTab.fitness {
+            self = .fitness
+        } else {
+            self = .finance
+        }
+    }
+
+    /// Whether this is one of the apps, which only an iPad's sidebar lists.
+    var isApp: Bool {
+        switch self {
+        case .home, .moments, .settings: false
+        case .weather, .atlas, .fitness, .finance: true
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+@Observable
+final class ShellCoordinator {
+    var selection: ShellSelection = .home
     /// Whether the tab bar is out of the way: the shared module says so for the screens that
     /// want the whole display (the clip editor, car tagging).
     var tabBarHidden = false
@@ -98,7 +122,10 @@ final class ShellCoordinator {
 
     init() {
         shell.onSelectTab = { [weak self] tab in
-            self?.selection = Selection(tab)
+            self?.selection = ShellSelection(tab)
+        }
+        shell.onSelectApp = { [weak self] app in
+            self?.selection = ShellSelection(app)
         }
         shell.onTabBarVisibilityChange = { [weak self] visible in
             self?.tabBarHidden = !visible.boolValue
@@ -106,31 +133,71 @@ final class ShellCoordinator {
     }
 }
 
+/// The tabs, and on an iPad a sidebar: `.sidebarAdaptable` puts the bar at the top of a
+/// regular-width window, where it can open out into a sidebar, and at the foot of a compact one
+/// as on the iPhone. The sidebar also lists the apps that live beside the cameras — weather, the
+/// atlas, fitness and finance — each a tab of its own instead of a card in the drawer; the
+/// tab bar keeps to the three it has always had (Apple's advice is five at most there), so the
+/// apps are sidebar-only. Where there is no sidebar to list them in — an iPhone, or an iPad
+/// window narrowed to a phone's width — they are hidden, and the shell's drawer brings them back
+/// (`IosShell.appsInSidebar`).
 @available(iOS 26.0, *)
 struct ShellTabView: View {
     @Bindable var coordinator: ShellCoordinator
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// An iPad (or a Mac running the iPad app) with room for a sidebar.
+    private var appsInSidebar: Bool {
+        UIDevice.current.userInterfaceIdiom != .phone && sizeClass == .regular
+    }
 
     var body: some View {
         TabView(selection: $coordinator.selection) {
-            Tab("Home", systemImage: "house.fill", value: ShellCoordinator.Selection.home) {
+            Tab("Home", systemImage: "house.fill", value: ShellSelection.home) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.home))
                     .ignoresSafeArea()
                     .toolbar(coordinator.tabBarHidden ? .hidden : .visible, for: .tabBar)
             }
-            Tab("Moments", systemImage: "film.stack.fill", value: ShellCoordinator.Selection.moments) {
+            Tab("Moments", systemImage: "film.stack.fill", value: ShellSelection.moments) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.moments))
                     .ignoresSafeArea()
             }
-            Tab("Settings", systemImage: "gearshape.fill", value: ShellCoordinator.Selection.settings) {
+            Tab("Settings", systemImage: "gearshape.fill", value: ShellSelection.settings) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.settings))
                     .ignoresSafeArea()
             }
+            TabSection("Apps") {
+                appTab("Weather", systemImage: "cloud.sun.fill", value: .weather, app: IosAppTab.weather)
+                appTab("Atlas", systemImage: "map.fill", value: .atlas, app: IosAppTab.atlas)
+                appTab("Fitness", systemImage: "figure.strengthtraining.traditional", value: .fitness, app: IosAppTab.fitness)
+                appTab("Finance", systemImage: "chart.line.uptrend.xyaxis", value: .finance, app: IosAppTab.finance)
+            }
+            .hidden(!appsInSidebar)
         }
+        .tabViewStyle(.sidebarAdaptable)
         // The app's Material primary (FrigateDarkColorScheme.primary, #FFB59D) for the selected
         // tab, and the dark glass: the shared theme is dark-only, so the bar must not follow the
         // system into light.
         .tint(Color(red: 1.0, green: 0.71, blue: 0.616))
         .preferredColorScheme(.dark)
+        .focusedSceneValue(\.shellSelection, $coordinator.selection)
+        .focusedSceneValue(\.shellAppsInSidebar, appsInSidebar)
+        .onChange(of: appsInSidebar, initial: true) { _, inSidebar in
+            coordinator.shell.appsInSidebar = inSidebar
+            // Narrowed to a phone's width while an app was up: it has no tab there, so Home is,
+            // and the app is a card in the drawer again.
+            if !inSidebar && coordinator.selection.isApp {
+                coordinator.selection = .home
+            }
+        }
+    }
+
+    private func appTab(_ title: LocalizedStringKey, systemImage: String, value: ShellSelection, app: IosAppTab) -> some TabContent<ShellSelection> {
+        Tab(title, systemImage: systemImage, value: value) {
+            ComposeTabView(controller: coordinator.shell.appViewController(app: app))
+                .ignoresSafeArea()
+        }
+        .tabPlacement(.sidebarOnly)
     }
 }
 

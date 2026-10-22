@@ -104,6 +104,7 @@ import com.meticulouscreations.homesafe.navigation.rememberBackStackViewModelSto
 import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
+import com.meticulouscreations.homesafe.ui.showsTwoPanes
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
@@ -141,7 +142,10 @@ import org.jetbrains.compose.resources.stringResource
 enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS }
 
 @Stable
-class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
+class ShellNavigation(
+    private val onTabSelected: (TopLevelRoute) -> Unit = {},
+    private val onAppSelected: (InnerApp) -> Unit = {},
+) {
     val topLevel = TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home)
 
     // The Home tab's nested back stack lives here, not in HomeTabNav, so the shell can tell when
@@ -158,6 +162,17 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
     /** The swipe across the shell that draws the drawer out by hand, and opens it when let go far enough. */
     val drawerPull = DrawerPull(onOpen = { drawerOpen = true })
 
+    /**
+     * Whether the apps from the drawer are a host's own destinations rather than overlays: an
+     * iPad's sidebar, where each is a tab beside Home (see `IosShell.kt`). The drawer then has
+     * nothing to offer, so the shell shows no way to it, and [openApp] asks the host to go to the
+     * app ([onAppSelected]) instead of growing it over the shell.
+     */
+    var appsInSidebar by mutableStateOf(false)
+
+    /** Notes shared into the fitness app while it is a sidebar tab ([appsInSidebar]), until that tab has taken them to its import page. */
+    var fitnessNotes by mutableStateOf<String?>(null)
+
     /** The drawer is out, or a swipe is drawing it out: what's on it should be up to date. */
     val drawerShowing: Boolean get() = drawerOpen || drawerPull.active
 
@@ -165,7 +180,10 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
      * The swipe for [tab] to wear, or null while the drawer can't be drawn out there: only where
      * the menu button is, at the tab's root. A nested screen has sideways gestures of its own.
      */
-    fun drawerPullOn(tab: TopLevelRoute): DrawerPull? = drawerPull.takeIf { showsTopBar(tab) }
+    fun drawerPullOn(tab: TopLevelRoute): DrawerPull? = drawerPull.takeIf { showsTopBar(tab) && !appsInSidebar }
+
+    /** The top bar's menu button, which opens the drawer: none while the apps are in a sidebar ([appsInSidebar]). */
+    val openDrawer: (() -> Unit)? get() = if (appsInSidebar) null else ({ drawerOpen = true })
 
     /** Which of the apps inside PercySafe the overlay holds: the one that is up, or the one on its way out. */
     var app by mutableStateOf(InnerApp.FINANCE)
@@ -206,12 +224,18 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
 
     fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null, weatherLink: WeatherDeepLink? = null) {
         app = which
-        appOrigin = origin
-        appHost = from
         this.financeTab = financeTab.takeIf { which == InnerApp.FINANCE }
         this.weatherLink = weatherLink.takeIf { which == InnerApp.WEATHER }
-        appOpen = true
         drawerOpen = false
+        // The app is a destination of its own in the sidebar: it reads what it was asked to show
+        // ([financeTab], [weatherLink]) from here when it comes up.
+        if (appsInSidebar) {
+            onAppSelected(which)
+            return
+        }
+        appOrigin = origin
+        appHost = from
+        appOpen = true
     }
 
     /** The finance app has turned to the tab it was asked for. */
@@ -256,8 +280,17 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
 
     private val reselected = MutableSharedFlow<TopLevelRoute>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-    /** Whether [tab] is showing its root screen, which is when the shell's own top bar belongs above it. */
-    fun showsTopBar(tab: TopLevelRoute): Boolean = isAtRoot(tab)
+    /**
+     * Whether the window has room for two panes ([showsTwoPanes]), as the shell's composition last
+     * saw it: Settings then keeps its list on screen beside the page a row opens.
+     */
+    var twoPanes by mutableStateOf(false)
+
+    /**
+     * Whether [tab] is showing its root screen, which is when the shell's own top bar belongs above
+     * it — or, for Settings in two panes, still has its root beside whatever it opened.
+     */
+    fun showsTopBar(tab: TopLevelRoute): Boolean = isAtRoot(tab) || (twoPanes && tab == TopLevelRoute.Settings)
 
     private fun isAtRoot(tab: TopLevelRoute): Boolean = when (tab) {
         TopLevelRoute.Home -> homeBackStack.size <= 1
@@ -404,8 +437,9 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
             val host = selectedTab
             openApp(InnerApp.WEATHER, Offset.Zero, host, weatherLink = link)
             // Under a native tab bar the tab Compose last asked for may not be the one on screen;
-            // asking for it again puts the tab that holds the app in front.
-            onTabSelected(host)
+            // asking for it again puts the tab that holds the app in front. In a sidebar the app
+            // is a tab itself, and openApp has already gone to it.
+            if (!appsInSidebar) onTabSelected(host)
             WeatherDeepLinks.consume(link)
         }
     }
@@ -455,7 +489,11 @@ fun FrigateAppShell() {
     LaunchedEffect(nav) { nav.openWeatherFromNotifications() }
     LaunchedEffect(nav) { nav.openFinanceFromNotifications() }
     val compactLandscape = isCompactLandscape()
-    SideEffect { nav.compactLandscape = compactLandscape }
+    val twoPanes = showsTwoPanes()
+    SideEffect {
+        nav.compactLandscape = compactLandscape
+        nav.twoPanes = twoPanes
+    }
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
@@ -518,7 +556,11 @@ fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     val offline by viewModel.offline.collectAsStateWithLifecycle()
     // Every tab's composition says the same thing here: they share one window.
     val compactLandscape = isCompactLandscape()
-    SideEffect { nav.compactLandscape = compactLandscape }
+    val twoPanes = showsTwoPanes()
+    SideEffect {
+        nav.compactLandscape = compactLandscape
+        nav.twoPanes = twoPanes
+    }
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(tab),
@@ -528,7 +570,7 @@ fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
             FrigateTopBar(
                 activeConnection = activeConnection,
                 appVersion = viewModel.appVersion,
-                onMenu = { nav.drawerOpen = true },
+                onMenu = nav.openDrawer,
                 offline = offline,
                 arrange = if (tab == TopLevelRoute.Home) homeArrangeAction() else null,
             )
@@ -769,7 +811,7 @@ internal fun ShellSkeleton(onMenu: () -> Unit = {}) {
 
 /**
  * [appVersion] is what the route badge shows when tapped; unused until there is a route to badge.
- * [onMenu] opens the drawer. With [offline] the badge says so instead of naming the route: the
+ * [onMenu] opens the drawer; null where there is none to open (the apps are in an iPad's sidebar). With [offline] the badge says so instead of naming the route: the
  * app is on what the device kept, and "Tailscale" there would read as "connected over Tailscale".
  * [arrange] is Home's way into Arrange mode, the first thing in the badge's menu while Home is up
  * with cameras to arrange (the status icon opens the same menu before there is a route).
@@ -778,7 +820,7 @@ internal fun ShellSkeleton(onMenu: () -> Unit = {}) {
 internal fun FrigateTopBar(
     activeConnection: ActiveConnection?,
     appVersion: String,
-    onMenu: () -> Unit = {},
+    onMenu: (() -> Unit)? = {},
     offline: Boolean = false,
     arrange: ArrangeAction? = null,
 ) {
@@ -793,8 +835,10 @@ internal fun FrigateTopBar(
             .statusBarsPadding()
             .padding(horizontal = 24.dp, vertical = shellTopBarVerticalPadding()),
     ) {
-        IconButton(onClick = onMenu, modifier = Modifier.size(48.dp).align(Alignment.CenterStart).testTag("shell_menu")) {
-            Icon(Icons.Filled.Menu, contentDescription = stringResource(Res.string.shell_menu), tint = MaterialTheme.colorScheme.primary)
+        if (onMenu != null) {
+            IconButton(onClick = onMenu, modifier = Modifier.size(48.dp).align(Alignment.CenterStart).testTag("shell_menu")) {
+                Icon(Icons.Filled.Menu, contentDescription = stringResource(Res.string.shell_menu), tint = MaterialTheme.colorScheme.primary)
+            }
         }
         Text(
             text = stringResource(Res.string.shell_app_title),

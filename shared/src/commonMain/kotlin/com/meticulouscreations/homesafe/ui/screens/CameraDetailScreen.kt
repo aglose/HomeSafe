@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -121,8 +123,10 @@ import com.meticulouscreations.homesafe.ui.fitVideo
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.formatDuration
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
+import com.meticulouscreations.homesafe.ui.showsTwoPanes
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.ui.windowHeight
+import com.meticulouscreations.homesafe.ui.windowWidth
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.LandedPersonViewModel
@@ -180,6 +184,9 @@ import kotlin.math.roundToInt
  * sound, clip, the timeline — come up over the picture on a tap and fade away again (see
  * [FullScreenPlayerChrome]). It is the same player in the same place in the composition, grown to
  * the window, so the stream never rebinds; turning back upright gives the page back as it was.
+ *
+ * A tablet on its side keeps the page, and has the room to lay it out across rather than down: the
+ * video and its timeline at the start, and the prompts and recent activity beside them.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -224,7 +231,14 @@ fun CameraDetailScreen(
     // player would be the whole page. It stops growing at the width whose 16:9 is
     // PLAYER_MAX_HEIGHT_FRACTION of the window's height, and centres, so the timeline under it
     // is still in sight. On a phone held upright that width is wider than the phone.
-    val playerGutter = if (fullScreen) 0.dp else contentGutter(maxWidth = windowHeight() * PLAYER_MAX_HEIGHT_FRACTION * VIDEO_ASPECT, min = 0.dp)
+    //
+    // A tablet on its side (or a wide desktop window) has the width to put what the camera has
+    // seen beside the video instead of under it: the video and its timeline down the start side,
+    // the prompts and the recent activity in a column of their own at the end, each scrolling
+    // on its own, so the timeline under the video is never pushed out of sight by the list.
+    val besideVideo = !fullScreen && showsTwoPanes() && windowWidth() > windowHeight()
+    val videoSideWidth = if (besideVideo) shellContentWidth() - CAMERA_SIDE_PANEL_WIDTH else shellContentWidth()
+    val playerGutter = if (fullScreen) 0.dp else contentGutter(maxWidth = windowHeight() * PLAYER_MAX_HEIGHT_FRACTION * VIDEO_ASPECT, min = 0.dp, available = videoSideWidth)
     // How tall the scrolling area is — what the player grows into while zoomed. Held as state
     // rather than read here so that only the player's layout, not this screen, depends on it.
     val scrollViewportHeight = remember { mutableIntStateOf(0) }
@@ -266,6 +280,53 @@ fun CameraDetailScreen(
         onDismiss = tagViewModel::dismiss,
     )
 
+    // What the camera has seen and what it wants a word about: under the timeline on a phone, in
+    // a column of its own beside the video on a tablet on its side.
+    val activity: @Composable () -> Unit = {
+        // The detection this screen was opened on, when its car went unrecognised.
+        tagState.landed?.let { landed ->
+            TagCarPrompt(summary = landed.summary, taggedAs = tagState.tagged[landed.eventId], onTag = tagViewModel::openLanded)
+        }
+
+        // ... or when its person was one nobody named: was anyone there?
+        NotAPersonPrompt(state = personState, onMark = personViewModel::mark, onUndo = personViewModel::undo)
+
+        // Cars in view that a classifier still wants a name for. Polls and recomposes on
+        // its own, and takes no room when there's nothing to ask about.
+        LiveLabelingSection(cameraName = cameraName)
+
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(
+                text = stringResource(Res.string.camera_recent_activity),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            val moments = recentMoments
+            if (moments.isNullOrEmpty()) {
+                Text(
+                    // Null is a question still out to the server, not an answer.
+                    text = stringResource(if (moments == null) Res.string.camera_recent_loading else Res.string.camera_recent_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    moments.forEach { item ->
+                        // Tapping a detection plays it in the player, from its start.
+                        RecentMomentCard(
+                            item = item,
+                            onClick = {
+                                viewModel.playMoment(item.event.startEpochSeconds)
+                                scope.launch { scrollState.animateScrollTo(0) }
+                            },
+                            onTagCar = { tagViewModel.open(item.event) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(if (fullScreen) Color.Black else MaterialTheme.colorScheme.background)) {
         // This header replaces the shell's top bar (the shell hides it while a nested screen is
         // up), so it steps in from the status bar itself. Full screen, the player's own chrome
@@ -304,140 +365,118 @@ fun CameraDetailScreen(
             }
         }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .onSizeChanged { scrollViewportHeight.intValue = it.height }
-                .verticalScroll(scrollState, enabled = !fullScreen),
-        ) {
-            PlayerSurface(
-                cameraAvailable = cameraAvailable,
-                cameraName = cameraName,
-                playerKey = cameraName,
-                warmStreamUrl = warmStreamUrl,
-                warmPosterUrl = warmPosterUrl,
-                viewportHeight = scrollViewportHeight,
-                // The scroll runs under the floating nav bar; the zoomed video is centred above it.
-                bottomInsetPx = with(LocalDensity.current) { bottomNavClearance().roundToPx() },
-                takeover = zoomTakeover,
-                // The zoomed player fills the viewport only from the top of the scroll.
-                onZoomStarted = { scope.launch { scrollState.animateScrollTo(0) } },
-                fullScreen = fullScreen,
-                hasQualityChoice = hasQualityChoice,
-                hint = hintText.takeIf { hint != null },
-                showHint = showHint,
-                onBack = onBack,
-                onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
-                // The header's own menu, in white, at the end of the chrome's top row.
-                overflowMenu = { onOpenChange ->
-                    CameraOverflowMenu(
-                        onEditDetectionZones = onEditDetectionZones,
-                        onTagCars = onTagCars,
-                        statsShown = statsShown,
-                        onToggleStats = viewModel::toggleStats,
-                        tint = Color.White,
-                        onOpenChange = onOpenChange,
-                    )
-                },
-                modifier = with(sharedTransitionScope) {
-                    // The video is the one thing that moves between here and the card (this
-                    // screen only fades — see SharedElementPush / SharedElementPop); its corners
-                    // round off on the way to the card and square up on the way here.
-                    Modifier.padding(horizontal = playerGutter).sharedBounds(
-                        sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(cameraName)),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = CameraVideoBoundsTransform,
-                        clipInOverlayDuringTransition = rememberCameraVideoOverlayClip(
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            visibleRadius = 0.dp,
-                            hiddenRadius = CAMERA_CARD_CORNER_RADIUS,
-                        ),
-                    )
-                },
-            )
-
-            // Full screen there is no page: the player is the viewport, and what the page offered
-            // is on the player's chrome.
-            if (fullScreen) return@Column
-
-            // The player's own bar, under the picture and as wide as it: zoomed, the player
-            // pushes it down out of the viewport along with the rest of the page.
-            QuickActionsRow(
-                cameraName = cameraName,
-                cameraAvailable = cameraAvailable,
-                hasQualityChoice = hasQualityChoice,
-                showHint = showHint,
-                onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
-                modifier = Modifier.padding(horizontal = playerGutter),
-            )
-
+        Row(modifier = Modifier.weight(1f)) {
             Column(
                 modifier = Modifier
-                    .padding(horizontal = contentGutter())
-                    .padding(top = 16.dp, bottom = bottomNavClearance()),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
+                    .weight(1f)
+                    .onSizeChanged { scrollViewportHeight.intValue = it.height }
+                    .verticalScroll(scrollState, enabled = !fullScreen),
             ) {
-                AnimatedVisibility(visible = hint != null) {
-                    Text(
-                        text = hintText?.let { stringResource(it) }.orEmpty(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                // First on the page, straight under the video it drives, and there whatever else
-                // the page has to say: the prompts and the cars in view below come and go, and
-                // would move it out from under a thumb each time they did.
-                TimelineSection(cameraName = cameraName)
-
-                // The detection this screen was opened on, when its car went unrecognised.
-                tagState.landed?.let { landed ->
-                    TagCarPrompt(summary = landed.summary, taggedAs = tagState.tagged[landed.eventId], onTag = tagViewModel::openLanded)
-                }
-
-                // ... or when its person was one nobody named: was anyone there?
-                NotAPersonPrompt(state = personState, onMark = personViewModel::mark, onUndo = personViewModel::undo)
-
-                // Cars in view that a classifier still wants a name for. Polls and recomposes on
-                // its own, and takes no room when there's nothing to ask about.
-                LiveLabelingSection(cameraName = cameraName)
-
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(
-                        text = stringResource(Res.string.camera_recent_activity),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    val moments = recentMoments
-                    if (moments.isNullOrEmpty()) {
-                        Text(
-                            // Null is a question still out to the server, not an answer.
-                            text = stringResource(if (moments == null) Res.string.camera_recent_loading else Res.string.camera_recent_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                PlayerSurface(
+                    cameraAvailable = cameraAvailable,
+                    cameraName = cameraName,
+                    playerKey = cameraName,
+                    warmStreamUrl = warmStreamUrl,
+                    warmPosterUrl = warmPosterUrl,
+                    viewportHeight = scrollViewportHeight,
+                    // The scroll runs under the floating nav bar; the zoomed video is centred above it.
+                    bottomInsetPx = with(LocalDensity.current) { bottomNavClearance().roundToPx() },
+                    takeover = zoomTakeover,
+                    // The zoomed player fills the viewport only from the top of the scroll.
+                    onZoomStarted = { scope.launch { scrollState.animateScrollTo(0) } },
+                    fullScreen = fullScreen,
+                    hasQualityChoice = hasQualityChoice,
+                    hint = hintText.takeIf { hint != null },
+                    showHint = showHint,
+                    onBack = onBack,
+                    onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
+                    // The header's own menu, in white, at the end of the chrome's top row.
+                    overflowMenu = { onOpenChange ->
+                        CameraOverflowMenu(
+                            onEditDetectionZones = onEditDetectionZones,
+                            onTagCars = onTagCars,
+                            statsShown = statsShown,
+                            onToggleStats = viewModel::toggleStats,
+                            tint = Color.White,
+                            onOpenChange = onOpenChange,
                         )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            moments.forEach { item ->
-                                // Tapping a detection plays it in the player above, from its start.
-                                RecentMomentCard(
-                                    item = item,
-                                    onClick = {
-                                        viewModel.playMoment(item.event.startEpochSeconds)
-                                        scope.launch { scrollState.animateScrollTo(0) }
-                                    },
-                                    onTagCar = { tagViewModel.open(item.event) },
-                                )
-                            }
-                        }
+                    },
+                    modifier = with(sharedTransitionScope) {
+                        // The video is the one thing that moves between here and the card (this
+                        // screen only fades — see SharedElementPush / SharedElementPop); its corners
+                        // round off on the way to the card and square up on the way here.
+                        Modifier.padding(horizontal = playerGutter).sharedBounds(
+                            sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(cameraName)),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            boundsTransform = CameraVideoBoundsTransform,
+                            clipInOverlayDuringTransition = rememberCameraVideoOverlayClip(
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                visibleRadius = 0.dp,
+                                hiddenRadius = CAMERA_CARD_CORNER_RADIUS,
+                            ),
+                        )
+                    },
+                )
+
+                // Full screen there is no page: the player is the viewport, and what the page offered
+                // is on the player's chrome.
+                if (fullScreen) return@Column
+
+                // The player's own bar, under the picture and as wide as it: zoomed, the player
+                // pushes it down out of the viewport along with the rest of the page.
+                QuickActionsRow(
+                    cameraName = cameraName,
+                    cameraAvailable = cameraAvailable,
+                    hasQualityChoice = hasQualityChoice,
+                    showHint = showHint,
+                    onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
+                    modifier = Modifier.padding(horizontal = playerGutter),
+                )
+
+                Column(
+                    modifier = Modifier
+                        // Beside the activity column the timeline lines up with the video's edges.
+                        .padding(horizontal = if (besideVideo) TAB_CONTENT_HORIZONTAL_PADDING else contentGutter())
+                        .padding(top = 16.dp, bottom = bottomNavClearance()),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    AnimatedVisibility(visible = hint != null) {
+                        Text(
+                            text = hintText?.let { stringResource(it) }.orEmpty(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
+
+                    // First on the page, straight under the video it drives, and there whatever else
+                    // the page has to say: the prompts and the cars in view below come and go, and
+                    // would move it out from under a thumb each time they did.
+                    TimelineSection(cameraName = cameraName)
+
+                    if (!besideVideo) activity()
+                }
+            }
+
+            if (besideVideo) {
+                Column(
+                    modifier = Modifier
+                        .width(CAMERA_SIDE_PANEL_WIDTH)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING).padding(top = 8.dp, bottom = bottomNavClearance()),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    activity()
                 }
             }
         }
     }
 }
+
+/** The column beside the video on a tablet on its side: the width of a phone's page, for the same cards. */
+private val CAMERA_SIDE_PANEL_WIDTH = 400.dp
 
 /**
  * This screen's view model, resolved from the graph rather than passed down as a parameter.

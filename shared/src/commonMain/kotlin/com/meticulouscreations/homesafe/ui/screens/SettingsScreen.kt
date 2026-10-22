@@ -295,6 +295,7 @@ internal fun SettingsHome(
                 title = stringResource(Res.string.alerts_title),
                 summary = alertsSummary(state).resolve(),
                 onClick = onOpenAlerts,
+                opens = AlertsRoute,
             )
             SettingsRowDivider()
             SettingsNavRow(
@@ -302,6 +303,7 @@ internal fun SettingsHome(
                 title = stringResource(Res.string.presence_title),
                 summary = awaySummary(state).resolve(),
                 onClick = onOpenAway,
+                opens = AwayRoute,
             )
             if (onOpenDoors != null) {
                 SettingsRowDivider()
@@ -310,6 +312,7 @@ internal fun SettingsHome(
                     title = stringResource(Res.string.doors_title),
                     summary = stringResource(Res.string.doors_settings_summary),
                     onClick = onOpenDoors,
+                    opens = DoorsRoute,
                 )
             }
         }

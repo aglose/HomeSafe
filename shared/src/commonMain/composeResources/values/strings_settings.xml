@@ -379,4 +379,7 @@
     <string name="settings_app_icon_constellation">Constellation</string>
     <string name="settings_app_icon_glitch">Glitch</string>
     <string name="settings_app_icon_peephole">Peephole</string>
+
+    <!-- A tablet's Settings, with the page a row opens beside the list: what that side shows before a row is picked. -->
+    <string name="settings_pane_empty">Pick a setting, and its page opens here.</string>
 </resources>

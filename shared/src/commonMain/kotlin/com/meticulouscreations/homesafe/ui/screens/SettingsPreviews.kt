@@ -5,9 +5,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigationevent.NavigationEventDispatcher
+import androidx.navigationevent.NavigationEventDispatcherOwner
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
@@ -148,21 +155,78 @@ private fun SettingsHomeAppIconPreview() {
 @Preview(name = "Settings · Alerts page", widthDp = 412, heightDp = 915)
 @Composable
 private fun AlertsPagePreview() {
-    FrigatePreview {
-        SettingsPage(title = stringResource(Res.string.alerts_title), subtitle = stringResource(Res.string.settings_alerts_subtitle), onBack = {}) {
-            AlertsSection(
-                state = previewSettings,
-                onPushNotifications = {},
-                onZoneCategory = { _, _, _ -> },
-                onPreset = {},
-                onQuietHours = {},
-                onOnlyWhenAway = {},
-                onQuietFamiliar = {},
-                onLoadVolume = {},
-                onOpenSettings = {},
-                onSendTest = {},
-            )
+    FrigatePreview { AlertsPage() }
+}
+
+@Composable
+private fun AlertsPage() {
+    SettingsPage(title = stringResource(Res.string.alerts_title), subtitle = stringResource(Res.string.settings_alerts_subtitle), onBack = {}) {
+        AlertsSection(
+            state = previewSettings,
+            onPushNotifications = {},
+            onZoneCategory = { _, _, _ -> },
+            onPreset = {},
+            onQuietHours = {},
+            onOnlyWhenAway = {},
+            onQuietFamiliar = {},
+            onLoadVolume = {},
+            onOpenSettings = {},
+            onSendTest = {},
+        )
+    }
+}
+
+/** A tablet on its side: the list down the start side, with Alerts open beside it and its row marked. */
+@Preview(name = "Settings, two panes", widthDp = 1194, heightDp = 834)
+@Composable
+private fun SettingsTwoPanesPreview() {
+    SettingsTwoPanesPreviewContent(open = AlertsRoute)
+}
+
+/** The same before a row has been picked. */
+@Preview(name = "Settings, two panes, nothing open", widthDp = 834, heightDp = 1194)
+@Composable
+private fun SettingsTwoPanesEmptyPreview() {
+    SettingsTwoPanesPreviewContent(open = null)
+}
+
+@Composable
+private fun SettingsTwoPanesPreviewContent(open: Any?) {
+    // The page side is a NavDisplay, which wants a back dispatcher; a preview has no activity to give it one.
+    val back = remember {
+        object : NavigationEventDispatcherOwner {
+            override val navigationEventDispatcher = NavigationEventDispatcher()
         }
+    }
+    FrigatePreview {
+        CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides back) { SettingsTwoPanesPreviewPanes(open) }
+    }
+}
+
+@Composable
+private fun SettingsTwoPanesPreviewPanes(open: Any?) {
+    val backStack = remember { mutableStateListOf<Any>(SettingsHomeRoute).apply { open?.let(::add) } }
+    val pages = entryProvider<Any> {
+        entry<SettingsHomeRoute> {}
+        entry<AlertsRoute> { AlertsPage() }
+    }
+    SettingsTwoPanes(backStack, pages) {
+        SettingsHome(
+            state = previewSettings,
+            onOpenAlerts = {},
+            onOpenAway = {},
+            onOpenClassifier = {},
+            onOpenFaces = {},
+            onOpenServer = {},
+            onDetection = { _, _ -> },
+            onMotion = { _, _ -> },
+            onDismissCameraError = {},
+            onTone = {},
+            onFinanceDrawerItems = {},
+            onFigureStyle = {},
+            onAppIcon = {},
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = contentGutter(), vertical = 24.dp),
+        )
     }
 }
 

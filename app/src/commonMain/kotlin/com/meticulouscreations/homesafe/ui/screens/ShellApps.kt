@@ -1,8 +1,15 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,7 +88,10 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
         atlas.setActive(visible && (drawerShowing || atlasUp), full = atlasUp)
     }
     // Only the tab in front listens, so that under the iOS 26 host one composition takes a share, not three.
-    if (nav.selectedTab == tab) LaunchedEffect(nav, fitness) { nav.openFitnessFromShares(fitness::setImportText) }
+    // In a sidebar the fitness app is a tab with a view model of its own, so the notes wait on [nav] for it.
+    if (nav.selectedTab == tab) {
+        LaunchedEffect(nav, fitness) { nav.openFitnessFromShares { notes -> if (nav.appsInSidebar) nav.fitnessNotes = notes else fitness.setImportText(notes) } }
+    }
     ShellDrawer(
         open = nav.drawerOpen,
         pull = nav.drawerPull,
@@ -117,6 +127,77 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
 
                 InnerApp.ATLAS -> AtlasApp(onClose = nav::closeApp, active = nav.appOpen)
             }
+        }
+    }
+}
+
+/**
+ * One of the apps from the drawer as a destination of its own, for a host that lists them beside
+ * the shell's tabs — an iPad's sidebar, where each is a tab hosting this (see `IosShell.kt`).
+ * Nothing grows from a card here: the app is simply there while its tab is up, and fetches what it
+ * shows for as long as it is on screen. Its own close button goes back to Home.
+ *
+ * The money and the places kept behind the lock lock again as the tab is left, as they do when the
+ * overlay closes: a tab stays composed while another is up, so the lock can't wait for it to go.
+ *
+ * The app keeps clear of what the system draws at the window's sides — on iPadOS 26 that includes
+ * the sidebar, which floats over the tab's view rather than beside it — as the shell does: the
+ * apps were made to cover the whole screen, and would otherwise lay their pages out under it.
+ */
+// Fills its host's view, like the overlay it stands in for.
+@Suppress("ktlint:compose:modifier-missing-check")
+@Composable
+fun ShellAppTab(nav: ShellNavigation, app: InnerApp) {
+    val financeLock: FinanceLockViewModel = metroViewModel()
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val visible = lifecycle.isAtLeast(Lifecycle.State.STARTED)
+    if (app == InnerApp.FINANCE || app == InnerApp.ATLAS) {
+        LaunchedEffect(visible) { if (!visible) financeLock.lock() }
+    }
+    val sides = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+    Box(Modifier.fillMaxSize().windowInsetsPadding(sides).consumeWindowInsets(sides)) {
+        AppTabContent(nav, app, visible)
+    }
+}
+
+@Composable
+private fun AppTabContent(nav: ShellNavigation, app: InnerApp, visible: Boolean) {
+    val goHome = { nav.selectTab(TopLevelRoute.Home) }
+    when (app) {
+        InnerApp.FINANCE -> {
+            val finance: FinanceViewModel = metroViewModel()
+            LaunchedEffect(visible) { finance.setActive(visible, full = true) }
+            FinanceApp(onClose = goHome, active = visible, requestedTab = nav.financeTab, onShowRequestedTab = nav::onFinanceTabShown)
+        }
+
+        InnerApp.WEATHER -> {
+            val weather: WeatherViewModel = metroViewModel()
+            LaunchedEffect(visible) { weather.setActive(visible, full = true) }
+            WeatherApp(onClose = goHome, active = visible, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
+        }
+
+        InnerApp.FITNESS -> {
+            val fitness: FitnessViewModel = metroViewModel()
+            val health: HealthViewModel = metroViewModel()
+            LaunchedEffect(visible) {
+                fitness.setActive(visible, full = true)
+                health.setActive(visible)
+            }
+            // Notes shared into the app (see ShellApps, which hears of them) land on its import page.
+            val notes = nav.fitnessNotes
+            LaunchedEffect(notes) {
+                if (notes != null) {
+                    fitness.setImportText(notes)
+                    nav.fitnessNotes = null
+                }
+            }
+            FitnessApp(onClose = goHome, active = visible)
+        }
+
+        InnerApp.ATLAS -> {
+            val atlas: AtlasViewModel = metroViewModel()
+            LaunchedEffect(visible) { atlas.setActive(visible, full = true) }
+            AtlasApp(onClose = goHome, active = visible)
         }
     }
 }

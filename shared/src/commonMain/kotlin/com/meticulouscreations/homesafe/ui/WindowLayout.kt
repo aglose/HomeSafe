@@ -51,6 +51,28 @@ fun isCompactLandscape(): Boolean {
     return with(LocalDensity.current) { size.height.toDp() < COMPACT_HEIGHT && size.width.toDp() >= SIDE_BY_SIDE_WIDTH }
 }
 
+/** Stands in for the window in [showsTwoPanes], as [LocalCompactLandscape] does in [isCompactLandscape]: null asks the window. */
+val LocalTwoPanes = compositionLocalOf<Boolean?> { null }
+
+/**
+ * Wide enough for a list and the page it opens to stand side by side, each at a width it reads
+ * well at: Material's "expanded" width, near enough, and a little under, so an 11-inch iPad held
+ * upright (834pt) gets them too, as the system's own Settings does there.
+ */
+private val TWO_PANE_WIDTH = 800.dp
+
+/**
+ * Whether the window is a tablet's, or a desktop's, with room for two panes: Settings' list beside
+ * the page a row opens, a camera's video beside what it has seen. Never a phone on its side
+ * ([isCompactLandscape]), which is wide but has no height for either pane's header and content.
+ */
+@Composable
+@ReadOnlyComposable
+fun showsTwoPanes(): Boolean {
+    LocalTwoPanes.current?.let { return it }
+    return !isCompactLandscape() && windowWidth() >= TWO_PANE_WIDTH
+}
+
 /** The window's width, system bars and cutouts included. */
 @Composable
 @ReadOnlyComposable

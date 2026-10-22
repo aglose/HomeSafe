@@ -21,11 +21,28 @@ internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulous
     - content: STABLE (composable function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.AppTabContent(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, app: com.meticulouscreations.homesafe.ui.screens.InnerApp, visible: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - app: STABLE (class with no mutable properties)
+    - visible: STABLE (primitive type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.DrawerColumn(content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - content: STABLE (composable function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.ShellAppTab(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, app: com.meticulouscreations.homesafe.ui.screens.InnerApp): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - app: STABLE (class with no mutable properties)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit

@@ -5,6 +5,17 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<!--
+	  One window. Each window builds its own shell (IosShell in the shared module), and each shell
+	  drains notification taps for as long as it lives, so a second iPad window would race the
+	  first for every tap. Written out here, with the target's manifest generation off: the generated
+	  one allows several windows, and it wins over this file.
+	-->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<!--
 	  The weather app's background check (IosWeatherRefresh in the shared module): a background
 	  app refresh now and then, so "rain in 20 minutes" can arrive while the app is closed. The
 	  identifier must be listed here or registering its handler at launch is a crash.

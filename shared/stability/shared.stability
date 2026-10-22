@@ -363,6 +363,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.AlertRules(state: com.me
     - onLoadVolume: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.AlertsPage(): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.AlertsSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onPushNotifications: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>, onPreset: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.AlertPreset, kotlin.Unit>, onQuietHours: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.QuietHours, kotlin.Unit>, onOnlyWhenAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onQuietFamiliar: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onLoadVolume: kotlin.Function0<kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>, onSendTest: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -1353,7 +1359,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.FrigateAppShell(): kotlin
   params:
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeConnection: com.meticulouscreations.homesafe.domain.model.ActiveConnection?, appVersion: kotlin.String, onMenu: kotlin.Function0<kotlin.Unit>, offline: kotlin.Boolean, arrange: com.meticulouscreations.homesafe.ui.screens.ArrangeAction?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeConnection: com.meticulouscreations.homesafe.domain.model.ActiveConnection?, appVersion: kotlin.String, onMenu: kotlin.Function0<kotlin.Unit>?, offline: kotlin.Boolean, arrange: com.meticulouscreations.homesafe.ui.screens.ArrangeAction?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2320,7 +2326,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.SettingsInfoGrid(items: 
     - items: RUNTIME (requires runtime check)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.SettingsNavRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: kotlin.String, summary: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsNavRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: kotlin.String, summary: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, opens: kotlin.Any?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2329,6 +2335,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsNavRow(icon: an
     - summary: STABLE (String is immutable)
     - onClick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - opens: UNSTABLE (cross-module type without @Stable/@Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.SettingsPage(title: kotlin.String, subtitle: kotlin.String, onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onRefresh: kotlin.Function0<kotlin.Unit>?, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
@@ -2341,6 +2348,12 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsPage(title: kot
     - modifier: STABLE (marked @Stable or @Immutable)
     - onRefresh: STABLE (function type)
     - content: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SettingsPaneEmpty(): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.SettingsRowDivider(modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -2396,6 +2409,29 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsToggleRow(title
     - checked: STABLE (primitive type)
     - onCheckedChange: STABLE (function type)
     - enabled: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsTwoPanes(backStack: androidx.compose.runtime.snapshots.SnapshotStateList<kotlin.Any>, pages: kotlin.Function1<kotlin.Any, androidx.navigation3.runtime.NavEntry<kotlin.Any>>, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - backStack: STABLE (marked @Stable or @Immutable)
+    - pages: STABLE (function type)
+    - content: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SettingsTwoPanesPreviewContent(open: kotlin.Any?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - open: UNSTABLE (cross-module type without @Stable/@Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SettingsTwoPanesPreviewPanes(open: kotlin.Any?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - open: UNSTABLE (cross-module type without @Stable/@Immutable)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onClose: kotlin.Function0<kotlin.Unit>, apps: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
@@ -2772,12 +2808,13 @@ internal fun com.meticulouscreations.homesafe.ui.screens.categoryDisplayName(cat
     - category: STABLE (String is immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.contentGutter(maxWidth: androidx.compose.ui.unit.Dp, min: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp
+internal fun com.meticulouscreations.homesafe.ui.screens.contentGutter(maxWidth: androidx.compose.ui.unit.Dp, min: androidx.compose.ui.unit.Dp, available: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp
   skippable: false
   restartable: false
   params:
     - maxWidth: STABLE (marked @Stable or @Immutable)
     - min: STABLE (marked @Stable or @Immutable)
+    - available: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.doorTint(open: kotlin.Boolean?): androidx.compose.ui.graphics.Color
@@ -2898,6 +2935,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.sentence(zones: org.jetb
     - ignoreAreas: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.shellContentWidth(): androidx.compose.ui.unit.Dp
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.shellTopBarClearance(): androidx.compose.ui.unit.Dp
   skippable: false
   restartable: false
@@ -2938,6 +2981,12 @@ internal fun com.meticulouscreations.homesafe.ui.screens.tabContentPadding(top: 
     - top: STABLE (marked @Stable or @Immutable)
     - maxWidth: STABLE (marked @Stable or @Immutable)
     - bottom: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.showsTwoPanes(): kotlin.Boolean
+  skippable: false
+  restartable: false
+  params:
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.theme.FrigateTheme(content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit

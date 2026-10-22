@@ -14,5 +14,6 @@ struct iOSApp: App {
         WindowGroup {
             ContentView()
         }
+        .commands { ShellCommands() }
     }
 }
