@@ -417,12 +417,11 @@ private fun com.meticulouscreations.homesafe.ui.screens.AttemptCard(attempt: com
     - onDiscard: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.AutomaticPresenceRows(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.AutomaticPresenceRows(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
-    - onAutomatic: STABLE (function type)
     - onRequestLocation: STABLE (function type)
     - onSetHomeHere: STABLE (function type)
     - onClearHome: STABLE (function type)
@@ -435,14 +434,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.AwayBanner(onBack: kotli
     - onBack: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onDecides: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>, onRemoveDevice: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>, onRemoveDevice: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onAway: STABLE (function type)
-    - onDecides: STABLE (function type)
-    - onAutomatic: STABLE (function type)
     - onRequestLocation: STABLE (function type)
     - onSetHomeHere: STABLE (function type)
     - onClearHome: STABLE (function type)
@@ -1886,16 +1883,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.OpenAppsButton(onClick: 
     - extraColors: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.OtherDevicesToggle(count: kotlin.Int, counted: kotlin.Int, expanded: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - count: STABLE (primitive type)
-    - counted: STABLE (primitive type)
-    - expanded: STABLE (primitive type)
-    - onToggle: STABLE (function type)
-
-@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.OutageRow(title: kotlin.String, detail: kotlin.String, ongoing: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
@@ -2825,6 +2812,13 @@ internal fun com.meticulouscreations.homesafe.ui.screens.nestedHeaderVerticalPad
   skippable: false
   restartable: false
   params:
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.notTrackedText(presence: com.meticulouscreations.homesafe.domain.model.HouseholdPresence): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - presence: RUNTIME (requires runtime check)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.objectList(objects: kotlin.collections.List<kotlin.String>): kotlin.String

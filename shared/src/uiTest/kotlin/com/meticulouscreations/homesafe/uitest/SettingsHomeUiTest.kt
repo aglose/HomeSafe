@@ -93,7 +93,7 @@ class SettingsHomeUiTest {
         notificationPermission = NotificationPermission.GRANTED,
         classifiers = listOf(ClassifierModel(name = "known_cars", objects = listOf("car"))),
         presence = HouseholdPresence(
-            devices = listOf(PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel", build = "release")),
+            devices = listOf(PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel")),
             everyoneAway = false,
         ),
     )

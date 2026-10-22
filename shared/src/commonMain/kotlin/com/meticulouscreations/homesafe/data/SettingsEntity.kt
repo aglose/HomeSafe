@@ -13,8 +13,6 @@ data class SettingsEntity(
     val pushNotificationsEnabled: Boolean,
     /** Added in schema 7; the default keeps existing installs alerting for everyone until they choose otherwise. */
     @ColumnInfo(defaultValue = "0") val quietFamiliarPeople: Boolean = false,
-    /** Added in schema 9: automatic presence (geofence + LAN). Off until the user turns it on and grants location. */
-    @ColumnInfo(defaultValue = "0") val automaticPresence: Boolean = false,
     /**
      * Added in schema 13: quiet hours (off, with the 10 PM to 7 AM window ready for when it's
      * switched on) and "only when everyone's away" (off). The defaults change nothing for an

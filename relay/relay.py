@@ -250,7 +250,8 @@ def db() -> sqlite3.Connection:
         " device_id TEXT PRIMARY KEY, token TEXT UNIQUE, platform TEXT, name TEXT, created REAL, last_seen REAL,"
         " away INTEGER NOT NULL DEFAULT 0, away_updated REAL, quiet_familiar INTEGER NOT NULL DEFAULT 0,"
         " build TEXT NOT NULL DEFAULT 'unknown', secret TEXT, away_pending_since REAL, away_pending_dwell REAL,"
-        " quiet_start INTEGER, quiet_end INTEGER, only_away INTEGER NOT NULL DEFAULT 0, tz TEXT, utc_offset INTEGER)"
+        " quiet_start INTEGER, quiet_end INTEGER, only_away INTEGER NOT NULL DEFAULT 0, tz TEXT, utc_offset INTEGER,"
+        " hardware_id TEXT, emulator INTEGER NOT NULL DEFAULT 0)"
     )
     conn.execute("CREATE TABLE IF NOT EXISTS sent (review_id TEXT PRIMARY KEY, sent_at REAL, body TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT)")
@@ -416,6 +417,8 @@ def db() -> sqlite3.Connection:
     # them by. Guarded like the ALTERs above so an existing relay.db picks them up on boot.
     # Then who last signed in on it (`user`, and their Frigate `role`): a push about the
     # household's money goes only to the phones of people who may see it (see `budget_push`).
+    # Then which phone it runs on (`hardware_id`) and whether that is an emulator, which decide
+    # whether it can be one of the tracked phones (see "away mode").
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     for column, declaration in (
         ("quiet_start", "INTEGER"),
@@ -425,6 +428,8 @@ def db() -> sqlite3.Connection:
         ("utc_offset", "INTEGER"),
         ("user", "TEXT"),
         ("role", "TEXT"),
+        ("hardware_id", "TEXT"),
+        ("emulator", "INTEGER NOT NULL DEFAULT 0"),
     ):
         if column not in columns:
             conn.execute(f"ALTER TABLE devices ADD COLUMN {column} {declaration}")
@@ -736,59 +741,127 @@ def recent_alerts() -> list[dict[str, Any]]:
 
 # ---------------------------------------------------------------- away mode
 
-# Only the household's real phones decide whether the house is empty. A debug build — an
-# emulator, a test install next to the release app, a phone left on a dev branch — registers for
-# push like any other device, but it must never hold away mode open (or, worse, be the single
-# "away" device that opens it). Anything that didn't say which build it is stays out too.
+# Away mode follows exactly two phones: the household's Android phone and its iPhone, each a
+# release build on real hardware. Everything else — a debug build (an emulator, the .debug app
+# beside the real one, an Xcode Debug install), a release build on an emulator or simulator, an
+# app too old to say which phone it runs on — still registers for push, but isn't tracked: it
+# isn't listed in the presence snapshot, its away switch is ignored, and it can never hold away
+# mode open. This replaced the presence authority (one phone deciding alone) on 2026-10-22, which
+# had itself replaced "every release phone votes" after stale installs kept the house occupied.
 #
-# The exception is iOS: there is no iOS release channel yet (no App Store / TestFlight build), so
-# the household's iPhone is a debug IPA and would otherwise never count. Drop "ios" from this set
-# the day an iOS release ships.
-AWAY_BUILDS = {"release"}
-AWAY_DEBUG_PLATFORMS = {"ios"}
+# A phone is known by its `hardware_id`, which outlives a reinstall: Android's ANDROID_ID (per
+# signing key, so the release app's differs from the debug app's), and on iOS a UUID the app keeps
+# in the Keychain, which survives deleting the app. A reinstall registers a new device_id with the
+# same hardware_id; `register` folds the old row into the new one, so the list never grows ghosts.
+TRACKED_PLATFORMS = ("android", "ios")
+TRACKED_BUILD = "release"
+# A tracked phone nothing has been heard from in this long gives its place up to a release phone of
+# the same platform that has been (a new phone; the old one sits in a drawer). While both are in
+# use the first keeps it, so two phones can't take turns: removing the old one in Settings hands
+# its place over at once.
+TRACKED_STALE_SECONDS = 7 * 24 * 3600.0
+# An install that isn't tracked and hasn't been heard from in this long is forgotten. One still in
+# use comes back the next time it connects and re-registers.
+UNTRACKED_FORGET_SECONDS = 14 * 24 * 3600.0
 
 # The household's home, as `{"lat", "lng", "radius_m", "updated", "by"}`, or absent. Set once from
 # whichever phone is standing in it; both phones draw their geofence around it.
 HOME_KEY = "home"
 
-# The presence authority: one install whose away switch alone decides whether the house is empty.
-# "Every release phone" let stale rows vote — three old iPhone debug installs and a release build on
-# an emulator, none of which will ever say away — so `everyone_away` could not come true
-# (2026-09-29, and away mode had been silent since). The phone that carries its owner in and out
-# (Andrew's release Pixel) is chosen from the app (`PUT /presence/authority`), or by
-# PRESENCE_DEVICE until it has been; the build rule above applies only while neither is set.
-PRESENCE_KEY = "presence_device"
-PRESENCE_DEVICE = os.environ.get("PRESENCE_DEVICE", "").strip()
+# Where the authority used to be kept; cleared on startup.
+OLD_AUTHORITY_KEY = "presence_device"
 
 
-def presence_authority() -> str | None:
-    """The device_id that decides away mode on its own, or None while every counting phone votes."""
-    return state_get(PRESENCE_KEY) or PRESENCE_DEVICE or None
+def tracked_key(platform: str) -> str:
+    return f"tracked_{platform}"
 
 
-def counts_for_away(platform: str, build: str) -> bool:
-    """Whether this device's away switch is part of `everyone_away` when no presence authority is set."""
-    return (build or "").lower() in AWAY_BUILDS or (platform or "").lower() in AWAY_DEBUG_PLATFORMS
+def not_tracked_reason(platform: str | None, build: str | None, emulator: Any, hardware_id: str | None) -> str | None:
+    """Why an install can't be one of the tracked phones ("platform", "debug", "emulator", "old_app"), or None when it can."""
+    if (platform or "").lower() not in TRACKED_PLATFORMS:
+        return "platform"
+    if (build or "").lower() != TRACKED_BUILD:
+        return "debug"
+    if emulator:
+        return "emulator"
+    if not hardware_id:
+        return "old_app"
+    return None
 
 
-def counts(device_id: str, platform: str, build: str, authority: str | None) -> bool:
-    """Whether this device's away switch decides away mode: the authority alone when there is one."""
-    return device_id == authority if authority else counts_for_away(platform, build)
+def assign_tracked_phones(now: float | None = None) -> dict[str, str]:
+    """
+    Settles which install is each platform's tracked phone and answers {platform: device_id}. A
+    phone keeps its place while it can be tracked, unless it has gone stale and another one of its
+    platform hasn't; an empty place goes to the eligible install heard from most recently. A phone
+    that takes a place starts at home: whatever its row said before was never counted.
+    """
+    now = time.time() if now is None else now
+
+    def settle(c: sqlite3.Connection) -> tuple[dict[str, str], list[tuple[str, str | None, str | None]]]:
+        rows = c.execute("SELECT device_id, platform, build, emulator, hardware_id, last_seen FROM devices").fetchall()
+        eligible = {d: ((p or "").lower(), ls or 0.0) for d, p, b, e, h, ls in rows if not_tracked_reason(p, b, e, h) is None}
+        tracked, changes = {}, []
+        for platform in TRACKED_PLATFORMS:
+            row = c.execute("SELECT value FROM state WHERE key=?", (tracked_key(platform),)).fetchone()
+            holder = json.loads(row[0]) if row else None
+            candidates = [d for _, d in sorted(((ls, d) for d, (p, ls) in eligible.items() if p == platform), reverse=True)]
+            if holder in eligible and eligible[holder][0] == platform:
+                fresh = [d for d in candidates if d != holder and now - eligible[d][1] <= TRACKED_STALE_SECONDS]
+                chosen = fresh[0] if fresh and now - eligible[holder][1] > TRACKED_STALE_SECONDS else holder
+            else:
+                chosen = candidates[0] if candidates else None
+            if chosen != holder:
+                if chosen is None:
+                    c.execute("DELETE FROM state WHERE key=?", (tracked_key(platform),))
+                else:
+                    c.execute("INSERT OR REPLACE INTO state VALUES (?,?)", (tracked_key(platform), json.dumps(chosen)))
+                    c.execute(
+                        "UPDATE devices SET away=0, away_updated=?, away_pending_since=NULL, away_pending_dwell=NULL WHERE device_id=?",
+                        (now, chosen),
+                    )
+                changes.append((platform, holder, chosen))
+            if chosen is not None:
+                tracked[platform] = chosen
+        if changes:
+            c.commit()
+        return tracked, changes
+
+    tracked, changes = with_db(settle)
+    for platform, before, after in changes:
+        log.info("presence: the tracked %s phone is now %s (was %s)", platform, after, before)
+    return tracked
+
+
+def forget_untracked(now: float | None = None) -> int:
+    """Deletes the installs that aren't tracked and haven't been heard from in UNTRACKED_FORGET_SECONDS; answers how many."""
+    now = time.time() if now is None else now
+    keep = list(assign_tracked_phones(now).values())
+    marks = ",".join("?" * len(keep))
+    query = "DELETE FROM devices WHERE COALESCE(last_seen, created, 0) < ?" + (f" AND device_id NOT IN ({marks})" if keep else "")
+    gone = with_db(lambda c: (c.execute(query, (now - UNTRACKED_FORGET_SECONDS, *keep)).rowcount, c.commit())[0])
+    if gone:
+        log.info("presence: forgot %d install(s) not heard from in %d days", gone, UNTRACKED_FORGET_SECONDS // 86400)
+    return gone
 
 
 def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
     """
-    Who says they're home. Every registered device is listed (so a debug install can see itself),
-    but `everyone_away` is decided by the counting ones alone: at least one, and all of them away —
-    which with a presence `authority` is that one phone.
-    A device that has *left* but is still inside its dwell (see `promote_pending`) shows as
-    `pending_away` and is not away yet. `this_device` matches a device_id or, for old apps, a token.
-    `id` and `last_seen` let Settings tell a phone in use from an old install, and remove the
-    latter (`DELETE /devices/{id}`).
+    Who says they're home: the tracked phones alone, Android first, and `everyone_away` when there
+    is at least one and all of them are away. A phone that has *left* but is still inside its
+    dwell (see `promote_pending`) shows as `pending_away` and is not away yet. `this_device`
+    matches a device_id or, for old apps, a token; when it names an install that isn't listed,
+    `not_tracked` says why — its `not_tracked_reason`, "taken" (another phone of its platform is
+    tracked) or "unregistered". `id` is what `DELETE /devices/{id}` takes.
     """
+    tracked = assign_tracked_phones()
+    ids = [tracked[p] for p in TRACKED_PLATFORMS if p in tracked]
     rows = with_db(lambda c: c.execute(
-        "SELECT device_id, token, name, platform, away, away_updated, build, away_pending_since, last_seen FROM devices ORDER BY created"
-    ).fetchall())
+        "SELECT device_id, token, name, platform, away, away_updated, build, away_pending_since, last_seen FROM devices"
+        f" WHERE device_id IN ({','.join('?' * len(ids))})",
+        ids,
+    ).fetchall()) if ids else []
+    by_id = {row[0]: row for row in rows}
     devices = [
         {
             "id": d,
@@ -798,31 +871,38 @@ def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
             "away_updated": u,
             "this_device": this_device is not None and this_device in (d, t),
             "build": b,
+            # Every listed phone counts; kept for the apps that still read it.
+            "counts": True,
             "pending_away": ps is not None,
             "last_seen": ls,
         }
-        for d, t, n, p, a, u, b, ps, ls in rows
+        for d, t, n, p, a, u, b, ps, ls in (by_id[i] for i in ids if i in by_id)
     ]
-    authority = presence_authority()
-    for device in devices:
-        device["counts"] = counts(device["id"], device["platform"], device["build"], authority)
-    counting = [d for d in devices if d["counts"]]
+    not_tracked = None
+    if this_device is not None and not any(d["this_device"] for d in devices):
+        row = with_db(lambda c: c.execute(
+            "SELECT platform, build, emulator, hardware_id FROM devices WHERE device_id=? OR token=?", (this_device, this_device)
+        ).fetchone())
+        not_tracked = "unregistered" if row is None else (not_tracked_reason(*row) or "taken")
     return {
         "devices": devices,
-        "everyone_away": bool(counting) and all(d["away"] for d in counting),
+        "everyone_away": bool(devices) and all(d["away"] for d in devices),
         "home": state_get(HOME_KEY),
-        "authority": authority,
+        "not_tracked": not_tracked,
     }
 
 
 def away_since() -> float | None:
-    """When the last person left, or None while somebody is home (or no counting phone has registered)."""
-    rows = with_db(lambda c: c.execute("SELECT device_id, platform, away, away_updated, build FROM devices").fetchall())
-    authority = presence_authority()
-    counting = [(a, u) for d, p, a, u, b in rows if counts(d, p, b, authority)]
-    if not counting or not all(a for a, _ in counting):
+    """When the last tracked phone left, or None while one of them is home (or none is tracked)."""
+    ids = list(assign_tracked_phones().values())
+    if not ids:
         return None
-    return float(max((u or 0.0) for _, u in counting))
+    rows = with_db(lambda c: c.execute(
+        f"SELECT away, away_updated FROM devices WHERE device_id IN ({','.join('?' * len(ids))})", ids
+    ).fetchall())
+    if not rows or not all(a for a, _ in rows):
+        return None
+    return float(max((u or 0.0) for _, u in rows))
 
 
 def promote_pending() -> None:
@@ -1399,7 +1479,7 @@ class Followups:
 
 # ---------------------------------------------------------------- notification policy
 
-# What deserves a sound depends on whether anyone is home (see "presence authority"). Measured
+# What deserves a sound depends on whether anyone is home (see "away mode"). Measured
 # 2026-09-26..29: 802 pushes in three days, two thirds of them "... in the driveway" on the Front
 # Yard, a quarter of them people Frigate had put a name to, and among them no telling a household
 # car coming or going from its re-detections. So while the house is occupied:
@@ -4381,8 +4461,13 @@ class Device(BaseModel):
     name: str = ""
     # "Only strangers": skip pushes for people Frigate recognised. Sent on every registration.
     quiet_familiar: bool = False
-    # "release" or "debug" — decides whether this phone counts towards away mode (`counts_for_away`).
+    # "release" or "debug". Only a release build can be a tracked phone (see "away mode").
     build: str = "unknown"
+    # The phone this install runs on, kept across reinstalls: Android's ANDROID_ID, or a UUID the
+    # iOS app keeps in the Keychain. Absent from apps before 2026-10-22, which aren't tracked.
+    hardware_id: str | None = None
+    # A release build on an emulator or simulator is still not a phone anyone carries.
+    emulator: bool = False
     # Quiet hours, minutes after the phone's local midnight; both absent while they're off.
     quiet_start: int | None = None
     quiet_end: int | None = None
@@ -4406,11 +4491,6 @@ class Home(BaseModel):
     lat: float
     lng: float
     radius_m: float = 150
-
-
-class Authority(BaseModel):
-    # The install whose away switch alone decides away mode (see "presence authority").
-    device_id: str
 
 
 def require_frigate_session(request: Request) -> str:
@@ -4476,6 +4556,8 @@ def startup() -> None:
     global CONN
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     CONN = db()
+    state_set(OLD_AUTHORITY_KEY, None)
+    forget_untracked()
     load_car_profiles()
     threading.Thread(target=poll_forever, name="poller", daemon=True).start()
     threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
@@ -4599,6 +4681,27 @@ def register(device: Device, request: Request) -> dict[str, Any]:
     now = time.time()
 
     def upsert(c: sqlite3.Connection) -> str:
+        if device.hardware_id:
+            # A reinstall on the same phone: its old installs go, and the newest of them hands this
+            # one its presence (when this one has none yet) and its place as a tracked phone.
+            old = c.execute(
+                "SELECT device_id, away, away_updated, away_pending_since, away_pending_dwell FROM devices"
+                " WHERE hardware_id=? AND platform=? AND device_id!=? ORDER BY COALESCE(last_seen, 0) DESC",
+                (device.hardware_id, device.platform, device_id),
+            ).fetchall()
+            if old:
+                if c.execute("SELECT 1 FROM devices WHERE device_id=?", (device_id,)).fetchone() is None:
+                    c.execute(
+                        "INSERT INTO devices (device_id, platform, name, created, last_seen, away, away_updated, away_pending_since, away_pending_dwell)"
+                        " VALUES (?,?,?,?,?,?,?,?,?)",
+                        (device_id, device.platform, device.name, now, now, *old[0][1:]),
+                    )
+                for platform in TRACKED_PLATFORMS:
+                    held = c.execute("SELECT value FROM state WHERE key=?", (tracked_key(platform),)).fetchone()
+                    if held and json.loads(held[0]) in [row[0] for row in old]:
+                        c.execute("UPDATE state SET value=? WHERE key=?", (json.dumps(device_id), tracked_key(platform)))
+                c.executemany("DELETE FROM devices WHERE device_id=?", [(row[0],) for row in old])
+                log.info("device %s replaces %d earlier install(s) on the same phone", device_id, len(old))
         if device.token:
             # An app that only just learned it has an identity: its old row is keyed by its token.
             # Move that row over so its presence and history survive the upgrade...
@@ -4611,15 +4714,16 @@ def register(device: Device, request: Request) -> dict[str, Any]:
             # Deliberately leaves `away`/`away_updated`/pending alone: re-registering (every connect,
             # every LAN/Tailscale flip) must not quietly mark a phone as back home.
             "INSERT INTO devices (device_id, token, platform, name, created, last_seen, quiet_familiar, build, secret,"
-            " quiet_start, quiet_end, only_away, tz, utc_offset)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            " quiet_start, quiet_end, only_away, tz, utc_offset, hardware_id, emulator)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(device_id) DO UPDATE SET token=excluded.token, platform=excluded.platform, name=excluded.name,"
             " last_seen=excluded.last_seen, quiet_familiar=excluded.quiet_familiar, build=excluded.build, secret=excluded.secret,"
             " quiet_start=excluded.quiet_start, quiet_end=excluded.quiet_end, only_away=excluded.only_away,"
-            " tz=excluded.tz, utc_offset=excluded.utc_offset",
+            " tz=excluded.tz, utc_offset=excluded.utc_offset, hardware_id=excluded.hardware_id, emulator=excluded.emulator",
             (
                 device_id, device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build, secret,
                 device.quiet_start, device.quiet_end, int(device.only_away), device.tz, device.utc_offset,
+                device.hardware_id, int(device.emulator),
             ),
         )
         c.commit()
@@ -4630,10 +4734,13 @@ def register(device: Device, request: Request) -> dict[str, Any]:
     # no session (a push token rotating in the background) leaves who it was as it stood.
     if profile and profile.get("username"):
         with_db(lambda c: (c.execute("UPDATE devices SET user=?, role=? WHERE device_id=?", (str(profile["username"]), profile.get("role"), device_id)), c.commit()))
+    forget_untracked(now)
+    tracked = device_id in assign_tracked_phones(now).values()
     log.info(
-        "device registered by %s: %s (%s %s, push=%s, strangers only=%s, quiet=%s-%s %s, only away=%s, counts for away=%s)",
-        user, device.name or "unnamed", device.platform, device.build, device.token is not None, device.quiet_familiar,
-        device.quiet_start, device.quiet_end, device.tz, device.only_away, counts(device_id, device.platform, device.build, presence_authority()),
+        "device registered by %s: %s (%s %s%s, push=%s, strangers only=%s, quiet=%s-%s %s, only away=%s, tracked=%s)",
+        user, device.name or "unnamed", device.platform, device.build, " emulator" if device.emulator else "", device.token is not None,
+        device.quiet_familiar, device.quiet_start, device.quiet_end, device.tz, device.only_away,
+        tracked or not_tracked_reason(device.platform, device.build, device.emulator, device.hardware_id) or "taken",
     )
     return {"ok": True, "device_id": device_id, "secret": secret}
 
@@ -4645,8 +4752,10 @@ def unregister(ident: str, request: Request) -> dict[str, Any]:
     device — how Settings clears out old installs. One that is still installed comes back the next
     time it connects and re-registers.
     """
-    authenticate(request, ident)
+    user = authenticate(request, ident)
     with_db(lambda c: (c.execute("DELETE FROM devices WHERE device_id=? OR token=?", (ident, ident)), c.commit()))
+    # A tracked phone removed hands its place to the next release phone of its platform, if any.
+    log.info("device %s removed by %s; tracked now %s", ident, user, assign_tracked_phones())
     return {"ok": True}
 
 
@@ -4656,16 +4765,21 @@ def set_presence(ident: str, presence: Presence, request: Request) -> dict[str, 
     This phone's owner has left (or come back). `ident` is the device_id (or, for old apps, the
     token); the row is created if it doesn't exist yet so a presence change can't race
     registration. Away with a dwell only *arms* the change — see `promote_pending`. Home is
-    always immediate and cancels any armed departure.
+    always immediate and cancels any armed departure. Only a tracked phone's change is kept: any
+    other install is answered with the snapshot, which says why it isn't tracked.
     """
     user = authenticate(request, ident)
     now = time.time()
     row = find_device(ident)
-    device_id = row[0] if row else ident
+    if row is None or row[0] not in assign_tracked_phones(now).values():
+        if row is not None:
+            with_db(lambda c: (c.execute("UPDATE devices SET last_seen=? WHERE device_id=?", (now, row[0])), c.commit()))
+        snapshot = presence_snapshot(ident)
+        log.info("presence by %s (%s) ignored: not a tracked phone (%s)", user, presence.source, snapshot["not_tracked"])
+        return snapshot
+    device_id = row[0]
 
     def apply(c: sqlite3.Connection) -> str:
-        if row is None:
-            c.execute("INSERT INTO devices (device_id, platform, name, created, last_seen) VALUES (?,?,?,?,?)", (device_id, "unknown", "", now, now))
         if not presence.away:
             c.execute(
                 "UPDATE devices SET last_seen=?, away=0, away_updated=?, away_pending_since=NULL, away_pending_dwell=NULL WHERE device_id=?",
@@ -4731,45 +4845,22 @@ def clear_home(request: Request, device: str | None = None) -> dict[str, Any]:
     return presence_snapshot(device)
 
 
-@app.put("/presence/authority")
-def set_presence_authority(authority: Authority, request: Request) -> dict[str, Any]:
-    """
-    Makes one install the presence authority: from then on its away switch alone says whether the
-    house is empty. An install may choose itself (its bearer secret); a signed-in user may choose any.
-    """
-    user = authenticate(request, authority.device_id)
-    row = find_device(authority.device_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="Unknown device")
-    state_set(PRESENCE_KEY, row[0])
-    snapshot = presence_snapshot(row[0])
-    log.info("presence authority set by %s: %s -> everyone_away=%s", user, row[2] or row[0], snapshot["everyone_away"])
-    return snapshot
-
-
-@app.delete("/presence/authority")
-def clear_presence_authority(request: Request, device: str | None = None) -> dict[str, Any]:
-    """
-    Hands the decision back to PRESENCE_DEVICE, or failing that to every counting phone. The
-    authority itself may step down (its bearer secret, `device` naming it); a signed-in user may always.
-    """
-    current = state_get(PRESENCE_KEY)
-    user = authenticate(request, device if device and device == current else None)
-    state_set(PRESENCE_KEY, None)
-    log.info("presence authority cleared by %s (was %s)", user, current)
-    return presence_snapshot(device)
-
-
 @app.get("/devices")
 def list_devices(request: Request) -> list[dict[str, Any]]:
     require_frigate_session(request)
+    """Every install the relay knows, tracked or not: what Settings doesn't list, for looking into from the box."""
     rows = with_db(lambda c: c.execute(
-        "SELECT device_id, platform, name, created, last_seen, away, build, token IS NOT NULL, away_pending_since IS NOT NULL FROM devices"
+        "SELECT device_id, platform, name, created, last_seen, away, build, token IS NOT NULL, away_pending_since IS NOT NULL,"
+        " emulator, hardware_id FROM devices"
     ).fetchall())
-    authority = presence_authority()
+    tracked = set(assign_tracked_phones().values())
     return [
-        {"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "counts_for_away": counts(d, p, b, authority), "push": bool(push), "pending_away": bool(pend)}
-        for d, p, n, cr, ls, a, b, push, pend in rows
+        {
+            "id": d, "platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "push": bool(push),
+            "pending_away": bool(pend), "emulator": bool(emu), "tracked": d in tracked,
+            "not_tracked": None if d in tracked else (not_tracked_reason(p, b, emu, hw) or "taken"),
+        }
+        for d, p, n, cr, ls, a, b, push, pend, emu, hw in rows
     ]
 
 

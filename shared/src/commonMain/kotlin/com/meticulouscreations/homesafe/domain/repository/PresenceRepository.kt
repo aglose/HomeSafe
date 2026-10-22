@@ -5,7 +5,7 @@ import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import kotlinx.coroutines.flow.StateFlow
 
-/** Household presence ("away mode") as kept by the push relay, shared between the two phones. */
+/** Household presence ("away mode") as kept by the push relay, shared between the two tracked phones. */
 interface PresenceRepository {
     /**
      * The latest snapshot; [HouseholdPresence.EMPTY] until the relay has answered. Re-read on
@@ -25,20 +25,13 @@ interface PresenceRepository {
      */
     suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource = PresenceSource.MANUAL, dwellSeconds: Int = 0): Result<Unit>
 
-    /**
-     * Makes this phone the household's presence authority, or with false steps it down: while it
-     * decides, its switch alone says whether the house is empty. Only notifications' loudness
-     * follows from that — every phone still gets them. Bears this install's relay secret, like
-     * [setThisDeviceAway]; [presence] reflects the relay's answer.
-     */
-    suspend fun setDecidesPresence(decides: Boolean): Result<Unit>
-
     /** Sets (or, with null, clears) the household's home; every phone's geofence follows [presence]. */
     suspend fun setHome(home: HomeLocation?): Result<Unit>
 
     /**
-     * Forgets another install ([PresenceDevice.id]) — an old one a reinstall left behind — and
-     * re-reads [presence]. One that is still installed re-registers the next time it connects.
+     * Forgets a tracked phone ([PresenceDevice.id]) — one that was replaced — and re-reads
+     * [presence]: the next release phone of its platform takes its place. One that is still
+     * installed re-registers the next time it connects.
      */
     suspend fun removeDevice(deviceId: String): Result<Unit>
 }

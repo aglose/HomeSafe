@@ -86,14 +86,6 @@ class PresenceRepositoryImpl(
         return last.map { _presence.value = it }
     }
 
-    override suspend fun setDecidesPresence(decides: Boolean): Result<Unit> {
-        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
-        val deviceId = identity.deviceId()
-        val secret = identity.secret()
-        val answer = if (decides) relayApi.setPresenceAuthority(url, deviceId, secret) else relayApi.clearPresenceAuthority(url, deviceId, secret)
-        return answer.map { _presence.value = it }
-    }
-
     override suspend fun setHome(home: HomeLocation?): Result<Unit> {
         val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
         return relayApi.setHome(url, home, identity.deviceId()).map { _presence.value = it }

@@ -1,7 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
-import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
@@ -9,12 +8,12 @@ import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.GeoPoint
 import com.meticulouscreations.homesafe.domain.platform.GeofenceMonitor
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
-import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_name_generic
 import kotlinx.coroutines.Dispatchers
@@ -64,8 +63,6 @@ class PresenceAutomationImplTest {
             return Result.success(Unit)
         }
 
-        override suspend fun setDecidesPresence(decides: Boolean): Result<Unit> = Result.success(Unit)
-
         override suspend fun setHome(home: HomeLocation?): Result<Unit> {
             homeSet += home
             return Result.success(Unit)
@@ -74,12 +71,11 @@ class PresenceAutomationImplTest {
         override suspend fun removeDevice(deviceId: String): Result<Unit> = Result.success(Unit)
     }
 
-    private class FakeSettings(automatic: Boolean) : SettingsRepository {
-        val settings = MutableStateFlow(AlertSettings.DEFAULT.copy(automaticPresence = automatic))
-        override fun observeSettings(): Flow<AlertSettings> = settings
-        override suspend fun updateSettings(settings: AlertSettings) {
-            this.settings.value = settings
-        }
+    private class FakeDeviceInfo(override val build: String, override val emulator: Boolean = false) : DeviceInfo {
+        override val platform = "android"
+        override val name = "Google Pixel 10 Pro XL"
+        override val hardwareId = "a1b2c3"
+        override val appVersion = "1.0 (1)"
     }
 
     private class FakeConnection : ConnectionRepository {
@@ -112,14 +108,21 @@ class PresenceAutomationImplTest {
         }
     }
 
-    private class Harness(scope: TestScope, automatic: Boolean = true, access: LocationAccess = LocationAccess.ALWAYS, cachedHome: HomeLocation? = null) {
+    /** [build] and [emulator] say whether this install can be tracked: a release build on a real phone. */
+    private class Harness(
+        scope: TestScope,
+        build: String = "release",
+        emulator: Boolean = false,
+        access: LocationAccess = LocationAccess.ALWAYS,
+        cachedHome: HomeLocation? = null,
+    ) {
         val presence = FakePresence()
-        val settings = FakeSettings(automatic)
+        val deviceInfo = FakeDeviceInfo(build, emulator)
         val connection = FakeConnection()
         val fence = FakeFence(access)
         val dao = InMemorySettingsDao()
         val identity = DeviceIdentityStore(dao)
-        val automation = PresenceAutomationImpl(presence, settings, connection, fence, identity, scope.backgroundScope, dwellSeconds = 600)
+        val automation = PresenceAutomationImpl(presence, deviceInfo, connection, fence, identity, scope.backgroundScope, dwellSeconds = 600)
         val cached = cachedHome
     }
 
@@ -161,18 +164,18 @@ class PresenceAutomationImplTest {
     }
 
     @Test
-    fun theLanSaysNothingWhenAlreadyHomeOrWhenAutomationIsOff() = runTest {
+    fun theLanSaysNothingWhenAlreadyHomeOrOnABuildThatIsNotTracked() = runTest {
         val h = Harness(this).started()
         h.presence.me(away = false)
         h.connection.route(ConnectionRoute.LOCAL_NETWORK)
         settle()
         assertTrue(h.presence.calls.isEmpty(), "home already: nothing to report")
 
-        val off = Harness(this, automatic = false).started()
-        off.presence.me(away = true)
-        off.connection.route(ConnectionRoute.LOCAL_NETWORK)
+        val debug = Harness(this, build = "debug").started()
+        debug.presence.me(away = true)
+        debug.connection.route(ConnectionRoute.LOCAL_NETWORK)
         settle()
-        assertTrue(off.presence.calls.isEmpty(), "switched off: the LAN is just a network")
+        assertTrue(debug.presence.calls.isEmpty(), "a debug build: the relay doesn't track it, so it says nothing")
 
         // Tailscale isn't proof of anything: it works from the road too.
         val remote = Harness(this).started()
@@ -183,7 +186,7 @@ class PresenceAutomationImplTest {
     }
 
     @Test
-    fun theFenceFollowsTheSwitchTheAccessAndTheHome() = runTest {
+    fun theFenceFollowsTheAccessAndTheHomeWithNoSwitchToTurnItOn() = runTest {
         val h = Harness(this).started()
         settle()
         assertEquals(listOf<HomeLocation?>(null), h.fence.watched, "no home known yet: nothing to watch")
@@ -200,11 +203,6 @@ class PresenceAutomationImplTest {
         settle()
         assertEquals(home, h.fence.watched.last())
 
-        h.settings.settings.value = h.settings.settings.value.copy(automaticPresence = false)
-        settle()
-        assertNull(h.fence.watched.last())
-
-        h.settings.settings.value = h.settings.settings.value.copy(automaticPresence = true)
         h.presence.me(away = false, home = elsewhere)
         settle()
         assertEquals(elsewhere, h.fence.watched.last(), "home moved: the fence moves with it")
@@ -237,10 +235,22 @@ class PresenceAutomationImplTest {
     }
 
     @Test
-    fun crossingsAreIgnoredWhileAutomationIsOff() = runTest {
-        val h = Harness(this, automatic = false).started()
-        h.automation.onGeofenceTransition(exited = true)
-        assertTrue(h.presence.calls.isEmpty())
+    fun crossingsAreIgnoredOnADebugBuildOrAnEmulator() = runTest {
+        val debug = Harness(this, build = "debug").started()
+        debug.automation.onGeofenceTransition(exited = true)
+        assertTrue(debug.presence.calls.isEmpty())
+
+        val emulator = Harness(this, emulator = true).started()
+        emulator.automation.onGeofenceTransition(exited = true)
+        assertTrue(emulator.presence.calls.isEmpty(), "a release build on an emulator is still not a phone anyone carries")
+    }
+
+    @Test
+    fun aBuildThatIsNotTrackedTakesDownAFenceItArmedBefore() = runTest {
+        val h = Harness(this, build = "debug", cachedHome = home).started()
+        h.presence.me(away = false, home = home)
+        settle()
+        assertEquals(listOf<HomeLocation?>(null), h.fence.watched)
     }
 
     @Test
@@ -267,9 +277,9 @@ class PresenceAutomationImplTest {
         noAccess.automation.resyncGeofence()
         assertEquals(listOf<HomeLocation?>(null), noAccess.fence.watched)
 
-        val off = Harness(this, automatic = false)
-        off.identity.saveCachedHome(home)
-        off.automation.resyncGeofence()
-        assertEquals(listOf<HomeLocation?>(null), off.fence.watched)
+        val debug = Harness(this, build = "debug")
+        debug.identity.saveCachedHome(home)
+        debug.automation.resyncGeofence()
+        assertEquals(listOf<HomeLocation?>(null), debug.fence.watched)
     }
 }

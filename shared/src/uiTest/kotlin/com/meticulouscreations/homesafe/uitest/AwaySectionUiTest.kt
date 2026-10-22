@@ -11,12 +11,12 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.NotTrackedReason
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
@@ -27,34 +27,28 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * The Away mode page's card and its "This phone decides home/away" switch, rendered
- * for real: which phone decides, as the relay's presence snapshot says, and what the switch and
- * the device list make of it. [AwaySection] is stateless, so every state is a [SettingsUiState]
- * fixture and the switch is checked by the callback it fires.
+ * The Away mode page's card, rendered for real: the two tracked phones as the relay's presence
+ * snapshot lists them, the "I'm away" switch, and what an install the relay doesn't track is told.
+ * [AwaySection] is stateless, so every state is a [SettingsUiState] fixture and the switch is
+ * checked by the callback it fires.
  */
 @OptIn(ExperimentalTestApi::class)
 class AwaySectionUiTest {
 
-    private val pixel = PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel", build = "release")
-    private val iphone = PresenceDevice(name = "Apple iPhone", platform = "ios", away = false, id = "iphone", build = "debug")
+    private val pixel = PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel")
+    private val iphone = PresenceDevice(name = "Apple iPhone", platform = "ios", away = false, id = "iphone")
 
-    /** The household as a relay with [decider] as its presence authority tells it: that phone alone counts. */
-    private fun presence(decider: String?, devices: List<PresenceDevice> = listOf(pixel, iphone)) = HouseholdPresence(
-        devices = devices.map { if (decider == null) it else it.copy(decides = it.id == decider, countsForAway = it.id == decider) },
-        everyoneAway = false,
-        authorityDeviceId = decider,
-    )
+    private fun presence(devices: List<PresenceDevice> = listOf(pixel, iphone), notTracked: NotTrackedReason? = null) =
+        HouseholdPresence(devices = devices, everyoneAway = false, thisDeviceNotTracked = notTracked)
 
-    private fun runAway(state: SettingsUiState, onDecides: (Boolean) -> Unit = {}, block: ComposeUiTest.() -> Unit) = runComposeUiTest {
+    private fun runAway(state: SettingsUiState, onAway: (Boolean) -> Unit = {}, block: ComposeUiTest.() -> Unit) = runComposeUiTest {
         mainClock.autoAdvance = false
         setContent {
             FrigatePreview {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     AwaySection(
                         state = state,
-                        onAway = {},
-                        onDecides = onDecides,
-                        onAutomatic = {},
+                        onAway = onAway,
                         onRequestLocation = {},
                         onSetHomeHere = {},
                         onClearHome = {},
@@ -76,58 +70,52 @@ class AwaySectionUiTest {
     }
 
     @Test
-    fun withNobodyDecidingTheSwitchIsOffAndTurningItOnAsksToDecide() {
+    fun aTrackedPhoneSaysWhereItCountsAndItsSwitchSaysAway() {
         val asked = mutableListOf<Boolean>()
-        runAway(SettingsUiState(presence = presence(decider = null)), onDecides = { asked += it }) {
-            switchFor(DECIDES).assertIsOff().assertIsEnabled().performClick()
+        runAway(SettingsUiState(presence = presence()), onAway = { asked += it }) {
+            onNodeWithText("This phone counts as home.").assertIsDisplayed()
+            switchFor(IM_AWAY).assertIsOff().assertIsEnabled().performClick()
             mainClock.advanceTimeBy(SETTLE_MS)
             assertEquals(listOf(true), asked)
         }
     }
 
     @Test
-    fun whenThisPhoneDecidesTheSwitchIsOnAndTheListSaysSo() {
-        val asked = mutableListOf<Boolean>()
-        runAway(SettingsUiState(presence = presence(decider = "pixel")), onDecides = { asked += it }) {
-            switchFor(DECIDES).assertIsOn()
-            onNodeWithText("On — only this phone's location says whether the house is empty. Every phone still gets notifications.").assertIsDisplayed()
-            onNodeWithText("· decides home/away", substring = true).assertIsDisplayed()
-            switchFor(DECIDES).performClick()
-            mainClock.advanceTimeBy(SETTLE_MS)
-            assertEquals(listOf(false), asked, "turning it off hands the decision back")
+    fun theOnlySwitchIsTheAwayOneAutomaticIsAlwaysOn() = runAway(SettingsUiState(presence = presence())) {
+        onNodeWithText("Automatic").assertIsDisplayed()
+        assertEquals(1, onAllNodes(isToggleable()).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun bothTrackedPhonesAreListedAndAMissingOneIsNamed() {
+        runAway(SettingsUiState(presence = presence())) {
+            onNodeWithText("Google Pixel 10 Pro XL").assertIsDisplayed()
+            onNodeWithText("Apple iPhone").assertIsDisplayed()
+            onNodeWithText("No iPhone is tracked yet", substring = true).assertDoesNotExist()
+        }
+        runAway(SettingsUiState(presence = presence(devices = listOf(pixel)))) {
+            onNodeWithText("No iPhone is tracked yet. One joins when a Release build opens on it.").assertIsDisplayed()
         }
     }
 
     @Test
-    fun whenAnotherPhoneDecidesBothSwitchesNameIt() = runAway(SettingsUiState(presence = presence(decider = "iphone"))) {
-        switchFor(DECIDES).assertIsOff().assertIsEnabled()
-        onNodeWithText("Apple iPhone decides now. Turn this on to make it this phone instead. Every phone still gets notifications.").assertIsDisplayed()
-        onNodeWithText("Apple iPhone decides whether the house is empty, so this switch only speaks for this phone.").assertIsDisplayed()
-        onNodeWithText("debug, not counted", substring = true).assertDoesNotExist()
-    }
-
-    @Test
-    fun theSwitchWaitsWhileAChangeIsOnItsWay() = runAway(SettingsUiState(presence = presence(decider = null), decidesBusy = true)) {
-        switchFor(DECIDES).assertIsNotEnabled()
-    }
-
-    @Test
-    fun anOlderRelayThatListsNoIdsCantBeAskedToDecide() =
-        runAway(SettingsUiState(presence = presence(decider = null, devices = listOf(pixel.copy(id = null))))) {
-            switchFor(DECIDES).assertIsNotEnabled()
-        }
-
-    @Test
-    fun aPhoneTheRelayListsSaysWhereItCounts() = runAway(SettingsUiState(presence = presence(decider = null))) {
-        onNodeWithText("This phone counts as home.").assertIsDisplayed()
-    }
-
-    @Test
-    fun aHouseholdListedWithoutThisPhoneDoesNotSayThisPhoneIsHome() =
-        runAway(SettingsUiState(presence = presence(decider = null, devices = listOf(iphone)))) {
-            onNodeWithText("This phone isn't registered with the relay yet, so it doesn't count as home or away.").assertIsDisplayed()
+    fun aDebugBuildIsToldItIsNotTrackedAndItsSwitchIsLocked() =
+        runAway(SettingsUiState(presence = presence(devices = listOf(pixel.copy(isThisDevice = false), iphone), notTracked = NotTrackedReason.DEBUG_BUILD))) {
+            onNodeWithText("This is a debug build", substring = true).assertIsDisplayed()
             onNodeWithText("This phone counts as home.").assertDoesNotExist()
+            switchFor(IM_AWAY).assertIsNotEnabled()
         }
+
+    @Test
+    fun aSecondPhoneOfTheSameKindIsToldTheOtherIsTracked() =
+        runAway(SettingsUiState(presence = presence(devices = listOf(pixel.copy(isThisDevice = false)), notTracked = NotTrackedReason.ANOTHER_PHONE))) {
+            onNodeWithText("Another phone of this kind is the tracked one. Remove it below if this phone replaces it.").assertIsDisplayed()
+        }
+
+    @Test
+    fun theSwitchWaitsWhileAChangeIsOnItsWay() = runAway(SettingsUiState(presence = presence(), awayBusy = true)) {
+        switchFor(IM_AWAY).assertIsNotEnabled()
+    }
 
     @Test
     fun untilTheRelayAnswersTheSwitchSaysItIsChecking() = runAway(SettingsUiState()) {
@@ -137,11 +125,11 @@ class AwaySectionUiTest {
 
     @Test
     fun anUnreachableRelayLocksTheSwitch() = runAway(SettingsUiState(presence = HouseholdPresence.EMPTY, awayError = "Relay unreachable".asUiText())) {
-        switchFor(DECIDES).assertIsNotEnabled()
+        switchFor(IM_AWAY).assertIsNotEnabled()
     }
 
     private companion object {
-        const val DECIDES = "This phone decides home/away"
+        const val IM_AWAY = "I'm away"
         const val SETTLE_MS = 1_000L
     }
 }
