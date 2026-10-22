@@ -349,11 +349,13 @@ class PushMessageTest(unittest.TestCase):
         aps = relay.push_message("tok", "Person in the driveway", "Front Yard", self.DATA)["message"]["apns"]["payload"]["aps"]
         self.assertEqual({"title": "Person in the driveway", "body": "Front Yard"}, aps["alert"])
         self.assertNotIn("interruption-level", aps)
+        self.assertNotIn("sound", aps, "HomeSafe never makes a sound")
 
     def test_away_is_marked_for_both(self):
         message = relay.push_message("tok", "Away: Person", "Front Yard · nobody home", {**self.DATA, "away": "1"}, away=True)["message"]
         self.assertEqual("1", message["data"]["away"], "the app picks the loud channel from this")
         self.assertEqual("time-sensitive", message["apns"]["payload"]["aps"]["interruption-level"])
+        self.assertNotIn("sound", message["apns"]["payload"]["aps"], "not even while nobody is home")
 
 
     def test_a_visits_follow_up_is_quiet_and_lands_on_the_same_notification(self):
@@ -366,9 +368,8 @@ class PushMessageTest(unittest.TestCase):
         self.assertEqual("passive", aps["interruption-level"])
         self.assertEqual("r0", message["apns"]["headers"]["apns-collapse-id"])
 
-    def test_a_sounding_push_collapses_by_its_own_review_without_a_visit(self):
+    def test_a_push_outside_a_visit_collapses_by_its_own_review(self):
         message = relay.push_message("tok", "Front Yard", "Person in the driveway", self.DATA)["message"]
-        self.assertEqual("default", message["apns"]["payload"]["aps"]["sound"])
         self.assertEqual("r1", message["apns"]["headers"]["apns-collapse-id"])
 
 

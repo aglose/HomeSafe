@@ -1,7 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
 import android.Manifest
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -29,7 +28,8 @@ import com.meticulouscreations.homesafe.ui.notification.drawableRes
  * telling a phone twice replaces rather than stacks.
  */
 object BudgetNotificationPoster {
-    const val CHANNEL_ID = "budget"
+    /** "_v2" because the first "budget" channel sounded (see `createSilentChannel`). */
+    const val CHANNEL_ID = "budget_v2"
 
     /** Its own id beside the detections' (`AlertNotificationPoster`), so a tag can never collide with one of theirs. */
     private const val NOTIFICATION_ID = 2
@@ -38,13 +38,16 @@ object BudgetNotificationPoster {
     private const val OVER_COLOR = 0xFFE5484D.toInt()
 
     /** A group of their own under the wallet, so Android never bundles the month's spending in with the cameras' alerts or the weather. */
-    private val group = NotificationGroupSummary(CHANNEL_ID, CHANNEL_ID, R.string.notif_group_budget)
+    private val group = NotificationGroupSummary("budget", CHANNEL_ID, R.string.notif_group_budget)
 
     fun ensureChannel(context: Context) {
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_budget_name), NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = context.getString(R.string.notif_channel_budget_description)
-            },
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.retireChannels("budget")
+        manager.createSilentChannel(
+            CHANNEL_ID,
+            context.getString(R.string.notif_channel_budget_name),
+            context.getString(R.string.notif_channel_budget_description),
+            NotificationManager.IMPORTANCE_DEFAULT,
         )
     }
 

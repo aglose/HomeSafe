@@ -34,7 +34,6 @@ import platform.UserNotifications.UNNotificationAttachment
 import platform.UserNotifications.UNNotificationAttachmentOptionsThumbnailClippingRectKey
 import platform.UserNotifications.UNNotificationInterruptionLevel
 import platform.UserNotifications.UNNotificationRequest
-import platform.UserNotifications.UNNotificationSound
 import platform.UserNotifications.UNUserNotificationCenter
 import kotlin.coroutines.resume
 
@@ -83,7 +82,6 @@ private class IosWeatherNotifier : WeatherNotifier {
             notification.place?.let { setSubtitle(it) }
             // iOS shows as much of the body as fits and the rest on a long press: a warning gets its excerpt, not just its headline.
             setBody(notification.detail ?: notification.body)
-            setSound(UNNotificationSound.defaultSound)
             setThreadIdentifier(THREAD)
             setCategoryIdentifier(IosWeatherActions.CATEGORY)
             setInterruptionLevel(if (notification.urgent) UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive else UNNotificationInterruptionLevel.UNNotificationInterruptionLevelActive)

@@ -468,8 +468,6 @@ def state_set(key: str, value: Any | None) -> None:
 # ---------------------------------------------------------------- FCM
 
 SCOPES = ["https://www.googleapis.com/auth/firebase.messaging"]
-# Must match AlertNotifier.android.kt / HomeSafeMessagingService.kt in the app.
-AWAY_CHANNEL_ID = "away_alerts"
 _session: AuthorizedSession | None = None
 
 
@@ -488,16 +486,15 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     tap that can't say which moment it was — so the app's messaging service must always be the
     one to post it (text at once, then its picture and clip; see HomeSafeMessagingService.kt).
     The title and body travel in the data for that. iOS draws its own banner from `aps.alert`.
-    `away` escalates it: the app's loud "away_alerts" channel on Android, time-sensitive on iOS.
+    `away` escalates it: the app's Away channel on Android, time-sensitive on iOS. Neither ever
+    makes a sound (no `aps.sound`): HomeSafe lights the screen but keeps the phone quiet.
 
     A push that is one more alert in a visit already on the phone (see `Visits`) carries the
-    visit's `notif_id` and `silent: "1"`: Android replaces that visit's notification without a
-    sound, and iOS collapses it onto the same banner (`apns-collapse-id`), quietly.
+    visit's `notif_id` and `silent: "1"`: Android replaces that visit's notification without
+    alerting again, and iOS collapses it onto the same banner (`apns-collapse-id`), passively.
     """
     silent = data.get("silent") == "1"
     aps: dict[str, Any] = {"alert": {"title": title, "body": body}, "thread-id": data.get("camera", "")}
-    if not silent:
-        aps["sound"] = "default"
     if away:
         aps["interruption-level"] = "time-sensitive"
     elif silent:
