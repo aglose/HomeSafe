@@ -319,6 +319,7 @@ Hammer curls
 // A handful of whole screens, one for each place the app can be. The forge and the fibres are
 // drawn by shaders, which the preview renderers run on the CPU, a frame at a time.
 @Preview(widthDp = 412, heightDp = 915)
+@Preview(name = "Today, in Spanish", widthDp = 412, heightDp = 915, locale = "es")
 @Composable
 private fun FitnessTodayPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions()) }

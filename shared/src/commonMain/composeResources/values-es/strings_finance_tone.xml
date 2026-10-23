@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The voice the finance app's Economy and Risk tabs speak in (EconomyTone.kt): its two choices,
+  as the Economy tab's chips and the Settings row (EconomyToneOptions.kt) show them.
+  See AGENTS.md, "Strings and localization".
+  Spanish translation of values/strings_finance_tone.xml.
+-->
+<resources>
+    <string name="tone_straight_label">Sin rodeos</string>
+    <string name="tone_straight_blurb">Solo los números: dónde está cada lectura frente a sus líneas de alerta y su propia historia, y qué suele venir después. Sin triunfalismos.</string>
+    <string name="tone_bright_side_label">Lado positivo</string>
+    <string name="tone_bright_side_blurb">Los mismos números, con las ventajas que pueden traer y lo que suele salir bien. Sin dejar de ser realista sobre los riesgos.</string>
+
+    <string name="tone_settings_title">Comentarios sobre la economía</string>
+    <string name="tone_settings_caption">Cómo describe Finanzas la economía. Las lecturas, las gráficas y las líneas de alerta son las mismas en ambos.</string>
+</resources>

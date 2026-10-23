@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings.xml: notification channels, the notification buttons and
+  confirmations, and the system biometric prompt. Android string resources, so an apostrophe would
+  be escaped as \'. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="notif_channel_detections_name">Detecciones</string>
+    <string name="notif_channel_detections_description">Una persona, un vehículo o un animal visto por una de tus cámaras</string>
+    <string name="notif_channel_away_name">Alertas de ausencia</string>
+    <string name="notif_channel_away_description">Una persona en cualquier cámara, o una puerta que se abre, cuando no hay nadie en casa</string>
+    <string name="notif_channel_summaries_name">Resúmenes</string>
+    <string name="notif_channel_summaries_description">Algunas veces al día: lo que vieron las cámaras mientras había alguien en casa</string>
+    <string name="notif_channel_weather_name">Clima</string>
+    <string name="notif_channel_weather_description">Lluvia o nieve en camino, y lo que traen hoy y mañana</string>
+    <string name="notif_channel_weather_severe_name">Clima severo</string>
+    <string name="notif_channel_weather_severe_description">Avisos oficiales para donde estás</string>
+    <string name="notif_channel_budget_name">Presupuesto</string>
+    <string name="notif_channel_budget_description">El gasto del mes con tarjeta cerca de un límite, por encima de él o tocando los ahorros</string>
+    <string name="notif_door_opened_title">Se abrió: %1$s</string>
+    <string name="notif_door_opened_away_title">Ausente: se abrió %1$s</string>
+    <string name="notif_door_body">Sensor de puerta</string>
+    <string name="notif_door_away_body">Sensor de puerta · no hay nadie en casa</string>
+    <string name="notif_nest_unavailable_title">%1$s no está transmitiendo</string>
+    <string name="notif_nest_streaming_title">%1$s volvió a transmitir</string>
+    <string name="notif_nest_refused_body">Desde %1$s, Google dice que la cámara no está disponible para transmitir. Revísala en la app Google Home.</string>
+    <string name="notif_nest_refused_body_no_time">Google dice que la cámara no está disponible para transmitir. Revísala en la app Google Home.</string>
+    <string name="notif_nest_unconfirmed_body">Sin video de Google desde %1$s. Revisa la cámara en la app Google Home.</string>
+    <string name="notif_nest_unconfirmed_body_no_time">Sin video de Google. Revisa la cámara en la app Google Home.</string>
+    <string name="notif_nest_streaming_body">Google está enviando su video de nuevo.</string>
+    <string name="notif_group_cameras">Cámaras</string>
+    <string name="notif_group_summaries">Resúmenes de cámaras</string>
+    <string name="notif_group_weather">Clima</string>
+    <string name="notif_group_budget">Presupuesto</string>
+    <string name="notif_budget_close_title">Cerca del presupuesto del mes</string>
+    <string name="notif_budget_over_title">Por encima del presupuesto del mes</string>
+    <string name="notif_budget_savings_title">Tocando los ahorros</string>
+    <string name="notif_budget_person_over_title">%1$s superó su presupuesto</string>
+    <string name="notif_budget_family_over_title">La tarjeta familiar superó el presupuesto</string>
+    <plurals name="notif_budget_body_spent">
+        <item quantity="one">%1$s gastado de %2$s, con %3$d día restante este mes.</item>
+        <item quantity="other">%1$s gastado de %2$s, con %3$d días restantes este mes.</item>
+    </plurals>
+    <string name="notif_budget_body_spent_last_day">%1$s gastado de %2$s, en el último día del mes.</string>
+    <string name="notif_budget_savings_body">Las tarjetas van en %1$s este mes, por encima de los %2$s que deja el sueldo neto después de las cuentas.</string>
+    <string name="notif_action_weather_radar">Radar</string>
+    <string name="notif_action_tag_car">Etiquetar auto</string>
+    <string name="notif_action_not_a_person">No es una persona</string>
+    <string name="notif_action_undo">Deshacer</string>
+    <string name="notif_action_try_again">Reintentar</string>
+    <string name="notif_marking_not_a_person_title">Marcando como no es una persona…</string>
+    <string name="notif_marked_not_a_person_title">Marcado como no es una persona</string>
+    <string name="notif_marked_not_a_person_body">%1$s no volverá a alertar por esto, y HomeSafe aprende de ello.</string>
+    <string name="notif_mark_failed_title">No se pudo marcar como no es una persona</string>
+    <string name="notif_undo_failed_title">No se pudo deshacer</string>
+    <string name="notif_reason_timeout">El servidor no respondió a tiempo.</string>
+    <string name="notif_reason_unreachable">No se pudo conectar con el servidor.</string>
+    <string name="biometric_enable_title">Activar inicio de sesión biométrico</string>
+    <string name="biometric_enable_subtitle">Confirma tu huella o tu rostro para guardar este inicio de sesión</string>
+    <string name="biometric_sign_in_title">Iniciar sesión con biometría</string>
+    <string name="biometric_sign_in_subtitle">Usa tu huella o tu rostro para iniciar sesión en HomeSafe</string>
+    <string name="biometric_finance_title">Desbloquear Finanzas</string>
+    <string name="biometric_finance_subtitle">No se puede conectar con el servidor. Confirma que eres tú para ver lo que guardó este teléfono.</string>
+    <string name="biometric_cancel">Cancelar</string>
+</resources>

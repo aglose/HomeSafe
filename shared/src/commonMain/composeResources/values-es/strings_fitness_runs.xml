@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The fitness app's runs, read from the device's health store (Health Connect on Android): the
+  door on Today, the page of every run with the weeks added up, and a run opened up into its
+  pace, heart rate, splits and route. See AGENTS.md, "Strings and localization".
+  Spanish translation of values/strings_fitness_runs.xml.
+-->
+<resources>
+    <string name="fitness_run_title">Carreras</string>
+    <string name="fitness_run_page_title">Carrera</string>
+
+    <string name="fitness_run_name_morning">Carrera de la mañana</string>
+    <string name="fitness_run_name_midday">Carrera de mediodía</string>
+    <string name="fitness_run_name_afternoon">Carrera de la tarde</string>
+    <string name="fitness_run_name_evening">Carrera al atardecer</string>
+    <string name="fitness_run_name_night">Carrera nocturna</string>
+    <string name="fitness_run_treadmill">Cinta de correr</string>
+
+    <string name="fitness_run_miles">%1$s mi</string>
+    <string name="fitness_run_pace">%1$s /mi</string>
+    <string name="fitness_run_feet">%1$s ft</string>
+    <string name="fitness_run_bpm">%1$d lpm</string>
+    <string name="fitness_run_spm">%1$d ppm</string>
+
+    <string name="fitness_run_open">Ver tus carreras</string>
+    <plurals name="fitness_run_week">
+        <item quantity="one">%1$s esta semana · %2$d carrera</item>
+        <item quantity="other">%1$s esta semana · %2$d carreras</item>
+    </plurals>
+    <string name="fitness_run_week_none">Nada esta semana todavía</string>
+    <string name="fitness_run_last">Última: %1$s · %2$s · %3$s</string>
+    <string name="fitness_run_last_timed">Última: %1$s · %2$s</string>
+    <string name="fitness_run_none">Aún no hay carreras. Registra una con tu banda o en Google Health y aparecerá aquí.</string>
+    <string name="fitness_run_not_shared">El ejercicio no se comparte con PercySafe, así que no hay carreras que mostrar.</string>
+
+    <string name="fitness_run_this_week">Esta semana</string>
+    <string name="fitness_run_stat_miles">Millas</string>
+    <string name="fitness_run_stat_runs">Carreras</string>
+    <string name="fitness_run_stat_time">Tiempo</string>
+    <string name="fitness_run_weeks_title">Millas por semana</string>
+    <string name="fitness_run_weeks_from">Semana del %1$s</string>
+    <string name="fitness_run_weeks_described">Millas por semana en las últimas %1$d semanas. Esta semana, %2$s.</string>
+    <string name="fitness_run_all">Todas las carreras</string>
+    <string name="fitness_run_row_stats">%1$s · %2$s · %3$s</string>
+    <string name="fitness_run_badge_longest">Más larga</string>
+    <string name="fitness_run_badge_fastest">Ritmo más rápido</string>
+    <string name="fitness_run_open_run">Abrir %1$s, %2$s</string>
+    <string name="fitness_run_source">Las carreras las registra tu banda o la app Google Health, y se leen de Health Connect.</string>
+
+    <string name="fitness_run_stat_distance">Distancia</string>
+    <string name="fitness_run_stat_pace">Ritmo</string>
+    <string name="fitness_run_stat_heart">FC promedio</string>
+    <string name="fitness_run_stat_peak">FC máxima</string>
+    <string name="fitness_run_stat_calories">Calorías</string>
+    <string name="fitness_run_stat_cadence">Cadencia</string>
+    <string name="fitness_run_stat_climb">Ascenso</string>
+    <string name="fitness_run_stat_steps">Pasos</string>
+    <string name="fitness_run_reading">Leyendo la carrera…</string>
+    <string name="fitness_run_heart">Frecuencia cardiaca</string>
+    <string name="fitness_run_heart_described">Frecuencia cardiaca durante la carrera, entre %1$d y %2$d latidos por minuto</string>
+    <string name="fitness_run_zones_unset">Configura tu frecuencia cardiaca máxima para ver esta carrera por zonas.</string>
+    <string name="fitness_run_splits">Parciales</string>
+    <string name="fitness_run_split_mile">Milla</string>
+    <string name="fitness_run_route">Ruta</string>
+    <string name="fitness_run_route_ask">Mostrar la ruta</string>
+    <string name="fitness_run_route_described">La ruta de la carrera, dibujada como una línea desde el inicio hasta el final</string>
+</resources>

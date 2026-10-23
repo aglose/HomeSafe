@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The atlas app: what is said about fetching the location history from the relay.
+     Spanish translation of values/strings_atlas_data.xml. -->
+<resources>
+    <string name="atlas_error_signed_out">Inicia sesión en el servidor de cámaras para obtener tu historial</string>
+    <string name="atlas_error_unreachable">No se pudo conectar con el servidor. Se muestra lo que este dispositivo tiene guardado.</string>
+    <string name="atlas_error_not_allowed">Esta cuenta no puede ver el historial de ubicaciones</string>
+    <string name="atlas_error_relay_outdated">El relay del servidor es más antiguo que esta app y todavía no tiene historial de ubicaciones</string>
+    <string name="atlas_error_relay_answered">El relay respondió %1$s</string>
+</resources>

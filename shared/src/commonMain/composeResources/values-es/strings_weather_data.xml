@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_weather_data.xml.
+  The weather app's words that are made outside its screens: the sky's names, units, the clock
+  and calendar, the forecast told as sentences (WeatherStory) and its notifications
+  (WeatherNoticePlanner). The screens' own labels are in strings_weather.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="weather_kind_sunny">Soleado</string>
+    <string name="weather_kind_clear_night">Despejado</string>
+    <string name="weather_kind_mostly_sunny">Mayormente soleado</string>
+    <string name="weather_kind_mostly_clear_night">Mayormente despejado</string>
+    <string name="weather_kind_partly_cloudy">Parcialmente nublado</string>
+    <string name="weather_kind_overcast">Nublado</string>
+    <string name="weather_kind_fog">Niebla</string>
+    <string name="weather_kind_drizzle">Llovizna</string>
+    <string name="weather_kind_freezing_drizzle">Llovizna helada</string>
+    <string name="weather_kind_light_rain">Lluvia ligera</string>
+    <string name="weather_kind_rain">Lluvia</string>
+    <string name="weather_kind_heavy_rain">Lluvia intensa</string>
+    <string name="weather_kind_freezing_rain">Lluvia helada</string>
+    <string name="weather_kind_light_snow">Nevada ligera</string>
+    <string name="weather_kind_snow">Nieve</string>
+    <string name="weather_kind_heavy_snow">Nevada intensa</string>
+    <string name="weather_kind_snow_grains">Granos de nieve</string>
+    <string name="weather_kind_light_showers">Chubascos ligeros</string>
+    <string name="weather_kind_showers">Chubascos</string>
+    <string name="weather_kind_heavy_showers">Chubascos intensos</string>
+    <string name="weather_kind_snow_showers">Chubascos de nieve</string>
+    <string name="weather_kind_thunderstorm">Tormenta eléctrica</string>
+    <string name="weather_kind_hail_storm">Tormenta con granizo</string>
+
+    <string name="weather_unit_mph">%1$s mph</string>
+    <string name="weather_unit_kmh">%1$s km/h</string>
+    <string name="weather_unit_in">%1$s pulg</string>
+    <string name="weather_unit_mm">%1$s mm</string>
+    <string name="weather_unit_cm">%1$s cm</string>
+    <string name="weather_unit_mi">%1$s mi</string>
+    <string name="weather_unit_km">%1$s km</string>
+    <string name="weather_unit_inhg">%1$s inHg</string>
+    <string name="weather_unit_hpa">%1$s hPa</string>
+
+    <string name="weather_time_am">%1$s a. m.</string>
+    <string name="weather_time_pm">%1$s p. m.</string>
+    <string name="weather_date_month_day">%2$s %1$s</string>
+    <string name="weather_weekday_mon">Lun</string>
+    <string name="weather_weekday_tue">Mar</string>
+    <string name="weather_weekday_wed">Mié</string>
+    <string name="weather_weekday_thu">Jue</string>
+    <string name="weather_weekday_fri">Vie</string>
+    <string name="weather_weekday_sat">Sáb</string>
+    <string name="weather_weekday_sun">Dom</string>
+    <string name="weather_weekday_long_mon">Lunes</string>
+    <string name="weather_weekday_long_tue">Martes</string>
+    <string name="weather_weekday_long_wed">Miércoles</string>
+    <string name="weather_weekday_long_thu">Jueves</string>
+    <string name="weather_weekday_long_fri">Viernes</string>
+    <string name="weather_weekday_long_sat">Sábado</string>
+    <string name="weather_weekday_long_sun">Domingo</string>
+    <string name="weather_month_jan">ene</string>
+    <string name="weather_month_feb">feb</string>
+    <string name="weather_month_mar">mar</string>
+    <string name="weather_month_apr">abr</string>
+    <string name="weather_month_may">may</string>
+    <string name="weather_month_jun">jun</string>
+    <string name="weather_month_jul">jul</string>
+    <string name="weather_month_aug">ago</string>
+    <string name="weather_month_sep">sep</string>
+    <string name="weather_month_oct">oct</string>
+    <string name="weather_month_nov">nov</string>
+    <string name="weather_month_dec">dic</string>
+
+    <string name="weather_compass_n">N</string>
+    <string name="weather_compass_ne">NE</string>
+    <string name="weather_compass_e">E</string>
+    <string name="weather_compass_se">SE</string>
+    <string name="weather_compass_s">S</string>
+    <string name="weather_compass_sw">SO</string>
+    <string name="weather_compass_w">O</string>
+    <string name="weather_compass_nw">NO</string>
+
+    <string name="weather_story_rain_starting">Empieza a llover en unos %1$d min</string>
+    <string name="weather_story_snow_starting">Empieza a nevar en unos %1$d min</string>
+    <string name="weather_story_mix_starting">Empieza la aguanieve en unos %1$d min</string>
+    <string name="weather_story_storm_starting">Llegan tormentas en unos %1$d min</string>
+    <string name="weather_story_rain_stopping">Deja de llover en unos %1$d min</string>
+    <string name="weather_story_snow_stopping">Deja de nevar en unos %1$d min</string>
+    <string name="weather_story_mix_stopping">La aguanieve para en unos %1$d min</string>
+    <string name="weather_story_storm_stopping">Las tormentas pasan en unos %1$d min</string>
+    <string name="weather_story_rain_continuing">Lluvia durante las próximas dos horas</string>
+    <string name="weather_story_snow_continuing">Nieve durante las próximas dos horas</string>
+    <string name="weather_story_mix_continuing">Aguanieve durante las próximas dos horas</string>
+    <string name="weather_story_storm_continuing">Tormentas durante las próximas dos horas</string>
+
+    <string name="weather_span_rain_around">Lluvia alrededor de %1$s</string>
+    <string name="weather_span_snow_around">Nieve alrededor de %1$s</string>
+    <string name="weather_span_mix_around">Aguanieve alrededor de %1$s</string>
+    <string name="weather_span_storm_around">Tormentas alrededor de %1$s</string>
+    <string name="weather_span_rain_from_to">Lluvia de %1$s a %2$s</string>
+    <string name="weather_span_snow_from_to">Nieve de %1$s a %2$s</string>
+    <string name="weather_span_mix_from_to">Aguanieve de %1$s a %2$s</string>
+    <string name="weather_span_storm_from_to">Tormentas de %1$s a %2$s</string>
+    <string name="weather_span_rain_all_day">Lluvia todo el día</string>
+    <string name="weather_span_snow_all_day">Nieve todo el día</string>
+    <string name="weather_span_mix_all_day">Aguanieve todo el día</string>
+    <string name="weather_span_storm_all_day">Tormentas todo el día</string>
+    <string name="weather_span_rain_on_off">Lluvia intermitente</string>
+    <string name="weather_span_snow_on_off">Nieve intermitente</string>
+    <string name="weather_span_mix_on_off">Aguanieve intermitente</string>
+    <string name="weather_span_storm_on_off">Tormentas intermitentes</string>
+
+    <string name="weather_story_warmer">%1$s más cálido que ayer</string>
+    <string name="weather_story_cooler">%1$s más fresco que ayer</string>
+    <string name="weather_story_high_low">Máxima de %1$s, mínima de %2$s</string>
+
+    <string name="weather_notice_title_rain_today">Lluvia hoy</string>
+    <string name="weather_notice_title_snow_today">Nieve hoy</string>
+    <string name="weather_notice_title_mix_today">Aguanieve hoy</string>
+    <string name="weather_notice_title_storm_today">Tormentas hoy</string>
+    <string name="weather_notice_title_rain_tomorrow">Lluvia mañana</string>
+    <string name="weather_notice_title_snow_tomorrow">Nieve mañana</string>
+    <string name="weather_notice_title_mix_tomorrow">Aguanieve mañana</string>
+    <string name="weather_notice_title_storm_tomorrow">Tormentas mañana</string>
+    <string name="weather_notice_title_wind">Mucho viento hoy</string>
+    <string name="weather_notice_title_heat">Mucho calor hoy</string>
+    <string name="weather_notice_title_cold">Frío intenso hoy</string>
+    <string name="weather_notice_title_uv">Sol fuerte hoy</string>
+    <string name="weather_notice_title_air">Aire insalubre hoy</string>
+    <string name="weather_notice_title_freeze">Helada esta noche</string>
+    <string name="weather_notice_title_colder_tomorrow">Mucho más frío mañana</string>
+    <string name="weather_notice_title_warmer_tomorrow">Mucho más cálido mañana</string>
+
+    <string name="weather_notice_soon_body">Alrededor de %1$s en %2$s</string>
+    <string name="weather_notice_soon_body_lasting">Alrededor de %1$s en %2$s, durante unos %3$d min</string>
+    <string name="weather_notice_soon_here">Alrededor de %1$s</string>
+    <string name="weather_notice_soon_here_lasting">Alrededor de %1$s, durante unos %2$d min</string>
+    <string name="weather_notice_heavy_at_times">Con momentos intensos</string>
+    <string name="weather_notice_amount">Unos %1$s</string>
+    <string name="weather_notice_snow_amount">Unos %1$s de nieve</string>
+    <string name="weather_notice_gusts">Ráfagas de hasta %1$s</string>
+    <string name="weather_notice_heat">Sensación térmica de %1$s en el momento más caluroso</string>
+    <string name="weather_notice_cold">Sensación térmica de %1$s en el momento más frío</string>
+    <string name="weather_notice_uv">Índice UV de hasta %1$d</string>
+    <string name="weather_notice_air">Índice de calidad del aire: %1$d</string>
+    <string name="weather_notice_freeze">Mínima de %1$s</string>
+    <string name="weather_notice_colder_tomorrow">Máxima de %1$s, %2$s menos que hoy</string>
+    <string name="weather_notice_warmer_tomorrow">Máxima de %1$s, %2$s más que hoy</string>
+    <string name="weather_notice_high_tomorrow">Máxima de %1$s</string>
+
+    <string name="weather_notice_art_range">%1$s / %2$s</string>
+    <string name="weather_notice_fact_uv">UV %1$d</string>
+    <string name="weather_notice_fact_aqi">ICA %1$d</string>
+    <string name="weather_notice_sample_body">Un ejemplo: así se ve una notificación del clima</string>
+
+    <string name="weather_error_forecast_unavailable">El servicio del clima no está respondiendo bien en este momento. Vuelve a intentarlo en un rato.</string>
+    <string name="weather_error_no_forecast">El servicio del clima no tenía pronóstico para este lugar</string>
+    <string name="weather_error_search_unavailable">La búsqueda de lugares no está respondiendo bien en este momento. Vuelve a intentarlo en un rato.</string>
+    <string name="weather_error_forecast">No se pudo conectar con el servicio del clima. Revisa tu conexión.</string>
+    <string name="weather_error_search">No se pudo buscar en este momento. Revisa tu conexión.</string>
+    <string name="weather_error_radar">El radar no responde</string>
+</resources>

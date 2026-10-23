@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The home page, a camera's own screen, the app shell (top bar, bottom bar, drawer) and the
+  shared live-video components. Keys are prefixed home_, camera_, shell_ and player_.
+  Spanish translation of values/strings_home.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="home_in_view_title">A la vista ahora</string>
+    <string name="home_in_view_subtitle">Autos estacionados a la vista de las cámaras</string>
+    <string name="home_in_view_empty">No hay nada estacionado a la vista ahora.</string>
+    <string name="home_in_view_check">Revisar y etiquetar</string>
+    <string name="home_glance_open_in_view">Ver los autos a la vista</string>
+    <string name="home_glance_all_doors_closed">Todas las puertas cerradas</string>
+    <plurals name="home_glance_doors_closed">
+        <item quantity="one">%1$d puerta cerrada</item>
+        <item quantity="other">%1$d puertas cerradas</item>
+    </plurals>
+
+    <string name="home_no_cameras">No se encontraron cámaras en este servidor.</string>
+    <string name="home_all_cameras_hidden">Todas las cámaras de aquí están ocultas. Elige Ordenar cámaras en el menú para volver a mostrar alguna.</string>
+    <string name="home_placement_outdoor">Exterior</string>
+    <string name="home_placement_indoor">Interior</string>
+    <string name="home_arrange_menu">Ordenar cámaras</string>
+    <string name="home_arrange_menu_done">Terminar de ordenar</string>
+    <string name="home_arrange_done">Listo</string>
+    <string name="home_arrange_hint">Mantén presionada una cámara para arrastrarla. Tócala para enderezar, acercar o recortar su imagen. Las cámaras ocultas solo aparecen aquí.</string>
+    <string name="camera_move_earlier">Mover antes</string>
+    <string name="camera_move_later">Mover después</string>
+    <string name="camera_turn_left">Girar a la izquierda</string>
+    <string name="camera_turn_right">Girar a la derecha</string>
+    <string name="camera_hide">Ocultar de Inicio</string>
+    <string name="camera_show">Mostrar en Inicio</string>
+    <string name="camera_hidden_badge">Oculta</string>
+    <string name="camera_frame_button">Encuadrar</string>
+    <string name="camera_frame_click_label">Encuadrar la imagen</string>
+    <string name="camera_frame_title">Encuadrar %1$s</string>
+    <string name="camera_frame_done">Listo</string>
+    <string name="camera_frame_hint">Arrastra para mover la imagen, pellizca para hacer zoom y gira para enderezarla. Solo se ve lo que queda dentro del marco.</string>
+    <string name="camera_frame_straighten">Enderezar</string>
+    <string name="camera_frame_straighten_value">%1$s°</string>
+    <string name="camera_frame_level">Nivelar</string>
+    <string name="camera_frame_nudge_left">Enderezar una décima de grado a la izquierda</string>
+    <string name="camera_frame_nudge_right">Enderezar una décima de grado a la derecha</string>
+    <string name="camera_frame_zoom">Zoom</string>
+    <string name="camera_frame_zoom_value">%1$s×</string>
+    <string name="camera_frame_reset">Restablecer</string>
+    <string name="home_away_banner">Modo ausente · no hay nadie en casa · alertas intensificadas</string>
+    <string name="home_away_back">Ya volví</string>
+    <string name="home_connection_tailscale_off_title">Tailscale no está conectado en este dispositivo</string>
+    <string name="home_connection_tailscale_off_body">Sin Tailscale, este dispositivo no tiene ruta al servidor. Abre la app de Tailscale y conéctate. Mientras tanto, ves lo que este dispositivo guardó.</string>
+    <string name="home_connection_unreachable_title">No se puede conectar con el servidor</string>
+    <string name="home_connection_unreachable_body">No responde en tu red doméstica ni a través de Tailscale. Ves lo que este dispositivo guardó.</string>
+    <string name="home_connection_open_tailscale">Abrir Tailscale</string>
+    <string name="home_connection_retry">Reintentar</string>
+    <string name="home_connection_retrying">Intentando…</string>
+
+    <string name="home_badge_disabled">Desactivada</string>
+    <string name="home_badge_connecting">Conectando</string>
+    <string name="home_badge_live">En vivo</string>
+
+    <string name="camera_quality_auto">Auto</string>
+    <string name="camera_quality_high">HD</string>
+    <string name="camera_quality_low">SD</string>
+    <string name="camera_quality_auto_description">Inicia rápido y luego gana nitidez</string>
+    <string name="camera_quality_high_description">Resolución completa, con el sonido de la cámara</string>
+    <string name="camera_quality_low_description">Usa menos datos, sin sonido</string>
+    <string name="camera_quality_menu_title">Calidad de video</string>
+    <string name="camera_quality_button_description">Calidad de video: %1$s</string>
+    <string name="camera_quality_selected">Seleccionada</string>
+    <string name="camera_sound_turn_on">Activar sonido</string>
+    <string name="camera_sound_turn_off">Desactivar sonido</string>
+    <string name="camera_nest_live_only">Solo en vivo. Las cámaras Nest transmiten desde Google mientras miras, y HomeSafe no las graba.</string>
+    <string name="camera_nest_fit_fill">Llenar el marco</string>
+    <string name="camera_nest_fit_whole">Mostrar la imagen completa</string>
+    <string name="camera_action_clip_description">Crear un clip de video de %1$s</string>
+    <string name="camera_hint_single_quality">Esta cámara tiene una sola calidad de transmisión</string>
+    <string name="camera_hint_sound_on_no_audio">Sonido activado, pero esta transmisión no tiene audio</string>
+    <string name="camera_hint_sound_on">Sonido activado</string>
+    <string name="camera_hint_sound_off">Sonido desactivado</string>
+
+    <string name="camera_live">EN VIVO</string>
+    <string name="camera_go_live">VER EN VIVO</string>
+    <string name="camera_behind_live">-%1$s</string>
+    <string name="camera_play">Reproducir</string>
+    <string name="camera_pause">Pausar</string>
+    <string name="camera_show_controls">Mostrar controles</string>
+    <string name="camera_hide_controls">Ocultar controles</string>
+    <plurals name="camera_skip_seconds">
+        <item quantity="one">%1$d segundo</item>
+        <item quantity="other">%1$d segundos</item>
+    </plurals>
+    <plurals name="camera_skip_back">
+        <item quantity="one">Retroceder %1$d segundo</item>
+        <item quantity="other">Retroceder %1$d segundos</item>
+    </plurals>
+    <plurals name="camera_skip_forward">
+        <item quantity="one">Avanzar %1$d segundo</item>
+        <item quantity="other">Avanzar %1$d segundos</item>
+    </plurals>
+    <string name="camera_timeline">Línea de tiempo</string>
+    <string name="camera_span_1h">1 h</string>
+    <string name="camera_span_3h">3 h</string>
+    <string name="camera_span_12h">12 h</string>
+    <string name="camera_span_24h">24 h</string>
+    <string name="camera_no_recordings">Aún no hay grabaciones en este intervalo</string>
+    <string name="camera_history_error">No se pudieron cargar las grabaciones: %1$s</string>
+    <string name="camera_recent_activity">Actividad reciente</string>
+    <string name="camera_recent_loading">Buscando detecciones recientes…</string>
+    <string name="camera_recent_empty">Aún no hay detecciones en esta cámara.</string>
+    <string name="camera_moment_clip_length">Clip de %1$s</string>
+    <string name="camera_menu_detection_zones">Zonas de detección</string>
+    <string name="camera_menu_tag_cars">Etiquetar autos a la vista</string>
+    <string name="camera_menu_stats_show">Estadísticas para nerds</string>
+    <string name="camera_menu_stats_hide">Ocultar estadísticas para nerds</string>
+
+    <string name="camera_stats_title">Estadísticas para nerds</string>
+    <string name="camera_stats_close">Cerrar estadísticas para nerds</string>
+    <string name="camera_stats_measuring">Midiendo…</string>
+    <string name="camera_stats_recording">Cambia a en vivo para ver las estadísticas de la transmisión</string>
+    <string name="camera_stats_delay">Retraso desde el servidor</string>
+    <string name="camera_stats_delay_unknown">No se mide en este dispositivo</string>
+    <string name="camera_stats_network">Red</string>
+    <string name="camera_stats_buffer">Búfer</string>
+    <string name="camera_stats_decode">Decodificación</string>
+    <string name="camera_stats_milliseconds">%1$d ms</string>
+    <string name="camera_stats_seconds">%1$d.%2$d s</string>
+    <string name="camera_stats_connection">Conexión</string>
+    <string name="camera_stats_connection_webrtc">WebRTC</string>
+    <string name="camera_stats_connection_hls">HLS</string>
+    <string name="camera_stats_video">Video</string>
+    <string name="camera_stats_resolution">%1$d×%2$d</string>
+    <string name="camera_stats_frame_rate">%1$d fps</string>
+    <string name="camera_stats_bitrate">Tasa de bits</string>
+    <string name="camera_stats_kbps">%1$d kbps</string>
+    <string name="camera_stats_mbps">%1$d.%2$d Mbps</string>
+    <string name="camera_stats_dropped">Perdidos</string>
+    <plurals name="camera_stats_dropped_frames">
+        <item quantity="one">%1$d fotograma</item>
+        <item quantity="other">%1$d fotogramas</item>
+    </plurals>
+    <plurals name="camera_stats_lost_packets">
+        <item quantity="one">%1$d paquete</item>
+        <item quantity="other">%1$d paquetes</item>
+    </plurals>
+
+    <string name="shell_app_title">PERCYSAFE</string>
+    <string name="shell_tab_home">Inicio</string>
+    <string name="shell_tab_moments">Momentos</string>
+    <string name="shell_tab_settings">Configuración</string>
+    <string name="shell_menu">Menú</string>
+    <string name="shell_status">Estado</string>
+    <string name="shell_offline">Sin conexión</string>
+    <string name="shell_show_version">Mostrar la versión de la app</string>
+    <string name="shell_show_options">Mostrar opciones y la versión de la app</string>
+    <string name="shell_app_version">Versión %1$s</string>
+    <string name="shell_drawer_close">Cerrar menú</string>
+    <string name="shell_drawer_section_apps">Apps</string>
+    <string name="shell_drawer_finance">Finanzas</string>
+    <string name="shell_drawer_finance_subtitle">Mercados y tu dinero</string>
+    <string name="shell_drawer_open_finance">Abrir Finanzas</string>
+    <string name="shell_drawer_change_today">%1$s hoy</string>
+    <string name="shell_drawer_net_worth">Patrimonio neto %1$s</string>
+    <string name="shell_drawer_finance_locked">Bloqueado sin conexión</string>
+    <string name="shell_drawer_market_disclaimer">Los datos del mercado tienen retraso y son solo informativos.</string>
+    <string name="shell_refresh">Actualizar</string>
+    <string name="shell_refreshing">Actualizando</string>
+
+    <string name="player_live_unavailable">La vista en vivo aún no está disponible en esta plataforma</string>
+</resources>

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the network, data and platform layers say when something goes wrong, the names of the
+  biometric methods, and the in-app alerts' own words. Errors reach the screen through
+  LocalizedException / userMessage(). A %1$s that follows a failure is the server's HTTP status
+  ("404 Not Found"), passed through as it is.
+  Spanish translation of values/strings_data.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="error_login_failed">Error al iniciar sesión: %1$s</string>
+    <string name="error_sign_in_failed">Error al iniciar sesión</string>
+    <string name="error_load_cameras">No se pudieron cargar las cámaras: %1$s</string>
+    <string name="error_load_indoor_cameras">No se pudieron cargar las cámaras interiores: %1$s</string>
+    <string name="error_load_camera_config">No se pudo cargar la configuración de la cámara: %1$s</string>
+    <string name="error_camera_not_on_server">La cámara %1$s no está en este servidor</string>
+    <string name="error_save_failed">No se pudo guardar: %1$s</string>
+    <string name="error_request_failed">Error en la solicitud: %1$s</string>
+    <string name="error_load_events">No se pudieron cargar los eventos: %1$s</string>
+    <string name="error_load_server_stats">No se pudieron cargar las estadísticas del servidor: %1$s</string>
+    <string name="error_load_server_config">No se pudo cargar la configuración del servidor: %1$s</string>
+    <string name="error_load_profile">No se pudo cargar el perfil: %1$s</string>
+    <string name="error_load_thumbnail">Sin miniatura: %1$s</string>
+    <string name="error_load_preview">Sin vista previa: %1$s</string>
+    <string name="error_load_recordings">No se pudieron cargar las grabaciones: %1$s</string>
+    <string name="error_load_faces">No se pudieron cargar los rostros: %1$s</string>
+    <string name="error_load_classifier_config">No se pudo cargar la configuración: %1$s</string>
+    <string name="error_load_timeline">No se pudo cargar la línea de tiempo: %1$s</string>
+    <string name="error_load_tracked_objects">No se pudieron cargar los objetos rastreados: %1$s</string>
+    <string name="error_load_dataset">No se pudo cargar el conjunto de datos: %1$s</string>
+    <string name="error_load_classifier_queue">No se pudo cargar la cola: %1$s</string>
+    <string name="error_load_camera_frame">No se pudo cargar el fotograma de la cámara: %1$s</string>
+    <string name="error_load_recording_frame">No se pudo cargar la grabación: %1$s</string>
+
+    <string name="error_relay_answered">El relay respondió %1$s</string>
+    <string name="error_relay_no_secret">El relay no emitió ningún secreto</string>
+    <string name="error_relay_no_spot">El relay no guardó ningún punto</string>
+
+    <string name="error_not_connected">No hay conexión con un servidor</string>
+    <string name="error_no_server_to_ask">No hay ningún servidor al que consultar</string>
+    <string name="error_server_unreachable">No se pudo conectar con el servidor</string>
+    <string name="error_load_server_config_fallback">No se pudo cargar la configuración del servidor</string>
+    <string name="error_load_detections">No se pudieron cargar las detecciones</string>
+    <string name="error_load_older_detections">No se pudieron cargar las detecciones anteriores</string>
+    <string name="error_classifier_not_found">No hay ningún clasificador llamado %1$s en este servidor</string>
+    <string name="error_detection_gone">Frigate ya no tiene esta detección</string>
+    <string name="error_no_car_box">Frigate no guardó ningún recuadro para este auto</string>
+    <string name="error_no_location">No se pudo obtener la ubicación de este teléfono</string>
+
+    <string name="download_cancelled">Se canceló la descarga</string>
+    <string name="download_frigate_refused">Frigate respondió %1$s para el clip</string>
+    <string name="download_no_space">No hay suficiente espacio en el teléfono</string>
+    <string name="download_file_exists">Ya hay un archivo con este nombre en Descargas</string>
+    <string name="download_connection_lost">Se perdió la conexión con el servidor</string>
+    <string name="download_too_many_redirects">El servidor redirigió la descarga demasiadas veces</string>
+    <string name="download_failed_code">Error en la descarga (%1$s)</string>
+    <string name="download_write_failed">No se pudo guardar el clip en este dispositivo</string>
+    <string name="download_unavailable_desktop">La descarga de clips no está disponible en la computadora</string>
+    <string name="download_unavailable_platform">La descarga de clips no está disponible en esta plataforma</string>
+
+    <string name="biometric_name_face_id">Face ID</string>
+    <string name="biometric_name_touch_id">Touch ID</string>
+    <string name="biometric_name_fingerprint">huella digital</string>
+    <string name="biometric_name_generic">biometría</string>
+    <string name="biometric_name_passcode">código de acceso</string>
+    <string name="biometric_confirm_save_reason">Confirma que eres tú para guardar este inicio de sesión</string>
+    <string name="biometric_sign_in_reason">Inicia sesión en tu servidor</string>
+    <string name="biometric_confirmation_cancelled">Se canceló la confirmación biométrica</string>
+    <string name="biometric_keychain_save_failed">No se pudo guardar el inicio de sesión en el Llavero (estado %1$s)</string>
+    <string name="biometric_sign_in_failed">El inicio de sesión biométrico falló o se canceló</string>
+    <string name="biometric_no_saved_login">No hay ningún inicio de sesión guardado para el acceso biométrico</string>
+    <string name="biometric_needs_app_open">El inicio de sesión biométrico necesita la app abierta</string>
+    <string name="biometric_unavailable_desktop">El inicio de sesión biométrico no está disponible en la computadora</string>
+    <string name="biometric_unavailable_platform">El inicio de sesión biométrico no está disponible en esta plataforma</string>
+    <string name="biometric_finance_reason">Para desbloquear Finanzas cuando no se puede conectar con el servidor</string>
+    <string name="identity_check_unavailable">Este dispositivo no tiene desbloqueo con huella digital ni con el rostro para verificar tu identidad</string>
+
+    <string name="notif_away_title">Modo ausente: %1$s</string>
+</resources>

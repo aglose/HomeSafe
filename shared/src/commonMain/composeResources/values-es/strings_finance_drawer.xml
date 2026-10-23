@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the Finance card in the drawer can show (FinanceDrawerItem.kt), and the Settings row that
+  chooses it (FinanceDrawerOptions.kt). The markets use their names from strings_finance_data.xml.
+  See AGENTS.md, "Strings and localization".
+  Spanish translation of values/strings_finance_drawer.xml.
+-->
+<resources>
+    <string name="finance_drawer_item_net_worth">Patrimonio neto</string>
+    <string name="finance_drawer_item_assets">Activos totales</string>
+    <string name="finance_drawer_item_investments">Inversiones</string>
+    <string name="finance_drawer_item_cash">Efectivo</string>
+    <string name="finance_drawer_item_debt">Deuda sin hipoteca</string>
+
+    <string name="finance_drawer_settings_title">Finanzas en el menú</string>
+    <string name="finance_drawer_settings_caption">Lo que muestra la tarjeta de Finanzas en el menú, hasta cuatro cosas. Tu dinero queda oculto mientras Finanzas está bloqueado.</string>
+    <string name="finance_drawer_settings_markets">Mercados</string>
+    <string name="finance_drawer_settings_money">Tu dinero</string>
+    <string name="finance_drawer_settings_none">Solo el nombre</string>
+    <string name="finance_drawer_settings_full">Ya son cuatro. Quita uno para agregar otro.</string>
+</resources>

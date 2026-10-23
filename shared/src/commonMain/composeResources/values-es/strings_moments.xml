@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_moments.xml.
+  The Moments tab (the detection feed and its cards), tagging a moment's car, "Not a person", the
+  home screen's in-view strip, and the clip editor. Keys start with moments_ or clip_.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="moments_label_person">Persona</string>
+    <string name="moments_label_car">Auto</string>
+    <string name="moments_label_truck">Camión</string>
+    <string name="moments_label_bus">Autobús</string>
+    <string name="moments_label_motorcycle">Motocicleta</string>
+    <string name="moments_label_bicycle">Bicicleta</string>
+    <string name="moments_label_boat">Bote</string>
+    <string name="moments_label_train">Tren</string>
+    <string name="moments_label_vehicle">Vehículo</string>
+    <string name="moments_label_dog">Perro</string>
+    <string name="moments_label_cat">Gato</string>
+    <string name="moments_label_bird">Pájaro</string>
+    <string name="moments_label_horse">Caballo</string>
+    <string name="moments_label_sheep">Oveja</string>
+    <string name="moments_label_cow">Vaca</string>
+    <string name="moments_label_bear">Oso</string>
+    <string name="moments_label_deer">Venado</string>
+    <string name="moments_label_rabbit">Conejo</string>
+    <string name="moments_label_squirrel">Ardilla</string>
+    <string name="moments_label_fox">Zorro</string>
+    <string name="moments_label_animal">Animal</string>
+    <string name="moments_label_package">Paquete</string>
+    <string name="moments_label_face">Rostro</string>
+    <string name="moments_label_license_plate">Placa</string>
+
+    <string name="moments_title_detected">Detección: %1$s</string>
+    <string name="moments_title_in_zone">%1$s en %2$s</string>
+    <string name="moments_title_on_zone">%1$s en %2$s</string>
+    <plurals name="moments_title_came_and_went">
+        <item quantity="one">%1$s llegó y se fue una vez</item>
+        <item quantity="other">%1$s llegó y se fue %2$d×</item>
+    </plurals>
+
+    <string name="moments_since">Desde %1$s</string>
+    <plurals name="moments_seen_still_there">
+        <item quantity="one">Se vio una vez · sigue ahí</item>
+        <item quantity="other">Se vio %1$d veces · sigue ahí</item>
+    </plurals>
+    <plurals name="moments_seen_last_seen">
+        <item quantity="one">Se vio una vez · última vez: %2$s</item>
+        <item quantity="other">Se vio %1$d veces · última vez: %2$s</item>
+    </plurals>
+    <plurals name="moments_clip_count">
+        <item quantity="one">%1$d clip</item>
+        <item quantity="other">%1$d clips</item>
+    </plurals>
+    <plurals name="moments_sighting_count">
+        <item quantity="one">%1$d avistamiento</item>
+        <item quantity="other">%1$d avistamientos</item>
+    </plurals>
+
+    <string name="moments_date_today">Hoy</string>
+    <string name="moments_date_yesterday">Ayer</string>
+    <string name="moments_weekday_monday">Lunes</string>
+    <string name="moments_weekday_tuesday">Martes</string>
+    <string name="moments_weekday_wednesday">Miércoles</string>
+    <string name="moments_weekday_thursday">Jueves</string>
+    <string name="moments_weekday_friday">Viernes</string>
+    <string name="moments_weekday_saturday">Sábado</string>
+    <string name="moments_weekday_sunday">Domingo</string>
+    <string name="moments_month_jan">ene</string>
+    <string name="moments_month_feb">feb</string>
+    <string name="moments_month_mar">mar</string>
+    <string name="moments_month_apr">abr</string>
+    <string name="moments_month_may">may</string>
+    <string name="moments_month_jun">jun</string>
+    <string name="moments_month_jul">jul</string>
+    <string name="moments_month_aug">ago</string>
+    <string name="moments_month_sep">sept</string>
+    <string name="moments_month_oct">oct</string>
+    <string name="moments_month_nov">nov</string>
+    <string name="moments_month_dec">dic</string>
+    <string name="moments_date_short">%2$d %1$s</string>
+
+    <string name="moments_in_view_since">desde %1$s</string>
+    <string name="moments_in_view_last_seen">visto por última vez: %1$s</string>
+    <string name="moments_clock_yesterday">ayer, %1$s</string>
+    <string name="moments_clock_on_day">%2$s, %1$s</string>
+
+    <string name="moments_category_all">Todos los eventos</string>
+    <string name="moments_category_people">Personas</string>
+    <string name="moments_category_vehicles">Vehículos</string>
+    <string name="moments_category_animals">Animales</string>
+    <string name="moments_filter_unfamiliar">Desconocidos</string>
+    <string name="moments_filter_unfamiliar_people">Personas desconocidas</string>
+    <string name="moments_filter_unfamiliar_vehicles">Vehículos desconocidos</string>
+    <string name="moments_filter_unfamiliar_animals">Animales desconocidos</string>
+    <string name="moments_filter_unfamiliar_only">Solo desconocidos</string>
+    <string name="moments_filter_all_cameras">Todas las cámaras</string>
+    <string name="moments_filter_by_camera">Filtrar por cámara</string>
+    <string name="moments_filter_by_type">Filtrar por tipo</string>
+    <string name="moments_filter_selected">Seleccionado</string>
+    <string name="moments_history_pick_day">Elegir un día</string>
+    <string name="moments_history_from">Desde el %1$s</string>
+    <string name="moments_history_back_to_latest">Volver a los momentos más recientes</string>
+    <string name="moments_history_show">Mostrar</string>
+
+    <string name="moments_feed_load_older">Cargar momentos anteriores</string>
+    <string name="moments_feed_end">Eso es todo lo que el servidor aún conserva.</string>
+
+    <string name="moments_empty_look_further">Buscar más atrás</string>
+    <string name="moments_empty_error">No se pudo conectar con el servidor para obtener las detecciones.</string>
+    <string name="moments_empty_kind_detections">detecciones</string>
+    <string name="moments_empty_kind_people">personas</string>
+    <string name="moments_empty_kind_vehicles">vehículos</string>
+    <string name="moments_empty_kind_animals">animales</string>
+    <string name="moments_empty_kind_unfamiliar_detections">detecciones desconocidas</string>
+    <string name="moments_empty_kind_unfamiliar_people">personas desconocidas</string>
+    <string name="moments_empty_kind_unfamiliar_vehicles">vehículos desconocidos</string>
+    <string name="moments_empty_kind_unfamiliar_animals">animales desconocidos</string>
+    <string name="moments_empty_history_more">No hay %1$s en las páginas más recientes antes del %2$s.</string>
+    <string name="moments_empty_history_more_on_camera">No hay %1$s en %2$s en las páginas más recientes antes del %3$s.</string>
+    <string name="moments_empty_history">No hay %1$s del %2$s o antes que el servidor aún conserve.</string>
+    <string name="moments_empty_history_on_camera">No hay %1$s en %2$s del %3$s o antes que el servidor aún conserve.</string>
+    <string name="moments_empty_filtered">No hay %1$s para mostrar. Las detecciones aparecen aquí cuando ocurren en una zona configurada para vigilarlas, o cuando se reconocen.</string>
+    <string name="moments_empty_filtered_on_camera">No hay %1$s en %2$s para mostrar. Las detecciones aparecen aquí cuando ocurren en una zona configurada para vigilarlas, o cuando se reconocen.</string>
+    <string name="moments_empty_camera">No hay detecciones en %1$s para mostrar. Las detecciones aparecen aquí cuando ocurren en una zona configurada para vigilarlas, o cuando Frigate reconoce quién o qué son.</string>
+    <string name="moments_empty_nothing">Aún no hay nada que mostrar. Las detecciones aparecen aquí cuando ocurren en una zona configurada para vigilarlas, o cuando Frigate reconoce quién o qué son.</string>
+
+    <string name="moments_refresh_action">Actualizar momentos</string>
+    <string name="moments_play_clip">Reproducir clip</string>
+    <string name="moments_close_clip">Cerrar clip</string>
+    <string name="moments_live_badge">EN VIVO</string>
+    <string name="moments_show_sightings">Mostrar avistamientos</string>
+    <string name="moments_hide_sightings">Ocultar avistamientos</string>
+    <string name="moments_show_clips">Mostrar clips</string>
+    <string name="moments_hide_clips">Ocultar clips</string>
+    <string name="moments_play_full_screen">Reproducir en pantalla completa</string>
+    <string name="moments_download_clip">Descargar clip</string>
+    <string name="moments_downloaded">Descargado</string>
+    <string name="moments_download_failed">No se pudo descargar: %1$s</string>
+    <string name="moments_clip_load_failed">No se pudo cargar el clip: %1$s</string>
+    <string name="moments_clip_play_failed">No se pudo reproducir este clip</string>
+
+    <string name="moments_not_a_person">No es una persona</string>
+    <string name="moments_not_a_person_mark_action">Marcar que no es una persona</string>
+    <string name="moments_not_a_person_marked_on_camera">Marcado: no era una persona. Ese punto de %1$s no volverá a generar alertas.</string>
+    <string name="moments_not_a_person_marked">Marcado: no era una persona</string>
+    <string name="moments_not_a_person_question">¿Había alguien?</string>
+    <string name="moments_not_a_person_wont_alert">%1$s no volverá a alertar por esto.</string>
+    <string name="moments_not_a_person_mark_failed">No se pudo marcar: %1$s</string>
+    <string name="moments_not_a_person_undo_failed">No se pudo deshacer: %1$s</string>
+
+    <string name="moments_tag_car">Etiquetar auto</string>
+    <string name="moments_tag_this_car">Etiquetar este auto</string>
+    <string name="moments_tag_car_tag_as">Etiquetar como %1$s</string>
+    <string name="moments_tag_car_unrecognised">Frigate no reconoció este auto</string>
+    <string name="moments_tag_car_tagged_as">Etiquetado como %1$s</string>
+    <string name="moments_tag_car_title">¿De quién es este auto?</string>
+    <string name="moments_tag_car_title_done">Auto etiquetado</string>
+    <string name="moments_tag_car_loading">Cargando los autos conocidos…</string>
+    <string name="moments_tag_car_none_known">El clasificador aún no conoce ningún auto. Ponle nombre a este abajo.</string>
+    <string name="moments_tag_car_new_name_label">Nombre del auto nuevo</string>
+    <string name="moments_tag_car_new_name_placeholder">p. ej., La camioneta de la abuela</string>
+    <string name="moments_tag_car_add">Agregar</string>
+    <string name="moments_tag_car_saving">Enseñando al clasificador…</string>
+    <string name="moments_tag_car_name_needed">Escribe el nombre del auto, p. ej., La camioneta de la abuela.</string>
+    <string name="moments_tag_car_done_retraining">Etiquetado como %1$s. Reentrenando ahora.</string>
+    <string name="moments_tag_car_done_saved">Etiquetado como %1$s. Guardado para el próximo entrenamiento.</string>
+    <string name="moments_tag_car_done_unnamed_retraining">Etiquetado como %1$s. No se pudo renombrar esta detección; aparecerá cuando el modelo reconozca el auto. Reentrenando ahora.</string>
+    <string name="moments_tag_car_done_unnamed_saved">Etiquetado como %1$s. No se pudo renombrar esta detección; aparecerá cuando el modelo reconozca el auto. Guardado para el próximo entrenamiento.</string>
+    <string name="moments_tag_car_save_failed">No se pudo guardar la etiqueta: %1$s</string>
+    <string name="moments_tag_car_classifiers_failed">No se pudieron cargar los clasificadores: %1$s</string>
+    <string name="moments_tag_car_known_cars_failed">No se pudieron cargar los autos conocidos: %1$s</string>
+    <string name="moments_tag_car_no_classifier">Este servidor no tiene ningún clasificador que funcione con autos.</string>
+
+    <string name="clip_close_editor">Cerrar el editor de clips</string>
+    <string name="clip_finding_recording">Buscando la grabación…</string>
+    <string name="clip_time_range">%1$s – %2$s</string>
+    <string name="clip_save_description">Guardar clip</string>
+    <string name="clip_saving_description">Guardando clip</string>
+    <string name="clip_saving_progress_description">Guardando clip, %1$d%</string>
+    <string name="clip_saving">Guardando</string>
+    <string name="clip_saved">Guardado</string>
+    <string name="clip_saved_message">Clip guardado</string>
+    <string name="clip_saving_banner">Guardando en segundo plano. Terminará aunque cierres el editor.</string>
+    <string name="clip_save_failed">No se pudo guardar: %1$s</string>
+    <string name="clip_dismiss">Descartar</string>
+    <string name="clip_trim_hint">Arrastra los extremos para recortar · pellizca la tira para ajustar con más precisión</string>
+    <string name="clip_play">Reproducir</string>
+    <string name="clip_pause">Pausar</string>
+    <string name="clip_length">Duración</string>
+    <string name="clip_make_length">Hacer que el clip dure %1$s</string>
+    <string name="clip_length_seconds">%1$d s</string>
+    <string name="clip_length_minutes">%1$d min</string>
+    <string name="clip_detected_nearby">Detecciones cercanas</string>
+    <string name="clip_moment_description">Clip: %1$s, %2$s</string>
+    <string name="clip_not_connected">Sin conexión con el servidor</string>
+    <string name="clip_load_recordings_failed">No se pudieron cargar las grabaciones: %1$s</string>
+    <string name="clip_open_recording_failed">No se pudo abrir la grabación: %1$s</string>
+    <string name="clip_nothing_recorded">No se grabó nada alrededor de este momento</string>
+    <string name="clip_play_recording_failed">No se pudo reproducir esta grabación</string>
+
+    <string name="clip_trimmer_description">Recortador de clips</string>
+    <plurals name="clip_trimmer_state">
+        <item quantity="one">De %1$s a %2$s, %3$d segundo</item>
+        <item quantity="other">De %1$s a %2$s, %3$d segundos</item>
+    </plurals>
+    <string name="clip_trimmer_start_earlier">Empezar 1 segundo antes</string>
+    <string name="clip_trimmer_start_later">Empezar 1 segundo después</string>
+    <string name="clip_trimmer_end_earlier">Terminar 1 segundo antes</string>
+    <string name="clip_trimmer_end_later">Terminar 1 segundo después</string>
+    <string name="clip_trimmer_playhead_back">Cabezal 1 segundo atrás</string>
+    <string name="clip_trimmer_playhead_forward">Cabezal 1 segundo adelante</string>
+    <string name="clip_trimmer_zoom_in">Acercar</string>
+    <string name="clip_trimmer_zoom_out">Alejar</string>
+    <string name="clip_trimmer_scroll_earlier">Desplazar hacia antes</string>
+    <string name="clip_trimmer_scroll_later">Desplazar hacia después</string>
+</resources>

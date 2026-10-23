@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the fitness app says about the training log: the names of body parts, muscles, equipment
+  and phases, how a weight is written, and the sentences of coaching beside a target. The
+  screens' own words are in strings_fitness.xml.
+  Spanish translation of values/strings_fitness_data.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="fitness_part_chest">Pecho</string>
+    <string name="fitness_part_back">Espalda</string>
+    <string name="fitness_part_legs">Piernas</string>
+    <string name="fitness_part_shoulders">Hombros</string>
+    <string name="fitness_part_biceps">Bíceps</string>
+    <string name="fitness_part_triceps">Tríceps</string>
+    <string name="fitness_part_core">Abdomen</string>
+
+    <string name="fitness_focus_chest">Pecho</string>
+    <string name="fitness_focus_back">Espalda</string>
+    <string name="fitness_focus_legs">Piernas</string>
+    <string name="fitness_focus_shoulders">Hombros</string>
+    <string name="fitness_focus_arms">Brazos</string>
+
+    <string name="fitness_muscle_chest">Pecho</string>
+    <string name="fitness_muscle_back">Espalda</string>
+    <string name="fitness_muscle_traps">Trapecios</string>
+    <string name="fitness_muscle_front_delts">Deltoides anteriores</string>
+    <string name="fitness_muscle_side_delts">Deltoides laterales</string>
+    <string name="fitness_muscle_rear_delts">Deltoides posteriores</string>
+    <string name="fitness_muscle_biceps">Bíceps</string>
+    <string name="fitness_muscle_triceps">Tríceps</string>
+    <string name="fitness_muscle_forearms">Antebrazos</string>
+    <string name="fitness_muscle_abs">Abdominales</string>
+    <string name="fitness_muscle_quads">Cuádriceps</string>
+    <string name="fitness_muscle_hamstrings">Isquiotibiales</string>
+    <string name="fitness_muscle_glutes">Glúteos</string>
+    <string name="fitness_muscle_adductors">Aductores</string>
+    <string name="fitness_muscle_calves">Pantorrillas</string>
+
+    <string name="fitness_equipment_barbell">Barra</string>
+    <string name="fitness_equipment_dumbbell">Mancuernas</string>
+    <string name="fitness_equipment_machine">Máquina</string>
+    <string name="fitness_equipment_cable">Polea</string>
+    <string name="fitness_equipment_plate_loaded">Con discos</string>
+    <string name="fitness_equipment_smith">Máquina Smith</string>
+    <string name="fitness_equipment_bodyweight">Peso corporal</string>
+    <string name="fitness_equipment_other">Otro</string>
+
+    <string name="fitness_load_weight">Libras</string>
+    <string name="fitness_load_per_hand">Libras por mano</string>
+    <string name="fitness_load_plates">Discos por lado</string>
+    <string name="fitness_load_level">Número de pasador</string>
+    <string name="fitness_load_bodyweight">Peso corporal</string>
+
+    <string name="fitness_phase_bulk">Volumen</string>
+    <string name="fitness_phase_cut">Definición</string>
+    <string name="fitness_phase_maintain">Mantenimiento</string>
+
+    <string name="fitness_weight_pounds">%1$s lb</string>
+    <string name="fitness_weight_per_hand">%1$s lb × 2</string>
+    <string name="fitness_weight_level">Pasador %1$s</string>
+    <string name="fitness_weight_bodyweight">Peso corporal</string>
+    <string name="fitness_weight_bodyweight_plus">Peso corporal + %1$s lb</string>
+    <plurals name="fitness_weight_plates">
+        <item quantity="one">%1$d disco</item>
+        <item quantity="other">%1$d discos</item>
+    </plurals>
+    <plurals name="fitness_weight_plates_plus">
+        <item quantity="one">%1$d disco + %2$s</item>
+        <item quantity="other">%1$d discos + %2$s</item>
+    </plurals>
+    <string name="fitness_set_line">%1$s × %2$d</string>
+
+    <string name="fitness_reason_benchmark">De tus notas. Vuelve a alcanzar este nivel y luego progresa.</string>
+    <string name="fitness_reason_add_rep">Una repetición más que la última vez.</string>
+    <string name="fitness_reason_add_weight">Superaste el rango de repeticiones. Sube el peso.</string>
+    <string name="fitness_reason_hold">En definición: iguala la última vez. Mantener el peso mantiene el músculo.</string>
+    <string name="fitness_reason_back_off">Las repeticiones bajaron del rango. Baja el peso y mantén las series fuertes.</string>
+    <string name="fitness_reason_rebuild">Recuperando: al %1$d% de tu mejor marca. Vuelve más rápido de lo que se construyó.</string>
+    <string name="fitness_reason_ease_in">De vuelta tras un descanso. Empieza por debajo de tus últimas cifras; se recuperan en pocas sesiones.</string>
+
+    <string name="fitness_record_all_time_weight">Récord de peso</string>
+    <string name="fitness_record_all_time_reps">Récord de repeticiones con este peso</string>
+    <string name="fitness_record_phase_cut">Mejor marca de esta definición</string>
+    <string name="fitness_record_phase_bulk">Mejor marca de este volumen</string>
+    <string name="fitness_record_phase_maintain">Mejor marca en un tiempo</string>
+
+    <string name="fitness_volume_none">Sin entrenar</string>
+    <string name="fitness_volume_low">Ligero</string>
+    <string name="fitness_volume_building">En aumento</string>
+    <string name="fitness_volume_on_target">En el objetivo</string>
+    <string name="fitness_volume_high">De sobra</string>
+
+    <string name="fitness_pace_cut_on">Bajando %1$s por semana: el ritmo que conserva el músculo.</string>
+    <string name="fitness_pace_cut_fast">Bajando %1$s por semana: tan rápido que cuesta fuerza. Reduce el déficit.</string>
+    <string name="fitness_pace_cut_slow">%1$s por semana: apenas avanza para una definición.</string>
+    <string name="fitness_pace_bulk_on">Subiendo %1$s por semana: el ritmo de un volumen limpio.</string>
+    <string name="fitness_pace_bulk_fast">Subiendo %1$s por semana: más rápido de lo que se construye músculo. El resto es grasa.</string>
+    <string name="fitness_pace_bulk_slow">%1$s por semana: todavía no hay mucho superávit.</string>
+    <string name="fitness_pace_steady">%1$s por semana.</string>
+</resources>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_fitness_history.xml.
+  The fitness app's History tab: the month as a calendar, the workouts in it with what each came
+  to, and the page a workout is looked back on (and deleted from).
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="fitness_history_month_year">%1$s de %2$d</string>
+    <string name="fitness_history_month_january">enero</string>
+    <string name="fitness_history_month_february">febrero</string>
+    <string name="fitness_history_month_march">marzo</string>
+    <string name="fitness_history_month_april">abril</string>
+    <string name="fitness_history_month_may">mayo</string>
+    <string name="fitness_history_month_june">junio</string>
+    <string name="fitness_history_month_july">julio</string>
+    <string name="fitness_history_month_august">agosto</string>
+    <string name="fitness_history_month_september">septiembre</string>
+    <string name="fitness_history_month_october">octubre</string>
+    <string name="fitness_history_month_november">noviembre</string>
+    <string name="fitness_history_month_december">diciembre</string>
+    <string name="fitness_history_weekday_monday">Lun</string>
+    <string name="fitness_history_weekday_tuesday">Mar</string>
+    <string name="fitness_history_weekday_wednesday">Mié</string>
+    <string name="fitness_history_weekday_thursday">Jue</string>
+    <string name="fitness_history_weekday_friday">Vie</string>
+    <string name="fitness_history_weekday_saturday">Sáb</string>
+    <string name="fitness_history_weekday_sunday">Dom</string>
+    <string name="fitness_history_previous_month">Mes anterior</string>
+    <string name="fitness_history_next_month">Mes siguiente</string>
+    <string name="fitness_history_this_month">Este mes</string>
+
+    <plurals name="fitness_history_day_sessions">
+        <item quantity="one">%2$d de %1$s, %3$d sesión registrada</item>
+        <item quantity="other">%2$d de %1$s, %3$d sesiones registradas</item>
+    </plurals>
+    <string name="fitness_history_day_none">%2$d de %1$s, nada registrado</string>
+    <string name="fitness_history_day_today">Hoy, %1$s</string>
+
+    <string name="fitness_history_date">%1$s, %3$d de %2$s</string>
+    <string name="fitness_history_date_year">%1$s, %3$d de %2$s de %4$d</string>
+    <string name="fitness_history_time_am">%1$d:%2$s a. m.</string>
+    <string name="fitness_history_time_pm">%1$d:%2$s p. m.</string>
+    <string name="fitness_history_when">%1$s · %2$s</string>
+    <string name="fitness_history_minutes">%1$d min</string>
+    <string name="fitness_history_hours_minutes">%1$d h %2$d min</string>
+    <string name="fitness_history_none">–</string>
+
+    <string name="fitness_history_stat_workouts">Entrenamientos</string>
+    <string name="fitness_history_stat_sets">Series</string>
+    <string name="fitness_history_stat_reps">Repeticiones</string>
+    <string name="fitness_history_stat_exercises">Ejercicios</string>
+    <string name="fitness_history_stat_time">Tiempo</string>
+    <string name="fitness_history_stat_hours">Horas</string>
+    <string name="fitness_history_stat_records">Récords</string>
+    <string name="fitness_history_stat_volume">Volumen</string>
+
+    <string name="fitness_history_list_month">Entrenamientos de %1$s</string>
+    <string name="fitness_history_show_month">Todo el mes</string>
+    <string name="fitness_history_empty_month">No hay nada registrado este mes.</string>
+    <string name="fitness_history_empty">Termina un entrenamiento y aparecerá aquí, en el día en que lo hiciste.</string>
+    <string name="fitness_history_loose">Fuera de un entrenamiento</string>
+    <string name="fitness_history_in_progress">En curso</string>
+    <plurals name="fitness_history_sets">
+        <item quantity="one">%1$d serie</item>
+        <item quantity="other">%1$d series</item>
+    </plurals>
+    <plurals name="fitness_history_exercises">
+        <item quantity="one">%1$d ejercicio</item>
+        <item quantity="other">%1$d ejercicios</item>
+    </plurals>
+    <plurals name="fitness_history_records">
+        <item quantity="one">%1$d récord</item>
+        <item quantity="other">%1$d récords</item>
+    </plurals>
+    <string name="fitness_history_volume">%1$s lb</string>
+    <string name="fitness_history_row_stats">%1$s · %2$s · %3$s</string>
+    <string name="fitness_history_row_stats_short">%1$s · %2$s</string>
+    <string name="fitness_history_open">Abrir %1$s, %2$s</string>
+
+    <string name="fitness_title_session">Entrenamiento</string>
+    <string name="fitness_session_heart">Frecuencia cardiaca</string>
+    <string name="fitness_session_lifts">Lo que hiciste</string>
+    <string name="fitness_session_empty">No quedan series en este entrenamiento.</string>
+    <string name="fitness_session_volume_caption">El volumen es cada repetición multiplicada por su peso. No incluye las máquinas registradas por número de pasador.</string>
+    <string name="fitness_session_open_exercise">Abrir %1$s</string>
+    <string name="fitness_session_delete">Eliminar entrenamiento</string>
+    <string name="fitness_session_delete_sets">Eliminar estas series</string>
+    <string name="fitness_session_delete_confirm">Toca de nuevo para eliminar definitivamente</string>
+</resources>

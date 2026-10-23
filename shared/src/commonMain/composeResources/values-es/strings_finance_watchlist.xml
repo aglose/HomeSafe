@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_finance_watchlist.xml.
+  The finance watchlist: tickers added in the app, the add-a-symbol search, positions entered
+  against a ticker and the holdings card that sums them (WatchlistUi.kt, FinanceFormat.positionLine),
+  and a quote's "All time" block (the longrun_* keys). Tickers, company and fund names, currency
+  codes ("JPY") and amounts arrive already formatted ("$2,431.20", "+12.34%", "Sep 30, 2026").
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="watchlist_add">Agregar</string>
+    <string name="watchlist_add_click">Agregar una acción, un fondo o una cripto</string>
+    <string name="watchlist_subtitle_sheet_and_app">Los tickers marcados “En la hoja” vienen de tu hoja de presupuesto; los demás los agregaste aquí</string>
+    <string name="watchlist_subtitle_sheet">De tu hoja de presupuesto. Agrega más aquí: se quedan en este dispositivo</string>
+    <string name="watchlist_subtitle_app">Agregados aquí, en este dispositivo</string>
+    <string name="watchlist_subtitle_suggestions">Algunos para empezar. Agrega tus propias acciones, fondos o criptos</string>
+    <string name="watchlist_in_sheet">En la hoja</string>
+
+    <string name="watchlist_holdings_title">TUS INVERSIONES</string>
+    <string name="watchlist_holdings_title_currency">TUS INVERSIONES EN %1$s</string>
+    <string name="watchlist_holdings_today">%1$s hoy</string>
+    <string name="watchlist_holdings_today_percent">%1$s (%2$s) hoy</string>
+    <string name="watchlist_holdings_since_bought">%1$s desde que compraste</string>
+    <string name="watchlist_holdings_since_bought_percent">%1$s (%2$s) desde que compraste</string>
+    <plurals name="watchlist_holdings_note">
+        <item quantity="one">%1$d posición ingresada en la app. No cuenta en el patrimonio neto, porque los saldos de las cuentas de la hoja ya la incluyen.</item>
+        <item quantity="other">%1$d posiciones ingresadas en la app. No cuentan en el patrimonio neto, porque los saldos de las cuentas de la hoja ya las incluyen.</item>
+    </plurals>
+
+    <plurals name="watchlist_shares">
+        <item quantity="one">%1$s acción</item>
+        <item quantity="other">%1$s acciones</item>
+    </plurals>
+    <string name="watchlist_shares_fraction">%1$s acciones</string>
+    <string name="watchlist_coins">%1$s %2$s</string>
+
+    <string name="watchlist_search_title">Agregar a la lista</string>
+    <string name="watchlist_search_subtitle">Acciones, ETF, fondos mutuos, cripto e índices, por ticker o nombre.</string>
+    <string name="watchlist_search_hint">p. ej., VTI, Apple, Vanguard, ETH</string>
+    <string name="watchlist_search_description">Buscar tickers</string>
+    <string name="watchlist_search_clear">Borrar</string>
+    <string name="watchlist_search_searching">Buscando…</string>
+    <string name="watchlist_search_failed">No se pudo buscar: %1$s</string>
+    <string name="watchlist_search_unavailable">La búsqueda no está disponible</string>
+    <string name="watchlist_search_no_matches">No hay resultados para “%1$s”.</string>
+    <string name="watchlist_search_add_symbol">Agregar %1$s</string>
+    <string name="watchlist_search_added">Agregado</string>
+
+    <string name="watchlist_status_in_sheet">En tu lista de seguimiento desde la hoja de presupuesto</string>
+    <string name="watchlist_status_added">En tu lista de seguimiento</string>
+    <string name="watchlist_status_remove">Quitar</string>
+    <string name="watchlist_status_not_added">No está en tu lista de seguimiento</string>
+
+    <string name="watchlist_position_title">Tu posición</string>
+    <string name="watchlist_position_entered">Ingresada en este dispositivo</string>
+    <string name="watchlist_position_edit">Editar</string>
+    <string name="watchlist_position_own_some">¿Tienes %1$s?</string>
+    <string name="watchlist_position_invite">Ingresa tus acciones para ver cuánto valen y cómo les va.</string>
+    <string name="watchlist_position_add">Agregar una posición</string>
+    <string name="watchlist_position_held">Tenencia</string>
+    <string name="watchlist_position_shares">Acciones</string>
+    <string name="watchlist_position_market_value">Valor de mercado</string>
+    <string name="watchlist_position_average_cost">Costo promedio</string>
+    <string name="watchlist_position_not_entered">Sin ingresar</string>
+    <string name="watchlist_position_cost_basis">Base de costo</string>
+    <string name="watchlist_position_today">Hoy</string>
+    <string name="watchlist_position_today_percent">Hoy %</string>
+    <string name="watchlist_position_total_return">Rendimiento total</string>
+    <string name="watchlist_position_return_percent">Rendimiento %</string>
+
+    <string name="watchlist_editor_title">Tu posición en %1$s</string>
+    <string name="watchlist_editor_amount_held">Cantidad (%1$s)</string>
+    <string name="watchlist_editor_cost_per_share">Costo promedio por acción (opcional)</string>
+    <string name="watchlist_editor_cost_per_coin">Costo promedio por moneda (opcional)</string>
+    <string name="watchlist_editor_note">Solo se guarda en este dispositivo. Deja vacías las acciones para eliminar la posición.</string>
+
+    <string name="longrun_title">Todo el historial</string>
+    <string name="longrun_data_from">Datos desde %1$s</string>
+    <string name="longrun_all_time_high">Máximo histórico</string>
+    <string name="longrun_set_on">Alcanzado el</string>
+    <string name="longrun_week_of">Semana del</string>
+    <string name="longrun_from_high">Desde el máximo</string>
+    <string name="longrun_at_record">En récord</string>
+    <string name="longrun_per_year">Por año</string>
+    <plurals name="longrun_years">
+        <item quantity="one">%1$d año</item>
+        <item quantity="other">%1$d años</item>
+    </plurals>
+    <string name="longrun_since_year">Desde %1$s</string>
+    <string name="longrun_since_start">Desde el inicio</string>
+    <string name="longrun_history_failed">No se pudo cargar el historial completo: %1$s</string>
+    <string name="longrun_fine_print">Solo cambios de precio: no incluye dividendos. “Por año” es la tasa anual constante que, compuesta, daría el cambio desde el inicio. El máximo histórico es el precio más alto al que se ha negociado, no solo al que ha cerrado.</string>
+</resources>

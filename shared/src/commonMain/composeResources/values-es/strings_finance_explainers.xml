@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The finance app's plain-English explainers (finance/domain/Explainers.kt): for each idea its
+  plain name, the name the news uses, a one-line summary, an everyday comparison, why it matters
+  to a household, what's normal, and how it works. Keys are explainer_<id>_<part>.
+  Spanish translation of values/strings_finance_explainers.xml.
+-->
+<resources>
+    <string name="explainer_topic_prices">Precios e inflación</string>
+    <string name="explainer_topic_jobs">Empleo y crecimiento</string>
+    <string name="explainer_topic_rates">Tasas de interés y la Fed</string>
+    <string name="explainer_topic_markets">Acciones y mercados</string>
+    <string name="explainer_topic_credit">Crédito y tensión</string>
+    <string name="explainer_topic_government">Gobierno y dinero</string>
+    <string name="explainer_topic_housing">Vivienda</string>
+    <string name="explainer_topic_your_money">Tu dinero</string>
+
+    <string name="explainer_cpi_title">Inflación</string>
+    <string name="explainer_cpi_technical">IPC, interanual</string>
+    <string name="explainer_cpi_one_liner">Cuánto más cuestan hoy las mismas compras del súper, la renta, la gasolina y los cortes de pelo que hace un año.</string>
+    <string name="explainer_cpi_analogy">Piénsalo como una fuga lenta en tu billetera: los mismos $100 compran un poco menos cada mes.</string>
+    <string name="explainer_cpi_why_you">Cuando la inflación sube más rápido que tus aumentos de sueldo, te vuelves más pobre sin darte cuenta, aunque tu sueldo crezca. También es la razón principal por la que la Fed sube las tasas de interés, lo que encarece las hipotecas, los préstamos de auto y las tarjetas de crédito.</string>
+    <string name="explainer_cpi_normal">Alrededor de 2% al año es la meta de la Reserva Federal. Un 3% ya se nota; 5% o más (como en 2022) duele.</string>
+    <string name="explainer_cpi_how_it_works">Cada mes el gobierno revisa los precios de una canasta de unas 80,000 cosas que la gente compra y los compara con la misma canasta de un año antes. Los precios suben cuando la gente quiere comprar más de lo que las empresas pueden ofrecer, o cuando suben costos como el petróleo y los salarios.</string>
+
+    <string name="explainer_corecpi_title">Inflación sin alimentos ni gasolina</string>
+    <string name="explainer_corecpi_technical">IPC subyacente</string>
+    <string name="explainer_corecpi_one_liner">La inflación sin los precios más volátiles (alimentos y combustible), para mostrar la tendencia de fondo.</string>
+    <string name="explainer_corecpi_analogy">Como medir tu peso con el promedio de la semana en vez de pesarte el día después de Acción de Gracias.</string>
+    <string name="explainer_corecpi_why_you">Los precios de la gasolina y los huevos suben y bajan sin control, pero la renta, los seguros y los servicios suelen seguir subiendo una vez que empiezan. La inflación subyacente te dice si las alzas de precios llegaron para quedarse.</string>
+    <string name="explainer_corecpi_normal">Cerca de 2–2.5% al año.</string>
+    <string name="explainer_corecpi_how_it_works">Es la misma encuesta de precios que la inflación general, sin alimentos ni energía. Los economistas la siguen porque un salto en la gasolina puede desaparecer en semanas, mientras que las rentas y los salarios al alza tardan años en enfriarse.</string>
+
+    <string name="explainer_corepce_title">El indicador de inflación de la Fed</string>
+    <string name="explainer_corepce_technical">PCE subyacente</string>
+    <string name="explainer_corepce_one_liner">La medida de inflación específica que usa la Reserva Federal para decidir si sube o baja las tasas.</string>
+    <string name="explainer_corepce_why_you">Este es el número detrás de las decisiones de la Fed, y esas decisiones fijan lo que pagas por pedir prestado y lo que ganas con tus ahorros.</string>
+    <string name="explainer_corepce_normal">La meta de la Fed es exactamente 2%.</string>
+    <string name="explainer_corepce_how_it_works">El PCE sigue lo que la gente realmente gasta, incluidas cosas que otros pagan en su nombre, como el seguro médico que da el empleador, y se ajusta cuando la gente cambia a productos más baratos. Suele quedar un poco por debajo del IPC.</string>
+
+    <string name="explainer_unrate_title">Desempleo</string>
+    <string name="explainer_unrate_technical">Tasa de desempleo</string>
+    <string name="explainer_unrate_one_liner">De cada 100 personas que quieren trabajo, cuántas no lo encuentran.</string>
+    <string name="explainer_unrate_why_you">Es la señal más clara de qué tan seguros están los empleos. Cuando es baja, los aumentos llegan más fácil y cambiar de trabajo es menos arriesgado; cuando sube, los despidos se extienden y la gente recorta gastos, lo que cuesta más empleos.</string>
+    <string name="explainer_unrate_normal">Entre 3.5% y 5% es un rango sano. Por encima de 6% suele significar recesión.</string>
+    <string name="explainer_unrate_how_it_works">Cada mes el gobierno encuesta a unos 60,000 hogares. Quienes dejaron de buscar trabajo no cuentan como desempleados, y cualquiera que haya trabajado aunque sea una hora esa semana cuenta como empleado; por eso este número puede verse mejor que la realidad en una crisis. La tasa de subempleo (U-6) cuenta ambos casos.</string>
+
+    <string name="explainer_sahm_title">Alarma de recesión (empleo)</string>
+    <string name="explainer_sahm_technical">Regla de Sahm</string>
+    <string name="explainer_sahm_one_liner">Una alarma hecha a partir del desempleo: cuánto ha subido por encima de su punto más bajo del último año.</string>
+    <string name="explainer_sahm_analogy">Como un detector de humo del mercado laboral: no le importa qué tan alto está el desempleo, solo qué tan rápido sube.</string>
+    <string name="explainer_sahm_why_you">El desempleo rara vez sube solo un poco: una vez que empieza a subir, suele crecer como bola de nieve. Esta alarma se ha activado al inicio de cada recesión de EE. UU. desde 1970.</string>
+    <string name="explainer_sahm_normal">Por debajo de 0.3 está tranquila. En 0.5 suena la alarma.</string>
+    <string name="explainer_sahm_how_it_works">La economista Claudia Sahm notó que cuando el promedio de 3 meses de la tasa de desempleo está medio punto porcentual por encima de su mínimo de los últimos 12 meses, casi siempre ya ha comenzado una recesión.</string>
+
+    <string name="explainer_icsa_title">Nuevos despidos cada semana</string>
+    <string name="explainer_icsa_technical">Solicitudes iniciales de desempleo</string>
+    <string name="explainer_icsa_one_liner">Cuántas personas pidieron beneficios por desempleo por primera vez la semana pasada.</string>
+    <string name="explainer_icsa_why_you">Es el dato duro más temprano sobre despidos: sale cada jueves, meses antes de que los despidos aparezcan en la tasa de desempleo.</string>
+    <string name="explainer_icsa_normal">Entre 200,000 y 250,000 por semana es normal para un país de 335 millones. Más de 300,000 durante semanas seguidas indica problemas.</string>
+    <string name="explainer_icsa_how_it_works">Cada estado cuenta las nuevas solicitudes y las reporta cada semana. El número es irregular en temporada de fiestas, así que mira la tendencia de un mes y no una sola semana.</string>
+
+    <string name="explainer_u6_title">Subempleo</string>
+    <string name="explainer_u6_technical">Tasa de desempleo U-6</string>
+    <string name="explainer_u6_one_liner">Los desempleados, más quienes trabajan medio tiempo y quieren tiempo completo, más quienes quieren trabajo pero dejaron de buscar.</string>
+    <string name="explainer_u6_analogy">Si la tasa principal cuenta a quienes se quedaron fuera del edificio, esta también cuenta a los que siguen atorados en el vestíbulo.</string>
+    <string name="explainer_u6_why_you">Un trabajo con muy pocas horas, o una búsqueda abandonada, no aparece en la tasa principal, pero sí en el presupuesto de un hogar. Este es el conteo más completo de las personas a las que el mercado laboral les está quedando a deber.</string>
+    <string name="explainer_u6_normal">Suele ser más o menos el doble de la tasa principal. Cerca de 7% fue el mínimo en 2019 y en 2022–23; en 2007 fue 8%.</string>
+    <string name="explainer_u6_how_it_works">Sale de la misma encuesta mensual de hogares que la tasa principal, con dos grupos más: quienes trabajan medio tiempo solo porque no consiguieron tiempo completo, y quienes quieren trabajo y buscaron en el último año pero no en las últimas cuatro semanas.</string>
+
+    <string name="explainer_slackgap_title">Holgura oculta</string>
+    <string name="explainer_slackgap_technical">U-6 menos U-3</string>
+    <string name="explainer_slackgap_one_liner">Cuánto está la tasa amplia de subempleo por encima de la tasa principal de desempleo.</string>
+    <string name="explainer_slackgap_why_you">Cuando esta brecha se amplía, a la gente se le empuja a trabajar menos horas o a dejar de buscar, en vez de pasar a las listas de desempleo, así que el mercado laboral está más débil de lo que sugiere el número principal.</string>
+    <string name="explainer_slackgap_normal">Unos 3–3.7 puntos en años buenos; pasó de 5 en 2008 y de 7 en 2011.</string>
+    <string name="explainer_slackgap_how_it_works">Es simplemente U-6 menos la tasa principal, lo que deja a quienes trabajan medio tiempo sin quererlo y a los marginalmente vinculados: personas que quieren trabajo pero dejaron de buscar.</string>
+
+    <string name="explainer_primeepop_title">Proporción de 25–54 años con empleo</string>
+    <string name="explainer_primeepop_technical">Relación empleo-población de 25 a 54 años</string>
+    <string name="explainer_primeepop_one_liner">De cada 100 personas de 25 a 54 años, cuántas tienen trabajo.</string>
+    <string name="explainer_primeepop_analogy">En vez de preguntarles a quienes buscan trabajo cómo les va, esto simplemente cuenta cuántos están trabajando.</string>
+    <string name="explainer_primeepop_why_you">No puede mejorar porque la gente dejó de buscar, y el rango de edad deja fuera a jubilados y estudiantes, así que es el dato de empleo más difícil de maquillar.</string>
+    <string name="explainer_primeepop_normal">Alrededor de 80% en una economía fuerte (79.9% en 2007, 80.4% en 2019). Cayó a 75% después de 2008.</string>
+    <string name="explainer_primeepop_how_it_works">Son los empleados divididos entre toda la gente de ese rango de edad, según la encuesta mensual de hogares. Como la base es la población y no la fuerza laboral, quien deja de buscar sigue contando en contra.</string>
+
+    <string name="explainer_longterm_title">Búsquedas de empleo largas</string>
+    <string name="explainer_longterm_technical">Proporción desempleada 27 semanas o más</string>
+    <string name="explainer_longterm_one_liner">De las personas sin trabajo, la proporción que lleva más de seis meses buscando.</string>
+    <string name="explainer_longterm_why_you">Las búsquedas largas agotan los ahorros, y cuanto más dura una búsqueda, más difícil es conseguir el siguiente trabajo. Una proporción en aumento significa que encontrar trabajo está tardando más aunque los despidos se mantengan estables.</string>
+    <string name="explainer_longterm_normal">Alrededor de 20% en años buenos; 18% en 2007, 45% en 2010.</string>
+    <string name="explainer_longterm_how_it_works">La encuesta mensual de hogares les pregunta a los desempleados cuánto tiempo llevan buscando. La proporción se mueve despacio y suele seguir subiendo un tiempo después de que termina una crisis.</string>
+
+    <string name="explainer_insured_title">Personas que siguen cobrando desempleo</string>
+    <string name="explainer_insured_technical">Tasa de desempleo asegurado (solicitudes continuas)</string>
+    <string name="explainer_insured_one_liner">De cada 100 trabajadores cubiertos por el seguro de desempleo, cuántos siguen cobrando beneficios.</string>
+    <string name="explainer_insured_why_you">Las solicitudes nuevas hablan de despidos; esto te dice si quienes fueron despedidos están encontrando el siguiente trabajo. Cuando sube mientras las solicitudes nuevas siguen bajas, lo que se frenó fue la contratación, no que los despidos se aceleraran.</string>
+    <string name="explainer_insured_normal">Alrededor de 1.1–1.3% en los últimos años buenos; 1.9% en 2007. Pasó de 2.5% en 2008 y llegó a 5% en 2009.</string>
+    <string name="explainer_insured_how_it_works">Los estados reportan cuántas personas pidieron una semana más de beneficios, y el Departamento de Trabajo divide eso entre los empleos que cubre el seguro de desempleo. Cuenta de menos a los desempleados, ya que muchas personas no califican para los beneficios o los agotan después de unos seis meses.</string>
+
+    <string name="explainer_quits_title">Personas que renuncian a su trabajo</string>
+    <string name="explainer_quits_technical">Tasa de renuncias JOLTS</string>
+    <string name="explainer_quits_one_liner">La proporción de trabajadores que renuncian a su trabajo en un mes.</string>
+    <string name="explainer_quits_analogy">La gente solo salta cuando ve dónde caer.</string>
+    <string name="explainer_quits_why_you">Renunciar es la forma en que la mayoría consigue un aumento más grande. Cuando las renuncias bajan, los trabajadores están menos seguros de encontrar algo mejor, y el crecimiento de los salarios suele frenarse después.</string>
+    <string name="explainer_quits_normal">Alrededor de 2.2–2.4% en un mercado sano. 3% en el pico de 2022; 1.2% en 2009.</string>
+    <string name="explainer_quits_how_it_works">La Encuesta de Vacantes y Rotación Laboral (JOLTS) les pregunta a unos 21,000 empleadores cuántas personas se fueron por voluntad propia. Se publica unas cinco semanas después del mes que cubre.</string>
+
+    <string name="explainer_openings_title">Vacantes por persona que busca</string>
+    <string name="explainer_openings_technical">Vacantes ÷ desempleados</string>
+    <string name="explainer_openings_one_liner">Cuántas vacantes hay por cada persona que busca trabajo.</string>
+    <string name="explainer_openings_why_you">Por encima de 1, los empleadores compiten por trabajadores y quienes buscan empleo tienen opciones. Por debajo de 1, no hay vacantes para todos y las búsquedas tardan más.</string>
+    <string name="explainer_openings_normal">Alrededor de 1.2 en 2019, un récord de 2.0 en 2022, 0.66 en 2006–07 y 0.15 en 2009.</string>
+    <string name="explainer_openings_how_it_works">Las vacantes salen de la encuesta a empleadores (JOLTS) y los desempleados, de la encuesta de hogares. Algunas vacantes se publican y nunca se cubren, así que el mercado se ve un poco mejor de lo que está.</string>
+
+    <string name="explainer_realwages_title">Sueldos vs. precios</string>
+    <string name="explainer_realwages_technical">Ingreso semanal mediano real, interanual</string>
+    <string name="explainer_realwages_one_liner">Si el sueldo típico de tiempo completo alcanza para más o para menos que hace un año.</string>
+    <string name="explainer_realwages_why_you">Este es el aumento que importa: lo que queda de él después de los precios. Por debajo de cero, el trabajador típico se está quedando atrás aunque tenga aumento.</string>
+    <string name="explainer_realwages_normal">Alrededor de +1% al año en buenos tiempos. Estuvo por debajo de cero desde mediados de 2021 hasta finales de 2022.</string>
+    <string name="explainer_realwages_how_it_works">Es el pago semanal mediano de quienes trabajan tiempo completo, ajustado por inflación y comparado con un año antes. En una crisis puede saltar porque los trabajadores con sueldos más bajos pierden el empleo primero y salen de la muestra, así que léelo junto con los datos de empleo.</string>
+
+    <string name="explainer_temphelp_title">Empleos temporales</string>
+    <string name="explainer_temphelp_technical">Empleo en servicios de personal temporal</string>
+    <string name="explainer_temphelp_one_liner">Cuántas personas emplean las agencias de trabajo temporal, comparado con hace un año.</string>
+    <string name="explainer_temphelp_analogy">Los temporales son el amortiguador de un negocio: los primeros en ser contratados cuando suben los pedidos y los primeros en salir cuando bajan.</string>
+    <string name="explainer_temphelp_why_you">Como los empleadores ajustan el personal temporal antes que su plantilla permanente, una caída sostenida puede anticipar despidos.</string>
+    <string name="explainer_temphelp_normal">Crece unos pocos puntos porcentuales al año en una expansión. Cayó antes de 2001 y de 2008, pero también durante 2023–24 sin que hubiera recesión.</string>
+    <string name="explainer_temphelp_how_it_works">Es la línea de una sola industria en la encuesta mensual a empleadores. Parte de su larga caída desde 2022 se debe a que las empresas cambiaron su forma de contratar personal; por eso tiene líneas de alerta pero poco peso en el indicador.</string>
+
+    <string name="explainer_civpart_title">Proporción de adultos en la fuerza laboral</string>
+    <string name="explainer_civpart_technical">Tasa de participación laboral</string>
+    <string name="explainer_civpart_one_liner">De cada 100 adultos, cuántos trabajan o buscan trabajo.</string>
+    <string name="explainer_civpart_why_you">Cuando la gente sale por completo de la fuerza laboral, desaparece de la tasa de desempleo, así que una participación en descenso puede esconder debilidad.</string>
+    <string name="explainer_civpart_normal">Alrededor de 62–63% últimamente, por debajo del 67% de 2000, sobre todo porque los baby boomers se están jubilando.</string>
+    <string name="explainer_civpart_how_it_works">Es la fuerza laboral dividida entre la población adulta. El envejecimiento la empuja hacia abajo año tras año sin importar la economía, así que la proporción de 25–54 años con empleo mide mejor la holgura.</string>
+
+    <string name="explainer_gdp_title">Crecimiento económico</string>
+    <string name="explainer_gdp_technical">Crecimiento del PIB real</string>
+    <string name="explainer_gdp_one_liner">Qué tan rápido creció el último trimestre todo lo que el país produce y vende, descontando la inflación.</string>
+    <string name="explainer_gdp_analogy">Si la economía fuera un negocio, esto sería el crecimiento de sus ventas.</string>
+    <string name="explainer_gdp_why_you">Una economía que crece significa que las empresas contratan y pagan más. Cuando se contrae, las ganancias caen y las empresas recortan empleos.</string>
+    <string name="explainer_gdp_normal">Alrededor de 2% al año es lo típico en EE. UU. Por debajo de cero significa que la economía se contrajo.</string>
+    <string name="explainer_gdp_how_it_works">El PIB suma todo lo que se gasta en el país: las compras de la gente, la inversión de las empresas, el gasto del gobierno y las exportaciones menos las importaciones. Dos trimestres seguidos de contracción son la señal de libro de texto de una recesión.</string>
+
+    <string name="explainer_umcsent_title">Cómo se siente la gente con el dinero</string>
+    <string name="explainer_umcsent_technical">Sentimiento del consumidor</string>
+    <string name="explainer_umcsent_one_liner">Una encuesta mensual que le pregunta a la gente si se siente bien o mal con sus finanzas y con la economía.</string>
+    <string name="explainer_umcsent_why_you">El gasto de los hogares es cerca de dos tercios de la economía. Cuando la gente está pesimista, pospone las compras grandes, y esa cautela por sí sola puede frenar las cosas.</string>
+    <string name="explainer_umcsent_normal">El promedio de largo plazo ronda 85. Por debajo de 60 es muy pesimista.</string>
+    <string name="explainer_umcsent_how_it_works">La Universidad de Michigan llama a unas 600 personas al mes. El ánimo sigue de cerca a los precios: la inflación alta lo hunde incluso cuando sobra empleo.</string>
+
+    <string name="explainer_dff_title">La tasa de interés de la Fed</string>
+    <string name="explainer_dff_technical">Tasa de fondos federales</string>
+    <string name="explainer_dff_one_liner">La tasa de interés que fija la Reserva Federal: el punto de partida de casi todas las demás tasas del país.</string>
+    <string name="explainer_dff_analogy">Es el acelerador y el freno de la economía. Las tasas bajas la aceleran; las altas la frenan.</string>
+    <string name="explainer_dff_why_you">Cuando la Fed la sube, las tarjetas de crédito, los préstamos de auto y las hipotecas se encarecen en cuestión de semanas, y las cuentas de ahorro pagan más. Cuando la baja, pedir prestado se abarata y los ahorros pagan menos.</string>
+    <string name="explainer_dff_normal">No hay un nivel normal fijo. Estuvo cerca de 0% después de 2008 y en 2020, y por encima de 5% en 2023.</string>
+    <string name="explainer_dff_how_it_works">La Fed sube las tasas cuando la inflación está demasiado alta, para encarecer el crédito y que la gente y las empresas gasten menos. Las baja cuando la economía está débil, para fomentar el crédito, la contratación y el gasto.</string>
+
+    <string name="explainer_realrate_title">Tasa de interés real</string>
+    <string name="explainer_realrate_technical">Fondos federales menos inflación</string>
+    <string name="explainer_realrate_one_liner">La tasa de interés de la Fed menos la inflación: si el dinero que tienes ahorrado crece más rápido que los precios.</string>
+    <string name="explainer_realrate_why_you">Por encima de cero, el efectivo en una cuenta de ahorro más o menos sigue el ritmo de los precios, y pedir prestado es realmente caro. Por debajo de cero, los ahorros pierden poder de compra y la deuda es barata.</string>
+    <string name="explainer_realrate_normal">Alrededor de 0.5–1% se considera neutral: ni acelera ni frena la economía.</string>
+    <string name="explainer_realrate_how_it_works">Una tasa de 5% suena alta, pero si los precios suben 6% sigues perdiendo terreno. Restar la inflación muestra qué tan caro o barato está realmente el dinero.</string>
+
+    <string name="explainer_dgs10_title">Costo de deuda del gobierno a 10 años</string>
+    <string name="explainer_dgs10_technical">Rendimiento del bono del Tesoro a 10 años</string>
+    <string name="explainer_dgs10_one_liner">La tasa de interés que piden los inversionistas por prestarle dinero al gobierno de EE. UU. durante 10 años.</string>
+    <string name="explainer_dgs10_why_you">Las tasas hipotecarias siguen muy de cerca este número y normalmente quedan unos 1.5–2 puntos por encima. Cuando sube, comprar una casa se encarece.</string>
+    <string name="explainer_dgs10_normal">Alrededor de 3.5–4.5% en las últimas décadas; más de 5% es alto.</string>
+    <string name="explainer_dgs10_how_it_works">El gobierno pide prestado vendiendo “bonos del Tesoro”, que son pagarés. Los inversionistas los compran, y la tasa que exigen sube cuando esperan inflación, cuando les preocupa cuánto debe el gobierno o cuando la Fed mantiene las tasas altas.</string>
+
+    <string name="explainer_dgs2_title">Costo de deuda del gobierno a 2 años</string>
+    <string name="explainer_dgs2_technical">Rendimiento del bono del Tesoro a 2 años</string>
+    <string name="explainer_dgs2_one_liner">Lo que cobran los inversionistas por prestarle dinero al gobierno durante 2 años: básicamente, su apuesta sobre hacia dónde va la tasa de la Fed.</string>
+    <string name="explainer_dgs2_why_you">Si está bajando, los mercados esperan que la Fed baje las tasas pronto, lo que abarataría los préstamos.</string>
+    <string name="explainer_dgs2_normal">Suele estar cerca de la tasa de la Fed.</string>
+
+    <string name="explainer_dgs30_title">Costo de deuda del gobierno a 30 años</string>
+    <string name="explainer_dgs30_technical">Rendimiento del bono del Tesoro a 30 años</string>
+    <string name="explainer_dgs30_one_liner">Lo que cobran los inversionistas por prestarle dinero al gobierno durante 30 años.</string>
+    <string name="explainer_dgs30_why_you">Refleja las preocupaciones de largo plazo sobre la inflación y la deuda pública, y mueve un poco los préstamos de largo plazo, como las hipotecas.</string>
+
+    <string name="explainer_treasuries_title">Bonos del Tesoro</string>
+    <string name="explainer_treasuries_technical">Bonos del gobierno de EE. UU.</string>
+    <string name="explainer_treasuries_one_liner">Pagarés que vende el gobierno de EE. UU. para pedir dinero prestado. El interés que pagan se llama rendimiento.</string>
+    <string name="explainer_treasuries_analogy">Como un certificado de depósito en el banco, solo que quien pide prestado es el gobierno de EE. UU.</string>
+    <string name="explainer_treasuries_why_you">Los bonos del Tesoro se consideran la inversión más segura del mundo, así que sus rendimientos marcan el piso de todos los demás préstamos: tu hipoteca, los bonos de una empresa, incluso tu cuenta de ahorro.</string>
+    <string name="explainer_treasuries_how_it_works">Hay plazos desde 1 mes hasta 30 años. Los precios y los rendimientos se mueven en sentidos opuestos: cuando mucha gente quiere comprar bonos del Tesoro (a menudo cuando tiene miedo), los precios suben y los rendimientos bajan.</string>
+
+    <string name="explainer_yieldcurve_title">La curva de rendimiento</string>
+    <string name="explainer_yieldcurve_technical">Curva de rendimiento del Tesoro</string>
+    <string name="explainer_yieldcurve_one_liner">Una línea que une lo que paga el gobierno por pedir prestado a 1 mes, 1 año, 10 años y 30 años.</string>
+    <string name="explainer_yieldcurve_analogy">Normalmente un préstamo a 10 años cuesta más que uno a 1 año: quieres algo extra por dejar tu dinero comprometido más tiempo. Por eso la línea sube. Cuando baja, algo anda mal.</string>
+    <string name="explainer_yieldcurve_why_you">Cuando las tasas de corto plazo son más altas que las de largo plazo (una curva “invertida”), los inversionistas apuestan a que la economía se debilitará y la Fed tendrá que bajar las tasas. Eso ha pasado antes de cada recesión de EE. UU. desde 1970.</string>
+    <string name="explainer_yieldcurve_normal">Con pendiente hacia arriba: las tasas de largo plazo 1–2 puntos por encima de las de corto plazo.</string>
+    <string name="explainer_yieldcurve_how_it_works">Las tasas de corto plazo siguen a la Fed. Las de largo plazo siguen lo que los inversionistas esperan del crecimiento y la inflación durante muchos años. Si la Fed presiona fuerte contra la inflación mientras los inversionistas esperan una desaceleración, las tasas cortas terminan por encima de las largas.</string>
+
+    <string name="explainer_t10y2y_title">Costo de deuda a largo vs. corto plazo</string>
+    <string name="explainer_t10y2y_technical">Curva de rendimiento: 10 años menos 2 años</string>
+    <string name="explainer_t10y2y_one_liner">Cuánto más paga el gobierno por pedir prestado a 10 años que a 2 años.</string>
+    <string name="explainer_t10y2y_analogy">Por encima de cero es lo normal. Por debajo de cero (“invertida”) es como una veleta que gira antes de una tormenta.</string>
+    <string name="explainer_t10y2y_why_you">Cada recesión de EE. UU. desde 1970 llegó después de que esto bajara de cero. Pero no es un cronómetro: la recesión ha llegado entre 6 meses y 2 años después, a menudo justo cuando la curva vuelve a ser positiva.</string>
+    <string name="explainer_t10y2y_normal">Entre +0.5 y +2 puntos.</string>
+
+    <string name="explainer_t10y3m_title">Costo de deuda a largo vs. muy corto plazo</string>
+    <string name="explainer_t10y3m_technical">Curva de rendimiento: 10 años menos 3 meses</string>
+    <string name="explainer_t10y3m_one_liner">La tasa a 10 años menos la tasa a 3 meses: la versión de la curva de rendimiento que usa la Fed de Nueva York para estimar la probabilidad de recesión.</string>
+    <string name="explainer_t10y3m_why_you">Igual que su prima de arriba, cuando baja de cero ha anticipado recesiones de forma confiable.</string>
+    <string name="explainer_t10y3m_normal">Por encima de +0.5 puntos.</string>
+
+    <string name="explainer_mortgage_title">Tasas hipotecarias</string>
+    <string name="explainer_mortgage_technical">Tasa hipotecaria fija a 30 años</string>
+    <string name="explainer_mortgage_one_liner">La tasa de interés típica de un préstamo hipotecario a 30 años.</string>
+    <string name="explainer_mortgage_why_you">Cada punto de aumento suma unos $330 al mes al pago de un préstamo de $500,000. Las tasas altas dejan a mucha gente fuera del mercado y hacen que los dueños no se muden, así que salen menos casas a la venta.</string>
+    <string name="explainer_mortgage_normal">Alrededor de 4–6% durante casi todos los últimos 20 años. El mínimo histórico fue menos de 3% en 2021; más de 7% es lo más alto desde principios de los 2000.</string>
+    <string name="explainer_mortgage_how_it_works">Los prestamistas fijan las tasas hipotecarias un poco por encima del rendimiento del bono del Tesoro a 10 años, agregando un margen por su riesgo y sus costos. La Fed no las fija directamente, pero sus movimientos mueven los rendimientos del Tesoro.</string>
+
+    <string name="explainer_homeprices_title">Precios de la vivienda</string>
+    <string name="explainer_homeprices_technical">Índice nacional Case-Shiller, interanual</string>
+    <string name="explainer_homeprices_one_liner">Cuánto cambió el precio de una casa típica de EE. UU. en el último año.</string>
+    <string name="explainer_homeprices_why_you">Para la mayoría de las familias, su casa es su mayor activo. La caída de precios puede atrapar a los dueños que deben más de lo que vale la casa: eso fue lo que encendió la mecha en 2008.</string>
+    <string name="explainer_homeprices_normal">Subidas de 3–5% al año. Las caídas de precio son raras y suelen indicar problemas.</string>
+    <string name="explainer_homeprices_how_it_works">El índice sigue las mismas casas cuando se revenden, así que mide cambios de precio y no una mezcla de casas grandes y pequeñas. Va unos dos meses atrasado.</string>
+
+    <string name="explainer_hy_title">Costo de deuda de las empresas riesgosas</string>
+    <string name="explainer_hy_technical">Diferencial de bonos de alto rendimiento (basura)</string>
+    <string name="explainer_hy_one_liner">Cuánto interés extra pagan las empresas más frágiles por pedir prestado, comparado con el gobierno.</string>
+    <string name="explainer_hy_analogy">Es el miedo del mercado a las quiebras, escrito como un número. Se dispara cuando los prestamistas se ponen nerviosos.</string>
+    <string name="explainer_hy_why_you">Cuando se dispara, las empresas que necesitan préstamos no los consiguen, así que recortan empleos. Saltó a unos 20 puntos en 2008 y a 11 en marzo de 2020.</string>
+    <string name="explainer_hy_normal">3–4.5 puntos es calma. Más de 6 es tensión.</string>
+
+    <string name="explainer_stlfsi_title">Tensión del sistema financiero</string>
+    <string name="explainer_stlfsi_technical">Índice de Tensión Financiera de la Fed de St. Louis</string>
+    <string name="explainer_stlfsi_one_liner">Un solo número que combina 18 señales de presión en el sistema financiero. Cero significa normal.</string>
+    <string name="explainer_stlfsi_why_you">Cuando las tuberías financieras se tapan (los bancos desconfían de prestarse entre sí, los inversionistas huyen hacia lo seguro), el crédito se seca para todos.</string>
+    <string name="explainer_stlfsi_normal">Por debajo de cero está más tranquilo de lo habitual. Por encima de 1 hay tensión real; en 2008 llegó a cerca de 5.</string>
+
+    <string name="explainer_vix_title">Medidor del miedo del mercado</string>
+    <string name="explainer_vix_technical">VIX</string>
+    <string name="explainer_vix_one_liner">Qué tan movida esperan los inversionistas que esté la bolsa durante el próximo mes.</string>
+    <string name="explainer_vix_analogy">Un pronóstico de turbulencia para tu 401(k).</string>
+    <string name="explainer_vix_why_you">Un VIX alto significa grandes vaivenes diarios en tu cuenta de retiro. No predice la dirección, pero se dispara durante las ventas masivas.</string>
+    <string name="explainer_vix_normal">Menos de 20 es calma. 20–30 es nerviosismo. Más de 30 es miedo; pasó de 80 en 2008 y 2020.</string>
+    <string name="explainer_vix_how_it_works">Se calcula a partir de los precios de las opciones, que son contratos de seguro sobre el S&amp;P 500. Cuando los inversionistas corren a comprar protección, esos precios y el VIX suben.</string>
+
+    <string name="explainer_ccdelinq_title">Pagos atrasados de tarjetas de crédito</string>
+    <string name="explainer_ccdelinq_technical">Tasa de morosidad de tarjetas de crédito</string>
+    <string name="explainer_ccdelinq_one_liner">La proporción de saldos de tarjetas de crédito con al menos 30 días de atraso.</string>
+    <string name="explainer_ccdelinq_why_you">Muestra qué tan apretados están los hogares comunes. Cuando sube, la gente se está quedando sin margen, y el gasto suele caer poco después.</string>
+    <string name="explainer_ccdelinq_normal">Alrededor de 2.5–3.5%. Llegó a cerca de 6.8% en 2009.</string>
+
+    <string name="explainer_debtgdp_title">Deuda nacional vs. la economía</string>
+    <string name="explainer_debtgdp_technical">Deuda federal sobre PIB</string>
+    <string name="explainer_debtgdp_one_liner">Todo lo que debe el gobierno federal, comparado con todo lo que produce el país en un año.</string>
+    <string name="explainer_debtgdp_analogy">Como comparar las deudas totales de una familia con su ingreso anual.</string>
+    <string name="explainer_debtgdp_why_you">Cuanto más debe el gobierno, más de tus impuestos se van en intereses y más tiene que pedir prestado, lo que puede subir las tasas de interés de los préstamos de todos.</string>
+    <string name="explainer_debtgdp_normal">Era cerca de 60% en 2000 y pasó de 100% alrededor de 2013. El máximo de la Segunda Guerra Mundial fue cerca de 119%.</string>
+
+    <string name="explainer_interest_title">Intereses que se comen los impuestos</string>
+    <string name="explainer_interest_technical">Pagos de intereses federales ÷ ingresos fiscales</string>
+    <string name="explainer_interest_one_liner">Cuántos centavos de cada dólar de impuestos se van solo en pagar intereses de la deuda nacional.</string>
+    <string name="explainer_interest_why_you">El dinero que se gasta en intereses no puede ir a carreteras, defensa o al Seguro Social. Cuando los intereses se llevan una gran tajada, el gobierno pide más prestado para cubrirlos, y eso puede volverse una espiral.</string>
+    <string name="explainer_interest_normal">Alrededor de 10–15% durante casi todos los 2000. Más de 30% sería lo más alto de la historia moderna.</string>
+
+    <string name="explainer_m2_title">Cantidad de dinero en circulación</string>
+    <string name="explainer_m2_technical">Oferta monetaria M2, interanual</string>
+    <string name="explainer_m2_one_liner">Qué tan rápido crece el total de efectivo y depósitos bancarios en la economía.</string>
+    <string name="explainer_m2_why_you">Mucho dinero nuevo suele alimentar la inflación (en 2021 creció 25%). Que el dinero se reduzca es raro y aprieta a quienes deben.</string>
+    <string name="explainer_m2_normal">Crece 4–7% al año.</string>
+
+    <string name="explainer_recession_title">Recesión</string>
+    <string name="explainer_recession_one_liner">Una caída amplia y duradera: la economía se contrae, las empresas recortan empleos y el desempleo sube.</string>
+    <string name="explainer_recession_why_you">En las recesiones la gente pierde empleos, los precios de las casas pueden bajar y las cuentas de inversión caen. Suelen durar menos de un año, pero la recuperación puede tardar más.</string>
+    <string name="explainer_recession_normal">EE. UU. ha tenido 4 recesiones desde 1990: 1990–91, 2001, 2007–09 y 2020. Aparecen sombreadas en las gráficas de esta app.</string>
+    <string name="explainer_recession_how_it_works">Ningún número por sí solo lo decide; un panel de economistas lo determina, normalmente meses después de que empieza. Por eso esta app vigila las señales de alerta temprana.</string>
+
+    <string name="explainer_stress_title">El indicador de tensión</string>
+    <string name="explainer_stress_technical">Puntaje compuesto de esta app</string>
+    <string name="explainer_stress_one_liner">La mezcla de 0 a 100 que hace esta app con 20 señales de alerta, del empleo al crédito y la inflación.</string>
+    <string name="explainer_stress_why_you">Es una lectura rápida de cuántas alarmas suenan a la vez. Una sola señal de alerta significa poco; varias juntas han significado problemas en el pasado.</string>
+    <string name="explainer_stress_normal">0–30 calma · 30–50 elevado · 50–70 alto · 70+ grave.</string>
+    <string name="explainer_stress_how_it_works">Cada lectura vale 0 cuando está cómodamente en lo normal, 50 en su línea de “vigilancia” y 100 en su línea de “peligro”. El indicador las promedia y da más peso a las señales de recesión más confiables. Es un resumen, no un pronóstico.</string>
+
+    <string name="explainer_sp500_title">La bolsa</string>
+    <string name="explainer_sp500_technical">S&amp;P 500</string>
+    <string name="explainer_sp500_one_liner">El valor combinado de las 500 empresas más grandes de EE. UU. Cuando la gente dice “el mercado”, normalmente se refiere a esto.</string>
+    <string name="explainer_sp500_why_you">La mayoría de los 401(k) y de los fondos indexados lo siguen, así que cuando se mueve, tus ahorros para el retiro probablemente se mueven con él.</string>
+    <string name="explainer_sp500_normal">A largo plazo ha ganado en promedio cerca de 10% al año, pero con caídas de 20% o más cada pocos años.</string>
+    <string name="explainer_sp500_how_it_works">Las empresas más grandes pesan más, así que un puñado de gigantes tecnológicos lo mueve mucho. Las acciones suben cuando se esperan más ganancias y bajan cuando los inversionistas esperan problemas o cuando suben las tasas de interés.</string>
+
+    <string name="explainer_dow_title">El Dow</string>
+    <string name="explainer_dow_technical">Dow Jones Industrial Average</string>
+    <string name="explainer_dow_one_liner">30 empresas grandes y conocidas de EE. UU. Es el índice bursátil más antiguo y el que citan en las noticias de la noche.</string>
+    <string name="explainer_dow_why_you">Sirve para tomar el pulso rápido, pero con solo 30 empresas es menos representativo que el S&amp;P 500.</string>
+
+    <string name="explainer_nasdaq_title">Acciones tecnológicas</string>
+    <string name="explainer_nasdaq_technical">Nasdaq Composite</string>
+    <string name="explainer_nasdaq_one_liner">Miles de empresas que cotizan en la bolsa Nasdaq, con mucho peso en tecnología.</string>
+    <string name="explainer_nasdaq_why_you">Oscila más que el S&amp;P 500 en ambas direcciones y es especialmente sensible a las tasas de interés.</string>
+
+    <string name="explainer_russell_title">Empresas pequeñas</string>
+    <string name="explainer_russell_technical">Russell 2000</string>
+    <string name="explainer_russell_one_liner">2,000 empresas más pequeñas de EE. UU.</string>
+    <string name="explainer_russell_why_you">Las empresas pequeñas piden más prestado y venden sobre todo en EE. UU., así que suelen ser las primeras en sentir que la economía se frena o que suben las tasas.</string>
+
+    <string name="explainer_gold_title">Oro</string>
+    <string name="explainer_gold_technical">Futuros de oro</string>
+    <string name="explainer_gold_one_liner">El precio de una onza de oro.</string>
+    <string name="explainer_gold_why_you">La gente compra oro cuando pierde la confianza en las monedas, los gobiernos o las acciones. Un precio del oro que se dispara es señal de preocupación.</string>
+
+    <string name="explainer_oil_title">Petróleo</string>
+    <string name="explainer_oil_technical">Petróleo crudo WTI</string>
+    <string name="explainer_oil_one_liner">El precio de un barril de petróleo crudo de EE. UU.</string>
+    <string name="explainer_oil_why_you">El petróleo pasa directo a los precios de la gasolina, el transporte de mercancías y los boletos de avión. Grandes saltos en el precio del petróleo antecedieron a la mayoría de las recesiones de EE. UU. desde los años setenta.</string>
+
+    <string name="explainer_bitcoin_title">Bitcoin</string>
+    <string name="explainer_bitcoin_technical">BTC</string>
+    <string name="explainer_bitcoin_one_liner">La criptomoneda más grande, que se negocia las 24 horas del día.</string>
+    <string name="explainer_bitcoin_why_you">Es muy volátil y a menudo se mueve primero cuando cambia el apetito de riesgo de los inversionistas.</string>
+
+    <string name="explainer_dollar_title">El dólar</string>
+    <string name="explainer_dollar_technical">Índice del dólar estadounidense</string>
+    <string name="explainer_dollar_one_liner">Qué tan fuerte está el dólar frente a otras seis monedas importantes.</string>
+    <string name="explainer_dollar_why_you">Un dólar fuerte abarata los viajes al extranjero y las importaciones, pero perjudica a las empresas de EE. UU. que venden fuera del país.</string>
+
+    <string name="explainer_range52w_title">Rango de 52 semanas</string>
+    <string name="explainer_range52w_one_liner">Los precios más bajo y más alto del último año, con un punto que muestra dónde está hoy.</string>
+    <string name="explainer_range52w_why_you">Te dice de un vistazo si el precio de hoy está cerca de un récord o cerca de un mínimo.</string>
+
+    <string name="explainer_prevclose_title">Cierre anterior y cambio de hoy</string>
+    <string name="explainer_prevclose_one_liner">El precio final de ayer. La ganancia o pérdida de hoy (el número verde o naranja) se mide a partir de él.</string>
+    <string name="explainer_prevclose_why_you">La línea punteada en la gráfica del día es el cierre de ayer: por encima, el día va al alza; por debajo, va a la baja.</string>
+
+    <string name="explainer_volume_title">Volumen</string>
+    <string name="explainer_volume_one_liner">Cuántas acciones cambiaron de manos hoy.</string>
+    <string name="explainer_volume_why_you">Un movimiento grande con mucho volumen dice más que uno en un día tranquilo.</string>
+
+    <string name="explainer_totalassets_title">Activos totales</string>
+    <string name="explainer_totalassets_one_liner">Todo lo que tienes que vale dinero: cuentas de inversión y de retiro, efectivo y el capital que tienes en tu casa.</string>
+    <string name="explainer_totalassets_why_you">Es el tamaño de tu colchón financiero. La gráfica muestra cómo ha crecido en cada revisión anotada en tu hoja.</string>
+
+    <string name="explainer_networth_title">Patrimonio neto</string>
+    <string name="explainer_networth_one_liner">Lo que tienes menos lo que debes.</string>
+    <string name="explainer_networth_analogy">Si vendieras todo y pagaras todas tus deudas hoy, es lo que te quedaría.</string>
+    <string name="explainer_networth_why_you">Es la mejor medida de tu progreso financiero. Hacerlo crecer de forma constante (ahorrando, invirtiendo y pagando deudas) importa más que cualquier mes en particular.</string>
+    <string name="explainer_networth_how_it_works">Aquí son tus activos totales menos tus deudas aparte de la hipoteca. Tu casa cuenta como el capital que has acumulado en ella, así que su hipoteca ya está descontada.</string>
+
+    <string name="explainer_allocation_title">Dónde está tu dinero</string>
+    <string name="explainer_allocation_technical">Asignación de activos</string>
+    <string name="explainer_allocation_one_liner">Cómo se reparte tu dinero entre cuentas de retiro, otras inversiones, efectivo, ahorros para la universidad y el capital de tu casa.</string>
+    <string name="explainer_allocation_why_you">La mezcla decide cuánto te afecta una caída de la bolsa y qué tan rápido podrías disponer de tu dinero en una emergencia. Las cuentas de retiro y de universidad tienen penalizaciones por retiro anticipado; el efectivo no.</string>
+
+    <string name="explainer_budgetpace_title">Ritmo del presupuesto</string>
+    <string name="explainer_budgetpace_one_liner">Qué tan rápido se está gastando el límite del mes, y dónde terminará el mes si sigue así.</string>
+    <string name="explainer_budgetpace_why_you">Un límite solo ayuda si lo ves venir. Un gasto que va por delante de un ritmo parejo el día 10 es fácil de corregir; el mismo exceso descubierto el día 28 ya está gastado.</string>
+    <string name="explainer_budgetpace_how_it_works">La línea discontinua es el límite repartido de forma pareja a lo largo del mes. La proyección extiende hasta el último día el ritmo diario que lleva el mes, estabilizada al principio con el ritmo del mes pasado para que una compra grande el día 2 no marque el paso. Es una línea recta, así que un solo cargo grande, como una cuota anual, todavía la desvía.</string>
+    <string name="explainer_savingsline_title">La línea de ahorro</string>
+    <string name="explainer_savingsline_one_liner">Lo que el sueldo neto deja para las tarjetas una vez pagadas las facturas que no van con tarjeta.</string>
+    <string name="explainer_savingsline_why_you">El gasto con tarjeta por debajo de esta línea se paga con el ingreso de este mes. Cada dólar que la pasa sale de dinero que ya tenías ahorrado.</string>
+    <string name="explainer_savingsline_how_it_works">Es el sueldo neto mensual de la hoja de presupuesto menos las líneas de gastos de la hoja que salen directamente del banco (la hipoteca, los préstamos, todo lo que no esté marcado como pagado con tarjeta en la configuración del presupuesto). Luego el gasto con tarjeta del mes se compara con lo que queda.</string>
+    <string name="explainer_cashflow_title">Flujo de caja mensual</string>
+    <string name="explainer_cashflow_one_liner">Lo que entra cada mes, a dónde va y lo que sobra.</string>
+    <string name="explainer_cashflow_why_you">Lo que sobra es lo que construye patrimonio. La barra muestra tu sueldo neto repartido entre tus gastos, y la franja blanca es lo que te quedas.</string>
+
+    <string name="explainer_savingsrate_title">Tasa de ahorro</string>
+    <string name="explainer_savingsrate_one_liner">La parte de tu sueldo que no gastas: lo que queda del sueldo neto después de los gastos mensuales, más lo que se ahorra directo de la nómina.</string>
+    <string name="explainer_savingsrate_why_you">Una regla común es ahorrar 15–20% del ingreso para el retiro y otras metas. Las aportaciones que se descuentan antes de recibir tu sueldo (como un 401(k)) cuentan: el chequeo las suma cuando la hoja indica cuánto se aportó cada año.</string>
+
+    <string name="explainer_runway_title">Autonomía en efectivo</string>
+    <string name="explainer_runway_technical">Fondo de emergencia</string>
+    <string name="explainer_runway_one_liner">Cuántos meses de gastos podría cubrir tu efectivo si dejaras de recibir ingresos.</string>
+    <string name="explainer_runway_why_you">Es tu colchón ante un despido o una factura grande inesperada. Los asesores suelen sugerir 3–6 meses, o más si el ingreso es irregular o si un solo empleo sostiene el hogar.</string>
+
+    <string name="explainer_debt_title">Deuda</string>
+    <string name="explainer_debt_one_liner">Lo que debes, la tasa de interés de cada préstamo y cómo ha cambiado con el tiempo.</string>
+    <string name="explainer_debt_why_you">Pagar un préstamo es un rendimiento garantizado igual a su tasa de interés. Los préstamos que cobran más de lo que pagan los ahorros seguros (más o menos la tasa de la Fed) suelen ser los que conviene pagar primero.</string>
+
+    <string name="explainer_homeequity_title">Capital en tu vivienda</string>
+    <string name="explainer_homeequity_one_liner">La parte de tu casa que realmente es tuya: su valor menos lo que falta pagar de la hipoteca.</string>
+    <string name="explainer_homeequity_why_you">Crece a medida que pagas el préstamo y que suben los precios de las casas, pero solo puedes usarlo si vendes o si pides prestado con la casa como garantía.</string>
+
+    <string name="explainer_mortgageplanner_title">Planificador de hipoteca</string>
+    <string name="explainer_mortgageplanner_one_liner">Prueba un precio de casa, un pago inicial y una tasa, y ve el costo mensual completo frente a lo que tu presupuesto puede soportar.</string>
+    <string name="explainer_mortgageplanner_why_you">El pago mensual incluye más que el préstamo: el impuesto predial, el seguro y las cuotas de la asociación de propietarios (HOA) se van sumando. Las barras lo comparan con el margen que tu hoja dice que tendrás en cada etapa de tu plan.</string>
+
+    <string name="explainer_vesting_title">Consolidación de acciones</string>
+    <string name="explainer_vesting_technical">RSU y ESPP</string>
+    <string name="explainer_vesting_one_liner">Acciones de la empresa que ganas con el tiempo (RSU) o que compras con descuento (ESPP), entregadas en fechas fijas.</string>
+    <string name="explainer_vesting_why_you">Es dinero real con calendario, pero llega como acciones de la empresa y tributa como ingreso: la cifra “después de impuestos” es lo que probablemente te quedarías.</string>
+
+    <string name="explainer_taxes_title">Tasa efectiva de impuestos</string>
+    <string name="explainer_taxes_one_liner">La parte de tu ingreso total que se fue en impuestos federales, estatales y locales.</string>
+    <string name="explainer_taxes_why_you">Es menor que tu tramo de impuestos más alto porque solo el ingreso por encima de cada umbral paga la tasa más alta.</string>
+</resources>

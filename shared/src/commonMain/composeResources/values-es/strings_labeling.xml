@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_labeling.xml.
+  Teaching Frigate: the classifier labelling queue (labeling_), the face library (faces_), tagging
+  cars on a camera frame and what the relay's car check says (cars_), and the detection-zones editor
+  (zones_). Category, person, car and zone names are data and arrive as arguments.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="labeling_subtitle">Enséñale a Frigate qué está viendo</string>
+    <string name="labeling_refresh">Actualizar</string>
+    <string name="labeling_load_failed">No se pudo cargar el clasificador: %1$s</string>
+    <string name="labeling_queue_empty_title">Nada pendiente de etiquetar</string>
+    <plurals name="labeling_queue_waiting">
+        <item quantity="one">%1$d pendiente de etiquetar</item>
+        <item quantity="other">%1$d pendientes de etiquetar</item>
+    </plurals>
+    <string name="labeling_queue_only_not_ours">Hasta que agregues una categoría arriba, solo puedes archivarlos en "No es nuestro".</string>
+    <string name="labeling_queue_empty_body">Frigate guarda un recorte cada vez que este modelo revisa un objeto de tipo %1$s. Aparecerán aquí.</string>
+    <string name="labeling_objects_or_separator"> o </string>
+    <plurals name="labeling_confident_more">
+        <item quantity="one">%1$d más del que el modelo está seguro</item>
+        <item quantity="other">%1$d más de los que el modelo está seguro</item>
+    </plurals>
+    <string name="labeling_confident_body">Autos que no son tuyos, y los tuyos una vez que su placa o su aspecto lo confirmaron. Un auto al que nunca le pusiste nombre se ve igual para el modelo, así que muéstralos para enseñarle uno nuevo.</string>
+    <string name="labeling_show">Mostrar</string>
+    <string name="labeling_hide">Ocultar</string>
+    <string name="labeling_clear_count">Quitar %1$d</string>
+    <string name="labeling_categories_title">Categorías</string>
+    <string name="labeling_category_count">%1$s · %2$d</string>
+    <string name="labeling_new_category_label">Nueva categoría, p. ej., El Mercedes de Ron y Judy</string>
+    <string name="labeling_add">Agregar</string>
+    <string name="labeling_not_ours_explainer">"No es nuestro" es para cualquier %1$s que no te interese. Le enseña al modelo qué ignorar y nunca se convierte en un nombre.</string>
+    <string name="labeling_not_ours">No es nuestro</string>
+    <string name="labeling_never_trained">Nunca entrenado</string>
+    <plurals name="labeling_new_since_training">
+        <item quantity="one">%1$d nuevo desde el último entrenamiento</item>
+        <item quantity="other">%1$d nuevos desde el último entrenamiento</item>
+    </plurals>
+    <string name="labeling_up_to_date">Al día</string>
+    <string name="labeling_train_hint">Tarda como medio minuto en el servidor. Frigate cambia al modelo nuevo cuando termina.</string>
+    <string name="labeling_train_needs_two">Se necesitan dos categorías con imágenes para poder entrenar.</string>
+    <string name="labeling_train">Entrenar</string>
+    <string name="labeling_model_no_guess">El modelo aún no opina</string>
+    <string name="labeling_model_thinks_score">El modelo cree: %1$s (%2$d%)</string>
+    <string name="labeling_model_thinks">El modelo cree: %1$s</string>
+    <string name="labeling_frigate_calls_it">Frigate lo llama %1$s</string>
+    <string name="labeling_filed_as">Archivado como %1$s</string>
+    <string name="labeling_discard_crop">Descartar este recorte</string>
+    <string name="labeling_cars_title">Cómo se ven tus autos</string>
+    <string name="labeling_cars_body">Una predicción del 100% solo cuenta cuando coinciden su placa, o su marca, modelo y color. El resto te espera aquí.</string>
+    <string name="labeling_edit_car_action">Editar %1$s</string>
+    <string name="labeling_car_not_described">Aún sin describir</string>
+    <string name="labeling_car_looks_and_plate">%1$s · placa registrada</string>
+    <string name="labeling_car_plate_on_file">placa registrada</string>
+    <string name="labeling_car_describe">Describir</string>
+    <string name="labeling_car_edit">Editar</string>
+    <string name="labeling_profile_make">Marca</string>
+    <string name="labeling_profile_any_make">Cualquier marca</string>
+    <string name="labeling_profile_model_label">Modelo, p. ej., Model Y</string>
+    <string name="labeling_profile_colour">Color</string>
+    <string name="labeling_profile_plate">Placa</string>
+    <string name="labeling_profile_plate_hint">Identifica el auto siempre que la cámara pueda leerla, incluso de noche</string>
+    <string name="labeling_profile_forget">Olvidar</string>
+    <string name="labeling_plate_too_short">Una placa necesita al menos %1$d letras o dígitos</string>
+    <string name="labeling_save_failed">No se pudo guardar: %1$s</string>
+    <string name="labeling_profile_forget_failed">No se pudo olvidar: %1$s</string>
+    <plurals name="labeling_cleared_confident">
+        <item quantity="one">Se quitó %1$d recorte del que el modelo estaba seguro</item>
+        <item quantity="other">Se quitaron %1$d recortes de los que el modelo estaba seguro</item>
+    </plurals>
+    <string name="labeling_clear_failed">No se pudo quitar: %1$s</string>
+    <string name="labeling_category_added">Categoría agregada: %1$s</string>
+    <string name="labeling_category_add_failed">No se pudo agregar la categoría: %1$s</string>
+    <string name="labeling_train_failed">No se pudo entrenar: %1$s</string>
+    <plurals name="labeling_trained">
+        <item quantity="one">Entrenado con %1$d imagen. Frigate ya está usando el modelo nuevo.</item>
+        <item quantity="other">Entrenado con %1$d imágenes. Frigate ya está usando el modelo nuevo.</item>
+    </plurals>
+    <string name="labeling_training_slow">El entrenamiento está tardando más de lo esperado; desliza hacia abajo para actualizar en un minuto.</string>
+
+    <string name="labeling_live_title">En cámara ahora</string>
+    <string name="labeling_live_body">Ponle nombre a un auto mientras está a la vista. El modelo lo aprenderá en el próximo entrenamiento.</string>
+
+    <string name="faces_title">Rostros</string>
+    <string name="faces_subtitle">Enséñale a Frigate quién es quién</string>
+    <string name="faces_refresh">Actualizar</string>
+    <string name="faces_load_failed">No se pudo cargar la biblioteca de rostros: %1$s</string>
+    <string name="faces_queue_empty_title">No hay rostros pendientes</string>
+    <plurals name="faces_queue_waiting">
+        <item quantity="one">%1$d rostro esperando un nombre</item>
+        <item quantity="other">%1$d rostros esperando un nombre</item>
+    </plurals>
+    <string name="faces_queue_empty_body">Frigate guarda cada rostro que logra ver bien, con su mejor suposición. Pasa frente a una cámara mirándola y vuelve a revisar en un minuto.</string>
+    <string name="faces_people_title">Personas</string>
+    <string name="faces_people_empty">Nadie aún. Agrega a las personas que viven aquí y luego archiva sus rostros abajo a medida que Frigate los capte.</string>
+    <string name="faces_person_count">%1$s · %2$d</string>
+    <string name="faces_new_person_label">Nueva persona, p. ej., Andrew</string>
+    <string name="faces_add">Agregar</string>
+    <string name="faces_explainer">Un rostro se reconoce en cuanto se archiva — sin paso de entrenamiento. Con cinco a diez rostros por persona, de distintas cámaras, distancias e iluminación, el reconocimiento es confiable. Toca un nombre para ver o depurar sus rostros.</string>
+    <string name="faces_person_no_faces">%1$s aún no tiene rostros. Archiva uno de la lista de abajo.</string>
+    <string name="faces_person_face_description">Rostro de %1$s</string>
+    <string name="faces_remove_face">Quitar este rostro</string>
+    <string name="faces_not_recognised">Frigate no reconoce este rostro</string>
+    <string name="faces_thinks_score">Frigate cree: %1$s (%2$d%)</string>
+    <string name="faces_thinks">Frigate cree: %1$s</string>
+    <string name="faces_filed_as">Archivado como %1$s</string>
+    <string name="faces_add_person_first">Agrega una persona arriba para archivar este rostro.</string>
+    <string name="faces_not_one_of_us">No es de la casa</string>
+    <string name="faces_person_added">Se agregó a %1$s. Archiva un rostro con su nombre para empezar el reconocimiento.</string>
+    <string name="faces_add_failed">No se pudo agregar: %1$s</string>
+    <string name="faces_delete_failed">No se pudo borrar: %1$s</string>
+    <string name="faces_save_failed">No se pudo guardar: %1$s</string>
+
+    <string name="cars_title">Etiquetar autos a la vista</string>
+    <string name="cars_new_frame">Nuevo fotograma</string>
+    <string name="cars_camera_frame">Fotograma de la cámara</string>
+    <string name="cars_box_unnamed">Auto · sin nombre</string>
+    <string name="cars_how_to_tag">Toca un auto que Frigate haya enmarcado o arrastra un rectángulo alrededor de uno que se le haya pasado.</string>
+    <string name="cars_tracking_none">Frigate no está siguiendo ningún auto aquí en este momento.</string>
+    <plurals name="cars_tracking">
+        <item quantity="one">Frigate está siguiendo %1$d auto aquí.</item>
+        <item quantity="other">Frigate está siguiendo %1$d autos aquí.</item>
+    </plurals>
+    <string name="cars_whose_car">¿De quién es este auto?</string>
+    <string name="cars_selected_untracked">Frigate no está siguiendo un auto aquí, así que esto solo le enseña al modelo.</string>
+    <string name="cars_selected_unnamed">Frigate lo está siguiendo, pero no le ha puesto nombre.</string>
+    <string name="cars_selected_named">Frigate lo llama %1$s.</string>
+    <string name="cars_load_classifiers_failed">No se pudieron cargar los clasificadores: %1$s</string>
+    <string name="cars_no_car_classifier">Este servidor no tiene ningún clasificador que funcione con autos.</string>
+    <string name="cars_load_known_cars_failed">No se pudieron cargar los autos conocidos: %1$s</string>
+    <string name="cars_load_camera_failed">No se pudo cargar la cámara: %1$s</string>
+    <string name="cars_unreadable_frame">La cámara envió una imagen que la app no puede leer.</string>
+    <string name="cars_tagged">Etiquetado como %1$s. %2$s %3$s</string>
+    <string name="cars_tagged_not_ours">Etiquetado como "No es nuestro". %1$s %2$s</string>
+    <string name="cars_in_view_untracked">Frigate no está siguiendo un auto ahí, así que no puede aparecer a la vista hasta que detecte uno.</string>
+    <string name="cars_in_view_rename_failed">No se pudo renombrar el auto en seguimiento; aparecerá cuando el modelo lo reconozca.</string>
+    <string name="cars_in_view_removed">Se quitó de "A la vista ahora".</string>
+    <string name="cars_in_view_shown">Se muestra en "A la vista ahora".</string>
+    <string name="cars_retraining">Reentrenando ahora.</string>
+    <string name="cars_saved_for_training">Guardado para el próximo entrenamiento.</string>
+    <string name="cars_tag_failed">No se pudo guardar la etiqueta: %1$s</string>
+
+    <string name="cars_colour_white">blanco</string>
+    <string name="cars_colour_black">negro</string>
+    <string name="cars_colour_grey">gris</string>
+    <string name="cars_colour_silver">plateado</string>
+    <string name="cars_colour_red">rojo</string>
+    <string name="cars_colour_blue">azul</string>
+    <string name="cars_colour_green">verde</string>
+    <string name="cars_colour_brown">café</string>
+    <string name="cars_colour_beige">beige</string>
+    <string name="cars_colour_gold">dorado</string>
+    <string name="cars_colour_yellow">amarillo</string>
+    <string name="cars_colour_orange">naranja</string>
+    <string name="cars_colour_purple">morado</string>
+    <string name="cars_looks_colour_car">%2$s %1$s</string>
+
+    <string name="cars_check_unchecked">Seguro que es %1$s, pero aún no lo confirman su placa ni su aspecto</string>
+    <string name="cars_check_confirmed_plate">Confirmado por su placa</string>
+    <string name="cars_check_confirmed_plate_saw">Confirmado por su placa: parecía un %1$s</string>
+    <string name="cars_check_confirmed_looks">Confirmado por su aspecto</string>
+    <string name="cars_check_confirmed_looks_saw">Confirmado por su aspecto: parecía un %1$s</string>
+    <string name="cars_check_other_car_plate">Revisión del auto: es %1$s por su placa, no %2$s</string>
+    <string name="cars_check_other_car_looks">Revisión del auto: es %1$s por su aspecto, no %2$s</string>
+    <string name="cars_check_mismatch_saw">Revisión del auto: parecía un %1$s, no %2$s</string>
+    <string name="cars_check_mismatch">Revisión del auto: no se parecía; no es %1$s</string>
+    <string name="cars_check_unconfirmed_saw">La revisión del auto no pudo confirmar %1$s: parecía un %2$s</string>
+    <string name="cars_check_unconfirmed_dark">La revisión del auto no pudo confirmar %1$s: estaba demasiado oscuro para ver el color</string>
+
+    <string name="zones_title">Zonas de detección</string>
+    <string name="zones_layer_zones">Zonas</string>
+    <string name="zones_layer_objects">Ignorar objetos</string>
+    <string name="zones_layer_motion">Ignorar movimiento</string>
+    <string name="zones_layer_zones_inline">zonas</string>
+    <string name="zones_layer_objects_inline">ignorar objetos</string>
+    <string name="zones_layer_motion_inline">ignorar movimiento</string>
+    <string name="zones_layer_zones_description">Áreas con nombre, como la entrada de autos o el jardín. Cada detección se etiqueta con las zonas en las que está, para que las alertas puedan decir dónde pasó algo. Las zonas nunca ocultan nada.</string>
+    <string name="zones_layer_objects_description">Todo lo que se detecte con los pies dentro de esta área se descarta como si no estuviera. Úsala para una calle o el patio de un vecino del que nunca quieras alertas.</string>
+    <string name="zones_layer_motion_description">El movimiento dentro de esta área no activa el detector. Úsala para árboles, banderas y marcas de hora en pantalla. Por sí sola no oculta objetos.</string>
+    <string name="zones_layer_count">%1$s · %2$d</string>
+    <string name="zones_leave_title">¿Guardar los cambios?</string>
+    <string name="zones_leave_body_zones">Editaste las zonas de esta cámara, pero no las guardaste. Frigate solo usa lo que está guardado.</string>
+    <string name="zones_leave_body_ignore_areas">Editaste las áreas ignoradas de esta cámara, pero no las guardaste. Frigate solo usa lo que está guardado.</string>
+    <string name="zones_save_and_leave">Guardar y salir</string>
+    <string name="zones_keep_editing">Seguir editando</string>
+    <string name="zones_discard">Descartar</string>
+    <string name="zones_refresh_frame">Actualizar fotograma</string>
+    <string name="zones_add_zone">Agregar zona</string>
+    <string name="zones_add_ignore_area">Agregar área ignorada</string>
+    <string name="zones_remove_corner">Quitar esquina</string>
+    <string name="zones_saving">Guardando en Frigate…</string>
+    <string name="zones_save_failed">No se pudo guardar: %1$s</string>
+    <string name="zones_unsaved_one">Cambios sin guardar: %1$s</string>
+    <string name="zones_unsaved_two">Cambios sin guardar: %1$s y %2$s</string>
+    <string name="zones_unsaved_three">Cambios sin guardar: %1$s, %2$s y %3$s</string>
+    <string name="zones_saved_zones">Guardado. Frigate ya usa las zonas nuevas.</string>
+    <string name="zones_saved_ignore_areas">Guardado. Frigate ya usa las nuevas áreas ignoradas.</string>
+    <string name="zones_hint_place_corners">Toca el fotograma para colocar esquinas (al menos tres).</string>
+    <string name="zones_hint_keep_adding">Sigue agregando esquinas, o toca la primera (o Listo) para cerrar la figura.</string>
+    <string name="zones_hint_corner_minimum">Una figura necesita al menos tres esquinas. Arrastra esta o toca un punto de un borde para agregar otra.</string>
+    <string name="zones_hint_corner_selected">Arrastra esta esquina o usa Quitar esquina. Toca un punto pequeño de un borde para agregar una ahí.</string>
+    <string name="zones_hint_zone_selected">Arrastra las esquinas para ajustarla al área; toca un punto pequeño de un borde para agregar una esquina. Ponle nombre abajo.</string>
+    <string name="zones_hint_area_selected">Arrastra las esquinas para ajustarla al área; toca un punto pequeño de un borde para agregar una esquina. Eliminar quita el área.</string>
+    <string name="zones_hint_no_zones">Aún no hay zonas. Toca el fotograma para delimitar un área, como la entrada de autos.</string>
+    <string name="zones_hint_nothing_ignored">Aún no se ignora nada. Toca el fotograma para delimitar un área.</string>
+    <string name="zones_hint_select_zone">Toca una zona para seleccionarla, o toca un espacio vacío para empezar una nueva.</string>
+    <string name="zones_hint_select_ignore_area">Toca un área ignorada para seleccionarla, o toca un espacio vacío para empezar una nueva.</string>
+    <string name="zones_any_object">Cualquier objeto</string>
+    <string name="zones_new_badge">NUEVA</string>
+    <string name="zones_name_label">Nombre</string>
+    <string name="zones_frigate_key">Clave de Frigate: %1$s</string>
+    <string name="zones_counts_objects">Cuenta estos objetos</string>
+    <string name="zones_load_failed">No se pudieron cargar las zonas de detección: %1$s</string>
+    <string name="zones_placeholder_name">Zona %1$d</string>
+</resources>

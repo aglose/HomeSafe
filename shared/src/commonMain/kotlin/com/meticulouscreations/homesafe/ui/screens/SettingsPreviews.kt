@@ -118,6 +118,7 @@ private fun SettingsHomePreviewContent(state: SettingsUiState, initialFold: Sett
 }
 
 @Preview(name = "Settings", widthDp = 412, heightDp = 915)
+@Preview(name = "Settings, in Spanish", widthDp = 412, heightDp = 915, locale = "es")
 @Composable
 private fun SettingsHomePreview() {
     SettingsHomePreviewContent(previewSettings)

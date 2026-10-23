@@ -161,6 +161,7 @@ private fun BudgetPreview(state: BudgetUiState) {
 }
 
 @Preview(name = "Budget · on pace", widthDp = 412, heightDp = 3400)
+@Preview(name = "Budget · on pace, in Spanish", widthDp = 412, heightDp = 3400, locale = "es")
 @Composable
 private fun FinanceBudgetPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.onPace))

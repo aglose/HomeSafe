@@ -44,6 +44,7 @@ import kotlinx.datetime.TimeZone
  */
 
 @Preview(name = "Home", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Preview(name = "Home, in Spanish", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP, locale = "es")
 @Composable
 fun HomeFeedPreview() {
     HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView, doors = previewDoors)

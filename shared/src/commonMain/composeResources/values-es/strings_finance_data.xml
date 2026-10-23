@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_finance_data.xml.
+  Finance: the markets the app follows, the household's books as read from the budget sheet,
+  the sheet's setup, sync and chart cards, and the "How it all connects" map.
+  fin_data_* is data and domain text, fin_sheet_* the sheet screens, fin_connections_* the map.
+  Text in “curly quotes” inside fin_data_section_*_looked_for is a title in the user's own sheet:
+  keep it as the sheet spells it.
+-->
+<resources>
+    <string name="fin_data_symbol_sp500">S&amp;P 500</string>
+    <string name="fin_data_symbol_sp500_about">Las 500 mayores empresas que cotizan en bolsa en EE. UU., ponderadas por tamaño: la lectura más amplia de las acciones estadounidenses y el índice de referencia que sigue la mayor parte del dinero para la jubilación.</string>
+    <string name="fin_data_symbol_dow_name">Dow Jones Industrial Average</string>
+    <string name="fin_data_symbol_dow_short">Dow</string>
+    <string name="fin_data_symbol_dow_about">30 empresas de primera línea, ponderadas por el precio de su acción. Es el índice más antiguo de EE. UU. y la cifra que citan los noticieros de la noche.</string>
+    <string name="fin_data_symbol_nasdaq_name">Nasdaq Composite</string>
+    <string name="fin_data_symbol_nasdaq_short">Nasdaq</string>
+    <string name="fin_data_symbol_nasdaq_about">Todas las acciones de la bolsa Nasdaq, con mucho peso en tecnología. Se mueve más que el S&amp;P, tanto al alza como a la baja.</string>
+    <string name="fin_data_symbol_russell_name">Russell 2000</string>
+    <string name="fin_data_symbol_russell_short">Russell 2K</string>
+    <string name="fin_data_symbol_russell_about">2,000 empresas pequeñas de EE. UU. Se endeudan más y venden sobre todo en el país, así que este índice es el primero en notar una economía que se frena y tasas más altas.</string>
+    <string name="fin_data_symbol_vix_name">Índice de Volatilidad CBOE</string>
+    <string name="fin_data_symbol_vix_short">VIX</string>
+    <string name="fin_data_symbol_vix_about">El medidor del miedo del mercado: la volatilidad que los operadores de opciones esperan del S&amp;P 500 en los próximos 30 días. Debajo de 20 hay calma; arriba de 30, miedo.</string>
+    <string name="fin_data_symbol_ten_year_name">Rendimiento del Tesoro a 10 años</string>
+    <string name="fin_data_symbol_ten_year_short">Bono 10 años</string>
+    <string name="fin_data_symbol_ten_year_about">Lo que paga el gobierno de EE. UU. por pedir prestado a diez años. Las hipotecas y casi todos los préstamos a largo plazo se fijan a partir de él.</string>
+    <string name="fin_data_symbol_gold_name">Futuros del oro</string>
+    <string name="fin_data_symbol_gold_short">Oro</string>
+    <string name="fin_data_symbol_gold_about">El refugio seguro clásico. El oro suele subir cuando los inversionistas pierden la confianza en las monedas, los gobiernos o la bolsa.</string>
+    <string name="fin_data_symbol_oil_name">Petróleo crudo (WTI)</string>
+    <string name="fin_data_symbol_oil_short">Petróleo</string>
+    <string name="fin_data_symbol_oil_about">Crudo West Texas. Desde los años setenta, la mayoría de las recesiones en EE. UU. vinieron después de un alza brusca del petróleo.</string>
+    <string name="fin_data_symbol_bitcoin">Bitcoin</string>
+    <string name="fin_data_symbol_bitcoin_about">La criptomoneda más grande, que se negocia a toda hora: a menudo lo primero que se mueve cuando cambia el apetito por el riesgo.</string>
+    <string name="fin_data_symbol_dollar_name">Índice del dólar estadounidense</string>
+    <string name="fin_data_symbol_dollar_short">Dólar</string>
+    <string name="fin_data_symbol_dollar_about">El dólar frente a seis monedas principales. Un dólar que sube rápido encarece el crédito en todo el mundo.</string>
+
+    <string name="fin_data_range_1d">1D</string>
+    <string name="fin_data_range_1w">1S</string>
+    <string name="fin_data_range_1m">1M</string>
+    <string name="fin_data_range_3m">3M</string>
+    <string name="fin_data_range_ytd">YTD</string>
+    <string name="fin_data_range_1y">1A</string>
+    <string name="fin_data_range_5y">5A</string>
+    <string name="fin_data_range_max">MÁX</string>
+
+    <string name="fin_data_owner_joint">Conjunta</string>
+
+    <string name="fin_data_category_retirement">Jubilación</string>
+    <string name="fin_data_category_investing">Inversión</string>
+    <string name="fin_data_category_education">Educación (529)</string>
+    <string name="fin_data_category_cash">Efectivo</string>
+    <string name="fin_data_category_home">Patrimonio de la casa</string>
+
+    <string name="fin_data_account_checking_savings">Cuenta corriente y ahorros</string>
+    <string name="fin_data_account_cash">Efectivo</string>
+    <string name="fin_data_account_home_equity">Patrimonio de la casa</string>
+
+    <string name="fin_data_section_income">Ingresos</string>
+    <string name="fin_data_section_income_looked_for">una celda que diga “Flow In” con el nombre de cada persona a su derecha, y “Monthly Income” debajo</string>
+    <string name="fin_data_section_expenses">Gastos mensuales</string>
+    <string name="fin_data_section_expenses_looked_for">una celda que diga “Flow Out”, con un monto junto a cada línea debajo de ella</string>
+    <string name="fin_data_section_totals">Totales mensuales</string>
+    <string name="fin_data_section_totals_looked_for">celdas que digan “Monthly Combined Income”, “Total Monthly Expenses” y “Net Monthly Profit”, cada una con su cifra al lado</string>
+    <string name="fin_data_section_accounts">Cuentas</string>
+    <string name="fin_data_section_accounts_looked_for">una celda que diga “Brokerage Accounts” con el nombre de cada persona en su fila</string>
+    <string name="fin_data_section_cash">Efectivo</string>
+    <string name="fin_data_section_cash_looked_for">una celda que diga “Checking/Savings” (o “Cash”) con un monto al lado</string>
+    <string name="fin_data_section_total_assets">Activos totales</string>
+    <string name="fin_data_section_total_assets_looked_for">una celda que diga “Total Assets” con su cifra al lado</string>
+    <string name="fin_data_section_debts">Deuda</string>
+    <string name="fin_data_section_debts_looked_for">una celda que diga “Debt” con el nombre de cada persona en la fila de abajo, o en su propia fila</string>
+    <string name="fin_data_section_home">Casa</string>
+    <string name="fin_data_section_home_looked_for">una celda que diga “Home Asset” con “Total Equity” o “Deposit…” debajo</string>
+    <string name="fin_data_section_vesting">Consolidación de acciones</string>
+    <string name="fin_data_section_vesting_looked_for">una celda que diga “Future Holdings”, con los encabezados “Type” y “Amount” justo debajo</string>
+    <string name="fin_data_section_watchlist">Lista de seguimiento</string>
+    <string name="fin_data_section_watchlist_looked_for">celdas como “Live TSLA Price”</string>
+    <string name="fin_data_section_history">Historial</string>
+    <string name="fin_data_section_history_looked_for">un encabezado “Date” en la misma fila que “Total Assets”, con una fecha en cada fila debajo</string>
+    <string name="fin_data_section_tax_years">Ingresos e impuestos</string>
+    <string name="fin_data_section_tax_years_looked_for">un encabezado “Take Home” en la misma fila que “Year”, con un año en cada fila debajo</string>
+    <string name="fin_data_section_contributions">Inversiones anuales</string>
+    <string name="fin_data_section_contributions_looked_for">una celda que diga “Investments” con los nombres de las personas debajo, y luego un año encima de cada bloque de filas</string>
+    <string name="fin_data_section_mortgage">Planificador de hipoteca</string>
+    <string name="fin_data_section_mortgage_looked_for">una celda que diga “Mortgage Calculator” con “Home Price” debajo</string>
+    <string name="fin_data_section_house_sale">Última venta de casa</string>
+    <string name="fin_data_section_house_sale_looked_for">una celda que diga “Sold Price” con su cifra al lado</string>
+
+    <plurals name="fin_data_found_people">
+        <item quantity="one">%1$d persona</item>
+        <item quantity="other">%1$d personas</item>
+    </plurals>
+    <plurals name="fin_data_found_lines">
+        <item quantity="one">%1$d línea</item>
+        <item quantity="other">%1$d líneas</item>
+    </plurals>
+    <plurals name="fin_data_found_accounts">
+        <item quantity="one">%1$d cuenta</item>
+        <item quantity="other">%1$d cuentas</item>
+    </plurals>
+    <plurals name="fin_data_found_balances">
+        <item quantity="one">%1$d saldo</item>
+        <item quantity="other">%1$d saldos</item>
+    </plurals>
+    <plurals name="fin_data_found_debts">
+        <item quantity="one">%1$d deuda</item>
+        <item quantity="other">%1$d deudas</item>
+    </plurals>
+    <plurals name="fin_data_found_payouts">
+        <item quantity="one">%1$d pago</item>
+        <item quantity="other">%1$d pagos</item>
+    </plurals>
+    <plurals name="fin_data_found_tickers">
+        <item quantity="one">%1$d símbolo</item>
+        <item quantity="other">%1$d símbolos</item>
+    </plurals>
+    <plurals name="fin_data_found_snapshots">
+        <item quantity="one">%1$d registro</item>
+        <item quantity="other">%1$d registros</item>
+    </plurals>
+    <plurals name="fin_data_found_years">
+        <item quantity="one">%1$d año</item>
+        <item quantity="other">%1$d años</item>
+    </plurals>
+    <string name="fin_data_found_all_totals">los 3</string>
+    <string name="fin_data_found_some_totals">%1$d de 3</string>
+    <string name="fin_data_found_read">leído</string>
+
+    <plurals name="fin_data_note_totals_partial">
+        <item quantity="one">Solo se encontró %1$d de los 3 totales mensuales</item>
+        <item quantity="other">Solo se encontraron %1$d de los 3 totales mensuales</item>
+    </plurals>
+    <plurals name="fin_data_note_history_undated">
+        <item quantity="one">%1$d fila del historial tiene cifras pero no fecha, así que se dejó fuera</item>
+        <item quantity="other">%1$d filas del historial tienen cifras pero no fecha, así que se dejaron fuera</item>
+    </plurals>
+
+    <string name="fin_data_chart_kind_not_drawn">La app no dibuja gráficos de tipo %1$s</string>
+    <string name="fin_data_chart_unknown_kind_not_drawn">La app no dibuja este tipo de gráfico</string>
+    <string name="fin_data_chart_no_ranges">No tiene rangos de datos</string>
+    <string name="fin_data_chart_tabs_gone">Usa datos de una pestaña que la hoja ya no tiene: %1$s</string>
+    <string name="fin_data_chart_quoted_tab">“%1$s”</string>
+    <string name="fin_data_chart_cells_empty">Las celdas que usa están vacías</string>
+    <string name="fin_data_chart_on_tab">Gráfico en %1$s</string>
+    <string name="fin_data_chart_series_number">Serie %1$d</string>
+
+    <string name="fin_data_error_relay_outdated">El relay del servidor todavía no ofrece la hoja de presupuesto.</string>
+    <string name="fin_data_error_relay_answered">El relay respondió %1$s</string>
+    <string name="fin_data_error_not_connected">Sin conexión con el servidor</string>
+    <string name="fin_data_error_sheet">No se pudo leer la hoja de presupuesto</string>
+    <string name="fin_data_error_chart">No se pudo cargar el gráfico</string>
+    <string name="fin_data_error_markets">No se puede acceder a los mercados</string>
+    <string name="fin_data_error_yahoo_answered">Yahoo respondió %1$s</string>
+    <string name="fin_data_error_no_chart">Yahoo no tiene gráfico para %1$s</string>
+    <string name="fin_data_error_fred_answered">FRED respondió %1$s para %2$s</string>
+
+    <string name="fin_sheet_setup_not_shared_title">Comparte tu hoja de presupuesto</string>
+    <string name="fin_sheet_setup_not_shared_body">El servidor lee tu hoja con su propia cuenta de Google, así que la hoja nunca tiene que ser pública. Abre la hoja, toca Compartir y agrega esta dirección como Lector:</string>
+    <string name="fin_sheet_setup_api_disabled_title">Activa la API de Google Sheets</string>
+    <string name="fin_sheet_setup_api_disabled_body">El proyecto de Google Cloud del servidor necesita tener la API de Sheets activada una vez. Abre el enlace de abajo, toca Habilitar y luego vuelve aquí e intenta de nuevo.</string>
+    <string name="fin_sheet_setup_not_configured_title">Indica al servidor cuál es tu hoja</string>
+    <string name="fin_sheet_setup_not_configured_body">Pon FINANCE_SHEET_ID=&lt;el id de la hoja&gt; (la parte larga de su URL) en relay/finance.env en el servidor y reinicia el relay. Así queda fuera del docker-compose.yml público.</string>
+    <string name="fin_sheet_setup_no_key_title">El servidor no tiene clave de Google</string>
+    <string name="fin_sheet_setup_no_key_body">El relay lee la hoja con una clave de cuenta de servicio de Google. Define FINANCE_SHEET_KEY con su ruta (la clave de notificaciones push sirve) y reinicia el relay.</string>
+    <string name="fin_sheet_setup_relay_outdated_title">Actualiza el relay del servidor</string>
+    <string name="fin_sheet_setup_relay_outdated_body">El relay de tu servidor es más antiguo que la app de finanzas. Copia relay/ al servidor y ejecuta ahí docker compose up -d --build.</string>
+    <string name="fin_sheet_setup_not_allowed_title">No disponible para esta cuenta</string>
+    <string name="fin_sheet_setup_not_allowed_body">Las finanzas del hogar solo se muestran a las cuentas de administrador del servidor. Inicia sesión con una para verlas aquí.</string>
+    <string name="fin_sheet_setup_signed_out_title">Inicia sesión para ver tu dinero</string>
+    <string name="fin_sheet_setup_signed_out_body">Tu presupuesto llega a través de tu servidor PercySafe, así que aparece en cuanto te conectes.</string>
+    <string name="fin_sheet_setup_not_found_title">No se encontró la hoja</string>
+    <string name="fin_sheet_setup_not_found_body">Google no encontró la hoja que el servidor tiene configurada. Revisa FINANCE_SHEET_ID.</string>
+    <string name="fin_sheet_setup_other_title">No se pudo leer tu hoja</string>
+    <string name="fin_sheet_setup_open_cloud">Abrir Google Cloud</string>
+
+    <string name="fin_sheet_sync_line_failed">No se pudo sincronizar · se muestra la hoja de %1$s</string>
+    <plurals name="fin_sheet_sync_line_look">
+        <item quantity="one">Sincronizado %2$s · %1$d cosa por revisar</item>
+        <item quantity="other">Sincronizado %2$s · %1$d cosas por revisar</item>
+    </plurals>
+    <string name="fin_sheet_sync_line_ok">Sincronizado %1$s · todo leído</string>
+    <string name="fin_sheet_sync_open_action">Abrir la sincronización de la hoja</string>
+    <string name="fin_sheet_sync_status_failed">La última sincronización falló</string>
+    <string name="fin_sheet_sync_status_look">Sincronizado, pero no se leyó todo</string>
+    <string name="fin_sheet_sync_status_ok">Se leyó todo lo de la hoja</string>
+    <string name="fin_sheet_sync_last_read">Última lectura de Google: %1$s (%2$s)</string>
+    <string name="fin_sheet_sync_issue_fallback">El relay no pudo leer la hoja.</string>
+    <string name="fin_sheet_sync_issue_showing_last">%1$s La Billetera muestra la última lectura que funcionó.</string>
+    <string name="fin_sheet_sync_syncing">Sincronizando…</string>
+    <string name="fin_sheet_sync_now">Sincronizar ahora</string>
+    <string name="fin_sheet_sync_open_sheet">Abrir la hoja</string>
+    <string name="fin_sheet_sync_sections_title">Lo que lee la app</string>
+    <string name="fin_sheet_sync_sections_subtitle">Cada parte se encuentra por su título, esté donde esté en la hoja</string>
+    <string name="fin_sheet_sync_notes_title">Omitido</string>
+    <string name="fin_sheet_sync_note_whole_sheet">Hoja</string>
+    <string name="fin_sheet_sync_charts_title">Gráficos</string>
+    <string name="fin_sheet_sync_charts_subtitle">Todos los gráficos de la hoja; si agregas, cambias o quitas uno, se verá en la próxima sincronización</string>
+    <string name="fin_sheet_sync_chart_drawn">Dibujado</string>
+    <string name="fin_sheet_sync_chart_not_drawn">No dibujado</string>
+    <string name="fin_sheet_sync_section_nothing_read">No se leyó nada</string>
+    <string name="fin_sheet_sync_section_not_found">No encontrado</string>
+    <string name="fin_sheet_sync_section_empty_detail">El título está, pero no se pudo leer nada debajo. Busca %1$s.</string>
+    <string name="fin_sheet_sync_section_missing_detail">Busca %1$s.</string>
+    <string name="fin_sheet_sync_how">La app lee la hoja cada vez que abres Finanzas, cada par de minutos mientras está abierta y cuando deslizas hacia abajo. Puedes mover una parte o agregar y quitar filas y columnas en ella sin problema. Lo que hace que se pierda es cambiarle el título: vuelve a ponerle el título que muestra esta página, o haz que la app busque el nuevo.</string>
+
+    <string name="fin_sheet_chart_open_in_sheet">Hoja ↗</string>
+    <string name="fin_sheet_chart_kind_not_drawn">La app no dibuja este tipo de gráfico. Ábrelo en la hoja.</string>
+    <string name="fin_sheet_chart_nothing_in_range">Todavía no hay nada en su rango.</string>
+    <string name="fin_sheet_chart_right_scale">Escala derecha</string>
+    <string name="fin_sheet_chart_change_at">%1$s  %2$s</string>
+    <string name="fin_sheet_chart_change_since">%1$s desde %2$s</string>
+    <string name="fin_sheet_chart_total_caption">Total · %1$s</string>
+    <string name="fin_sheet_chart_total">Total</string>
+    <string name="fin_sheet_chart_points">%1$s pts</string>
+
+    <string name="fin_connections_node_fed">Tasa de la Fed</string>
+    <string name="fin_connections_node_mortgage">Hipotecas</string>
+    <string name="fin_connections_node_bonds">Tasas del gob.</string>
+    <string name="fin_connections_node_debt">Deuda del gob.</string>
+    <string name="fin_connections_node_homes">Viviendas</string>
+    <string name="fin_connections_node_credit">Crédito</string>
+    <string name="fin_connections_node_jobs">Empleo</string>
+    <string name="fin_connections_node_mood">Consumidores</string>
+    <string name="fin_connections_node_prices">Precios</string>
+    <string name="fin_connections_node_stocks">Acciones</string>
+
+    <string name="fin_connections_link_prices_fed">Cuando los precios suben demasiado rápido, la Fed sube su tasa para enfriar la economía.</string>
+    <string name="fin_connections_link_fed_mortgage">Una tasa de la Fed más alta sube en pocas semanas las tasas de hipotecas, préstamos de auto y tarjetas de crédito.</string>
+    <string name="fin_connections_link_fed_jobs">Cuando pedir prestado sale caro, las empresas contratan menos y posponen su expansión.</string>
+    <string name="fin_connections_link_fed_stocks">Con tasas más altas, el ahorro seguro resulta más atractivo que las acciones y a las empresas les cuesta más endeudarse, así que el precio de las acciones suele bajar.</string>
+    <string name="fin_connections_link_fed_credit">Las subidas rápidas de tasas pueden ahogar a quienes pidieron préstamos cuando el dinero era barato.</string>
+    <string name="fin_connections_link_bonds_mortgage">Las tasas hipotecarias siguen el costo de endeudamiento del gobierno a 10 años, normalmente entre 1.5 y 2 puntos por encima.</string>
+    <string name="fin_connections_link_mortgage_homes">Con préstamos caros, menos compradores pueden pagar una casa, y eso enfría los precios de la vivienda.</string>
+    <string name="fin_connections_link_jobs_mood">La gente con empleo estable y aumentos de sueldo se siente mejor con su dinero, y gasta más.</string>
+    <string name="fin_connections_link_mood_prices">Cuando todos salen a comprar, las empresas pueden subir los precios. Cuando los consumidores se frenan, los precios se enfrían.</string>
+    <string name="fin_connections_link_stocks_mood">Cuando sus planes 401(k) suben, la gente se siente más rica y gasta más.</string>
+    <string name="fin_connections_link_credit_jobs">Cuando las empresas no pueden pedir prestado, recortan gastos, y eso suele significar empleos.</string>
+    <string name="fin_connections_link_debt_bonds">Cuanto más se endeuda el gobierno, más puede tener que pagar a los prestamistas para que sigan comprando su deuda.</string>
+
+    <string name="fin_connections_title">Cómo se conecta todo</string>
+    <string name="fin_connections_intro">Nada en la economía se mueve solo. Toca cualquier parte para ver sobre qué influye y qué influye sobre ella. Los colores muestran la lectura de hoy: verde, calma; ámbar, conviene vigilarlo; rojo anaranjado, alerta.</string>
+    <string name="fin_connections_tour_start">Explícamelo paso a paso</string>
+    <string name="fin_connections_tour_stop">Detener el recorrido</string>
+    <string name="fin_connections_fine_print">Una imagen simplificada: las economías reales tienen muchas más conexiones, y los efectos pueden tardar meses en notarse.</string>
+    <string name="fin_connections_show_node">Mostrar %1$s</string>
+    <string name="fin_connections_go_to_node">Ir a %1$s</string>
+    <string name="fin_connections_pushes_on">%1$s influye en</string>
+    <string name="fin_connections_pushed_by">Qué influye sobre %1$s</string>
+    <string name="fin_connections_stocks_today">%1$s hoy</string>
+    <string name="fin_connections_tour_step">PASO %1$d DE %2$d</string>
+    <string name="fin_connections_tour_link">%1$s → %2$s</string>
+    <string name="fin_connections_entry_eyebrow">CÓMO SE CONECTA TODO</string>
+    <string name="fin_connections_entry_title">¿Por qué una subida de tasas de la Fed cambia tu hipoteca, y tu empleo?</string>
+    <string name="fin_connections_entry_body">Un mapa interactivo de causas y efectos, con las lecturas de hoy.</string>
+</resources>

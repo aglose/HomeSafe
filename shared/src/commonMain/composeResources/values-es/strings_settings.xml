@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_settings.xml.
+  The Settings tab (alerts, away mode, recognition, cameras, the server's diagnostics) and the
+  sign-in screen. Keys: settings_* (the tab, its rows' one-line summaries and the server page),
+  alerts_* (the Alerts page), presence_* (the Away mode page and the household's devices),
+  connection_* (sign-in and connection routes).
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="connection_route_local_network">Red local</string>
+    <string name="connection_route_tailscale">Tailscale</string>
+    <string name="connection_route_local_network_short">Local</string>
+
+    <string name="connection_brand_wordmark">PERCYSAFE</string>
+    <string name="connection_tailscale_active">Tailscale activo</string>
+    <string name="connection_server_url_label">URL del servidor</string>
+    <string name="connection_server_url_placeholder">Ingresa la URL del servidor</string>
+    <string name="connection_server_url_hint">La dirección de Tailscale de tu NVR: funciona desde cualquier lugar.</string>
+    <string name="connection_username_placeholder">Usuario</string>
+    <string name="connection_password_placeholder">Contraseña</string>
+    <string name="connection_autofill_test_credentials">Autocompletar credenciales de prueba</string>
+    <string name="connection_connect">Conectar</string>
+    <string name="connection_sign_in_with_biometrics">Iniciar sesión con %1$s</string>
+    <string name="connection_forget_saved_login">Olvidar inicio de sesión guardado</string>
+    <string name="connection_open_apps">Clima, Atlas, Fitness y Finanzas</string>
+    <string name="connection_open_apps_hint">Se abren sin iniciar sesión.</string>
+    <string name="connection_biometric_update_title">¿Actualizar el inicio de sesión con %1$s?</string>
+    <string name="connection_biometric_enable_title">¿Activar el inicio de sesión con %1$s?</string>
+    <string name="connection_biometric_update_body">Iniciaste sesión con tu contraseña. Guárdala para que el inicio de sesión con %1$s use estos datos la próxima vez en lugar de los que guardaste antes.</string>
+    <string name="connection_biometric_enable_body">La próxima vez no tendrás que volver a escribir tu contraseña: inicia sesión con %1$s. Tus credenciales están cifradas y solo se pueden desbloquear con tu biometría.</string>
+    <string name="connection_biometric_update">Actualizar</string>
+    <string name="connection_biometric_enable">Activar</string>
+    <string name="connection_biometric_not_now">Ahora no</string>
+    <string name="connection_error_connect_failed">No se pudo conectar con el servidor</string>
+    <string name="connection_error_biometric_failed">Falló el inicio de sesión biométrico</string>
+    <string name="connection_error_tailscale_off">Tailscale no está conectado en este dispositivo, así que no se puede llegar al servidor. Abre la app de Tailscale, conéctate y vuelve a intentarlo.</string>
+    <string name="connection_error_stale_biometric_login">Tu inicio de sesión guardado ya no coincide con el del servidor. Inicia sesión con tu contraseña para actualizarlo.</string>
+
+    <plurals name="settings_duration_days">
+        <item quantity="one">%1$d día</item>
+        <item quantity="other">%1$d días</item>
+    </plurals>
+    <plurals name="settings_duration_hours">
+        <item quantity="one">%1$d hora</item>
+        <item quantity="other">%1$d horas</item>
+    </plurals>
+    <plurals name="settings_duration_minutes">
+        <item quantity="one">%1$d minuto</item>
+        <item quantity="other">%1$d minutos</item>
+    </plurals>
+    <plurals name="settings_duration_seconds">
+        <item quantity="one">%1$d segundo</item>
+        <item quantity="other">%1$d segundos</item>
+    </plurals>
+    <string name="settings_duration_pair">%1$s, %2$s</string>
+    <string name="settings_duration_days_fraction">%1$s días</string>
+    <string name="settings_size_tb">%1$s TB</string>
+    <string name="settings_size_gb">%1$s GB</string>
+    <string name="settings_size_mb">%1$d MB</string>
+    <string name="settings_percent">%1$d%</string>
+    <string name="settings_millis">%1$s ms</string>
+    <string name="settings_value_missing">—</string>
+    <string name="settings_on">Activado</string>
+    <string name="settings_off">Desactivado</string>
+    <string name="settings_dismiss">Descartar</string>
+    <string name="settings_refresh">Actualizar</string>
+
+    <string name="settings_alerts_subtitle">De qué te avisa este teléfono, y cuándo</string>
+    <string name="settings_alerts_summary_unsupported">No disponible en esta plataforma</string>
+    <string name="settings_alerts_summary_blocked">Bloqueadas en la configuración del sistema</string>
+    <string name="settings_alerts_summary_off">Desactivadas</string>
+    <string name="settings_alerts_summary_only_away">Solo cuando todos están fuera</string>
+    <string name="settings_alerts_summary_on">Activadas</string>
+    <string name="settings_alerts_summary_relay">desde el relay</string>
+    <string name="settings_alerts_summary_custom">reglas personalizadas</string>
+    <string name="settings_alerts_summary_quiet">silencio %1$s – %2$s</string>
+    <string name="settings_alerts_summary_strangers">solo desconocidos</string>
+    <string name="settings_away_subtitle">Quién está en casa, según los dos teléfonos</string>
+    <string name="settings_away_summary_unreachable">No se puede contactar con el relay</string>
+    <string name="settings_away_summary_checking">Comprobando quién está en casa…</string>
+    <string name="settings_away_summary_nobody_home">No hay nadie en casa</string>
+    <string name="settings_away_summary_not_tracked">Este teléfono no tiene seguimiento</string>
+    <string name="settings_away_summary_leaving">Este teléfono está saliendo</string>
+    <string name="settings_away_summary_away">Este teléfono está fuera de casa</string>
+    <string name="settings_away_summary_home">Este teléfono está en casa</string>
+    <string name="settings_away_summary_automatic">automático</string>
+    <string name="settings_cameras_summary_none">No hay cámaras en este servidor</string>
+    <plurals name="settings_cameras_summary_all">
+        <item quantity="one">Detección activada en %1$d cámara</item>
+        <item quantity="other">Detección activada en las %1$d cámaras</item>
+    </plurals>
+    <plurals name="settings_cameras_summary_some">
+        <item quantity="one">Detección activada en %1$d de %2$d cámara</item>
+        <item quantity="other">Detección activada en %1$d de %2$d cámaras</item>
+    </plurals>
+    <string name="settings_cameras_summary_off">Detección desactivada en todas las cámaras</string>
+
+    <string name="settings_server_title">Servidor</string>
+    <string name="settings_server_subtitle">Qué es Frigate y qué está haciendo</string>
+    <string name="settings_server_summary_storage_used">%1$d% del almacenamiento en uso</string>
+    <string name="settings_server_summary_unreachable">no se puede contactar con el servidor</string>
+    <string name="settings_server_summary_checking">comprobando…</string>
+    <string name="settings_server_summary_refresh_failed">falló la última actualización</string>
+    <string name="settings_server_summary_disk_full">disco casi lleno</string>
+    <string name="settings_server_summary_update_available">actualización disponible</string>
+    <string name="settings_server_summary_healthy">en buen estado</string>
+    <string name="settings_server_connected_to">Conectado a %1$s</string>
+    <string name="settings_server_route_local">Red local — directo por Wi-Fi, sin pasar por la VPN</string>
+    <string name="settings_server_route_tailscale_local_unreachable">Tailscale — la dirección local no es accesible desde aquí</string>
+    <string name="settings_server_loading">Leyendo las estadísticas del servidor…</string>
+    <string name="settings_server_unreachable">No se pudo contactar con el servidor: %1$s</string>
+    <string name="settings_server_last_refresh_failed">Falló la última actualización: %1$s</string>
+    <string name="settings_server_version">Versión</string>
+    <string name="settings_server_update_available">Actualización disponible: %1$s</string>
+    <string name="settings_server_uptime">Tiempo activo</string>
+    <string name="settings_server_cpu">CPU</string>
+    <string name="settings_server_memory">Memoria</string>
+    <string name="settings_server_detector">Detector</string>
+    <string name="settings_server_detector_input_size">%1$d×%2$d</string>
+    <string name="settings_server_inference">Inferencia de %1$s por fotograma</string>
+    <string name="settings_server_no_inference">Aún no hay inferencias</string>
+    <string name="settings_server_gpu">GPU</string>
+    <string name="settings_server_gpu_busy">%1$s en uso</string>
+    <string name="settings_server_gpu_memory">%1$s de memoria</string>
+    <string name="settings_server_gpu_decoder">%1$s del decodificador</string>
+
+    <string name="settings_storage_title">Almacenamiento y retención</string>
+    <string name="settings_storage_loading">Leyendo el uso del disco…</string>
+    <string name="settings_storage_unreported">El servidor no informó sobre su disco de grabaciones.</string>
+    <string name="settings_storage_recordings">Grabaciones (%1$s)</string>
+    <string name="settings_storage_used">%1$s en uso</string>
+    <string name="settings_storage_total">%1$s en total</string>
+    <string name="settings_storage_percent_used">%1$d% en uso</string>
+    <string name="settings_retention_continuous">Continua</string>
+    <string name="settings_retention_motion">Movimiento</string>
+    <string name="settings_retention_alerts">Alertas</string>
+    <string name="settings_retention_detections">Detecciones</string>
+    <string name="settings_retention_default">Predeterminado</string>
+    <string name="settings_retention_caption">Frigate borra por sí solo las grabaciones que superan estos plazos. La retención se configura en su config.yml.</string>
+
+    <string name="settings_ai_title">Funciones de IA</string>
+    <string name="settings_ai_loading">Leyendo la configuración del servidor…</string>
+    <string name="settings_ai_face_recognition">Reconocimiento facial</string>
+    <string name="settings_ai_license_plates">Reconocimiento de placas</string>
+    <string name="settings_ai_semantic_search">Búsqueda semántica</string>
+    <string name="settings_ai_caption">Estas funciones de IA se configuran en el config.yml de Frigate, y para cambiarlas hay que reiniciar Frigate.</string>
+
+    <string name="settings_cameras_title">Cámaras</string>
+    <string name="settings_cameras_loading">Leyendo el proceso de detección de las cámaras…</string>
+    <string name="settings_cameras_viewer_read_only">Iniciaste sesión como espectador: los interruptores de abajo son de solo lectura. Una cuenta de administrador puede cambiarlos.</string>
+    <string name="settings_camera_disabled">Desactivada</string>
+    <string name="settings_camera_detections_per_second">%1$s detecciones/s</string>
+    <string name="settings_camera_fps">%1$d fps</string>
+    <string name="settings_camera_skipped">%1$s omitidos</string>
+    <string name="settings_camera_no_stats">Aún no hay estadísticas</string>
+    <string name="settings_object_detection">Detección de objetos</string>
+    <string name="settings_object_detection_on">Busca personas, vehículos y animales.</string>
+    <string name="settings_object_detection_off">Desactivada — esta cámara no genera detecciones ni alertas.</string>
+    <string name="settings_motion_detection">Detección de movimiento</string>
+    <string name="settings_motion_needed">Necesaria mientras la detección de objetos esté activada.</string>
+    <string name="settings_motion_on">Graba los segmentos con movimiento y alimenta al detector.</string>
+    <string name="settings_motion_off">Desactivada — solo grabación continua.</string>
+    <string name="settings_camera_error_generic">No se pudo cambiar esa configuración.</string>
+    <string name="settings_camera_error_refused">Frigate lo rechazó: esta cuenta no puede cambiar la configuración. Inicia sesión con una cuenta de administrador.</string>
+
+    <string name="settings_recognition_title">Reconocimiento</string>
+    <string name="settings_recognition_faces">Rostros</string>
+    <string name="settings_recognition_faces_description">Pon nombre a los rostros que vio Frigate para que distinga a la familia de los desconocidos</string>
+    <string name="settings_recognition_classifier_description">Etiqueta lo que vio el clasificador de %1$s y vuelve a entrenarlo</string>
+    <string name="settings_recognition_objects_separator"> y </string>
+
+    <string name="settings_test_notification_title">Alerta de prueba</string>
+    <string name="settings_test_notification_body">Las notificaciones de HomeSafe funcionan. Las detecciones se verán así.</string>
+
+    <string name="settings_recording_clip_save_failed">No se pudo guardar el clip</string>
+
+    <string name="alerts_title">Alertas</string>
+    <string name="alerts_notifications">Notificaciones</string>
+    <string name="alerts_notifications_unsupported">No disponible en esta plataforma. Usa la app de Android o iOS para recibir alertas.</string>
+    <string name="alerts_notifications_blocked">Bloqueadas en la configuración del sistema. Permite las notificaciones de HomeSafe para activarlas.</string>
+    <string name="alerts_notifications_on_relay">Activadas — desde el relay de HomeSafe, incluso con la app cerrada.</string>
+    <string name="alerts_notifications_on_poller">Activadas — una notificación por cada nueva detección mientras HomeSafe se está ejecutando.</string>
+    <string name="alerts_notifications_off">Recibe una notificación cuando una cámara vea algo.</string>
+    <string name="alerts_open_notification_settings">Abrir configuración de notificaciones</string>
+    <string name="alerts_only_when_away">Solo cuando todos están fuera</string>
+    <string name="alerts_only_when_away_on">Activado — en silencio mientras haya alguien en casa. Cuando todos los teléfonos están fuera, cada persona detectada avisa por el canal Alertas de ausencia.</string>
+    <string name="alerts_only_when_away_off">Sin avisos mientras haya alguien en casa; cuando la casa quede vacía, solo las alertas de ausencia.</string>
+    <string name="alerts_only_strangers">Solo desconocidos</string>
+    <string name="alerts_only_strangers_on">Activado — las personas que Frigate reconoce entran y salen sin avisar. Quien no pueda identificar sigue generando una notificación.</string>
+    <string name="alerts_only_strangers_off">Omite la notificación cuando Frigate reconoce a la persona. Pon nombre a los rostros en Reconocimiento, dentro de Configuración.</string>
+    <string name="alerts_only_strangers_faces_off">Requiere el reconocimiento facial, que está desactivado en la configuración de Frigate.</string>
+    <string name="alerts_only_strangers_faces_unknown">Requiere el reconocimiento facial en el servidor.</string>
+    <string name="alerts_send_test">Enviar notificación de prueba</string>
+    <string name="alerts_test_sent">Enviada</string>
+    <string name="alerts_caption_relay">Las alertas vienen del relay de HomeSafe en el servidor de Frigate, así que llegan aunque la app esté cerrada.</string>
+    <string name="alerts_caption_poller">HomeSafe busca nuevas detecciones en Frigate cada 15 segundos mientras la app está abierta o pasó hace poco a segundo plano. Frigate no tiene un servicio de notificaciones push para teléfonos, así que no llega nada una vez que el sistema detiene la app.</string>
+    <string name="alerts_loading_cameras">Cargando cámaras…</string>
+    <string name="alerts_no_cameras">No hay cámaras en este servidor.</string>
+    <string name="alerts_what_to_hear">De qué recibir avisos</string>
+    <string name="alerts_custom">Personalizado</string>
+    <string name="alerts_custom_description">Personalizado — ajustado lugar por lugar más abajo.</string>
+    <string name="alerts_hide_zones">Ocultar zonas</string>
+    <string name="alerts_fine_tune">Ajustar por zona</string>
+    <string name="alerts_zones_caption">Las zonas son las zonas de detección de cada cámara.</string>
+    <string name="alerts_relay_what_youll_hear">De qué recibirás avisos</string>
+    <string name="alerts_relay_policy">Mientras haya alguien en casa: los autos de la familia al llegar y al salir, y las personas en la zona Front Yard, al instante; todo lo demás, en un resumen unas cuantas veces al día. Mientras todos estén fuera: todo.</string>
+    <string name="alerts_quiet_hours">Horas de silencio</string>
+    <string name="alerts_quiet_hours_on">Activadas — nada de %1$s a %2$s. Las alertas de ausencia siguen llegando.</string>
+    <string name="alerts_quiet_hours_off">Silencia las alertas normales durante la noche. Las alertas de ausencia siguen llegando.</string>
+    <string name="alerts_quiet_from_button">Desde %1$s</string>
+    <string name="alerts_quiet_to_button">Hasta %1$s</string>
+    <string name="alerts_quiet_hours_empty">El horario empieza donde termina, así que queda vacío. Elige otra hora de fin.</string>
+    <string name="alerts_quiet_from_title">Silencio desde</string>
+    <string name="alerts_quiet_until_title">Silencio hasta</string>
+    <string name="alerts_quiet_set">Aceptar</string>
+    <string name="alerts_time_am">%1$d:%2$s a. m.</string>
+    <string name="alerts_time_pm">%1$d:%2$s p. m.</string>
+    <string name="alerts_category_people">Personas</string>
+    <string name="alerts_category_vehicles">Vehículos</string>
+    <string name="alerts_category_animals">Animales</string>
+    <string name="alerts_chip_noisy">%1$s · ~%2$d/día</string>
+    <string name="alerts_place_anywhere">Cualquier lugar</string>
+    <string name="alerts_place_anywhere_else">Cualquier otro lugar</string>
+    <plurals name="alerts_noisy_hint_week">
+        <item quantity="one">%1$s · %2$s · %3$s habría avisado aproximadamente %4$d vez la semana pasada.</item>
+        <item quantity="other">%1$s · %2$s · %3$s habría avisado aproximadamente %4$d veces la semana pasada.</item>
+    </plurals>
+    <plurals name="alerts_noisy_hint_day">
+        <item quantity="one">%1$s · %2$s · %3$s habría avisado aproximadamente %4$d vez al día últimamente.</item>
+        <item quantity="other">%1$s · %2$s · %3$s habría avisado aproximadamente %4$d veces al día últimamente.</item>
+    </plurals>
+    <string name="alerts_preset_people_only">Solo personas</string>
+    <string name="alerts_preset_people_driveway_cars">Personas + autos en la entrada</string>
+    <string name="alerts_preset_people_vehicles">Personas + vehículos</string>
+    <string name="alerts_preset_everything">Todo</string>
+    <string name="alerts_preset_people_only_description">Personas en cualquier lugar, en cualquier cámara. Los autos y los animales no avisan.</string>
+    <string name="alerts_preset_people_driveway_cars_description">Personas en cualquier lugar, y autos solo en zonas con nombre de entrada, garaje o estacionamiento, no el tráfico que pasa.</string>
+    <string name="alerts_preset_people_vehicles_description">Personas y vehículos en cualquier lugar, incluido el tráfico de la calle. Las reglas de fábrica.</string>
+    <string name="alerts_preset_everything_description">Personas, vehículos y animales en cualquier lugar.</string>
+
+    <string name="presence_title">Modo ausente</string>
+    <string name="presence_im_away">No estoy en casa</string>
+    <string name="presence_im_away_relay_unreachable">No se puede contactar con el relay de notificaciones del servidor de Frigate, así que por ahora no se puede cambiar la presencia.</string>
+    <string name="presence_im_away_leaving">Este teléfono salió de casa; en unos minutos contará como fuera, a menos que vuelva.</string>
+    <string name="presence_im_away_away">Este teléfono cuenta como fuera de casa.</string>
+    <string name="presence_im_away_home">Este teléfono cuenta como en casa.</string>
+    <string name="presence_im_away_checking">Consultando al relay…</string>
+    <string name="presence_not_tracked_debug">Esta es una compilación de depuración. El modo ausente solo sigue la app de versión final en el teléfono Android y el iPhone de la casa, así que este nunca está en casa ni fuera.</string>
+    <string name="presence_not_tracked_emulator">Esto es un emulador. El modo ausente solo sigue el teléfono Android y el iPhone reales de la casa.</string>
+    <string name="presence_not_tracked_other_phone">Ya se sigue otro teléfono de este tipo. Quítalo más abajo si este teléfono lo reemplaza.</string>
+    <string name="presence_not_tracked_unknown">El relay aún no sigue este teléfono, así que no cuenta como en casa ni fuera.</string>
+    <string name="presence_nobody_home">No hay nadie en casa — las alertas se intensifican en ambos teléfonos.</string>
+    <string name="presence_caption">Cuando los dos teléfonos salen de casa, cada persona detectada en cualquier cámara avisa con fuerza en ambos, por su propio canal "Alertas de ausencia", digan lo que digan las reglas de Alertas. Termina solo cuando cualquiera de los teléfonos vuelve a casa.</string>
+    <string name="presence_no_android_phone">Aún no se sigue ningún teléfono Android. Se agrega uno cuando se abre en él la app de versión final.</string>
+    <string name="presence_no_iphone">Aún no se sigue ningún iPhone. Se agrega uno cuando se abre en él una compilación Release.</string>
+    <string name="presence_automatic">Automático</string>
+    <string name="presence_automatic_unsupported">No disponible en esta plataforma. Aquí el interruptor de arriba es manual.</string>
+    <string name="presence_automatic_not_tracked">Solo los dos teléfonos con seguimiento detectan por sí solos si están en casa.</string>
+    <string name="presence_automatic_needs_always">Necesita la ubicación en "Siempre" para que la geocerca note cuando sales con la app cerrada.</string>
+    <string name="presence_automatic_needs_home">Indica dónde está tu casa, desde un teléfono que esté en ella.</string>
+    <string name="presence_automatic_on">Al salir de casa, este teléfono pasa a fuera tras unos minutos; al llegar —por la geocerca o al conectarse a tus cámaras por Wi-Fi— pasa a en casa de inmediato.</string>
+    <string name="presence_allow_location_always">Permitir ubicación siempre</string>
+    <string name="presence_allow_location_settings">Permitir ubicación en la configuración del sistema</string>
+    <string name="presence_allow_location">Permitir ubicación</string>
+    <string name="presence_set_home_here">Fijar casa aquí</string>
+    <string name="presence_move_home_here">Mover casa aquí</string>
+    <string name="presence_clear_home">Borrar</string>
+    <string name="presence_home_not_set">Aún no se ha fijado la casa.</string>
+    <string name="presence_home_set">Casa fijada — un círculo de %1$d m que vigilan ambos teléfonos.</string>
+    <string name="presence_remove_title">¿Quitar %1$s?</string>
+    <string name="presence_remove_body">Deja de recibir alertas y el modo ausente deja de seguirlo. El próximo teléfono de su tipo que abra la app de versión final ocupa su lugar; si la app sigue instalada en él, vuelve la próxima vez que se abra.</string>
+    <string name="presence_remove">Quitar</string>
+    <string name="presence_remove_device">Quitar %1$s</string>
+    <string name="presence_status_away_since">fuera desde %1$s</string>
+    <string name="presence_status_away">fuera</string>
+    <string name="presence_status_leaving">saliendo…</string>
+    <string name="presence_status_home">en casa</string>
+    <string name="presence_detail_this_phone">este teléfono</string>
+    <string name="presence_unnamed_device">Dispositivo sin nombre</string>
+    <string name="presence_last_seen_just_now">visto hace un momento</string>
+    <plurals name="presence_last_seen_minutes">
+        <item quantity="one">visto hace %1$d min</item>
+        <item quantity="other">visto hace %1$d min</item>
+    </plurals>
+    <plurals name="presence_last_seen_hours">
+        <item quantity="one">visto hace %1$d h</item>
+        <item quantity="other">visto hace %1$d h</item>
+    </plurals>
+    <string name="presence_last_seen_yesterday">visto ayer</string>
+    <plurals name="presence_last_seen_days">
+        <item quantity="one">visto hace %1$d día</item>
+        <item quantity="other">visto hace %1$d días</item>
+    </plurals>
+    <string name="presence_error_relay_unreachable">No se pudo contactar con el relay de notificaciones.</string>
+    <string name="presence_error_relay_unreachable_detail">No se pudo contactar con el relay de notificaciones: %1$s</string>
+    <string name="presence_error_relay_refused">El relay rechazó esta sesión. Vuelve a iniciar sesión.</string>
+    <string name="presence_error_not_connected">No hay conexión con ningún servidor.</string>
+    <string name="presence_error_location">No se pudo obtener la ubicación de este teléfono. ¿Está activada la ubicación?</string>
+
+    <string name="settings_app_icon_title">Ícono de la app</string>
+    <string name="settings_app_icon_caption">Cómo se ve la app en tu pantalla de inicio. Tu teléfono puede tardar un momento en mostrar el cambio.</string>
+    <string name="settings_app_icon_classic">Clásico</string>
+    <string name="settings_app_icon_terracotta">Terracota</string>
+    <string name="settings_app_icon_midnight">Medianoche</string>
+    <string name="settings_app_icon_paper">Papel</string>
+    <string name="settings_app_icon_blueprint">Plano</string>
+    <string name="settings_app_icon_sage">Salvia</string>
+    <string name="settings_app_icon_cobalt">Cobalto</string>
+    <string name="settings_app_icon_porch">Luz del porche</string>
+    <string name="settings_app_icon_neon">Neón</string>
+    <string name="settings_app_icon_arcade">Arcade</string>
+    <string name="settings_app_icon_vault">Bóveda</string>
+    <string name="settings_app_icon_bauhaus">Bauhaus</string>
+    <string name="settings_app_icon_radar">Radar</string>
+    <string name="settings_app_icon_constellation">Constelación</string>
+    <string name="settings_app_icon_glitch">Glitch</string>
+    <string name="settings_app_icon_peephole">Mirilla</string>
+
+    <string name="settings_pane_empty">Elige una opción y su página se abrirá aquí.</string>
+</resources>

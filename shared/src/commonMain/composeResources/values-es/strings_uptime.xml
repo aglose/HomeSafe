@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The server's uptime screen (Settings › Server › Uptime): what the relay on the box could reach,
+  minute by minute, and which of the household's devices Tailscale could see. Keys: uptime_*.
+  Spanish translation of values/strings_uptime.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="uptime_title">Disponibilidad</string>
+    <string name="uptime_subtitle">Qué estuvo accesible, y cuándo</string>
+    <string name="uptime_link_description">Interrupciones y cuáles de tus dispositivos ve Tailscale</string>
+
+    <string name="uptime_range_day">24 horas</string>
+    <string name="uptime_range_week">7 días</string>
+    <string name="uptime_range_month">30 días</string>
+
+    <string name="uptime_headline_all_up">Todo funciona</string>
+    <string name="uptime_headline_down">Sin servicio ahora: %1$s</string>
+    <string name="uptime_headline_unknown">No hay una muestra reciente del servidor</string>
+    <string name="uptime_list_separator">, </string>
+    <string name="uptime_measured_since">El servidor lo mide una vez por minuto desde %1$s.</string>
+    <string name="uptime_measured">El servidor lo mide una vez por minuto.</string>
+    <string name="uptime_reached_over_local">Consultado a través de tu red doméstica.</string>
+    <string name="uptime_reached_over_tailscale">Consultado a través de Tailscale.</string>
+
+    <string name="uptime_check_server">Servidor en marcha</string>
+    <string name="uptime_check_server_about">Comprueba que el equipo esté encendido y llevando este registro. Un hueco es un reinicio o un corte de luz.</string>
+    <string name="uptime_check_router">Router de casa</string>
+    <string name="uptime_check_router_about">Comprueba que el equipo llegue al router. Si falla, es su cable o el propio router.</string>
+    <string name="uptime_check_internet">Internet</string>
+    <string name="uptime_check_internet_about">Comprueba que la casa tenga conexión. Si falla, nada del exterior llega al equipo.</string>
+    <string name="uptime_check_dns">Resolución de nombres</string>
+    <string name="uptime_check_dns_about">Comprueba que el equipo pueda buscar direcciones. Si falla, no se pueden enviar alertas.</string>
+    <string name="uptime_check_tailscale">Tailscale en el servidor</string>
+    <string name="uptime_check_tailscale_about">Comprueba que el equipo esté en tu tailnet. Si falla, no hay acceso desde fuera de casa.</string>
+    <string name="uptime_check_frigate">Frigate</string>
+    <string name="uptime_check_frigate_about">Comprueba que el software de las cámaras responda.</string>
+    <string name="uptime_check_cameras">Cámaras</string>
+    <string name="uptime_check_cameras_about">Comprueba que todas las cámaras estén enviando video.</string>
+    <string name="uptime_check_live">Video en vivo</string>
+    <string name="uptime_check_live_about">Comprueba que el servicio de transmisión en vivo responda.</string>
+
+    <string name="uptime_percent_whole">%1$d%</string>
+    <string name="uptime_percent_one_decimal">%1$d.%2$d%</string>
+    <string name="uptime_percent_two_decimals">%1$d.%2$s%</string>
+    <string name="uptime_up_share">%1$s en línea</string>
+    <string name="uptime_up_share_with_down">%1$s en línea · %2$s sin servicio</string>
+    <string name="uptime_not_measured">Sin medir</string>
+
+    <string name="uptime_state_up">En línea</string>
+    <string name="uptime_state_partial">Falla parcial</string>
+    <string name="uptime_state_down">Sin servicio</string>
+    <string name="uptime_state_not_measured">Sin medir</string>
+    <string name="uptime_device_state_seen">En la tailnet</string>
+    <string name="uptime_device_state_unseen">Fuera de la tailnet</string>
+    <string name="uptime_span_detail">%1$s · %2$s · %3$s</string>
+    <string name="uptime_span_hint">Toca una barra para ver su hora</string>
+    <string name="uptime_bar_description">Línea de tiempo de %1$s</string>
+    <string name="uptime_moment">%1$s, %2$s</string>
+
+    <string name="uptime_devices_title">Tus dispositivos en Tailscale</string>
+    <string name="uptime_devices_about">Un teléfono que Tailscale no ve no puede llegar al servidor desde fuera de casa, aunque el servidor esté bien.</string>
+    <string name="uptime_devices_none">El servidor aún no está leyendo Tailscale.</string>
+    <string name="uptime_device_online">En la tailnet</string>
+    <string name="uptime_device_last_seen">Visto por última vez: %1$s</string>
+    <string name="uptime_device_never_seen">No visto</string>
+
+    <string name="uptime_outages_title">Interrupciones</string>
+    <string name="uptime_outages_none">No hubo nada sin servicio en este periodo.</string>
+    <string name="uptime_outage_ended">%1$s · %2$s</string>
+    <string name="uptime_outage_ongoing">%1$s · sigue sin servicio tras %2$s</string>
+
+    <string name="uptime_loading">Leyendo el registro de disponibilidad…</string>
+    <string name="uptime_load_failed">No se pudo leer el registro de disponibilidad: %1$s</string>
+    <string name="uptime_not_kept_yet">El relay de este servidor aún no guarda un registro de disponibilidad. Actualiza el relay en el equipo.</string>
+</resources>

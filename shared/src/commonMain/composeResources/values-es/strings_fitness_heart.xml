@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_fitness_heart.xml.
+  The fitness app's heart rate: the live reading and its zone on a workout, the recovery line in
+  the rest timer, the last workout's time in zone on Today, and the page where a sensor is
+  connected and the zones are set. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="fitness_heart_title">Frecuencia cardiaca</string>
+    <string name="fitness_heart_open">Frecuencia cardiaca y zonas</string>
+    <string name="fitness_heart_pill_bpm">%1$d lpm</string>
+
+    <string name="fitness_heart_zone_1">Muy ligera</string>
+    <string name="fitness_heart_zone_2">Ligera</string>
+    <string name="fitness_heart_zone_3">Moderada</string>
+    <string name="fitness_heart_zone_4">Intensa</string>
+    <string name="fitness_heart_zone_5">Máxima</string>
+    <string name="fitness_heart_zone_below">En reposo</string>
+    <string name="fitness_heart_zone_label">Zona</string>
+    <string name="fitness_heart_zone_line">Zona %1$d · %2$s</string>
+    <string name="fitness_heart_zone_range">%1$d–%2$d lpm</string>
+
+    <string name="fitness_heart_bpm">lpm</string>
+    <string name="fitness_heart_no_reading">––</string>
+    <string name="fitness_heart_set_max">Configura tu frecuencia cardiaca máxima para ver las zonas</string>
+    <string name="fitness_heart_described_zone">Frecuencia cardiaca: %1$d latidos por minuto, zona %2$d, %3$s</string>
+    <string name="fitness_heart_described">Frecuencia cardiaca: %1$d latidos por minuto</string>
+    <string name="fitness_heart_described_status">Frecuencia cardiaca. %1$s</string>
+
+    <string name="fitness_heart_status_off">No conectado</string>
+    <string name="fitness_heart_status_unsupported">La frecuencia cardiaca no está disponible en este dispositivo.</string>
+    <string name="fitness_heart_status_permission">Aún no se permite el Bluetooth</string>
+    <string name="fitness_heart_status_bluetooth_off">El Bluetooth está apagado</string>
+    <string name="fitness_heart_status_searching">Buscando sensores…</string>
+    <string name="fitness_heart_status_scanning">Buscando %1$s…</string>
+    <string name="fitness_heart_status_connecting">Conectando con %1$s…</string>
+    <string name="fitness_heart_status_lost">Se perdió la conexión con %1$s. Reintentando…</string>
+    <string name="fitness_heart_status_connected">Conectado a %1$s</string>
+    <string name="fitness_heart_status_waiting">Conectado. Aún no hay frecuencia cardiaca: ¿tienes la banda en la muñeca?</string>
+    <string name="fitness_heart_sensor_unnamed">Sensor de frecuencia cardiaca</string>
+
+    <string name="fitness_heart_notice_up">Subiste a la zona %1$d · %2$s</string>
+    <string name="fitness_heart_notice_down">Bajaste a la zona %1$d · %2$s</string>
+    <string name="fitness_heart_notice_resting">Por debajo de la zona 1</string>
+
+    <string name="fitness_heart_recovery">%1$d → %2$d lpm</string>
+    <string name="fitness_heart_recovery_level">%1$d lpm</string>
+    <string name="fitness_heart_recovery_described">Frecuencia cardiaca %1$d, %2$d menos desde la serie</string>
+
+    <string name="fitness_heart_time_minutes">%1$d min</string>
+    <string name="fitness_heart_time_seconds">%1$d s</string>
+    <string name="fitness_heart_time_none">–</string>
+    <string name="fitness_heart_time_described">Zona %1$d, %2$s: %3$s</string>
+
+    <string name="fitness_heart_last_title">Pulso del último entrenamiento</string>
+    <string name="fitness_heart_last_when">%1$s · %2$s</string>
+    <string name="fitness_heart_last_average">Lpm promedio</string>
+    <string name="fitness_heart_last_peak">Lpm máximo</string>
+    <string name="fitness_heart_last_recorded">Registrado</string>
+
+    <string name="fitness_heart_sensor_title">Sensor</string>
+    <string name="fitness_heart_sensor_instruction">En Google Health, abre las Conexiones de tu banda y configura Compartir frecuencia cardiaca en Siempre visible. Hasta que eso esté activado, no se puede encontrar la banda.</string>
+    <string name="fitness_heart_sensor_find">Buscar mi sensor</string>
+    <string name="fitness_heart_sensor_connect">Conectar</string>
+    <string name="fitness_heart_sensor_allow">Permitir Bluetooth</string>
+    <string name="fitness_heart_sensor_permission">Para encontrar la banda se necesita el permiso de Dispositivos cercanos. Si no aparece nada al tocar, permítelo para esta app en la configuración del sistema.</string>
+    <string name="fitness_heart_sensor_stop">Dejar de buscar</string>
+    <string name="fitness_heart_sensor_forget">Olvidar este sensor</string>
+    <string name="fitness_heart_sensor_found">Sensores cercanos</string>
+    <string name="fitness_heart_sensor_found_none">Ninguno aún. Mantén la banda cerca y comprueba que compartir esté activado.</string>
+    <string name="fitness_heart_sensor_use">Usar %1$s</string>
+    <string name="fitness_heart_signal_near">Muy cerca</string>
+    <string name="fitness_heart_signal_mid">Cerca</string>
+    <string name="fitness_heart_signal_far">Lejos</string>
+
+    <string name="fitness_heart_zones_title">Zonas</string>
+    <string name="fitness_heart_zones_mode_max">Conozco mi máxima</string>
+    <string name="fitness_heart_zones_mode_age">Estimar por edad</string>
+    <string name="fitness_heart_zones_max">Frecuencia cardiaca máxima</string>
+    <string name="fitness_heart_zones_max_less">Bajar la máxima</string>
+    <string name="fitness_heart_zones_max_more">Subir la máxima</string>
+    <string name="fitness_heart_zones_age">Edad</string>
+    <string name="fitness_heart_zones_age_less">Menos edad</string>
+    <string name="fitness_heart_zones_age_more">Más edad</string>
+    <string name="fitness_heart_zones_resting_use">Usar frecuencia cardiaca en reposo</string>
+    <string name="fitness_heart_zones_resting">En reposo</string>
+    <string name="fitness_heart_zones_resting_less">Bajar la frecuencia en reposo</string>
+    <string name="fitness_heart_zones_resting_more">Subir la frecuencia en reposo</string>
+    <string name="fitness_heart_zones_estimated">Máxima estimada: %1$d lpm (208 − 0.7 × edad). Puede desviarse unos diez latidos hacia arriba o hacia abajo; si conoces la tuya, ingrésala.</string>
+    <string name="fitness_heart_zones_reserve">Las zonas se calculan sobre la reserva entre %1$d en reposo y tu máxima, lo que sube las zonas más fáciles.</string>
+    <string name="fitness_heart_zones_save">Guardar zonas</string>
+    <string name="fitness_heart_zones_saved">Guardado</string>
+
+    <string name="fitness_heart_notes_title">Para tener en cuenta</string>
+    <string name="fitness_heart_notes_accuracy">Un sensor de muñeca puede medir mal mientras sujetas una barra. Toma los números como una guía y juzga cada serie por cómo te fue.</string>
+    <string name="fitness_heart_notes_screen">La frecuencia cardiaca se sigue mientras esta app está en pantalla. Con el teléfono bloqueado u otra app al frente se detiene, y se reanuda cuando vuelves.</string>
+</resources>
