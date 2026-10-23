@@ -45,10 +45,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.weather.PlaceWeather
@@ -67,6 +69,7 @@ import com.meticulouscreations.homesafe.weather.ui.radar.RadarMap
 import com.meticulouscreations.homesafe.weather.ui.radar.RadarMapState
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.weather_alert_from
 import homesafe.shared.generated.resources.weather_alert_until
 import homesafe.shared.generated.resources.weather_attribution
 import homesafe.shared.generated.resources.weather_feels_like
@@ -85,6 +88,7 @@ import homesafe.shared.generated.resources.weather_outdoor_title
 import homesafe.shared.generated.resources.weather_radar_card_open
 import homesafe.shared.generated.resources.weather_radar_card_title
 import homesafe.shared.generated.resources.weather_scrub_at
+import homesafe.shared.generated.resources.weather_scrub_at_day
 import homesafe.shared.generated.resources.weather_stale
 import homesafe.shared.generated.resources.weather_time_range
 import homesafe.shared.generated.resources.weather_tip_coat
@@ -151,7 +155,7 @@ internal fun TodayScreen(
         }
         items(report.alerts.size, key = { "alert-${report.alerts[it].id}" }, contentType = { "alert" }) { i ->
             val alert = report.alerts[i]
-            AlertBanner(alert, alert.endsEpochSeconds?.let(report::offsetAt) ?: report.utcOffsetSeconds, onOpenAlert, Modifier.cardWidth())
+            AlertBanner(alert, report::offsetAt, nowEpochSeconds, onOpenAlert, Modifier.cardWidth())
         }
         if (showNextHours) {
             item(key = "next", contentType = "card") {
@@ -215,7 +219,13 @@ private fun Hero(report: WeatherReport, nowEpochSeconds: Long, scrubbed: HourFor
                 Spacer(Modifier.height(2.dp))
                 if (hour != null) {
                     // The sky and these words are showing another hour: say which.
-                    Text(stringResource(Res.string.weather_scrub_at, WeatherFormat.hour(hour.epochSeconds, report.offsetAt(hour.epochSeconds)).resolve()), style = type.headline, color = colors.sun)
+                    val at = WeatherFormat.hour(hour.epochSeconds, report.offsetAt(hour.epochSeconds)).resolve()
+                    val text = if (WeatherFormat.sameDay(hour.epochSeconds, nowEpochSeconds, report.utcOffsetSeconds)) {
+                        stringResource(Res.string.weather_scrub_at, at)
+                    } else {
+                        stringResource(Res.string.weather_scrub_at_day, stringResource(WeatherFormat.weekdayLong(hour.epochSeconds, report.utcOffsetSeconds)), at)
+                    }
+                    Text(text, style = type.headline, color = colors.sun)
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (today != null) {
@@ -259,9 +269,13 @@ private fun TipChip(tip: WeatherTip) {
     }
 }
 
-/** A government warning in force: its name, until when, and a way into the whole of it. */
+/**
+ * A government warning: its name, from when (only while that is still ahead, so a warning for
+ * tomorrow doesn't read as in force now), until when, and a way into the whole of it. [offsetAt]
+ * reads the place's clock at a moment.
+ */
 @Composable
-private fun AlertBanner(alert: WeatherAlert, utcOffsetSeconds: Int, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun AlertBanner(alert: WeatherAlert, offsetAt: (Long) -> Int, nowEpochSeconds: Long, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
     val tint = if (alert.isUrgent) colors.danger else colors.watch
     val shape = RoundedCornerShape(22.dp)
@@ -280,9 +294,16 @@ private fun AlertBanner(alert: WeatherAlert, utcOffsetSeconds: Int, onOpen: (Str
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(alert.event, style = WeatherTheme.type.bodyStrong, color = colors.onSky)
+            alert.onsetEpochSeconds?.takeIf { it > nowEpochSeconds }?.let { onset ->
+                Text(
+                    stringResource(Res.string.weather_alert_from, stringResource(WeatherFormat.weekday(onset, offsetAt(onset))), WeatherFormat.clock(onset, offsetAt(onset)).resolve()),
+                    style = WeatherTheme.type.label,
+                    color = colors.onSky,
+                )
+            }
             alert.endsEpochSeconds?.let { ends ->
                 Text(
-                    stringResource(Res.string.weather_alert_until, WeatherFormat.weekday(ends, utcOffsetSeconds).let { stringResource(it) }, WeatherFormat.clock(ends, utcOffsetSeconds).resolve()),
+                    stringResource(Res.string.weather_alert_until, stringResource(WeatherFormat.weekday(ends, offsetAt(ends))), WeatherFormat.clock(ends, offsetAt(ends)).resolve()),
                     style = WeatherTheme.type.label,
                     color = colors.onSkyMuted,
                 )
@@ -450,5 +471,25 @@ internal fun PillButton(label: String, onClick: () -> Unit, modifier: Modifier =
             Spacer(Modifier.width(8.dp))
         }
         Text(label, style = WeatherTheme.type.bodyStrong, color = content, maxLines = 1)
+    }
+}
+
+// Read this afternoon: a warning that starts tomorrow says when, and a finger held on tomorrow
+// morning in the strip (which marks the new day with its name) says which day the sky is showing.
+@Preview(widthDp = 412)
+@Composable
+private fun WeatherTodayAheadPreview() {
+    val report = WeatherFixtures.report
+    val tomorrowMorning = WeatherFixtures.TODAY + 33 * 3_600L
+    val alert = WeatherFixtures.windAdvisory.copy(onsetEpochSeconds = WeatherFixtures.TODAY + 30 * 3_600L, endsEpochSeconds = WeatherFixtures.TODAY + 42 * 3_600L)
+    Column(
+        Modifier.background(Brush.verticalGradient(listOf(Color(0xFF4A6A8C), Color(0xFF1B2638)))).padding(vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Hero(report, WeatherFixtures.NOW, report.hourly.first { it.epochSeconds == tomorrowMorning }, Modifier.padding(horizontal = 24.dp))
+        AlertBanner(alert, report::offsetAt, WeatherFixtures.NOW, onOpen = {}, modifier = Modifier.cardWidth())
+        WeatherCard(Modifier.cardWidth(), padding = 0.dp) {
+            HourlyStrip(report, WeatherFixtures.NOW, onScrub = {})
+        }
     }
 }

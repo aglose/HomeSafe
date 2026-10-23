@@ -157,6 +157,16 @@
     <string name="fitness_logger_set_record">%1$s, %2$s</string>
     <string name="fitness_logger_keypad_backspace">Delete digit</string>
     <string name="fitness_logger_keypad_done">Done</string>
+    <!-- Under the logged sets, for a few seconds after one was deleted: %1$s the set, like "135 lb × 8" -->
+    <string name="fitness_logger_undo_delete">Bring back %1$s</string>
+    <!-- Under a barbell's weight: the plates to put on each end of the bar, %1$s like "45, 25, 2.5" (pounds) -->
+    <string name="fitness_logger_plates_side">%1$s a side</string>
+    <!-- Under a barbell's weight when it is the empty bar -->
+    <string name="fitness_logger_plates_bar">Just the bar</string>
+    <!-- Before the first set: lighter sets to work up to it with, on chips -->
+    <string name="fitness_logger_warmup">Warm up</string>
+    <!-- For a screen reader, on a warm-up chip: %1$s the set, like "115 lb × 8" -->
+    <string name="fitness_logger_warmup_use">Load warm-up %1$s</string>
 
     <!-- Lifts -->
     <string name="fitness_lifts_all">All</string>

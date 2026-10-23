@@ -47,7 +47,6 @@ import com.meticulouscreations.homesafe.atlas.domain.CivilDate
 import com.meticulouscreations.homesafe.atlas.domain.PlaceKind
 import com.meticulouscreations.homesafe.atlas.domain.TravelMode
 import com.meticulouscreations.homesafe.atlas.domain.VisitRole
-import com.meticulouscreations.homesafe.atlas.domain.YearsCovered
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.ui.radar.MAP_TILE_DP
 import homesafe.shared.generated.resources.Res
@@ -117,7 +116,8 @@ internal fun MapScreen(
     }
 
     val shownYears = picked.ifEmpty { years.toSet() }
-    val covered = remember(history, picked) { picked.takeIf { it.isNotEmpty() }?.let { YearsCovered.of(history, it) } }
+    // From the index the analysis made off the main thread: a tap on a year, or a step while they play, looks it up.
+    val covered = remember(analysis, picked) { picked.takeIf { it.isNotEmpty() }?.let { analysis.yearsIndex.covered(it) } }
     val homeLabel = stringResource(Res.string.atlas_place_home)
     val workLabel = stringResource(Res.string.atlas_place_work)
     val markers = remember(analysis, covered, homeLabel, workLabel) {
@@ -146,8 +146,10 @@ internal fun MapScreen(
             )
         }
     }
-    val flights = remember(history, picked) {
-        history.moves.filter { it.mode == TravelMode.FLY && (picked.isEmpty() || CivilDate.of(it.startDay).year in picked) }.takeLast(400)
+    // Every flight once per history; picking years only sifts those.
+    val allFlights = remember(history) { history.moves.filter { it.mode == TravelMode.FLY } }
+    val flights = remember(allFlights, picked) {
+        (if (picked.isEmpty()) allFlights else allFlights.filter { CivilDate.of(it.startDay).year in picked }).takeLast(400)
     }
     val paths = state.paths
     val yearBits = remember(paths, picked) { if (picked.isEmpty()) -1 else paths?.density?.yearsIn(picked) ?: -1 }

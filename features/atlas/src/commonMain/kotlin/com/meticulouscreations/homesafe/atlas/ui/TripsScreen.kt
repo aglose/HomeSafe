@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -61,6 +63,8 @@ import homesafe.shared.generated.resources.atlas_era_span
 import homesafe.shared.generated.resources.atlas_eras_title
 import homesafe.shared.generated.resources.atlas_trip_days_title
 import homesafe.shared.generated.resources.atlas_trip_detail
+import homesafe.shared.generated.resources.atlas_trip_earlier
+import homesafe.shared.generated.resources.atlas_trip_later
 import homesafe.shared.generated.resources.atlas_trip_stops
 import homesafe.shared.generated.resources.atlas_trip_stops_title
 import homesafe.shared.generated.resources.atlas_trips_cities
@@ -86,7 +90,7 @@ internal fun tripTitle(trip: Trip, state: AtlasUiState): String = localityText(t
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun TripsScreen(state: AtlasUiState, padding: PaddingValues, onOpenTrip: (Int) -> Unit, onOpenPlace: (String) -> Unit, modifier: Modifier = Modifier) {
+internal fun TripsScreen(state: AtlasUiState, padding: PaddingValues, onOpenTrip: (Long) -> Unit, onOpenPlace: (String) -> Unit, modifier: Modifier = Modifier) {
     val colors = AtlasTheme.colors
     val analysis = state.analysis
     LazyColumn(modifier.fillMaxSize().testTag("atlas_trips"), contentPadding = padding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -119,7 +123,7 @@ internal fun TripsScreen(state: AtlasUiState, padding: PaddingValues, onOpenTrip
                 Text(stringResource(Res.string.atlas_trips_none), style = AtlasTheme.type.body, color = colors.textMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(28.dp))
             }
         }
-        itemsIndexed(analysis.trips, key = { _, trip -> trip.start }) { index, trip -> TripCard(trip, state, onClick = { onOpenTrip(index) }, modifier = Modifier.testTag("atlas_trip_$index")) }
+        itemsIndexed(analysis.trips, key = { _, trip -> trip.start }) { index, trip -> TripCard(trip, state, onClick = { onOpenTrip(trip.start) }, modifier = Modifier.testTag("atlas_trip_$index")) }
         if (analysis.eras.isNotEmpty()) {
             item(key = "eras_title") { SectionTitle(stringResource(Res.string.atlas_eras_title)) }
             itemsIndexed(analysis.eras.asReversed(), key = { _, era -> era.startDay }) { index, era -> EraCard(era, state, current = index == 0) { onOpenPlace(era.home.key) } }
@@ -234,7 +238,8 @@ private fun EraCard(era: Era, state: AtlasUiState, current: Boolean, onClick: ()
 
 /**
  * One trip: the map of it, with the way there and back and around drawn on it, then where it
- * stopped and what each day of it held.
+ * stopped and what each day of it held. [onEarlier] and [onLater] step to the trip before or
+ * after, null where there is none.
  */
 @Composable
 internal fun TripScreen(
@@ -245,6 +250,8 @@ internal fun TripScreen(
     onOpenDay: (Int) -> Unit,
     onOpenPlace: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onEarlier: (() -> Unit)? = null,
+    onLater: (() -> Unit)? = null,
     active: Boolean = true,
 ) {
     val colors = AtlasTheme.colors
@@ -261,13 +268,30 @@ internal fun TripScreen(
     }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).testTag("atlas_trip"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Column(Modifier.padding(horizontal = AtlasGutter + 4.dp)) {
-            Text(tripTitle(trip, state), style = AtlasTheme.type.hero, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(
-                if (trip.nights > 0) stringResource(Res.string.atlas_era_span, dateText(trip.startDay, year = false), dateText(trip.endDay)) else dateText(trip.startDay, weekday = true),
-                style = AtlasTheme.type.body,
-                color = colors.textMuted,
-            )
+        val stepping = onEarlier != null || onLater != null
+        Row(Modifier.fillMaxWidth().padding(horizontal = if (stepping) 8.dp else AtlasGutter + 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (stepping) {
+                AtlasRoundButton(Icons.Filled.ChevronLeft, stringResource(Res.string.atlas_trip_earlier), { onEarlier?.invoke() }, Modifier.testTag("atlas_trip_earlier"), enabled = onEarlier != null)
+            }
+            Column(Modifier.weight(1f), horizontalAlignment = if (stepping) Alignment.CenterHorizontally else Alignment.Start) {
+                Text(
+                    tripTitle(trip, state),
+                    style = AtlasTheme.type.hero,
+                    color = colors.text,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = if (stepping) TextAlign.Center else TextAlign.Start,
+                )
+                Text(
+                    if (trip.nights > 0) stringResource(Res.string.atlas_era_span, dateText(trip.startDay, year = false), dateText(trip.endDay)) else dateText(trip.startDay, weekday = true),
+                    style = AtlasTheme.type.body,
+                    color = colors.textMuted,
+                    textAlign = if (stepping) TextAlign.Center else TextAlign.Start,
+                )
+            }
+            if (stepping) {
+                AtlasRoundButton(Icons.Filled.ChevronRight, stringResource(Res.string.atlas_trip_later), { onLater?.invoke() }, Modifier.testTag("atlas_trip_later"), enabled = onLater != null)
+            }
         }
         Box(Modifier.padding(horizontal = AtlasGutter).fillMaxWidth().height(320.dp).clip(AtlasCardShape).border(1.dp, colors.hairline, AtlasCardShape)) {
             AtlasMap(map, tiles, Modifier.fillMaxSize(), markers = markers, flights = flights, highlight = tracks, animated = active, onTapMarker = { onOpenPlace(it.key) })

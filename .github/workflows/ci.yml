@@ -421,14 +421,80 @@ jobs:
             build/startup-perf/go2rtc.yaml
           retention-days: 14
 
+  # Where the iOS job runs, decided before it is queued: a job sent to the self-hosted Mac while
+  # the Mac is asleep or its runner has stopped waits there for good (up to a day), and ci-green
+  # with it. So the Mac is asked first whether it is online, and when it isn't, the job goes to a
+  # GitHub-hosted macOS runner instead: slower (it builds from nothing), but it finishes.
+  #
+  # - A fork's pull request must never execute on the Mac, so it always goes hosted (it needs no
+  #   secrets). So does a Dependabot branch, whether the run is its pull request's or one the
+  #   Dependency updates workflow started on it: it builds versions of plugins nobody has vetted
+  #   yet, and those should run on a machine that is thrown away afterwards.
+  # - The repository variable IOS_RUNNER set to `hosted` or `self-hosted` decides outright, for
+  #   when the Mac is known to be away (or known to be back).
+  # - Otherwise the Mac's status comes from the repository's runner list, which GITHUB_TOKEN may
+  #   not read: it takes the secret RUNNER_STATUS_TOKEN, a fine-grained token for this repository
+  #   with "Administration: Read-only" and nothing else. With no token, or the list unreadable,
+  #   the job goes to the Mac as it always did, with a warning on the run.
+  #
+  # A rerun of only the failed jobs keeps this job's answer; "Re-run all jobs" asks again.
+  ios-runner:
+    name: Pick the iOS runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      runs-on: ${{ steps.pick.outputs.runs-on }}
+    steps:
+      - name: Is the Mac online?
+        id: pick
+        env:
+          UNTRUSTED: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || startsWith(github.head_ref, 'dependabot/') || startsWith(github.ref, 'refs/heads/dependabot/') }}
+          OVERRIDE: ${{ vars.IOS_RUNNER }}
+          GH_TOKEN: ${{ secrets.RUNNER_STATUS_TOKEN }}
+        run: |
+          set -o pipefail
+          hosted='"macos-latest"'
+          mac='["self-hosted", "macOS"]'
+          pick() { echo "runs-on=$1" >> "$GITHUB_OUTPUT"; echo "iOS job runs on: $1"; }
+
+          if [ "$UNTRUSTED" = "true" ]; then
+            pick "$hosted"
+            exit 0
+          fi
+          case "$OVERRIDE" in
+            hosted)
+              echo "::notice::IOS_RUNNER=hosted: the iOS job runs on a GitHub-hosted Mac."
+              pick "$hosted"
+              exit 0
+              ;;
+            self-hosted)
+              pick "$mac"
+              exit 0
+              ;;
+          esac
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::RUNNER_STATUS_TOKEN isn't set, so whether the self-hosted Mac is online can't be checked; the iOS job is sent to it regardless. See the ios-runner job in ci.yml."
+            pick "$mac"
+            exit 0
+          fi
+          if ! online=$(gh api "repos/$GITHUB_REPOSITORY/actions/runners" --paginate \
+              --jq '[.runners[] | select(.status == "online" and any(.labels[]; .name == "self-hosted") and any(.labels[]; .name == "macOS"))] | length' \
+              | awk '{ n += $1 } END { print n + 0 }'); then
+            echo "::warning::Couldn't read the repository's runners with RUNNER_STATUS_TOKEN; the iOS job is sent to the self-hosted Mac regardless."
+            pick "$mac"
+            exit 0
+          fi
+          if [ "$online" -gt 0 ]; then
+            pick "$mac"
+          else
+            echo "::notice::The self-hosted Mac is offline, so the iOS job runs on a GitHub-hosted Mac instead."
+            pick "$hosted"
+          fi
+
   ios:
     name: iOS tests and build
-    # Branches in this repo run on the self-hosted Mac. A fork's pull request must never
-    # execute there, so it goes to a GitHub-hosted macOS runner instead (it needs no secrets).
-    # So does a Dependabot branch, whether the run is its pull request's or one the Dependency
-    # updates workflow started on it: it builds versions of plugins nobody has vetted yet, and
-    # those should run on a machine that is thrown away afterwards.
-    runs-on: ${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || startsWith(github.head_ref, 'dependabot/') || startsWith(github.ref, 'refs/heads/dependabot/')) && 'macos-latest' || fromJSON('["self-hosted", "macOS"]') }}
+    needs: ios-runner
+    runs-on: ${{ fromJSON(needs.ios-runner.outputs.runs-on) }}
     # The Mac takes a few minutes, with everything already built once. A hosted runner starts
     # from nothing each time: Kotlin/Native to download, and the whole of :shared to compile.
     timeout-minutes: 60
@@ -497,7 +563,7 @@ jobs:
     # The single required status check. Jobs can be added or renamed without touching
     # branch protection, as long as they are listed here.
     if: always()
-    needs: [gradle, relay, android-ui, startup-perf, ios]
+    needs: [gradle, relay, android-ui, startup-perf, ios-runner, ios]
     runs-on: ubuntu-24.04
     steps:
       - name: Show job results

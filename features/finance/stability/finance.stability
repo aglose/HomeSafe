@@ -243,11 +243,13 @@ internal fun com.meticulouscreations.homesafe.finance.ui.CashFlowBlock(finance: 
     - finance: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.CategoryBlock(budget: com.meticulouscreations.homesafe.finance.domain.Budget): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.CategoryBlock(budget: com.meticulouscreations.homesafe.finance.domain.Budget, selected: kotlin.String?, onSelect: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - budget: STABLE (marked @Stable or @Immutable)
+    - selected: STABLE (class with no mutable properties)
+    - onSelect: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.ChartSettingsScreen(style: com.meticulouscreations.homesafe.finance.domain.ChartStyle, contentPadding: androidx.compose.foundation.layout.PaddingValues, onChange: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.ChartStyle, kotlin.Unit>): kotlin.Unit
@@ -1086,6 +1088,14 @@ private fun com.meticulouscreations.homesafe.finance.ui.PurchaseRow(purchase: co
     - onClick: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.PurchaseSearch(query: kotlin.String, onQuery: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - query: STABLE (String is immutable)
+    - onQuery: STABLE (function type)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.QuickStats(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
   skippable: true
   restartable: true
@@ -1850,11 +1860,12 @@ private fun com.meticulouscreations.homesafe.finance.ui.components.rememberRisin
     - millis: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock(running: kotlin.Boolean): androidx.compose.runtime.State<kotlin.Float>
+internal fun com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock(running: kotlin.Boolean, frameSeconds: kotlin.Float): androidx.compose.runtime.State<kotlin.Float>
   skippable: false
   restartable: false
   params:
     - running: STABLE (primitive type)
+    - frameSeconds: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.formatChange(change: kotlin.Double, format: com.meticulouscreations.homesafe.finance.domain.ChartValueFormat): kotlin.String

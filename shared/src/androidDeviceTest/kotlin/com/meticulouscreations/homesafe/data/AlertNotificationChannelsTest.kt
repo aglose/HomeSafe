@@ -19,7 +19,7 @@ class AlertNotificationChannelsTest {
     @Test
     fun noChannelMakesASound() {
         AlertNotificationPoster.ensureChannels(context)
-        for (id in listOf(AlertNotificationPoster.CHANNEL_ID, AlertNotificationPoster.AWAY_CHANNEL_ID, AlertNotificationPoster.SUMMARY_CHANNEL_ID)) {
+        for (id in listOf(AlertNotificationPoster.CHANNEL_ID, AlertNotificationPoster.AWAY_CHANNEL_ID, AlertNotificationPoster.DOORS_CHANNEL_ID, AlertNotificationPoster.SUMMARY_CHANNEL_ID)) {
             val channel = assertNotNull(manager.getNotificationChannel(id), id)
             assertNull(channel.sound, "$id has a sound")
         }

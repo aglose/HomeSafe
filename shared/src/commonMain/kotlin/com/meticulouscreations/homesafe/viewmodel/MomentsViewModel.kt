@@ -35,6 +35,7 @@ import com.meticulouscreations.homesafe.domain.usecase.UndoNotAPersonUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
+import com.meticulouscreations.homesafe.ui.components.SeekCommand
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -222,6 +223,7 @@ class MomentsViewModel(
     private val _refreshing = MutableStateFlow(false)
     private val _clip = MutableStateFlow(ClipState())
     private var clipJob: Job? = null
+    private var clipSeekSequence = 0L
 
     private val _downloadState = MutableStateFlow(DownloadUiState())
     val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
@@ -474,6 +476,43 @@ class MomentsViewModel(
         _clip.update { if (it.request != null) it.copy(buffering = isBuffering) else it }
     }
 
+    /**
+     * The open clip played to its end. In a visit, the next of its takes with a clip opens and
+     * plays, so a visit plays straight through; a household car's routine doesn't (its sightings
+     * are hours apart, not one visit). Otherwise the clip stays on its last frame, paused, for a
+     * tap ([toggleClipPaused]) to play it again from the start.
+     */
+    fun onClipEnded() {
+        val clip = _clip.value
+        val eventId = clip.eventId ?: return
+        if (clip.request == null) return
+        val entry = uiState.value.groups.firstNotNullOfOrNull { group ->
+            group.items.firstOrNull { item -> item.event.id == eventId || item.clips.any { it.event.id == eventId } }
+        }
+        val next = entry?.takeIf { it.kind == VisitKind.VISIT }?.clips?.let { clips ->
+            val index = clips.indexOfFirst { it.event.id == eventId }
+            if (index < 0) null else clips.drop(index + 1).firstOrNull { it.event.hasClip }?.event
+        }
+        if (next != null) {
+            toggleExpanded(next)
+        } else {
+            _clip.update { if (it.eventId == eventId) it.copy(ended = true, request = it.request?.copy(playWhenReady = false)) else it }
+        }
+    }
+
+    /** A tap on the open clip: pauses it, plays it on, or — once it has ended — plays it again from the start. */
+    fun toggleClipPaused() {
+        val seekId = ++clipSeekSequence
+        _clip.update { clip ->
+            val request = clip.request
+            when {
+                request == null -> clip
+                clip.ended -> clip.copy(ended = false, request = request.copy(seek = SeekCommand(id = seekId, positionMs = 0), playWhenReady = true))
+                else -> clip.copy(request = request.copy(playWhenReady = !request.playWhenReady))
+            }
+        }
+    }
+
     /** The player gave up on the clip (bad status, expired session, purged event): say so instead of a blank box. */
     fun onClipPlaybackError() {
         _clip.update { if (it.eventId != null) it.copy(error = UiText.of(Res.string.moments_clip_play_failed), buffering = false) else it }
@@ -545,6 +584,8 @@ class MomentsViewModel(
         val posterUrl: String? = null,
         val error: UiText? = null,
         val buffering: Boolean = false,
+        /** The clip played to its end and stopped there (see [onClipEnded]). */
+        val ended: Boolean = false,
     )
 
     private companion object {

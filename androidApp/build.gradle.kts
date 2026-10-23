@@ -107,6 +107,15 @@ val keystoreProperties: Map<String, String> = run {
     }.toMap()
 }
 
+// -PpreviewBuild=true: a release build that installs beside the real one, to try a branch on a
+// phone that has HomeSafe installed without touching it (a different signature couldn't replace
+// it, and uninstalling it would take its sign-in and settings with it). Own package
+// (".preview"), "-preview" version, "HomeSafe Preview" label and a violet icon (src/preview/res).
+// Firebase has no client for that package, so push is off in it (see googleServicesPackages), and
+// ANDROID_ID differs per signing key, so Away mode sees it as a different phone. The "Preview APK"
+// workflow builds it for a pull request labelled preview-apk.
+val previewBuild = providers.gradleProperty("previewBuild").orNull == "true"
+
 android {
     namespace = "com.meticulouscreations.homesafe"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -187,6 +196,10 @@ android {
             buildConfigField("String", "TEST_PASSWORD", "\"${localCredentials.getProperty("test.password", "")}\"")
         }
         release {
+            if (previewBuild) {
+                applicationIdSuffix = ".preview"
+                versionNameSuffix = "-preview"
+            }
             // R8 full mode (the AGP 8+ default) with the optimize rule set: lambda grouping,
             // sourceInformation stripping and ComposerImpl devirtualization are where most of the
             // debug→release Compose speed-up comes from. Compose, Ktor, Room, Media3, Coil and
@@ -271,6 +284,11 @@ val googleServicesPackages: Set<String> = run {
         .toSet()
 }
 androidComponents {
+    if (previewBuild) {
+        onVariants(selector().withBuildType("release")) { variant ->
+            variant.sources.res?.addStaticSourceDirectory("src/preview/res")
+        }
+    }
     onVariants { variant ->
         val appId = variant.applicationId.get()
         if (googleServicesPackages.isNotEmpty() && appId !in googleServicesPackages) {

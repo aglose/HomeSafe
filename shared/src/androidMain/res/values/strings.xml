@@ -10,6 +10,8 @@
     <string name="notif_channel_detections_description">A person, vehicle, or animal seen by one of your cameras</string>
     <string name="notif_channel_away_name">Away alerts</string>
     <string name="notif_channel_away_description">A person on any camera, or a door opening, while nobody is home</string>
+    <string name="notif_channel_doors_name">Doors</string>
+    <string name="notif_channel_doors_description">A door opening while someone is home</string>
     <string name="notif_channel_summaries_name">Summaries</string>
     <string name="notif_channel_summaries_description">A few times a day: what the cameras saw while someone was home</string>
     <string name="notif_channel_weather_name">Weather</string>
@@ -34,6 +36,7 @@
     <string name="notif_nest_streaming_body">Google is sending its video again.</string>
     <!-- The name beside the app's in the header over each kind's notifications in the shade. -->
     <string name="notif_group_cameras">Cameras</string>
+    <string name="notif_group_doors">Doors</string>
     <string name="notif_group_summaries">Camera summaries</string>
     <string name="notif_group_weather">Weather</string>
     <string name="notif_group_budget">Budget</string>
@@ -67,4 +70,17 @@
     <string name="biometric_finance_title">Unlock Finance</string>
     <string name="biometric_finance_subtitle">The server can\'t be reached. Confirm it\'s you to see what this phone saved.</string>
     <string name="biometric_cancel">Cancel</string>
+    <!-- The Doors tile in Quick Settings, and the line under its name. %1$s is a door's name, e.g. "Back door". -->
+    <string name="tile_doors_label">Doors</string>
+    <string name="tile_doors_all_closed">All closed</string>
+    <string name="tile_doors_one_open">%1$s open</string>
+    <plurals name="tile_doors_open">
+        <item quantity="one">%1$d open</item>
+        <item quantity="other">%1$d open</item>
+    </plurals>
+    <string name="tile_doors_unreachable">Can\'t reach the server</string>
+    <!-- The shortcuts a long press on the launcher icon offers. -->
+    <string name="shortcut_doors">Doors</string>
+    <string name="shortcut_radar">Radar</string>
+    <string name="shortcut_budget">Budget</string>
 </resources>
