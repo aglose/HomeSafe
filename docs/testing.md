@@ -129,6 +129,12 @@ The iOS job runs on the Mac, and its disk is shared with everything else done th
 first: under 15 GB it clears the runner's Xcode derived data and simulator caches, and under 8 GB it stops with an error
 that says the disk is full, which is what `ld: write() failed, errno=28` from a link step meant.
 
+When the Mac is asleep or its runner has stopped, the iOS job goes to a GitHub-hosted macOS runner instead of waiting
+there for good (the `ios-runner` job in `ci.yml` asks first). That check reads the repository's runner list, which takes
+a repository secret `RUNNER_STATUS_TOKEN`: a fine-grained token for this repository with **Administration: Read-only**
+and nothing else. Without it the job goes to the Mac as before, with a warning on the run. The repository variable
+`IOS_RUNNER` (`hosted` or `self-hosted`) overrides the check either way.
+
 ## Android CLI journeys
 
 `androidApp/src/journeysTest/*.journey.xml` are journeys in the format documented for
