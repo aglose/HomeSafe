@@ -131,7 +131,7 @@ data class DebugAutofillCredentials(
 /**
  * Handles on the sign-in form for tests: Compose UI tests find the fields by these, and on Android
  * (where MainActivity sets `testTagsAsResourceId`) UiAutomator and Android CLI journeys see them
- * as resource ids. The URL field starts filled in, so it has no placeholder text to find it by.
+ * as resource ids. The URL field may start filled in (the last server), so its placeholder text can't find it.
  */
 const val SIGN_IN_SERVER_URL_TEST_TAG = "sign_in_server_url"
 const val SIGN_IN_USERNAME_TEST_TAG = "sign_in_username"
@@ -159,7 +159,9 @@ fun SecureConnectionScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val hasSavedBiometricCredentials by viewModel.hasSavedBiometricCredentials.collectAsStateWithLifecycle()
     var serverUrl by remember(mostRecentConnection) {
-        mutableStateOf(mostRecentConnection?.serverUrl ?: "http://frigate.local:8971")
+        // Empty on a first sign-in, with "Enter Server URL" showing: an example address in the
+        // field reads as the real one, and signing in to it only fails on a host that isn't there.
+        mutableStateOf(mostRecentConnection?.serverUrl.orEmpty())
     }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }

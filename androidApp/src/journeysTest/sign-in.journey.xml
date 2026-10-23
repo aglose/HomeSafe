@@ -6,7 +6,7 @@
     </description>
     <actions>
         <action>Verify that the sign-in screen is shown, with the title "PERCYSAFE" and a "Connect" button</action>
-        <action>Clear the server URL field (it starts filled in) and type http://10.0.2.2:8971</action>
+        <action>Clear the server URL field (it may hold the last server) and type http://10.0.2.2:8971</action>
         <action>Tap the "Username" field and type admin</action>
         <action>Tap the "Password" field and type correct-horse</action>
         <action>Tap "Connect"</action>
