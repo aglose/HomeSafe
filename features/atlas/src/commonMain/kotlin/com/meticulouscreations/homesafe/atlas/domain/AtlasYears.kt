@@ -10,13 +10,35 @@ import androidx.compose.runtime.Immutable
 @Immutable
 class YearsCovered(val placeKeys: Set<String>, val regions: Int) {
     companion object {
-        fun of(history: AtlasHistory, years: Set<Int>): YearsCovered {
-            val keys = HashSet<String>()
-            history.visits.forEach { if (CivilDate.of(it.startDay).year in years) keys += it.placeKey }
-            val regions = keys.mapNotNullTo(HashSet()) { key ->
-                history.locality(history.place(key))?.let { locality -> locality.region?.let { "${locality.country}-$it" } }
+        fun of(history: AtlasHistory, years: Set<Int>): YearsCovered = YearsIndex.of(history).covered(years)
+    }
+}
+
+/**
+ * What [YearsCovered] is worked out from, worked out once: the places visited each year, and the
+ * region each place is in. Finding a place's town means looking round it, too slow to do for
+ * every place each time a year is picked on the map, or each step while the years play.
+ */
+@Immutable
+class YearsIndex(private val keysByYear: Map<Int, Set<String>>, private val regionOf: Map<String, String>) {
+    fun covered(years: Set<Int>): YearsCovered {
+        val keys = HashSet<String>()
+        years.forEach { year -> keysByYear[year]?.let { keys.addAll(it) } }
+        val regions = keys.mapNotNullTo(HashSet()) { regionOf[it] }
+        return YearsCovered(keys, regions.size)
+    }
+
+    companion object {
+        val Empty = YearsIndex(emptyMap(), emptyMap())
+
+        fun of(history: AtlasHistory): YearsIndex {
+            val keysByYear = HashMap<Int, HashSet<String>>()
+            history.visits.forEach { keysByYear.getOrPut(CivilDate.of(it.startDay).year) { HashSet() }.add(it.placeKey) }
+            val regionOf = HashMap<String, String>()
+            history.places.forEach { (key, place) ->
+                history.locality(place)?.let { locality -> locality.region?.let { regionOf[key] = "${locality.country}-$it" } }
             }
-            return YearsCovered(keys, regions.size)
+            return YearsIndex(keysByYear, regionOf)
         }
     }
 }

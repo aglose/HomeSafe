@@ -70,7 +70,7 @@ private fun AtlasTripsPreview() {
 @Preview(widthDp = 412, heightDp = 1500)
 @Composable
 private fun AtlasTripPreview() {
-    FrigateTheme { AtlasAppContent(AtlasFixtures.state, NoTiles, AtlasActions(), initialPage = AtlasPage.TripDetail(1)) }
+    FrigateTheme { AtlasAppContent(AtlasFixtures.state, NoTiles, AtlasActions(), initialPage = AtlasPage.TripDetail(AtlasFixtures.state.analysis.trips[1].start)) }
 }
 
 @Preview(widthDp = 412, heightDp = 3200)
