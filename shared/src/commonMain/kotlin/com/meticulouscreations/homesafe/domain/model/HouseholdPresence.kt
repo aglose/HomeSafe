@@ -7,6 +7,12 @@ import homesafe.shared.generated.resources.presence_last_seen_hours
 import homesafe.shared.generated.resources.presence_last_seen_just_now
 import homesafe.shared.generated.resources.presence_last_seen_minutes
 import homesafe.shared.generated.resources.presence_last_seen_yesterday
+import kotlin.math.PI
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * One of the household's two tracked phones — its Android phone and its iPhone, each a release
@@ -56,7 +62,20 @@ data class HomeLocation(
     val latitude: Double,
     val longitude: Double,
     val radiusMeters: Double,
-)
+) {
+    /** How far ([latitude], [longitude]) is from the middle of home, in metres, along the ground. */
+    fun distanceMeters(latitude: Double, longitude: Double): Double {
+        val dLat = (latitude - this.latitude) * DEGREES_TO_RADIANS
+        val dLng = (longitude - this.longitude) * DEGREES_TO_RADIANS
+        val h = sin(dLat / 2).pow(2) + cos(this.latitude * DEGREES_TO_RADIANS) * cos(latitude * DEGREES_TO_RADIANS) * sin(dLng / 2).pow(2)
+        return 2 * EARTH_RADIUS_METERS * asin(sqrt(h.coerceIn(0.0, 1.0)))
+    }
+
+    private companion object {
+        const val EARTH_RADIUS_METERS = 6_371_000.0
+        const val DEGREES_TO_RADIANS = PI / 180
+    }
+}
 
 /** What flipped a phone's presence; the relay logs it and nothing else depends on it. */
 enum class PresenceSource(val wire: String) {
@@ -68,6 +87,12 @@ enum class PresenceSource(val wire: String) {
 
     /** Reached Frigate over the LAN — you can't do that from the road. Home, immediately. */
     LAN("lan"),
+
+    /**
+     * A location fix taken while the app runs, against home: what notices a phone that is
+     * already out (or in) when nothing has crossed the fence. Away is armed with the dwell.
+     */
+    LOCATION("location"),
 }
 
 /**

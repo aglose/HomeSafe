@@ -185,8 +185,10 @@ private class AndroidGeofenceMonitor(
             .setNotificationResponsiveness(60_000)
             .build()
         val request = GeofencingRequest.Builder()
-            // No initial trigger: arming the fence says nothing about where the phone is now.
-            .setInitialTrigger(0)
+            // Say which side the phone is on as the fence goes up: a phone already out when it was
+            // armed (after a reboot, an update, or becoming the tracked phone) would otherwise stay
+            // "home" until it came back. An exit is still only armed, with the relay's dwell.
+            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER or GeofencingRequest.INITIAL_TRIGGER_EXIT)
             .addGeofence(fence)
             .build()
         try {
