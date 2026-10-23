@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_finance_budget.xml.
+  Finance: the Budget tab, where the month's credit card spending (read through Plaid) is set
+  against the household's limits, and its settings page. fin_budget_* throughout.
+  Plaid is a company's name and stays as it is. %-placeholders that carry money arrive already
+  formatted ("$4,500"), and names of people, cards and merchants are data, shown as written.
+-->
+<resources>
+    <string name="finance_tab_budget">Presupuesto</string>
+    <string name="fin_budget_settings_title">Configuración del presupuesto</string>
+
+    <string name="fin_budget_error_generic">No se pudo conectar con el servidor</string>
+    <string name="fin_budget_error_purchase_gone">Esa compra ya no está</string>
+    <string name="fin_budget_error_refused">El servidor no aceptó ese cambio</string>
+    <string name="fin_budget_error_relay_outdated">El relay del servidor es más antiguo que el presupuesto. Copia relay/ al servidor y ejecuta ahí docker compose up -d --build.</string>
+    <string name="fin_budget_problem_outdated_title">El servidor necesita una actualización</string>
+    <string name="fin_budget_problem_other_title">No se pudo leer el presupuesto</string>
+    <string name="fin_budget_setup_title">Plaid aún no está configurado</string>
+    <string name="fin_budget_setup_body">El presupuesto lee tus tarjetas a través de Plaid, y el servidor no tiene claves de Plaid. Los pasos están en docs/bank-sync.md.</string>
+    <string name="fin_budget_link_title">Vincula tus tarjetas</string>
+    <string name="fin_budget_link_body">Vincula cada tarjeta de crédito una vez, como “Un banco o una tarjeta de crédito”, y lo que se compre con ella se leerá cada hora. Inicias sesión en la página de Plaid, con el acceso propio de la tarjeta. Esta app nunca ve tu contraseña.</string>
+    <string name="fin_budget_open_linked_accounts">Cuentas vinculadas</string>
+
+    <string name="fin_budget_bucket_family">Familia</string>
+    <string name="fin_budget_bucket_unsorted">Por clasificar</string>
+
+    <string name="fin_budget_headline_no_limit">Sin límite</string>
+    <string name="fin_budget_headline_under">A buen ritmo</string>
+    <string name="fin_budget_headline_projected_over">Por encima del ritmo</string>
+    <string name="fin_budget_headline_close">Cerca del límite</string>
+    <string name="fin_budget_headline_over">Límite superado</string>
+    <string name="fin_budget_headline_dipping">Tocando los ahorros</string>
+    <string name="fin_budget_headline_ended_under">Bajo el límite</string>
+
+    <string name="fin_budget_verdict_no_limit">Fija un límite mensual en los ajustes para ver a qué ritmo va el mes.</string>
+    <plurals name="fin_budget_verdict_under">
+        <item quantity="one">Quedan %1$s para el último día: unos %3$s para gastar.</item>
+        <item quantity="other">Quedan %1$s para %2$d días: unos %3$s al día.</item>
+    </plurals>
+    <plurals name="fin_budget_verdict_close">
+        <item quantity="one">Solo quedan %1$s y falta %2$d día.</item>
+        <item quantity="other">Solo quedan %1$s y faltan %2$d días.</item>
+    </plurals>
+    <string name="fin_budget_verdict_last_day">Último día del mes, con %1$s de margen.</string>
+    <string name="fin_budget_verdict_projected_over">A este ritmo el mes cerrará cerca de %1$s, unos %2$s por encima del límite.</string>
+    <string name="fin_budget_verdict_projected_over_on">A este ritmo el mes cerrará cerca de %1$s, unos %2$s por encima, y pasará el límite hacia el %3$s.</string>
+    <string name="fin_budget_verdict_over">%1$s por encima del límite.</string>
+    <string name="fin_budget_verdict_over_near_savings">%1$s por encima del límite. Con %2$s más, el mes saldrá de los ahorros.</string>
+    <string name="fin_budget_verdict_dipping">Las tarjetas superaron por %1$s lo que deja el sueldo neto después de las facturas. Esa cantidad está saliendo de los ahorros.</string>
+    <string name="fin_budget_verdict_ended_under">El mes cerró %1$s por debajo del límite.</string>
+    <string name="fin_budget_verdict_ended_over">El mes cerró %1$s por encima del límite.</string>
+
+    <string name="fin_budget_hero_day">Gastado en %1$s · día %2$d de %3$d</string>
+    <string name="fin_budget_hero_month">Gastado en %1$s</string>
+    <string name="fin_budget_hero_limit">Límite del mes: %1$s</string>
+    <string name="fin_budget_hero_no_limit">Sin límite para el mes</string>
+    <string name="fin_budget_back_to_now">Volver a este mes</string>
+    <string name="fin_budget_tank_pace_mark">Línea: ritmo parejo</string>
+    <string name="fin_budget_tank_share">%1$s del límite</string>
+    <string name="fin_budget_tank_no_limit">Aún sin límite</string>
+
+    <string name="fin_budget_fresh_reading">Leyendo las tarjetas…</string>
+    <string name="fin_budget_fresh_never">Las tarjetas aún no se han leído</string>
+    <string name="fin_budget_fresh_read">Tarjetas leídas %1$s</string>
+    <string name="fin_budget_fresh_read_changed">Tarjetas leídas %1$s · última compra nueva %2$s</string>
+    <string name="fin_budget_not_ready">Plaid todavía está obteniendo las primeras compras de estas tarjetas, así que al mes le pueden faltar algunas.</string>
+    <string name="fin_budget_pending_note">%1$s de esto aún no se ha liquidado y todavía puede cambiar.</string>
+    <string name="fin_budget_sandbox">Sandbox de Plaid: bancos de prueba y compras inventadas.</string>
+    <string name="fin_budget_card_relink">%1$s te pide que vuelvas a iniciar sesión. Abre las cuentas vinculadas.</string>
+    <string name="fin_budget_card_no_purchases">%1$s no se vinculó para leer sus compras. Desvincúlala y vuelve a vincularla como “Un banco o una tarjeta de crédito”.</string>
+    <string name="fin_budget_action_sync">Leer las tarjetas ahora</string>
+    <string name="fin_budget_action_syncing">Leyendo…</string>
+    <string name="fin_budget_action_settings">Límites y tarjetas</string>
+
+    <string name="fin_budget_roles_title">¿Para qué es cada tarjeta?</string>
+    <string name="fin_budget_roles_body">Una tarjeta cuenta para el presupuesto en cuanto tiene un rol. En una tarjeta que comparten dos personas, cada compra se asigna a una de ellas.</string>
+    <string name="fin_budget_card_masked">%1$s %2$s ··%3$s</string>
+    <string name="fin_budget_card_named">%1$s %2$s</string>
+    <string name="fin_budget_role_split">La compartimos dos</string>
+    <string name="fin_budget_role_family">De la familia</string>
+    <string name="fin_budget_role_ignore">Fuera del presupuesto</string>
+    <string name="fin_budget_role_person">Solo de %1$s</string>
+    <string name="fin_budget_role_unset">Sin indicar</string>
+
+    <string name="fin_budget_holders_title">¿De quién es cada tarjeta?</string>
+    <string name="fin_budget_holders_body">El banco marca cada compra de esta tarjeta con la tarjeta física con que se hizo. Indica de quién es cada una, una sola vez, y esas compras se clasificarán solas.</string>
+    <string name="fin_budget_holder_ending">Tarjeta terminada en %1$s</string>
+    <string name="fin_budget_sort_title">¿De quién son estas?</string>
+    <string name="fin_budget_sort_subtitle">El banco no dijo quién las hizo. Toca un nombre, o la compra misma para recordar su comercio.</string>
+    <plurals name="fin_budget_sort_count">
+        <item quantity="one">%1$d por clasificar</item>
+        <item quantity="other">%1$d por clasificar</item>
+    </plurals>
+    <plurals name="fin_budget_sort_more">
+        <item quantity="one">Mostrar %1$d más por clasificar</item>
+        <item quantity="other">Mostrar %1$d más por clasificar</item>
+    </plurals>
+
+    <string name="fin_budget_pace_title">Ritmo</string>
+    <string name="fin_budget_pace_caption">Lo gastado hasta ahora, frente a un mes parejo (línea discontinua) y dónde lo deja este ritmo</string>
+    <string name="fin_budget_pace_scrub">%1$s: gasto de %2$s hasta ahora</string>
+    <string name="fin_budget_pace_chart_description">El gasto del mes hasta ahora, día a día, frente a su límite</string>
+    <string name="fin_budget_pace_legend_limit">Límite</string>
+    <string name="fin_budget_pace_legend_savings">Línea de ahorros</string>
+    <string name="fin_budget_pace_stat_rate">Costo por día</string>
+    <string name="fin_budget_pace_stat_projected">El mes cierra cerca de</string>
+    <string name="fin_budget_pace_stat_allowance">Disponible por día</string>
+    <string name="fin_budget_pace_stat_limit_day">Límite alcanzado</string>
+    <string name="fin_budget_pace_stat_not_this_month">Este mes no</string>
+
+    <string name="fin_budget_who_title">Quién gastó qué</string>
+    <string name="fin_budget_who_subtitle">Toca uno para ver solo sus compras</string>
+    <string name="fin_budget_who_of_limit">%1$s de %2$s</string>
+    <string name="fin_budget_who_left">Quedan %1$s</string>
+    <string name="fin_budget_who_over">%1$s de más</string>
+    <string name="fin_budget_who_unsorted_note">En el total del mes, aún en el límite de nadie</string>
+
+    <string name="fin_budget_flow_title">Adónde va el sueldo neto</string>
+    <string name="fin_budget_flow_take_home">Sueldo neto este mes</string>
+    <string name="fin_budget_flow_bills">Facturas que no van a tarjeta</string>
+    <string name="fin_budget_flow_cards">En las tarjetas hasta ahora</string>
+    <string name="fin_budget_flow_left">Disponible este mes</string>
+    <string name="fin_budget_flow_from_savings">Saliendo de los ahorros</string>
+    <string name="fin_budget_flow_note">El sueldo neto y las facturas vienen de la hoja del presupuesto. Qué líneas se pagan con tarjeta se elige en “Límites y tarjetas”.</string>
+
+    <string name="fin_budget_what_title">En qué se gastó</string>
+    <string name="fin_budget_category_food">Comida y bebida</string>
+    <string name="fin_budget_category_shopping">Compras</string>
+    <string name="fin_budget_category_transport">Transporte</string>
+    <string name="fin_budget_category_travel">Viajes</string>
+    <string name="fin_budget_category_entertainment">Entretenimiento</string>
+    <string name="fin_budget_category_utilities">Renta y servicios</string>
+    <string name="fin_budget_category_home">Hogar</string>
+    <string name="fin_budget_category_medical">Salud</string>
+    <string name="fin_budget_category_personal_care">Cuidado personal</string>
+    <string name="fin_budget_category_services">Servicios generales</string>
+    <string name="fin_budget_category_government">Gobierno y donaciones</string>
+    <string name="fin_budget_category_fees">Comisiones e intereses</string>
+    <string name="fin_budget_category_loans">Pagos de préstamos</string>
+    <string name="fin_budget_category_other">Todo lo demás</string>
+    <string name="fin_budget_category_rest">El resto</string>
+
+    <string name="fin_budget_where_title">Dónde se gastó</string>
+    <plurals name="fin_budget_merchant_times">
+        <item quantity="one">%1$d vez</item>
+        <item quantity="other">%1$d veces</item>
+    </plurals>
+
+    <string name="fin_budget_months_title">Mes a mes</string>
+    <string name="fin_budget_months_subtitle">Toca un mes para revisarlo</string>
+
+    <string name="fin_budget_purchases_title">Compras</string>
+    <plurals name="fin_budget_purchases_count">
+        <item quantity="one">%1$d compra</item>
+        <item quantity="other">%1$d compras</item>
+    </plurals>
+    <string name="fin_budget_purchases_none">No se ha comprado nada con estas tarjetas este mes.</string>
+    <string name="fin_budget_purchases_none_here">Nada aquí este mes.</string>
+    <string name="fin_budget_filter_all">Todo</string>
+    <string name="fin_budget_purchase_pending">pendiente</string>
+    <string name="fin_budget_purchase_refund">+%1$s devuelto</string>
+
+    <string name="fin_budget_tag_clear">Quitar la etiqueta</string>
+    <string name="fin_budget_tag_remember">Siempre para %1$s</string>
+    <string name="fin_budget_tag_remember_note">Todas las compras de este comercio irán al mismo lugar, pasadas y futuras.</string>
+    <string name="fin_budget_tag_remembered_note">Este comercio ya se recuerda. Activa esto y vuelve a elegir para cambiar adónde va.</string>
+    <string name="fin_budget_source_manual">Puesta aquí a mano.</string>
+    <string name="fin_budget_source_account">Aquí por la tarjeta con que se pagó.</string>
+    <string name="fin_budget_source_bank">Aquí porque el banco indicó de quién era la tarjeta.</string>
+    <string name="fin_budget_source_rule">Aquí porque este comercio se recuerda.</string>
+    <string name="fin_budget_source_none">El banco no dijo quién la hizo.</string>
+
+    <string name="fin_budget_how">El servidor le pregunta a Plaid cada hora qué se compró con cada tarjeta. Los bancos envían las compras unas cuantas veces al día, así que una puede tardar algunas horas en aparecer, y una pendiente todavía puede cambiar. El pago de una tarjeta no se cuenta, y un reembolso se descuenta del mes en que llega.</string>
+
+    <string name="fin_budget_settings_limits_title">Límites</string>
+    <string name="fin_budget_settings_limits_subtitle">Lo máximo que debería costar un mes en las tarjetas. Deja uno vacío para no poner límite.</string>
+    <string name="fin_budget_settings_limit_total">El mes completo</string>
+    <string name="fin_budget_settings_limit_family">La tarjeta familiar</string>
+    <string name="fin_budget_settings_limit_suggest">Usar los %1$s de la hoja</string>
+    <string name="fin_budget_settings_saving">Guardando…</string>
+    <string name="fin_budget_settings_alerts_title">Alertas</string>
+    <string name="fin_budget_settings_alerts_subtitle">Una notificación cuando el mes cruza una línea</string>
+    <string name="fin_budget_settings_alert_total">El límite del mes</string>
+    <string name="fin_budget_settings_alert_total_note">Al llegar a cuatro quintos, y otra vez al superarlo</string>
+    <string name="fin_budget_settings_alert_savings">Tocando los ahorros</string>
+    <string name="fin_budget_settings_alert_savings_note">Cuando las tarjetas superan lo que deja el sueldo neto después de las facturas</string>
+    <string name="fin_budget_settings_alert_buckets">Cada persona y la tarjeta familiar</string>
+    <string name="fin_budget_settings_alert_buckets_note">Cuando uno supera su propio límite</string>
+    <string name="fin_budget_settings_alerts_note">Son del hogar: llegan a cada teléfono Android con sesión iniciada por alguien que puede ver Finanzas, una vez al mes por cada línea, y esperan a que terminen las horas de silencio del teléfono. Para silenciarlas en un teléfono, desactiva sus notificaciones de “Presupuesto” en los ajustes del teléfono. Los iPhone todavía no las reciben.</string>
+    <string name="fin_budget_settings_cards_title">Tarjetas</string>
+    <string name="fin_budget_settings_cards_subtitle">Qué es cada tarjeta para el presupuesto</string>
+    <string name="fin_budget_settings_cards_none">Aún no hay ninguna tarjeta de crédito vinculada.</string>
+    <string name="fin_budget_settings_lines_title">Pagado con tarjeta</string>
+    <string name="fin_budget_settings_lines_subtitle">Marca las líneas de la hoja del presupuesto que van a una tarjeta. El resto son las facturas que salen del banco, que el sueldo neto tiene que cubrir primero.</string>
+    <string name="fin_budget_settings_lines_none">Aún no se han leído las líneas de gastos de la hoja del presupuesto.</string>
+    <string name="fin_budget_settings_lines_sum">Facturas que no van a tarjeta: %1$s de los %2$s al mes de la hoja.</string>
+    <string name="fin_budget_settings_rules_title">Comercios recordados</string>
+    <string name="fin_budget_settings_rules_subtitle">Comercios cuyas compras siempre van al mismo lugar</string>
+    <string name="fin_budget_settings_rules_none">Aún ninguno. Toca una compra y activa “Siempre para…” para recordar su comercio.</string>
+    <string name="fin_budget_settings_rules_forget">Olvidar</string>
+    <string name="fin_budget_settings_people">Las personas del presupuesto son las de la hoja del presupuesto: %1$s.</string>
+    <string name="fin_budget_settings_people_none">La hoja del presupuesto aún no nombra a nadie, así que las compras solo pueden ser de la familia.</string>
+
+    <string name="fin_budget_teaser_title">Este mes en las tarjetas</string>
+    <string name="fin_budget_teaser_of_limit">%1$s de %2$s</string>
+</resources>

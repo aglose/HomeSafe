@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The fitness app's reading of the body, from the device's health store (Health Connect on
+  Android): the card on Today with a readiness score, steps and last night's sleep, connecting
+  the store, and the page Health Connect links to that says what is read and why. See AGENTS.md,
+  "Strings and localization".
+  Spanish translation of values/strings_fitness_body.xml.
+-->
+<resources>
+    <string name="fitness_body_title">Cuerpo</string>
+
+    <string name="fitness_body_connect_body">Ve aquí una puntuación de preparación, tus pasos, el sueño de anoche y tus carreras. Se leen de Health Connect, donde Google Health guarda lo que registra tu banda. Nada sale de este teléfono.</string>
+    <string name="fitness_body_connect_hint">Primero, en Google Health, activa Health Connect en Conexiones.</string>
+    <string name="fitness_body_connect_button">Conectar Health Connect</string>
+    <string name="fitness_body_missing_body">Los pasos, el sueño y las carreras de tu banda llegan a través de Health Connect, que este teléfono todavía no tiene.</string>
+    <string name="fitness_body_missing_button">Obtener Health Connect</string>
+    <string name="fitness_body_refused">Android deja de preguntar después de dos rechazos. Dale permiso a PercySafe directamente en Health Connect.</string>
+    <string name="fitness_body_manage_button">Abrir Health Connect</string>
+    <string name="fitness_body_reading">Leyendo Health Connect…</string>
+    <string name="fitness_body_failed">No se pudo conectar con Health Connect en este momento. Esto es de la última vez que se pudo.</string>
+    <string name="fitness_body_nothing_shared">Los pasos, el sueño y los datos del corazón no se comparten con PercySafe.</string>
+
+    <string name="fitness_body_readiness">Preparación</string>
+    <string name="fitness_body_readiness_high">A darlo todo</string>
+    <string name="fitness_body_readiness_moderate">Estable</string>
+    <string name="fitness_body_readiness_low">Tómalo con calma</string>
+    <string name="fitness_body_readiness_high_advice">Buen día para ir por una meta.</string>
+    <string name="fitness_body_readiness_moderate_advice">Entrena según lo planeado.</string>
+    <string name="fitness_body_readiness_low_advice">Hazlo ligero, o confórmate con igualar la última vez.</string>
+    <string name="fitness_body_readiness_waiting_title">Esperando los datos de anoche</string>
+    <string name="fitness_body_readiness_waiting">Todavía no ha llegado nada de anoche. Abre Google Health para sincronizar tu banda.</string>
+    <string name="fitness_body_readiness_unshared_title">Sin puntuación</string>
+    <string name="fitness_body_readiness_unshared">Comparte el sueño o la variabilidad de la frecuencia cardiaca para obtener una puntuación de preparación.</string>
+    <string name="fitness_body_readiness_none">––</string>
+    <string name="fitness_body_readiness_learning">Todavía aprendiendo qué es lo normal para ti: después de una semana de noches, la puntuación también toma en cuenta tu corazón.</string>
+    <string name="fitness_body_part_variability">VFC %1$d ms · normalmente %2$d</string>
+    <string name="fitness_body_part_resting">En reposo %1$d lpm · normalmente %2$d</string>
+    <string name="fitness_body_readiness_described">Preparación: %1$d de 100. %2$s</string>
+
+    <string name="fitness_body_steps">Pasos</string>
+    <string name="fitness_body_steps_average">Normalmente %1$s al día</string>
+    <string name="fitness_body_steps_no_average">Hoy hasta ahora</string>
+    <string name="fitness_body_steps_described">%1$s pasos hoy</string>
+    <string name="fitness_body_steps_described_average">%1$s pasos hoy, normalmente %2$s al día</string>
+
+    <string name="fitness_body_sleep">Sueño</string>
+    <string name="fitness_body_sleep_none">Nada de anoche todavía</string>
+    <string name="fitness_body_sleep_span">%1$s – %2$s</string>
+    <string name="fitness_body_sleep_average">Normalmente %1$s</string>
+    <string name="fitness_body_sleep_deep">Profundo</string>
+    <string name="fitness_body_sleep_light">Ligero</string>
+    <string name="fitness_body_sleep_rem">REM</string>
+    <string name="fitness_body_sleep_awake">Despierto</string>
+    <string name="fitness_body_sleep_described">Dormiste %1$s anoche</string>
+    <string name="fitness_body_sleep_described_stages">Dormiste %1$s anoche: %2$s de sueño profundo, %3$s ligero, %4$s REM y %5$s despierto</string>
+
+    <string name="fitness_body_not_shared">No compartido</string>
+
+    <string name="fitness_body_rationale_title">Qué lee PercySafe de Health Connect</string>
+    <string name="fitness_body_rationale_intro">La app Fitness muestra lo que registra tu banda junto a tu registro de entrenamiento. Solo lee; nunca escribe en Health Connect.</string>
+    <string name="fitness_body_rationale_steps">Pasos, para el conteo de la semana en la página principal.</string>
+    <string name="fitness_body_rationale_sleep">Sueño, para la duración y las fases de anoche, y como parte de la puntuación de preparación.</string>
+    <string name="fitness_body_rationale_heart">Frecuencia cardiaca en reposo y variabilidad de la frecuencia cardiaca, que la puntuación de preparación compara con tus propias últimas cuatro semanas.</string>
+    <string name="fitness_body_rationale_runs">Ejercicio, distancia, frecuencia cardiaca, calorías, elevación y rutas, para tus carreras: su ritmo, sus parciales, sus zonas de frecuencia cardiaca y por dónde fueron.</string>
+    <string name="fitness_body_rationale_privacy">Todo lo que se lee se queda en este teléfono. Nada se envía al servidor de casa ni a nadie más, y PercySafe no guarda nada: se vuelve a leer de Health Connect cada vez.</string>
+    <string name="fitness_body_rationale_change">Puedes dejar de compartir cualquiera de estos datos cuando quieras en Health Connect, en Permisos de apps.</string>
+    <string name="fitness_body_rationale_done">Listo</string>
+</resources>

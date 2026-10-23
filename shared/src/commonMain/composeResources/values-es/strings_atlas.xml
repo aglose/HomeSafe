@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spanish translation of values/strings_atlas.xml. The atlas app: everywhere its owner has been, from their Google Maps Timeline history. What its screens say. -->
+<resources>
+    <string name="atlas_title">Atlas</string>
+    <string name="atlas_close">Cerrar Atlas</string>
+    <string name="atlas_loading">Leyendo tu historial…</string>
+    <string name="atlas_tab_map">Mapa</string>
+    <string name="atlas_tab_days">Días</string>
+    <string name="atlas_tab_places">Lugares</string>
+    <string name="atlas_tab_trips">Viajes</string>
+    <string name="atlas_tab_patterns">Patrones</string>
+    <string name="atlas_title_day">Día</string>
+    <string name="atlas_title_place">Lugar</string>
+    <string name="atlas_title_trip">Viaje</string>
+    <string name="atlas_title_sync">Tu historial</string>
+
+    <string name="atlas_drawer_title">Atlas</string>
+    <string name="atlas_drawer_subtitle">Donde has estado</string>
+    <string name="atlas_drawer_open">Abrir Atlas</string>
+    <string name="atlas_drawer_empty">Trae tu Cronología de Google Maps</string>
+    <string name="atlas_drawer_locked">Bloqueado mientras no se pueda acceder al servidor</string>
+    <plurals name="atlas_drawer_places">
+        <item quantity="one">%1$s lugar</item>
+        <item quantity="other">%1$s lugares</item>
+    </plurals>
+    <string name="atlas_drawer_detail">%1$s desde %2$s</string>
+
+    <string name="atlas_date_weekday">%1$s, %2$s</string>
+    <string name="atlas_duration_minutes">%1$d min</string>
+    <string name="atlas_duration_hours">%1$s h</string>
+    <string name="atlas_duration_hours_minutes">%1$d h %2$d min</string>
+    <string name="atlas_duration_days">%1$d d</string>
+    <string name="atlas_duration_days_hours">%1$d d %2$d h</string>
+    <string name="atlas_distance_miles">%1$s mi</string>
+    <string name="atlas_distance_km">%1$s km</string>
+    <string name="atlas_ago_today">Hoy</string>
+    <string name="atlas_ago_yesterday">Ayer</string>
+    <plurals name="atlas_ago_days">
+        <item quantity="one">hace %1$d día</item>
+        <item quantity="other">hace %1$d días</item>
+    </plurals>
+    <plurals name="atlas_ago_months">
+        <item quantity="one">hace %1$d mes</item>
+        <item quantity="other">hace %1$d meses</item>
+    </plurals>
+    <plurals name="atlas_ago_years">
+        <item quantity="one">hace %1$d año</item>
+        <item quantity="other">hace %1$d años</item>
+    </plurals>
+
+    <string name="atlas_place_home">Casa</string>
+    <string name="atlas_place_work">Trabajo</string>
+    <string name="atlas_place_near">Cerca de %1$s</string>
+    <string name="atlas_place_unnamed">Lugar sin nombre</string>
+    <string name="atlas_locality_pair">%1$s, %2$s</string>
+
+    <string name="atlas_mode_walk">A pie</string>
+    <string name="atlas_mode_run">Corriendo</string>
+    <string name="atlas_mode_cycle">En bicicleta</string>
+    <string name="atlas_mode_drive">En auto</string>
+    <string name="atlas_mode_motorcycle">Motocicleta</string>
+    <string name="atlas_mode_bus">Autobús</string>
+    <string name="atlas_mode_train">Tren</string>
+    <string name="atlas_mode_subway">Metro</string>
+    <string name="atlas_mode_tram">Tranvía</string>
+    <string name="atlas_mode_fly">En avión</string>
+    <string name="atlas_mode_ferry">Ferri</string>
+    <string name="atlas_mode_boat">Barco</string>
+    <string name="atlas_mode_ski">Esquí</string>
+    <string name="atlas_mode_other">Otro medio</string>
+
+    <string name="atlas_map_all_years">Todos</string>
+    <string name="atlas_map_play">Reproducir los años</string>
+    <string name="atlas_map_pause">Pausar</string>
+    <string name="atlas_map_home">Ir a casa</string>
+    <string name="atlas_map_everywhere">Mostrar todo</string>
+    <string name="atlas_map_zoom_in">Acercar</string>
+    <string name="atlas_map_zoom_out">Alejar</string>
+    <string name="atlas_map_reading_paths">Leyendo tus recorridos…</string>
+    <string name="atlas_map_stat_places">lugares</string>
+    <string name="atlas_map_stat_travelled">por tierra</string>
+    <string name="atlas_map_stat_regions">estados</string>
+
+    <string name="atlas_days_on_this_day">Un día como hoy</string>
+    <plurals name="atlas_days_years_ago">
+        <item quantity="one">hace %1$d año</item>
+        <item quantity="other">hace %1$d años</item>
+    </plurals>
+    <string name="atlas_days_measure_distance">Distancia</string>
+    <string name="atlas_days_measure_places">Lugares</string>
+    <string name="atlas_days_measure_far">Lejos de casa</string>
+    <string name="atlas_days_legend_less">Menos</string>
+    <string name="atlas_days_legend_more">Más</string>
+    <string name="atlas_days_year_grid">%1$d, un cuadro por cada día</string>
+    <string name="atlas_days_day_state">%1$s: %2$s</string>
+    <string name="atlas_days_open_day">Abrir este día</string>
+
+    <string name="atlas_day_previous">Día anterior</string>
+    <string name="atlas_day_next">Día siguiente</string>
+    <string name="atlas_day_play">Repetir el día</string>
+    <string name="atlas_day_pause">Pausar</string>
+    <string name="atlas_day_nothing">No hay nada registrado este día</string>
+    <string name="atlas_day_ribbon">El día de medianoche a medianoche: dónde lo pasaste y cómo te moviste. Arrastra para recorrerlo.</string>
+    <string name="atlas_day_ribbon_whole">El día completo</string>
+    <plurals name="atlas_day_summary">
+        <item quantity="one">%1$s · %2$d lugar</item>
+        <item quantity="other">%1$s · %2$d lugares</item>
+    </plurals>
+    <string name="atlas_day_span">%1$s – %2$s</string>
+    <string name="atlas_day_visit_detail">%1$s · %2$s</string>
+    <string name="atlas_day_move_detail">%1$s · %2$s · %3$s</string>
+
+    <string name="atlas_places_search">Buscar lugares</string>
+    <string name="atlas_places_sort_time">Más tiempo</string>
+    <string name="atlas_places_sort_visits">Más visitas</string>
+    <string name="atlas_places_sort_recent">Recientes</string>
+    <string name="atlas_places_sort_missed">Hace tiempo</string>
+    <string name="atlas_places_none">Ningún lugar coincide</string>
+    <plurals name="atlas_places_visits">
+        <item quantity="one">%1$s visita</item>
+        <item quantity="other">%1$s visitas</item>
+    </plurals>
+    <string name="atlas_places_row_detail">%1$s · %2$s</string>
+    <string name="atlas_places_row_where">%1$s · %2$s</string>
+    <string name="atlas_places_row_last">%1$s · %2$s</string>
+
+    <string name="atlas_place_stat_visits">visitas</string>
+    <string name="atlas_place_stat_time">en total allí</string>
+    <string name="atlas_place_stat_first">primera visita</string>
+    <string name="atlas_place_stat_last">última visita</string>
+    <string name="atlas_place_stat_arrive">llegada habitual</string>
+    <string name="atlas_place_stat_gap">entre visitas</string>
+    <plurals name="atlas_place_gap">
+        <item quantity="one">%1$d día</item>
+        <item quantity="other">%1$d días</item>
+    </plurals>
+    <string name="atlas_place_rhythm_title">Cuándo estás ahí</string>
+    <string name="atlas_place_rhythm_description">La semana por horas: más brillante donde pasas más tiempo aquí</string>
+    <string name="atlas_place_years_title">Visitas por año</string>
+    <string name="atlas_place_recent_title">Últimas visitas</string>
+
+    <string name="atlas_trips_coverage_title">Hasta dónde llega</string>
+    <plurals name="atlas_trips_countries">
+        <item quantity="one">país</item>
+        <item quantity="other">países</item>
+    </plurals>
+    <plurals name="atlas_trips_regions">
+        <item quantity="one">estado</item>
+        <item quantity="other">estados</item>
+    </plurals>
+    <plurals name="atlas_trips_cities">
+        <item quantity="one">ciudad</item>
+        <item quantity="other">ciudades</item>
+    </plurals>
+    <string name="atlas_trips_title">Viajes</string>
+    <string name="atlas_trips_none">Todavía no hay viajes fuera de casa registrados</string>
+    <plurals name="atlas_trips_nights">
+        <item quantity="one">%1$d noche</item>
+        <item quantity="other">%1$d noches</item>
+    </plurals>
+    <string name="atlas_trips_day_trip">Viaje de un día</string>
+    <string name="atlas_trips_flew">En avión</string>
+    <string name="atlas_trips_from_home">a %1$s de casa</string>
+    <string name="atlas_trip_detail">%1$s · %2$s</string>
+    <string name="atlas_trip_stops_title">Paradas</string>
+    <plurals name="atlas_trip_stops">
+        <item quantity="one">%1$d parada</item>
+        <item quantity="other">%1$d paradas</item>
+    </plurals>
+    <string name="atlas_trip_days_title">Día a día</string>
+    <string name="atlas_eras_title">Dónde has vivido</string>
+    <string name="atlas_era_span">%1$s – %2$s</string>
+    <string name="atlas_era_now">hoy</string>
+    <plurals name="atlas_era_detail">
+        <item quantity="one">%1$s lugar · %2$s de recorrido</item>
+        <item quantity="other">%1$s lugares · %2$s de recorrido</item>
+    </plurals>
+
+    <string name="atlas_insights_title">Lo que muestra tu historial</string>
+    <string name="atlas_insight_home_share">Pasas el %1$d% de tu tiempo en casa: unas %2$s horas al día.</string>
+    <string name="atlas_insight_regularity">Tus semanas son regulares en un %1$d%: ese porcentaje del tiempo estás donde sueles estar a esa hora.</string>
+    <string name="atlas_insight_commute_cost">Ir y volver del trabajo te lleva unas %1$d horas al año, a %2$d minutos por trayecto.</string>
+    <string name="atlas_insight_late_weekday">Un %1$s cualquiera sales al trabajo %2$d minutos más tarde de lo habitual.</string>
+    <string name="atlas_insight_better_departure">Si sales al trabajo alrededor de las %1$s, el trayecto dura unos %2$d minutos menos.</string>
+    <string name="atlas_insight_drifted">Fuiste a %1$s %2$d veces, más o menos cada %3$d días. La última vez fue %4$s.</string>
+    <string name="atlas_insight_habit">%1$s es un hábito de cada %2$s: %3$d visitas en el último año, normalmente alrededor de las %4$s.</string>
+    <string name="atlas_insight_new_places_more">En %2$d fuiste a %1$d lugares por primera vez, más que los %3$d del año anterior.</string>
+    <string name="atlas_insight_new_places_fewer">En %2$d fuiste a %1$d lugares por primera vez, menos que los %3$d del año anterior.</string>
+    <string name="atlas_insight_shape_returner">Tu vida gira en torno a dos lugares. Explican el %1$d% de lo lejos que se reparten tus visitas.</string>
+    <string name="atlas_insight_shape_explorer">Te mueves mucho más allá de tus dos lugares principales. Explican solo el %1$d% de lo lejos que se reparten tus visitas.</string>
+    <string name="atlas_insight_range_wider">En %1$d tu tiempo se repartió a unos %2$s de su centro, más disperso que el año anterior (%3$s).</string>
+    <string name="atlas_insight_range_narrower">En %1$d tu tiempo se repartió a unos %2$s de su centro, más concentrado que el año anterior (%3$s).</string>
+    <string name="atlas_insight_short_drives">En %2$d, %1$d de tus trayectos en auto fueron de menos de una milla, %3$s en total. Podrías haberlos hecho caminando.</string>
+    <string name="atlas_insight_active_more">En %2$d recorriste %1$s a pie y en bicicleta, más que los %3$s del año anterior.</string>
+    <string name="atlas_insight_active_less">En %2$d recorriste %1$s a pie y en bicicleta, menos que los %3$s del año anterior.</string>
+    <plurals name="atlas_insight_days_in">
+        <item quantity="one">En %2$d pasaste %1$d día completo en casa.</item>
+        <item quantity="other">En %2$d pasaste %1$d días completos en casa.</item>
+    </plurals>
+
+    <string name="atlas_routine_title">Tu semana típica</string>
+    <plurals name="atlas_routine_subtitle">
+        <item quantity="one">La última semana, hora por hora</item>
+        <item quantity="other">Las últimas %1$d semanas, hora por hora</item>
+    </plurals>
+    <string name="atlas_routine_description">La semana por horas, coloreada según dónde sueles pasar cada hora: en casa, en el trabajo, en otro lugar o en movimiento</string>
+    <string name="atlas_role_home">Casa</string>
+    <string name="atlas_role_work">Trabajo</string>
+    <string name="atlas_role_elsewhere">Otro lugar</string>
+    <string name="atlas_role_moving">En movimiento</string>
+
+    <string name="atlas_commute_title">El trayecto al trabajo</string>
+    <string name="atlas_commute_to_work">Al trabajo</string>
+    <string name="atlas_commute_to_home">De vuelta a casa</string>
+    <string name="atlas_commute_minutes">%1$d min</string>
+    <string name="atlas_commute_leave">Saliendo alrededor de las %1$s</string>
+    <string name="atlas_commute_trend">El trayecto al trabajo, mes a mes</string>
+
+    <string name="atlas_modes_title">Cómo te mueves</string>
+    <string name="atlas_modes_laps">por tierra · %1$s vueltas a la Tierra en total</string>
+    <string name="atlas_modes_air">por aire</string>
+    <string name="atlas_modes_description">La distancia del año por tierra, según cómo la recorriste</string>
+
+    <string name="atlas_years_title">Año por año</string>
+    <plurals name="atlas_years_new_places">
+        <item quantity="one">%1$d lugar nuevo</item>
+        <item quantity="other">%1$d lugares nuevos</item>
+    </plurals>
+    <string name="atlas_years_range">alcance de %1$s</string>
+
+    <string name="atlas_records_title">Récords</string>
+    <string name="atlas_record_longest_day">Día con más recorrido</string>
+    <string name="atlas_record_farthest">Lo más lejos de casa</string>
+    <string name="atlas_record_busiest">Más lugares en un día</string>
+    <plurals name="atlas_record_busiest_value">
+        <item quantity="one">%1$d lugar</item>
+        <item quantity="other">%1$d lugares</item>
+    </plurals>
+    <string name="atlas_record_home_streak">Racha más larga en casa</string>
+    <plurals name="atlas_record_home_streak_value">
+        <item quantity="one">%1$d día</item>
+        <item quantity="other">%1$d días</item>
+    </plurals>
+
+    <string name="atlas_sync_open">Tu historial y de dónde viene</string>
+    <string name="atlas_sync_device_title">En este dispositivo</string>
+    <string name="atlas_sync_device_summary">%1$s estancias y %2$s trayectos entre ellas, del %3$s al %4$s.</string>
+    <string name="atlas_sync_fetching">Consultando al servidor…</string>
+    <string name="atlas_sync_fetching_years">Obteniendo el año %1$d de %2$d…</string>
+    <string name="atlas_sync_checked">Última consulta al servidor: %1$s</string>
+    <string name="atlas_sync_never">Todavía no se ha consultado al servidor</string>
+    <string name="atlas_sync_check_now">Buscar una nueva exportación</string>
+    <string name="atlas_sync_drive_title">La carpeta de Drive</string>
+    <string name="atlas_sync_drive_ok">El servidor revisa tu carpeta de Drive cada hora en busca de una nueva exportación.</string>
+    <string name="atlas_sync_drive_reading">El servidor está leyendo una exportación ahora.</string>
+    <string name="atlas_sync_drive_not_configured">El servidor no sabe en qué carpeta de Drive buscar. Pon el id de la carpeta en timeline.env como TIMELINE_DRIVE_FOLDER.</string>
+    <string name="atlas_sync_drive_not_shared">El servidor no puede ver la carpeta de Drive. Compártela como lector con la cuenta de abajo.</string>
+    <string name="atlas_sync_drive_api_disabled">La API de Google Drive está desactivada en el proyecto de Google Cloud del servidor.</string>
+    <string name="atlas_sync_drive_empty">La carpeta de Drive todavía no tiene ninguna exportación de Cronología.</string>
+    <string name="atlas_sync_drive_no_key">El servidor no tiene una clave de cuenta de servicio de Google para leer Drive.</string>
+    <string name="atlas_sync_drive_failed">El servidor no pudo leer la exportación.</string>
+    <string name="atlas_sync_drive_refused">Google rechazó al servidor cuando buscó en la carpeta de Drive.</string>
+    <string name="atlas_sync_share_with">Comparte la carpeta con</string>
+    <string name="atlas_sync_file">Última exportación leída: %1$s, %2$s</string>
+    <string name="atlas_sync_names_title">Nombres de lugares</string>
+    <string name="atlas_sync_names_progress">%1$s de %2$s lugares con nombre</string>
+    <string name="atlas_sync_names_month">%1$s de %2$s búsquedas usadas este mes</string>
+    <string name="atlas_sync_names_not_configured">El servidor no tiene clave de Places API, así que los lugares se identifican por su ciudad. Pon una en timeline.env como TIMELINE_PLACES_KEY.</string>
+    <string name="atlas_sync_names_api_disabled">Places API (New) está desactivada en el proyecto de Google Cloud de la clave.</string>
+    <string name="atlas_sync_names_refused">Google está rechazando las búsquedas de lugares del servidor.</string>
+    <string name="atlas_sync_howto_title">Cómo poner tu historial al día</string>
+    <string name="atlas_sync_howto_body">Google guarda la Cronología en tu teléfono. Para traerla aquí, abre la Configuración del teléfono, luego Ubicación, Servicios de ubicación, Cronología, y toca Exportar datos de Cronología. Guarda el archivo en la carpeta de Drive que vigila el servidor. Se lee en menos de una hora, y esta app obtiene los cambios la próxima vez que se abra.</string>
+
+    <string name="atlas_empty_title">Todavía no hay historial</string>
+    <string name="atlas_empty_body">Atlas muestra todos los lugares donde te registra tu Cronología de Google Maps: cualquier día repetido, cada lugar y viaje, y los patrones que hay en ellos. Exporta tu Cronología a la carpeta de Drive que vigila el servidor y aparecerá aquí.</string>
+    <string name="atlas_empty_action">Cómo traerlo</string>
+
+    <string name="atlas_lock_title">Atlas está bloqueado</string>
+    <string name="atlas_lock_body">No se puede acceder al servidor, así que esta es la copia de tu historial que guardó este dispositivo. Demuestra que el teléfono es tuyo para abrirla.</string>
+    <string name="atlas_lock_no_check">No se puede acceder al servidor, y este dispositivo no tiene huella digital ni rostro para verificar. Atlas se abrirá de nuevo cuando el servidor responda.</string>
+    <string name="atlas_lock_unlock">Desbloquear con %1$s</string>
+</resources>

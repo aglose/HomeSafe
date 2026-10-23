@@ -94,6 +94,7 @@ private fun DoorsPagePreviewContent(state: DoorsUiState) {
 
 /** Three doors: the back one open and set to always notify, the garage's sensor low on battery and far from the stick. */
 @Preview(name = "Doors", widthDp = 412, heightDp = 1500)
+@Preview(name = "Doors, in Spanish", widthDp = 412, heightDp = 1500, locale = "es")
 @Composable
 private fun DoorsPreview() {
     DoorsPagePreviewContent(DoorsUiState(doors = previewDoors, history = previewHistory, nowMillis = PREVIEW_NOW, loaded = true, pairing = DoorPairing()))

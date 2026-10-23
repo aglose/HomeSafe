@@ -240,6 +240,7 @@ object NoTiles : MapTileSource {
 // A handful of whole screens, not every state: each is drawn by the sky's shaders, which the
 // preview renderers run on the CPU, a frame at a time. SkyPreviews.kt has the skies themselves, small.
 @Preview
+@Preview(name = "Today, in Spanish", locale = "es")
 @Composable
 private fun WeatherTodayPreview() {
     WeatherAppContent(WeatherFixtures.state(), NoTiles, WeatherActions())

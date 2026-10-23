@@ -1,0 +1,414 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_finance_narrator.xml.
+  The finance narrator (Narrator.kt): sentences built from live readings, the economic weather
+  report, and the words FinanceFormat puts around numbers; plus the explainer sheet (explain_*),
+  the jargon buster (glossary_*) and the plain-language widgets (layman_*).
+  Arguments are numbers already formatted for display ("3.2%", "$1,850", "$2.19M") or names.
+-->
+<resources>
+    <string name="narrator_format_unchanged">sin cambios</string>
+    <string name="narrator_format_points_change">%1$s pts</string>
+    <string name="narrator_format_just_now">hace un momento</string>
+    <plurals name="narrator_format_minutes_ago">
+        <item quantity="one">hace %1$d min</item>
+        <item quantity="other">hace %1$d min</item>
+    </plurals>
+    <plurals name="narrator_format_hours_ago">
+        <item quantity="one">hace %1$d h</item>
+        <item quantity="other">hace %1$d h</item>
+    </plurals>
+    <string name="narrator_format_today">hoy</string>
+    <plurals name="narrator_format_in_days">
+        <item quantity="one">en %1$d día</item>
+        <item quantity="other">en %1$d días</item>
+    </plurals>
+    <plurals name="narrator_format_days_ago">
+        <item quantity="one">hace %1$d día</item>
+        <item quantity="other">hace %1$d días</item>
+    </plurals>
+    <plurals name="narrator_format_in_months">
+        <item quantity="one">en %1$d mes</item>
+        <item quantity="other">en %1$d meses</item>
+    </plurals>
+    <plurals name="narrator_format_months_ago">
+        <item quantity="one">hace %1$d mes</item>
+        <item quantity="other">hace %1$d meses</item>
+    </plurals>
+    <plurals name="narrator_format_in_years">
+        <item quantity="one">en %1$d año</item>
+        <item quantity="other">en %1$d años</item>
+    </plurals>
+    <plurals name="narrator_format_years_ago">
+        <item quantity="one">hace %1$d año</item>
+        <item quantity="other">hace %1$d años</item>
+    </plurals>
+
+    <string name="narrator_two_sentences">%1$s %2$s</string>
+    <string name="narrator_change_points">%1$s puntos</string>
+
+    <string name="narrator_trend_steady">Se ha mantenido más o menos estable durante seis meses.</string>
+    <string name="narrator_trend_improving">Ha ido mejorando en los últimos seis meses, una buena señal.</string>
+    <string name="narrator_trend_climbing_worse">Ha ido subiendo en los últimos seis meses, así que conviene vigilarlo.</string>
+    <string name="narrator_trend_rising">Ha ido subiendo en los últimos seis meses.</string>
+    <string name="narrator_trend_easing_better">Se ha ido moderando en los últimos seis meses, una buena señal.</string>
+    <string name="narrator_trend_sliding_worse">Ha ido cayendo en los últimos seis meses, así que conviene vigilarlo.</string>
+    <string name="narrator_trend_falling">Ha ido bajando en los últimos seis meses.</string>
+    <string name="narrator_trend_straight_unchanged">Sin cambios en seis meses.</string>
+    <string name="narrator_trend_straight_little_changed">Casi sin cambios en seis meses (%1$s).</string>
+    <string name="narrator_trend_straight_moved">%1$s en seis meses.</string>
+    <string name="narrator_trend_straight_toward">%1$s en seis meses, hacia la línea de peligro.</string>
+    <string name="narrator_trend_straight_away">%1$s en seis meses, alejándose de la línea de peligro.</string>
+    <string name="narrator_trend_straight_further_in">%1$s en seis meses, más adentro de la zona de peligro.</string>
+    <string name="narrator_trend_straight_back_toward">%1$s en seis meses, de vuelta hacia la línea de peligro.</string>
+
+    <string name="narrator_verdict_waiting">Esperando el dato más reciente.</string>
+    <string name="narrator_fact_cpi_higher">Los precios son un %1$s más altos que hace un año.</string>
+    <string name="narrator_fact_cpi_lower">Los precios son un %1$s más bajos que hace un año.</string>
+    <string name="narrator_fact_corecpi_higher">Sin contar alimentos ni gasolina, los precios son un %1$s más altos que hace un año.</string>
+    <string name="narrator_fact_corecpi_lower">Sin contar alimentos ni gasolina, los precios son un %1$s más bajos que hace un año.</string>
+    <string name="narrator_verdict_corepce_rising">La medida preferida de la Fed indica que los precios suben un %1$s al año, frente a su meta del 2%.</string>
+    <string name="narrator_verdict_corepce_falling">La medida preferida de la Fed indica que los precios bajan un %1$s al año, por debajo de su meta del 2%.</string>
+    <string name="narrator_fact_unrate">Alrededor de %1$s de cada 100 personas que quieren trabajar no encuentran empleo.</string>
+    <string name="narrator_fact_sahm">El promedio de desempleo de tres meses está %1$s puntos por encima de su mínimo del último año.</string>
+    <string name="narrator_fact_icsa">Alrededor de %1$s personas pidieron por primera vez el seguro de desempleo la semana pasada.</string>
+    <string name="narrator_fact_u6">Si se cuenta a quienes trabajan a tiempo parcial y quieren tiempo completo, y a quienes dejaron de buscar, el %1$s de la fuerza laboral está subempleado.</string>
+    <string name="narrator_fact_slackgap">El subempleo está %1$s puntos por encima de la tasa de desempleo oficial.</string>
+    <string name="narrator_fact_primeepop">%1$s de cada 100 personas de 25 a 54 años tienen trabajo.</string>
+    <string name="narrator_fact_longterm">El %1$s de las personas desempleadas lleva más de seis meses buscando trabajo.</string>
+    <string name="narrator_fact_insured">El %1$s de los trabajadores cubiertos por el seguro de desempleo sigue cobrando prestaciones.</string>
+    <string name="narrator_fact_quits">El %1$s de los trabajadores renunció a su empleo el mes pasado.</string>
+    <string name="narrator_fact_openings">Hay %1$s vacantes por cada persona desempleada.</string>
+    <string name="narrator_fact_realwages_more">El sueldo típico de tiempo completo alcanza para un %1$s más que hace un año.</string>
+    <string name="narrator_fact_realwages_less">El sueldo típico de tiempo completo alcanza para un %1$s menos que hace un año.</string>
+    <string name="narrator_fact_temphelp_more">Las agencias de empleo temporal tienen un %1$s más de personal que hace un año.</string>
+    <string name="narrator_fact_temphelp_fewer">Las agencias de empleo temporal tienen un %1$s menos de personal que hace un año.</string>
+    <string name="narrator_fact_civpart">El %1$s de los adultos trabaja o busca trabajo.</string>
+    <string name="narrator_fact_gdp_grew">La economía creció a un ritmo anual del %1$s el trimestre pasado.</string>
+    <string name="narrator_verdict_gdp_shrank">La economía se contrajo a un ritmo anual del %1$s el trimestre pasado.</string>
+    <string name="narrator_fact_umcsent">El ánimo de la gente sobre el dinero marca %1$s, frente a un promedio histórico de alrededor de 85.</string>
+    <string name="narrator_fact_curve_inverted">Pedir prestado a corto plazo cuesta %1$s puntos más que a largo plazo: la curva está invertida.</string>
+    <string name="narrator_fact_curve_normal">Pedir prestado a largo plazo cuesta %1$s puntos más que a corto plazo: la curva no está invertida.</string>
+    <string name="narrator_fact_hy">Las empresas riesgosas pagan %1$s puntos más que el gobierno por pedir prestado.</string>
+    <string name="narrator_fact_stlfsi">El índice de estrés financiero marca %1$s, donde 0 es lo normal.</string>
+    <string name="narrator_fact_vix">El índice del miedo está en %1$s; por debajo de 20 se considera calma.</string>
+    <string name="narrator_fact_ccdelinq">El %1$s de los saldos de tarjetas de crédito lleva un mes o más de atraso.</string>
+    <string name="narrator_verdict_debtgdp">El gobierno debe unos $%1$s por cada $100 que el país produce en un año.</string>
+    <string name="narrator_verdict_interest">Unos %1$s centavos de cada dólar de impuestos federales se van ahora en intereses de la deuda.</string>
+    <string name="narrator_verdict_m2_growing">La cantidad de dinero en la economía crece un %1$s al año.</string>
+    <string name="narrator_verdict_m2_shrinking">La cantidad de dinero en la economía se reduce un %1$s al año.</string>
+    <string name="narrator_verdict_dff">La tasa de interés de la Fed es del %1$s, el punto de partida para tarjetas de crédito, préstamos de auto y cuentas de ahorro.</string>
+    <string name="narrator_verdict_mortgage">Una hipoteca típica a 30 años cuesta %1$s. En un préstamo de $500,000, son unos %2$s al mes antes de impuestos y seguro.</string>
+    <string name="narrator_verdict_homeprices_up">Los precios de las viviendas subieron un %1$s respecto a hace un año.</string>
+    <string name="narrator_verdict_homeprices_down">Los precios de las viviendas bajaron un %1$s respecto a hace un año.</string>
+    <string name="narrator_verdict_dgs10">El gobierno paga %1$s por pedir prestado a 10 años. Las tasas hipotecarias suelen estar 1.5–2 puntos por encima.</string>
+    <string name="narrator_verdict_dgs2">El gobierno paga %1$s por pedir prestado a 2 años, más o menos donde los inversionistas esperan que esté la tasa de la Fed.</string>
+    <string name="narrator_verdict_dgs30">El gobierno paga %1$s por pedir prestado a 30 años.</string>
+    <string name="narrator_verdict_other">El dato más reciente es %1$s.</string>
+
+    <string name="narrator_standing_danger">Eso supera la línea de peligro de %1$s.</string>
+    <string name="narrator_standing_watch">Eso supera la línea de vigilancia de %1$s; la línea de peligro está en %2$s.</string>
+    <string name="narrator_standing_calm">Eso está dentro del rango de calma; la línea de vigilancia está en %1$s.</string>
+
+    <string name="narrator_judgement_cpi_falling">De hecho, los precios están bajando, lo que hace rendir más cada dólar.</string>
+    <string name="narrator_judgement_cpi_on_goal">Eso está muy cerca de la meta del 2% de la Fed.</string>
+    <string name="narrator_judgement_cpi_above_goal">Eso es algo más rápido que la meta del 2% de la Fed, y muy por debajo del 9% de 2022.</string>
+    <string name="narrator_judgement_cpi_well_above_goal">Eso está bastante por encima de la meta del 2% de la Fed, aunque la inflación ya ha bajado desde niveles más altos antes.</string>
+    <string name="narrator_judgement_cpi_far_above_goal">Eso está muy por encima de la meta del 2% de la Fed: el tipo de inflación que aprieta los presupuestos y contra el que la Fed actúa con más fuerza.</string>
+    <string name="narrator_judgement_unrate_strong">Es un mercado laboral fuerte.</string>
+    <string name="narrator_judgement_unrate_cooling">El mercado laboral se está enfriando, pero %1$s de cada 100 personas que quieren trabajar tienen empleo.</string>
+    <string name="narrator_judgement_unrate_harder">Ahora cuesta más encontrar trabajo; es justo cuando un colchón de efectivo demuestra su valor.</string>
+    <string name="narrator_judgement_sahm_ringing">La alarma del empleo ha sonado, algo que ha marcado el inicio de recesiones, y todas las recesiones desde 1990 terminaron en menos de 18 meses.</string>
+    <string name="narrator_judgement_sahm_quiet">La alarma del empleo, que suena en 0.5, está en silencio.</string>
+    <string name="narrator_judgement_icsa_low">Es un nivel de despidos bajo y saludable.</string>
+    <string name="narrator_judgement_icsa_rising">Los despidos han aumentado un poco desde niveles muy bajos.</string>
+    <string name="narrator_judgement_icsa_high">Es un nivel alto de despidos.</string>
+    <string name="narrator_judgement_curve_inverted">Esta forma invertida ha precedido a las recesiones, pero la anticipación puede ser de hasta dos años y, mientras tanto, los ahorradores ganan más con depósitos a corto plazo.</string>
+    <string name="narrator_judgement_curve_normal">Es la forma normal y saludable.</string>
+    <string name="narrator_judgement_umcsent_gloomy">Es un ánimo sombrío, pero el ánimo no es dinero: la confianza rondaba los 50 en junio de 2022, con un desempleo del 3.6%.</string>
+    <string name="narrator_judgement_umcsent_below">Está por debajo del promedio; lo que se siente suele ir detrás de las cifras.</string>
+    <string name="narrator_judgement_umcsent_upbeat">Es un ánimo optimista.</string>
+    <string name="narrator_judgement_gdp_healthy">Es un crecimiento saludable.</string>
+    <string name="narrator_judgement_gdp_slow">Es lento, pero sigue siendo crecimiento.</string>
+    <string name="narrator_judgement_gdp_shrinking">Todas las recesiones de EE. UU. desde 1990 terminaron en menos de 18 meses, y después de cada una la producción alcanzó nuevos máximos.</string>
+    <string name="narrator_judgement_realwages_raise">Es un aumento real, si el trabajador típico recibió uno.</string>
+    <string name="narrator_judgement_realwages_trailing">Por ahora los sueldos van detrás de los precios; tras la caída de 2021–22, el salario real volvió a crecer en menos de 18 meses.</string>
+    <string name="narrator_judgement_ccdelinq">Visto al revés, el %1$s de los saldos de tarjetas se paga a tiempo.</string>
+    <string name="narrator_judgement_calm">Está cómodamente del lado tranquilo.</string>
+    <string name="narrator_judgement_watch">Vale la pena vigilarlo, aunque no llega a la línea de peligro.</string>
+    <string name="narrator_judgement_danger">Está en la zona de peligro, que es donde, otras veces, las cosas han dado la vuelta.</string>
+
+    <string name="narrator_perspective_record">En el historial</string>
+    <string name="narrator_record_worse_than">Peor que el %1$d% de los datos desde %2$s.</string>
+    <string name="narrator_record_better_than">Mejor que el %1$d% de los datos desde %2$s.</string>
+    <string name="narrator_record_higher_than">Más alto que el %1$d% de los datos desde %2$s.</string>
+    <string name="narrator_record_lower_than">Más bajo que el %1$d% de los datos desde %2$s.</string>
+    <string name="narrator_record_highest_ever">El más alto del historial.</string>
+    <string name="narrator_record_lowest_ever">El más bajo del historial.</string>
+    <string name="narrator_record_highest_since">El más alto desde %1$s.</string>
+    <string name="narrator_record_lowest_since">El más bajo desde %1$s.</string>
+    <string name="narrator_record_year_ago">Hace un año estaba en %1$s.</string>
+
+    <string name="narrator_perspective_bright_side">El lado positivo</string>
+    <string name="narrator_bright_prices_falling">Si los precios bajan, cada dólar que ahorraste rinde más.</string>
+    <string name="narrator_bright_prices_near_goal">Con la inflación cerca de la meta, la Fed tiene margen para bajar las tasas, lo que abarata los préstamos.</string>
+    <string name="narrator_bright_prices_hot">La inflación ya ha bajado rápido antes: de alrededor del 9% a mediados de 2022 a cerca del 3% un año después. Mientras tanto, las cuentas de ahorro y las letras del Tesoro suelen pagar más mientras sigue alta.</string>
+    <string name="narrator_bright_jobs_tight">La mayoría de las personas que quieren trabajar tienen empleo, y un mercado laboral ajustado es cuando más fácil resulta conseguir aumentos y cambiar de trabajo.</string>
+    <string name="narrator_bright_jobs_cooling">Un mercado laboral que se enfría suele llevar a la Fed a bajar las tasas, lo que reduce el costo de préstamos y tarjetas. El empleo se ha recuperado después de cada crisis: el desempleo pasó del 14.8% en abril de 2020 al 3.6% en mayo de 2022.</string>
+    <string name="narrator_bright_hiring_options">Los trabajadores todavía tienen opciones: cuando la gente se siente libre de renunciar, los sueldos suelen seguir subiendo.</string>
+    <string name="narrator_bright_hiring_slower">Contratar más despacio quita presión a los precios y suele anticipar bajadas de tasas que ayudan a quienes piden prestado. Quedarse en el puesto también suma antigüedad mientras el mercado es más exigente.</string>
+    <string name="narrator_bright_realwages_up">Los sueldos están creciendo más que los precios, así que el trabajador típico puede permitirse un poco más que hace un año.</string>
+    <string name="narrator_bright_realwages_down">La última vez que los sueldos quedaron por detrás de los precios, en 2021–22, el salario real volvió a crecer en menos de 18 meses.</string>
+    <string name="narrator_bright_temphelp_up">Las empresas están sumando personal temporal, a menudo el primer paso antes de contratar de forma permanente.</string>
+    <string name="narrator_bright_temphelp_down">El empleo temporal cayó durante 2023–24 sin que llegara una recesión. Por sí solo es una pista temprana, no un veredicto.</string>
+    <string name="narrator_bright_civpart">Buena parte de la larga caída desde 2000 se debe a que los baby boomers se jubilan, no a que desaparezcan empleos; por eso la proporción de personas de 25 a 54 años con trabajo es mejor indicador.</string>
+    <string name="narrator_bright_gdp_growing">Crecer significa que las empresas venden más, y eso es lo que paga las contrataciones y los aumentos.</string>
+    <string name="narrator_bright_gdp_recession">Todas las recesiones de EE. UU. desde 1990 duraron entre 2 y 18 meses, y después de cada una la economía superó su máximo anterior.</string>
+    <string name="narrator_bright_umcsent">El ánimo no es dinero: la confianza rondaba los 50 en junio de 2022, mientras el desempleo estaba en el 3.6%. El pesimismo suele seguir más a los precios que al empleo.</string>
+    <string name="narrator_bright_curve_inverted">Una curva invertida significa que el ahorro a corto plazo (cuentas de alto rendimiento, certificados de depósito, letras del Tesoro) paga más que inmovilizar el dinero durante años.</string>
+    <string name="narrator_bright_curve_normal">Una curva normal es lo que muestran los mercados cuando esperan un crecimiento estable.</string>
+    <string name="narrator_bright_markets_calm">Con mercados tranquilos, las empresas pueden pedir prestado para crecer y contratar.</string>
+    <string name="narrator_bright_markets_panic">Los pánicos del mercado suelen durar poco: el estrés de 2020 se disipó en pocos meses una vez que intervino la Fed.</string>
+    <string name="narrator_bright_ccdelinq">El %1$s de los saldos de tarjetas se paga a tiempo.</string>
+    <string name="narrator_bright_debt">La deuda es más fácil de sostener mientras la economía crece más rápido que lo que se paga en intereses, y EE. UU. se endeuda en una moneda que emite él mismo.</string>
+    <string name="narrator_bright_m2_growing">Que el dinero crezca a un ritmo estable mantiene en marcha el crédito y el consumo.</string>
+    <string name="narrator_bright_m2_shrinking">La contracción de 2023 llegó tras un crecimiento récord en 2020–21; la cantidad de dinero siguió muy por encima de su nivel previo a la pandemia.</string>
+    <string name="narrator_bright_fed_rate">Cuando la tasa de la Fed está alta, las cuentas de ahorro y los certificados de depósito pagan más; cuando baja, pedir prestado sale más barato. De un modo u otro, alguien en casa sale ganando.</string>
+    <string name="narrator_bright_rates_reasonable">El financiamiento es razonable, lo que ayuda a quienes compran y a quien quiera refinanciar.</string>
+    <string name="narrator_bright_rates_high">Las tasas más altas han enfriado las guerras de ofertas, lo que da a los compradores más margen para negociar, y quienes ahorran o compran bonos hoy ganan más.</string>
+    <string name="narrator_bright_homeprices_up">La subida de precios aumenta el patrimonio de quienes tienen vivienda.</string>
+    <string name="narrator_bright_homeprices_down">La bajada de precios pone las viviendas al alcance de más compradores.</string>
+
+    <string name="narrator_for_you_prices_falling_spend">Los precios están bajando: tus %1$s de gasto mensual compran lo que hace un año habría costado unos %2$s más.</string>
+    <string name="narrator_for_you_prices_falling">Los precios están bajando: algo que hace un año costaba $100 ahora cuesta unos %1$s.</string>
+    <string name="narrator_for_you_prices_rising_spend">Si tus %1$s de gasto mensual subieron con los precios, esas mismas cosas habrían costado unos %2$s menos hace un año. Un aumento de sueldo menor al %3$s significa que tu sueldo compra menos que antes.</string>
+    <string name="narrator_for_you_prices_rising">Algo que hace un año costaba $100 ahora cuesta unos %1$s. Un aumento de sueldo menor al %2$s significa que tu sueldo compra menos que antes.</string>
+    <string name="narrator_for_you_savings_beats_inflation">Las cuentas de ahorro de alto rendimiento pagan más o menos el %1$s de la Fed. Con tus %2$s en efectivo, son unos %3$s al año, un poco más de lo que se lleva la inflación.</string>
+    <string name="narrator_for_you_savings_trails_inflation">Las cuentas de ahorro de alto rendimiento pagan más o menos el %1$s de la Fed. Con tus %2$s en efectivo, son unos %3$s al año, menos de lo que se lleva la inflación.</string>
+    <string name="narrator_for_you_savings_general">Las cuentas de ahorro suelen pagar algo cercano a la tasa de la Fed, y las tarjetas de crédito cobran esa tasa más 15–20 puntos.</string>
+    <string name="narrator_for_you_mortgage_same">Para la casa de %1$s de tu planificador, la tasa promedio de hoy supone unos %2$s al mes de préstamo, más o menos lo mismo que con el %3$s de tu plan.</string>
+    <string name="narrator_for_you_mortgage_more">Para la casa de %1$s de tu planificador, la tasa promedio de hoy supone unos %2$s al mes de préstamo, %3$s más que con el %4$s de tu plan.</string>
+    <string name="narrator_for_you_mortgage_less">Para la casa de %1$s de tu planificador, la tasa promedio de hoy supone unos %2$s al mes de préstamo, %3$s menos que con el %4$s de tu plan.</string>
+    <string name="narrator_for_you_mortgage_general">Cada punto que cambian las tasas hipotecarias mueve el pago de un préstamo de $500,000 en unos $330 al mes.</string>
+    <string name="narrator_for_you_home_more">Si tu casa siguió el promedio nacional, vale unos %1$s más que hace un año.</string>
+    <string name="narrator_for_you_home_less">Si tu casa siguió el promedio nacional, vale unos %1$s menos que hace un año.</string>
+    <string name="narrator_for_you_runway_solid">Tu efectivo cubriría unos %1$s meses de gastos si dejara de llegar un sueldo: un colchón sólido.</string>
+    <string name="narrator_for_you_runway_ok">Tu efectivo cubriría unos %1$s meses de gastos si dejara de llegar un sueldo, dentro de los 3–6 meses que recomiendan los asesores.</string>
+    <string name="narrator_for_you_runway_short">Tu efectivo cubriría unos %1$s meses de gastos si dejara de llegar un sueldo; los asesores recomiendan al menos 3–6 meses.</string>
+    <string name="narrator_for_you_stocks_mine">Si tus %1$s en inversiones se movieron hoy con el S&amp;P 500, eso son unos %2$s. Los movimientos diarios como este son normales; lo que importa es el largo plazo.</string>
+    <string name="narrator_for_you_stocks_general">Un 401(k) típico se mueve con esto. El %1$s de hoy sobre $100,000 serían unos %2$s.</string>
+
+    <string name="narrator_quote_up_quiet">%1$s sube un %2$s hoy: un día tranquilo. La mayoría de los días se mueve menos de un 1%.</string>
+    <string name="narrator_quote_up_ordinary">%1$s sube un %2$s hoy: un día normal. La mayoría de los días se mueve menos de un 1%.</string>
+    <string name="narrator_quote_up_big">%1$s sube un %2$s hoy: un día de mucho movimiento. La mayoría de los días se mueve menos de un 1%.</string>
+    <string name="narrator_quote_up_very_big">%1$s sube un %2$s hoy: un día de muchísimo movimiento. La mayoría de los días se mueve menos de un 1%.</string>
+    <string name="narrator_quote_down_quiet">%1$s baja un %2$s hoy: un día tranquilo. La mayoría de los días se mueve menos de un 1%.</string>
+    <string name="narrator_quote_down_ordinary">%1$s baja un %2$s hoy: un día normal. La mayoría de los días se mueve menos de un 1%.</string>
+    <string name="narrator_quote_down_big">%1$s baja un %2$s hoy: un día de mucho movimiento. La mayoría de los días se mueve menos de un 1%.</string>
+    <string name="narrator_quote_down_very_big">%1$s baja un %2$s hoy: un día de muchísimo movimiento. La mayoría de los días se mueve menos de un 1%.</string>
+
+    <string name="narrator_weather_sunny">Soleado</string>
+    <string name="narrator_weather_partly_cloudy">Parcialmente nublado</string>
+    <string name="narrator_weather_cloudy">Nublado</string>
+    <string name="narrator_weather_stormy">Tormentoso</string>
+
+    <string name="narrator_topic_prices">Precios</string>
+    <string name="narrator_topic_jobs">Empleo</string>
+    <string name="narrator_topic_slack">Detrás de la cifra oficial</string>
+    <string name="narrator_topic_borrowing">Crédito</string>
+    <string name="narrator_topic_markets">Mercados</string>
+    <string name="narrator_topic_recession">Señales de recesión</string>
+    <string name="narrator_topic_debt">Deuda pública</string>
+
+    <string name="narrator_briefing_prices_higher_straight">%1$s más altos que hace un año, frente a la meta del 2% de la Fed.</string>
+    <string name="narrator_briefing_prices_lower_straight">%1$s más bajos que hace un año, frente a la meta del 2% de la Fed.</string>
+    <string name="narrator_briefing_prices_falling">Los precios están bajando (un %1$s menos que hace un año), así que cada dólar rinde más.</string>
+    <string name="narrator_briefing_prices_normal">Los precios suben a un ritmo normal (%1$s al año).</string>
+    <string name="narrator_briefing_prices_bit_fast">Los precios suben algo más rápido que la meta del 2% (%1$s al año), muy por debajo de 2022.</string>
+    <string name="narrator_briefing_prices_fast">Los precios suben rápido (%1$s al año); las tasas de ahorro suelen subir con ellos.</string>
+
+    <string name="narrator_briefing_jobs_unrate_straight">El desempleo está en %1$s.</string>
+    <string name="narrator_briefing_jobs_u6_straight">Contando a los subempleados (U-6), está en %1$s.</string>
+    <string name="narrator_briefing_jobs_claims_straight">Las nuevas solicitudes de desempleo rondan las %1$sK por semana.</string>
+    <string name="narrator_briefing_jobs_weakening">Los despidos van en aumento: justo cuando un fondo de emergencia demuestra su valor.</string>
+    <string name="narrator_briefing_jobs_cooling">El mercado laboral se está enfriando un poco.</string>
+    <string name="narrator_briefing_jobs_cooling_rate">El mercado laboral se está enfriando un poco, aunque el %1$s de la fuerza laboral tiene empleo.</string>
+    <string name="narrator_briefing_jobs_plentiful_rate">Hay mucho empleo: el desempleo está en %1$s.</string>
+    <string name="narrator_briefing_jobs_plentiful">Hay mucho empleo.</string>
+
+    <plurals name="narrator_briefing_slack_calm_straight">
+        <item quantity="one">%1$d indicador de holgura oculta, dentro de su rango de calma.</item>
+        <item quantity="other">Los %1$d indicadores de holgura oculta están dentro de su rango de calma.</item>
+    </plurals>
+    <plurals name="narrator_briefing_slack_past_straight">
+        <item quantity="one">%1$d de %2$d indicador fuera de su rango de calma: %3$s.</item>
+        <item quantity="other">%1$d de %2$d indicadores fuera de su rango de calma: %3$s.</item>
+    </plurals>
+    <string name="narrator_briefing_slack_item">%1$s (%2$s)</string>
+    <string name="narrator_briefing_slack_sound">El subempleo, las búsquedas largas y las contrataciones se ven sólidos, así que la cifra oficial no esconde debilidad.</string>
+    <plurals name="narrator_briefing_slack_soft_spot">
+        <item quantity="one">%1$d de %2$d indicador de holgura oculta en calma. El punto débil: %3$s.</item>
+        <item quantity="other">%1$d de %2$d indicadores de holgura oculta en calma. El punto débil: %3$s.</item>
+    </plurals>
+    <plurals name="narrator_briefing_slack_soft_spots">
+        <item quantity="one">%1$d de %2$d indicador de holgura oculta en calma. Los puntos débiles: %3$s y %4$s.</item>
+        <item quantity="other">%1$d de %2$d indicadores de holgura oculta en calma. Los puntos débiles: %3$s y %4$s.</item>
+    </plurals>
+
+    <string name="narrator_briefing_borrowing_straight_fed">Hipotecas a 30 años: %1$s; tasa de la Fed: %2$s.</string>
+    <string name="narrator_briefing_borrowing_straight">Hipotecas a 30 años: %1$s.</string>
+    <string name="narrator_briefing_borrowing_expensive_fed">Pedir prestado sale caro (hipotecas alrededor del %1$s), pero el ahorro paga algo cercano al %2$s de la Fed.</string>
+    <string name="narrator_briefing_borrowing_expensive">Pedir prestado sale caro (hipotecas alrededor del %1$s).</string>
+    <string name="narrator_briefing_borrowing_moderate">El costo del crédito es moderado: hipotecas alrededor del %1$s.</string>
+    <string name="narrator_briefing_borrowing_cheap">Pedir prestado sale barato: hipotecas alrededor del %1$s.</string>
+
+    <string name="narrator_briefing_markets_fear_straight">El índice del miedo está en %1$s (por debajo de 20 es calma).</string>
+    <string name="narrator_briefing_markets_up_straight">El S&amp;P 500 sube un %1$s hoy.</string>
+    <string name="narrator_briefing_markets_down_straight">El S&amp;P 500 baja un %1$s hoy.</string>
+    <string name="narrator_briefing_markets_calm_up">Las bolsas están tranquilas: el S&amp;P 500 sube un %1$s hoy.</string>
+    <string name="narrator_briefing_markets_calm_down">Las bolsas están tranquilas: el S&amp;P 500 baja un %1$s hoy.</string>
+    <string name="narrator_briefing_markets_calm">Las bolsas están tranquilas.</string>
+    <string name="narrator_briefing_markets_jittery_up">Las bolsas están nerviosas, algo que pasa: el S&amp;P 500 sube un %1$s hoy.</string>
+    <string name="narrator_briefing_markets_jittery_down">Las bolsas están nerviosas, algo que pasa: el S&amp;P 500 baja un %1$s hoy.</string>
+    <string name="narrator_briefing_markets_jittery">Las bolsas están nerviosas, algo que pasa.</string>
+
+    <string name="narrator_briefing_recession_curve_inverted_straight">La curva de rendimientos está en %1$s (invertida).</string>
+    <string name="narrator_briefing_recession_curve_normal_straight">La curva de rendimientos está en %1$s (no invertida).</string>
+    <string name="narrator_briefing_recession_alarm_straight">La alarma del empleo marca %1$s; suena en 0.50.</string>
+    <string name="narrator_briefing_recession_both">Las dos alarmas de recesión más confiables están sonando; todas las recesiones desde 1990 terminaron en menos de 18 meses.</string>
+    <string name="narrator_briefing_recession_jobs">La alarma de recesión basada en el empleo está sonando, aunque ya ha sonado antes de tiempo.</string>
+    <string name="narrator_briefing_recession_curve">La curva de rendimientos está invertida, una advertencia temprana con una anticipación larga y desigual.</string>
+    <string name="narrator_briefing_recession_quiet">Las dos alarmas de recesión más confiables están en silencio.</string>
+
+    <string name="narrator_briefing_debt_straight_ratio">%1$s¢ de cada dólar de impuestos se van en intereses; la deuda equivale al %2$s de la producción de un año.</string>
+    <string name="narrator_briefing_debt_straight">%1$s¢ de cada dólar de impuestos se van en intereses.</string>
+    <string name="narrator_briefing_debt_strain">Unos %1$s¢ de cada dólar de impuestos se van en intereses: una presión que avanza despacio, no de golpe.</string>
+    <string name="narrator_briefing_debt">Unos %1$s¢ de cada dólar de impuestos se van en intereses.</string>
+
+    <string name="narrator_headline_gathering">Reuniendo los datos más recientes…</string>
+    <string name="narrator_headline_straight">%1$d en peligro · %2$d a vigilar · %3$d en calma</string>
+    <string name="narrator_headline_stormy">Tormentoso</string>
+    <string name="narrator_headline_mixed">Variable, con alguna tormenta</string>
+    <string name="narrator_headline_mostly_cloudy">Mayormente nublado</string>
+    <string name="narrator_headline_partly_cloudy">Parcialmente nublado</string>
+    <string name="narrator_headline_mostly_sunny">Mayormente soleado</string>
+
+    <plurals name="narrator_summary_straight_calm">
+        <item quantity="one">Estrés compuesto: %1$s de 100 (en calma) en %2$d dato: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+        <item quantity="other">Estrés compuesto: %1$s de 100 (en calma) en %2$d datos: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+    </plurals>
+    <plurals name="narrator_summary_straight_elevated">
+        <item quantity="one">Estrés compuesto: %1$s de 100 (elevado) en %2$d dato: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+        <item quantity="other">Estrés compuesto: %1$s de 100 (elevado) en %2$d datos: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+    </plurals>
+    <plurals name="narrator_summary_straight_high">
+        <item quantity="one">Estrés compuesto: %1$s de 100 (alto) en %2$d dato: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+        <item quantity="other">Estrés compuesto: %1$s de 100 (alto) en %2$d datos: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+    </plurals>
+    <plurals name="narrator_summary_straight_severe">
+        <item quantity="one">Estrés compuesto: %1$s de 100 (grave) en %2$d dato: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+        <item quantity="other">Estrés compuesto: %1$s de 100 (grave) en %2$d datos: %3$d más allá de una línea de peligro, %4$d más allá de una línea de vigilancia.</item>
+    </plurals>
+    <plurals name="narrator_summary_straight_dangers">
+        <item quantity="one">%1$d de %2$d área más allá de una línea de peligro.</item>
+        <item quantity="other">%1$d de %2$d áreas más allá de una línea de peligro.</item>
+    </plurals>
+    <plurals name="narrator_summary_calm_areas">
+        <item quantity="one">%1$d de %2$d área en calma.</item>
+        <item quantity="other">%1$d de %2$d áreas en calma.</item>
+    </plurals>
+    <plurals name="narrator_summary_bright_calm">
+        <item quantity="one">El estrés general está en calma (%1$s de 100), con %2$d de %3$d dato en calma.</item>
+        <item quantity="other">El estrés general está en calma (%1$s de 100), con %2$d de %3$d datos en calma.</item>
+    </plurals>
+    <plurals name="narrator_summary_bright_elevated">
+        <item quantity="one">El estrés general es elevado (%1$s de 100), con %2$d de %3$d dato en calma.</item>
+        <item quantity="other">El estrés general es elevado (%1$s de 100), con %2$d de %3$d datos en calma.</item>
+    </plurals>
+    <plurals name="narrator_summary_bright_high">
+        <item quantity="one">El estrés general es alto (%1$s de 100), con %2$d de %3$d dato en calma.</item>
+        <item quantity="other">El estrés general es alto (%1$s de 100), con %2$d de %3$d datos en calma.</item>
+    </plurals>
+    <plurals name="narrator_summary_bright_severe">
+        <item quantity="one">El estrés general es grave (%1$s de 100), con %2$d de %3$d dato en calma.</item>
+        <item quantity="other">El estrés general es grave (%1$s de 100), con %2$d de %3$d datos en calma.</item>
+    </plurals>
+
+    <string name="explain_click_label">Explicar %1$s</string>
+    <string name="explain_info_description">¿Qué es %1$s?</string>
+    <string name="explain_right_now">Ahora mismo</string>
+    <string name="explain_for_you">Qué significa para ti</string>
+    <string name="explain_why_it_matters">Por qué importa</string>
+    <string name="explain_analogy">Una comparación cotidiana</string>
+    <string name="explain_normal">Qué es lo normal</string>
+    <string name="explain_how_it_works">Cómo funciona</string>
+    <string name="explain_connected_to">Relacionado con</string>
+    <string name="explain_see_full_chart">Ver el gráfico completo</string>
+    <string name="explain_real_rate_positive">El %1$s de la Fed menos el %2$s de inflación deja una tasa real del %3$s: el dinero está algo caro y los ahorros siguen el ritmo de los precios.</string>
+    <string name="explain_real_rate_negative">El %1$s de la Fed menos el %2$s de inflación deja una tasa real del %3$s: los ahorros pierden terreno frente a los precios.</string>
+    <string name="explain_stress_calm">El medidor marca %1$s: en calma. %2$s y %3$s.</string>
+    <string name="explain_stress_elevated">El medidor marca %1$s: elevado. %2$s y %3$s.</string>
+    <string name="explain_stress_high">El medidor marca %1$s: alto. %2$s y %3$s.</string>
+    <string name="explain_stress_severe">El medidor marca %1$s: grave. %2$s y %3$s.</string>
+    <plurals name="explain_stress_dangers">
+        <item quantity="one">%1$d señal de alerta está en la zona de peligro</item>
+        <item quantity="other">%1$d señales de alerta están en la zona de peligro</item>
+    </plurals>
+    <plurals name="explain_stress_watches">
+        <item quantity="one">%1$d merece vigilancia</item>
+        <item quantity="other">%1$d merecen vigilancia</item>
+    </plurals>
+
+    <string name="glossary_title">Traductor de jerga</string>
+    <string name="glossary_subtitle">Todos los términos de esta app, en palabras sencillas. Toca uno para ver la explicación completa.</string>
+    <string name="glossary_search_hint">Busca, p. ej., “curva de rendimientos”</string>
+    <string name="glossary_search_description">Buscar términos</string>
+    <string name="glossary_no_matches">No hay resultados para “%1$s”.</string>
+
+    <string name="layman_weather_title">El clima económico de hoy</string>
+    <string name="layman_standing_title">Cómo está la economía</string>
+    <string name="layman_stress_calm">En calma</string>
+    <string name="layman_stress_elevated">Elevado</string>
+    <string name="layman_stress_high">Alto</string>
+    <string name="layman_stress_severe">Grave</string>
+    <string name="layman_stress_calm_detail">En calma: casi todas las luces de alerta están apagadas. La economía no muestra las tensiones que precedieron a crisis anteriores.</string>
+    <string name="layman_stress_elevated_detail">Elevado: hay algunas luces de alerta encendidas; conviene estar atento, pero la mayoría de las señales siguen en calma. Las recesiones pasadas llegaron con muchas luces encendidas a la vez.</string>
+    <string name="layman_stress_high_detail">Alto: hay muchas luces de alerta encendidas a la vez, un patrón que se vio antes de crisis anteriores.</string>
+    <string name="layman_stress_severe_detail">Grave: la mayoría de las luces de alerta parpadean, como en 2008 y 2020.</string>
+
+    <string name="layman_checkup_title">Chequeo financiero</string>
+    <plurals name="layman_checkup_score">
+        <item quantity="one">%1$d de %2$d en buen estado</item>
+        <item quantity="other">%1$d de %2$d en buen estado</item>
+    </plurals>
+    <string name="layman_checkup_healthy">En buen estado</string>
+    <string name="layman_checkup_worth_a_look">Vale la pena revisar</string>
+    <string name="layman_checkup_disclaimer">Reglas generales comunes, no asesoría financiera.</string>
+    <string name="layman_checkup_emergency_title">Fondo de emergencia</string>
+    <string name="layman_checkup_emergency_detail">Tu efectivo cubre %1$s meses de gastos.</string>
+    <string name="layman_checkup_emergency_tip_solid">Supera con holgura los 3–6 meses que recomiendan los asesores.</string>
+    <string name="layman_checkup_emergency_tip_ok">Dentro de los 3–6 meses que recomiendan los asesores; acercarse a seis es más seguro si un solo empleo sostiene el hogar.</string>
+    <string name="layman_checkup_emergency_tip_short">Los asesores recomiendan 3–6 meses; reunir efectivo primero te protege ante un despido.</string>
+    <string name="layman_checkup_saving_title">Ahorro mensual</string>
+    <string name="layman_checkup_saving_detail">Te queda el %1$s de tu sueldo neto después de gastos.</string>
+    <string name="layman_checkup_saving_detail_with_paycheck">Ahorras el %1$s de tu sueldo, contando los %2$s al mes que se apartan antes del sueldo neto.</string>
+    <string name="layman_checkup_saving_tip_ok">En la meta común del 15% o por encima.</string>
+    <string name="layman_checkup_saving_tip_low">La meta común es 15–20% (los aportes al 401(k) descontados de tu sueldo se suman a esto). Recortar un gasto fijo grande es lo que más lo mueve.</string>
+    <string name="layman_checkup_saving_tip_low_counted">La meta común es 15–20%. Recortar un gasto fijo grande es lo que más lo mueve.</string>
+    <string name="layman_checkup_debt_title">Deuda cara</string>
+    <string name="layman_checkup_debt_none">Ninguno de tus préstamos cobra más de alrededor del %1$s.</string>
+    <string name="layman_checkup_debt_tip_ok">Los préstamos a tasa baja se pueden pagar según lo previsto mientras los ahorros ganan más o menos lo mismo.</string>
+    <string name="layman_checkup_debt_tip_costly">Pagarlos antes de tiempo es un rendimiento garantizado igual a su tasa, normalmente mejor que lo que paga el ahorro.</string>
+    <string name="layman_checkup_ratio_title">Deuda frente a lo que tienes</string>
+    <string name="layman_checkup_ratio_detail">Debes el equivalente al %1$s de lo que tienes (sin contar la hipoteca).</string>
+    <string name="layman_checkup_ratio_tip_ok">Un margen cómodo.</string>
+    <string name="layman_checkup_ratio_tip_high">Si pasa de una cuarta parte, conviene bajarlo.</string>
+    <string name="layman_checkup_retirement_title">Ahorro para el futuro</string>
+    <string name="layman_checkup_retirement_detail">El %1$s de lo que tienes está en cuentas para la jubilación.</string>
+    <string name="layman_checkup_retirement_tip_ok">Las cuentas con ventajas fiscales están haciendo buena parte del trabajo.</string>
+    <string name="layman_checkup_retirement_tip_low">Las cuentas para la jubilación crecen libres de impuestos o con impuestos diferidos; aportar más a ellas suele ser la forma más barata de invertir.</string>
+
+    <string name="layman_tip_text">¿Primera vez por aquí? Toca ⓘ junto a cualquier elemento para ver una explicación sencilla, o ? arriba para abrir el traductor de jerga.</string>
+    <string name="layman_tip_dismiss_label">Descartar consejo</string>
+    <string name="layman_tip_dismiss">Descartar</string>
+</resources>

@@ -1,0 +1,57 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSFaceIDUsageDescription" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "HomeSafe uses Face ID to securely sign you in without retyping your password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeSafe usa Face ID para iniciar sesión de forma segura sin que tengas que volver a escribir tu contraseña."
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "With \"Always\", HomeSafe can notice you leaving or arriving home while the app is closed and switch away mode for you. For away mode only the home geofence is watched. For weather, your last position is kept on this phone and sent, rounded to about a kilometre, to the forecast services (Open-Meteo, and the US National Weather Service)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con “Siempre”, HomeSafe puede notar cuando sales de casa o llegas, aunque la app esté cerrada, y cambiar el modo ausente por ti. Para el modo ausente solo se vigila la geocerca de casa. Para el clima, tu última posición se guarda en este teléfono y se envía, redondeada a aproximadamente un kilómetro, a los servicios de pronóstico (Open-Meteo y el Servicio Meteorológico Nacional de EE. UU.)."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "HomeSafe uses your location to set where home is, so away mode can switch on by itself when everyone has left, and to show the weather where you are. For weather, your last position is kept on this phone and sent, rounded to about a kilometre, to the forecast services (Open-Meteo, and the US National Weather Service)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeSafe usa tu ubicación para saber dónde está tu casa, para que el modo ausente se active solo cuando todos se hayan ido, y para mostrarte el clima donde estás. Para el clima, tu última posición se guarda en este teléfono y se envía, redondeada a aproximadamente un kilómetro, a los servicios de pronóstico (Open-Meteo y el Servicio Meteorológico Nacional de EE. UU.)."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

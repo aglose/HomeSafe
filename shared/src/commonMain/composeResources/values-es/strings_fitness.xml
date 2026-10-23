@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_fitness.xml.
+  The fitness app's screens: Today, a workout and its set logger, Lifts, an exercise, Progress,
+  the notes import, and the drawer's card. What is said about the log itself (body parts,
+  muscles, how a weight is written, the coaching beside a target) is in strings_fitness_data.xml;
+  the History tab is in strings_fitness_history.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="fitness_title">Fitness</string>
+    <string name="fitness_tab_today">Hoy</string>
+    <string name="fitness_tab_lifts">Ejercicios</string>
+    <string name="fitness_tab_history">Historial</string>
+    <string name="fitness_tab_progress">Progreso</string>
+    <string name="fitness_title_exercise">Ejercicio</string>
+    <string name="fitness_title_edit">Editar ejercicio</string>
+    <string name="fitness_title_import">Importar notas</string>
+    <string name="fitness_close">Cerrar fitness</string>
+
+    <string name="fitness_drawer_title">Fitness</string>
+    <string name="fitness_drawer_subtitle">Ejercicios, récords y progreso</string>
+    <string name="fitness_drawer_open">Abrir fitness</string>
+    <string name="fitness_drawer_empty">Registra tus entrenamientos y supera tus récords</string>
+    <plurals name="fitness_drawer_week">
+        <item quantity="one">%1$d sesión en los últimos 7 días</item>
+        <item quantity="other">%1$d sesiones en los últimos 7 días</item>
+    </plurals>
+
+    <string name="fitness_when_today">Hoy</string>
+    <string name="fitness_when_yesterday">Ayer</string>
+    <plurals name="fitness_when_days_ago">
+        <item quantity="one">hace %1$d día</item>
+        <item quantity="other">hace %1$d días</item>
+    </plurals>
+    <string name="fitness_date_month_day">%2$d/%1$d</string>
+    <string name="fitness_date_month_day_year">%2$d/%1$d/%3$s</string>
+
+    <string name="fitness_phase_day">%1$s · día %2$d</string>
+
+    <string name="fitness_today_headline_working">Día de %1$s, en curso</string>
+    <string name="fitness_today_headline_due">Lo que sigue: %1$s</string>
+    <string name="fitness_today_headline_idle">Cuando quieras, empezamos</string>
+    <string name="fitness_today_headline_empty">Tu entrenamiento, en un solo lugar</string>
+    <string name="fitness_today_last">Último entrenamiento: %1$s</string>
+    <string name="fitness_today_never">Aún no has entrenado aquí</string>
+    <string name="fitness_today_week">Últimos 7 días</string>
+    <string name="fitness_today_week_sessions">Sesiones</string>
+    <string name="fitness_today_week_sets">Series</string>
+    <string name="fitness_today_week_records">Récords</string>
+    <string name="fitness_today_start">Empezar un entrenamiento</string>
+    <string name="fitness_today_start_focus">Empezar entrenamiento de %1$s</string>
+    <string name="fitness_today_up_next">A continuación</string>
+    <plurals name="fitness_today_exercises">
+        <item quantity="one">%1$d ejercicio</item>
+        <item quantity="other">%1$d ejercicios</item>
+    </plurals>
+    <string name="fitness_today_lift_line">%1$s · %2$s</string>
+    <string name="fitness_today_resume">Reanudar entrenamiento</string>
+    <plurals name="fitness_today_resume_detail">
+        <item quantity="one">%1$d serie registrada</item>
+        <item quantity="other">%1$d series registradas</item>
+    </plurals>
+    <string name="fitness_today_records">Récords recientes</string>
+    <string name="fitness_today_no_records">Los récords que logres aparecerán aquí.</string>
+    <string name="fitness_today_import_title">Empieza desde tus notas</string>
+    <string name="fitness_today_import_body">Pega tus notas de entrenamiento y cada ejercicio, peso y número de repeticiones se viene contigo. Se convierten en las marcas a superar.</string>
+    <string name="fitness_today_import_button">Importar notas</string>
+    <string name="fitness_today_add_button">Agregar un ejercicio a mano</string>
+
+    <string name="fitness_workout_title">Día de %1$s</string>
+    <string name="fitness_workout_elapsed">min</string>
+    <plurals name="fitness_workout_sets">
+        <item quantity="one">serie</item>
+        <item quantity="other">series</item>
+    </plurals>
+    <plurals name="fitness_workout_records">
+        <item quantity="one">récord</item>
+        <item quantity="other">récords</item>
+    </plurals>
+    <string name="fitness_workout_finish">Terminar entrenamiento</string>
+    <string name="fitness_workout_cancel">Cancelar entrenamiento</string>
+    <plurals name="fitness_workout_cancel_confirm">
+        <item quantity="one">Toca otra vez para descartar %1$d serie</item>
+        <item quantity="other">Toca otra vez para descartar las %1$d series</item>
+    </plurals>
+    <string name="fitness_workout_last">Anterior: %1$s · %2$s</string>
+    <string name="fitness_workout_from_notes">De tus notas</string>
+    <string name="fitness_workout_new">Aún sin hacer</string>
+    <plurals name="fitness_workout_done">
+        <item quantity="one">%1$d serie hoy</item>
+        <item quantity="other">%1$d series hoy</item>
+    </plurals>
+    <string name="fitness_workout_target">Meta: %1$s</string>
+    <string name="fitness_workout_expand">Registrar %1$s</string>
+    <string name="fitness_workout_history">Escalera e historial</string>
+    <string name="fitness_workout_empty_shelf">Todavía no hay nada en este grupo. Agrega un ejercicio abajo.</string>
+    <string name="fitness_workout_add">Nuevo ejercicio</string>
+    <string name="fitness_workout_add_hint">Ponle nombre: Remo sentado en polea</string>
+    <string name="fitness_workout_add_confirm">Agregar</string>
+    <string name="fitness_workout_regulars">Se suele agregar el día de %1$s</string>
+    <string name="fitness_workout_pull">Agregar %1$s a este entrenamiento</string>
+    <string name="fitness_workout_find">Agregar ejercicio</string>
+    <string name="fitness_workout_find_hint">Busca uno o ponle nombre a uno nuevo</string>
+    <string name="fitness_workout_find_none">Aún no hay nada con ese nombre</string>
+    <string name="fitness_workout_create">Crear “%1$s”</string>
+
+    <string name="fitness_rest_label">Descanso</string>
+    <string name="fitness_rest_go">¡Ya!</string>
+    <string name="fitness_rest_minus_short">−15</string>
+    <string name="fitness_rest_plus_short">+15</string>
+    <string name="fitness_rest_minus">15 segundos menos de descanso</string>
+    <string name="fitness_rest_plus">15 segundos más de descanso</string>
+    <string name="fitness_rest_skip">Saltar descanso</string>
+    <string name="fitness_rest_remaining">Quedan %1$s de descanso</string>
+
+    <string name="fitness_logger_aim">Meta: %1$s</string>
+    <string name="fitness_logger_weight">Peso, lb</string>
+    <string name="fitness_logger_weight_each">Cada mano, lb</string>
+    <string name="fitness_logger_added">Agregado, lb</string>
+    <string name="fitness_logger_pin">Pasador</string>
+    <string name="fitness_logger_reps">Reps</string>
+    <string name="fitness_logger_less_weight">Menos peso</string>
+    <string name="fitness_logger_more_weight">Más peso</string>
+    <string name="fitness_logger_less_reps">Una repetición menos</string>
+    <string name="fitness_logger_more_reps">Una repetición más</string>
+    <string name="fitness_logger_step">Saltos de %1$s</string>
+    <string name="fitness_logger_at_weight_best">Mejor aquí: %1$d</string>
+    <string name="fitness_logger_at_weight_phase">Mejor %1$d · reciente %2$d</string>
+    <string name="fitness_logger_at_weight_new">Peso nuevo</string>
+    <string name="fitness_logger_rung">%1$s · %2$d</string>
+    <string name="fitness_logger_log">Registrar serie</string>
+    <string name="fitness_logger_log_another">Registrar otra serie</string>
+    <string name="fitness_logger_delete_set">Borrar serie</string>
+    <string name="fitness_logger_set_record">%1$s, %2$s</string>
+    <string name="fitness_logger_keypad_backspace">Borrar dígito</string>
+    <string name="fitness_logger_keypad_done">Listo</string>
+
+    <string name="fitness_lifts_all">Todos</string>
+    <string name="fitness_lifts_empty">Aún no hay ejercicios. Importa tus notas o agrega uno abajo.</string>
+    <string name="fitness_lifts_import">Importar notas</string>
+    <string name="fitness_lifts_of_best">%1$d% de tu mejor marca</string>
+    <string name="fitness_lifts_untrained">Aún sin entrenar aquí</string>
+
+    <string name="fitness_exercise_edit">Editar ejercicio</string>
+    <string name="fitness_exercise_kind">%1$s · %2$s</string>
+    <string name="fitness_exercise_target">La próxima vez</string>
+    <string name="fitness_exercise_ladder">La escalera</string>
+    <string name="fitness_exercise_ladder_caption">Una barra por cada peso, tan alta como tus repeticiones máximas con él. La parte iluminada es esta fase.</string>
+    <plurals name="fitness_exercise_ladder_described">
+        <item quantity="one">La escalera: %1$d peso</item>
+        <item quantity="other">La escalera: %1$d pesos</item>
+    </plurals>
+    <string name="fitness_exercise_log">Registrar una serie</string>
+    <string name="fitness_exercise_best">Mejor marca</string>
+    <string name="fitness_exercise_phase_best">Mejor en esta fase (%1$s)</string>
+    <string name="fitness_exercise_none">Nada aún</string>
+    <string name="fitness_exercise_standing">Al %1$d% de tu mejor marca</string>
+    <plurals name="fitness_exercise_sessions">
+        <item quantity="one">%1$d sesión</item>
+        <item quantity="other">%1$d sesiones</item>
+    </plurals>
+    <string name="fitness_exercise_chart">Fuerza a lo largo del tiempo</string>
+    <string name="fitness_exercise_chart_caption">La mejor serie de cada sesión, expresada como el máximo a una repetición que representa. La línea horizontal es tu mejor marca; los tramos sombreados son fases de definición.</string>
+    <string name="fitness_exercise_chart_described">%1$s, fuerza a lo largo del tiempo</string>
+
+    <string name="fitness_edit_name">Nombre</string>
+    <string name="fitness_edit_shelf">Grupo</string>
+    <string name="fitness_edit_muscle">Trabaja sobre todo</string>
+    <string name="fitness_edit_load">El peso se cuenta en</string>
+    <string name="fitness_edit_reps">Rango de repeticiones</string>
+    <string name="fitness_edit_reps_band">De %1$d a %2$d repeticiones</string>
+    <string name="fitness_edit_step">Salto de peso habitual</string>
+    <string name="fitness_edit_rest">Descanso entre series</string>
+    <string name="fitness_edit_note">Nota</string>
+    <string name="fitness_edit_note_hint">Altura del asiento, agarre, una indicación</string>
+    <string name="fitness_edit_save">Guardar</string>
+    <string name="fitness_edit_delete">Borrar el ejercicio y sus series</string>
+    <string name="fitness_edit_delete_confirm">Toca otra vez para borrarlo definitivamente</string>
+
+    <string name="fitness_progress_phase">Fase</string>
+    <string name="fitness_progress_standing">%1$d%</string>
+    <string name="fitness_progress_standing_none">–</string>
+    <string name="fitness_progress_standing_label">de tu mejor marca</string>
+    <string name="fitness_progress_phase_about_bulk">Comer para crecer. Suma una repetición o un poco de peso en cada sesión.</string>
+    <string name="fitness_progress_phase_about_cut">Perder grasa. El logro es mantener tus pesos; los récords esperan al volumen.</string>
+    <string name="fitness_progress_phase_about_maintain">Mantenerte estable. Todavía se puede progresar, solo que más despacio.</string>
+    <string name="fitness_progress_phase_switch">Empezar una nueva fase</string>
+    <string name="fitness_progress_phase_confirm">Empezar %1$s hoy</string>
+    <string name="fitness_progress_phase_cancel">Ahora no</string>
+    <string name="fitness_progress_weight">Peso corporal</string>
+    <string name="fitness_progress_weight_trend">Tendencia</string>
+    <string name="fitness_progress_weight_today">Báscula: %1$s lb</string>
+    <string name="fitness_progress_weight_empty">Pésate algunas mañanas a la semana y la tendencia mostrará lo que de verdad está haciendo una fase de definición o de volumen, sin el ruido del día a día.</string>
+    <string name="fitness_progress_weight_chart">Tendencia del peso corporal</string>
+    <string name="fitness_progress_weight_log">Registrar el peso de hoy</string>
+    <string name="fitness_progress_weight_less">Menos peso</string>
+    <string name="fitness_progress_weight_more">Más peso</string>
+    <string name="fitness_progress_weight_save">Guardar pesaje</string>
+    <string name="fitness_progress_map">Esta semana en el cuerpo</string>
+    <string name="fitness_progress_map_described">Los músculos entrenados en los últimos 7 días</string>
+    <string name="fitness_progress_map_caption">Series registradas en los últimos 7 días. Una serie cuenta completa para el músculo al que va dirigida y la mitad para los que ayudan. La franja de cada barra es el rango al que debes apuntar.</string>
+    <string name="fitness_progress_volume_sets">%1$s series</string>
+    <string name="fitness_progress_calendar">Últimas 12 semanas</string>
+    <string name="fitness_progress_calendar_described">%1$d días entrenados en las últimas %2$d semanas</string>
+    <string name="fitness_progress_board">Cómo va cada ejercicio</string>
+    <string name="fitness_progress_board_line">%1$s · mejor %2$s</string>
+    <string name="fitness_progress_board_empty">Cuando registres un ejercicio aquí, aparecerá junto a lo mejor que hayas hecho.</string>
+
+    <string name="fitness_import_body">Pega una nota aquí o compártela con esta app desde tus notas. Primero el nombre de un ejercicio en una línea y luego una línea por cada peso con las repeticiones que hiciste. Puedes poner varias notas una tras otra.</string>
+    <string name="fitness_import_hint">Sentadilla hack\n- 290lbs - 12 reps\n- 320lbs - 10 reps</string>
+    <string name="fitness_import_shelf">Estas notas son de</string>
+    <string name="fitness_import_auto">Automático</string>
+    <string name="fitness_import_preview">Lo que contienen estas notas</string>
+    <string name="fitness_import_summary">%1$s y %2$s por importar</string>
+    <string name="fitness_import_nothing_new">Todo esto ya está en tu registro.</string>
+    <string name="fitness_import_unread">Nada de esto parece un ejercicio todavía.</string>
+    <string name="fitness_import_confirm">Importar</string>
+    <plurals name="fitness_import_row_new">
+        <item quantity="one">%1$d ejercicio nuevo</item>
+        <item quantity="other">%1$d ejercicios nuevos</item>
+    </plurals>
+    <plurals name="fitness_import_row_sets">
+        <item quantity="one">%1$d serie</item>
+        <item quantity="other">%1$d series</item>
+    </plurals>
+    <string name="fitness_import_row_known">Ya está aquí</string>
+    <string name="fitness_import_row_detail">%1$s · %2$s</string>
+    <string name="fitness_import_skipped">Líneas que no parecen una serie</string>
+    <plurals name="fitness_import_skipped_more">
+        <item quantity="one">y %1$d línea más</item>
+        <item quantity="other">y %1$d líneas más</item>
+    </plurals>
+    <string name="fitness_import_done">Se importaron %1$s y %2$s</string>
+    <string name="fitness_import_done_more">Pega otra nota o vuelve y empieza un entrenamiento.</string>
+    <string name="fitness_import_done_button">Listo</string>
+
+    <string name="fitness_lifts_send_copy">Enviar una copia de tu registro</string>
+    <string name="fitness_copy_unsent">No se pudo enviar este registro. Puede que sea demasiado largo para pasarlo a otra app de una sola vez.</string>
+    <string name="fitness_copy_share_title">Registro de entrenamiento</string>
+    <string name="fitness_title_import_copy">Importar un registro</string>
+    <string name="fitness_copy_title">Copia de un registro de entrenamiento</string>
+    <string name="fitness_copy_body">Enviado desde esta app en otro teléfono o desde otra versión de ella. Lo que contiene y que tu registro de aquí aún no tiene:</string>
+    <string name="fitness_copy_new_exercises">Ejercicios nuevos</string>
+    <string name="fitness_copy_changed_exercises">Ejercicios configurados de otra forma</string>
+    <string name="fitness_copy_sets">Series</string>
+    <string name="fitness_copy_workouts">Entrenamientos</string>
+    <string name="fitness_copy_phases">Fases</string>
+    <string name="fitness_copy_weigh_ins">Pesajes</string>
+    <string name="fitness_copy_caption">Solo se agrega lo que falta, así que importar la misma copia dos veces no duplica nada. Un ejercicio que ya tienes queda configurado como lo tiene la copia.</string>
+    <string name="fitness_copy_unreadable">Esto parece la copia de un registro de entrenamiento, pero no se puede leer. Puede que se haya cortado en el camino o que venga de una versión más nueva de la app.</string>
+</resources>

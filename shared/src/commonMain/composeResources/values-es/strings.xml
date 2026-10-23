@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Words used across the whole app. Each area keeps its own file beside this one
+  (strings_moments.xml, strings_finance_explainers.xml, ...); Compose resources merges every
+  values*/*.xml, so keys must be unique across all of them — prefix them with the file's area.
+  See AGENTS.md, "Strings and localization".
+  Spanish translation of values/strings.xml.
+-->
+<resources>
+    <string name="common_cancel">Cancelar</string>
+    <string name="common_close">Cerrar</string>
+    <string name="common_retry">Reintentar</string>
+    <string name="common_try_again">Volver a intentar</string>
+    <string name="common_save">Guardar</string>
+    <string name="common_delete">Eliminar</string>
+    <string name="common_done">Listo</string>
+    <string name="common_ok">Aceptar</string>
+    <string name="common_back">Atrás</string>
+    <string name="common_undo">Deshacer</string>
+    <string name="common_more_options">Más opciones</string>
+    <string name="common_list_separator">, </string>
+    <string name="common_dot_separator"> · </string>
+</resources>

@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_finance_indicators.xml.
+  The economic indicators the finance app follows (finance/domain/Indicators.kt): their names,
+  why each matters, what its danger line means, the Risk tab's groups, signal and stress words,
+  and the Treasury curve's tenor labels. Indicator keys are indicator_<id>_<part>.
+-->
+<resources>
+    <string name="indicator_signal_calm">Calma</string>
+    <string name="indicator_signal_watch">Atención</string>
+    <string name="indicator_signal_danger">Peligro</string>
+
+    <string name="indicator_stress_calm">Calma</string>
+    <string name="indicator_stress_elevated">Elevado</string>
+    <string name="indicator_stress_high">Alto</string>
+    <string name="indicator_stress_severe">Grave</string>
+
+    <string name="indicator_cadence_daily">Diaria</string>
+    <string name="indicator_cadence_weekly">Semanal</string>
+    <string name="indicator_cadence_monthly">Mensual</string>
+    <string name="indicator_cadence_quarterly">Trimestral</string>
+
+    <string name="indicator_group_recession_title">Señales de recesión</string>
+    <string name="indicator_group_recession_blurb">Los datos que cambiaron de rumbo antes de las crisis pasadas.</string>
+    <string name="indicator_group_labor_title">El empleo más allá del titular</string>
+    <string name="indicator_group_labor_blurb">Subempleo, búsquedas largas y contrataciones: la holgura que la tasa de desempleo no muestra.</string>
+    <string name="indicator_group_credit_title">Estrés crediticio y de mercado</string>
+    <string name="indicator_group_credit_blurb">Donde primero aparecen las grietas del sistema financiero.</string>
+    <string name="indicator_group_debt_title">Deuda y dinero</string>
+    <string name="indicator_group_debt_blurb">Si el endeudamiento del país se le está yendo de las manos.</string>
+    <string name="indicator_group_inflation_title">Inflación y tasas</string>
+    <string name="indicator_group_inflation_blurb">Cuánto cuesta el dinero y cuánto vale.</string>
+
+    <string name="indicator_reference_inversion">Inversión</string>
+    <string name="indicator_reference_recession_trigger">Umbral de recesión</string>
+    <string name="indicator_reference_contraction">Contracción</string>
+    <string name="indicator_reference_normal">Normal</string>
+    <string name="indicator_reference_shrinking">En contracción</string>
+    <string name="indicator_reference_fed_target">Meta de la Fed</string>
+    <string name="indicator_reference_losing_to_prices">Pierde ante los precios</string>
+
+    <string name="indicator_tenor_1m">1M</string>
+    <string name="indicator_tenor_3m">3M</string>
+    <string name="indicator_tenor_6m">6M</string>
+    <string name="indicator_tenor_1y">1A</string>
+    <string name="indicator_tenor_2y">2A</string>
+    <string name="indicator_tenor_3y">3A</string>
+    <string name="indicator_tenor_5y">5A</string>
+    <string name="indicator_tenor_7y">7A</string>
+    <string name="indicator_tenor_10y">10A</string>
+    <string name="indicator_tenor_20y">20A</string>
+    <string name="indicator_tenor_30y">30A</string>
+
+    <string name="indicator_t10y2y_title">Curva de rendimiento (10A − 2A)</string>
+    <string name="indicator_t10y2y_short_title">10A−2A</string>
+    <string name="indicator_t10y2y_why">Normalmente los prestamistas piden más por inmovilizar su dinero diez años que dos. Cuando el bono a 2 años paga más (una curva invertida), los mercados apuestan a que la Fed tendrá que bajar las tasas porque se avecina una desaceleración. Todas las recesiones de EE. UU. desde 1970 vinieron precedidas por una.</string>
+    <string name="indicator_t10y2y_danger_note">Por debajo de 0% la curva está invertida. Las recesiones suelen llegar entre 6 y 24 meses después de la inversión, a menudo justo cuando la curva vuelve a ser positiva.</string>
+
+    <string name="indicator_t10y3m_title">Curva de rendimiento (10A − 3M)</string>
+    <string name="indicator_t10y3m_short_title">10A−3M</string>
+    <string name="indicator_t10y3m_why">El modelo de recesión preferido de la Fed de Nueva York usa este diferencial. Compara el rendimiento a 10 años con las letras a 3 meses, que siguen casi exactamente la tasa de referencia de la Fed.</string>
+    <string name="indicator_t10y3m_danger_note">Por debajo de 0% está invertida: la señal de recesión más fuerte del modelo de la Fed de Nueva York.</string>
+
+    <string name="indicator_sahm_title">Regla de Sahm</string>
+    <string name="indicator_sahm_short_title">Sahm</string>
+    <string name="indicator_sahm_why">Cuánto ha subido el promedio de 3 meses de la tasa de desempleo sobre su mínimo del último año. El desempleo rara vez sube solo un poco: cuando empieza a subir, suele seguir subiendo.</string>
+    <string name="indicator_sahm_danger_note">Con 0.5 puntos, la regla ha anticipado todas las recesiones desde 1970, por lo general a pocos meses de su inicio.</string>
+
+    <string name="indicator_unrate_title">Tasa de desempleo</string>
+    <string name="indicator_unrate_short_title">Desempleo</string>
+    <string name="indicator_unrate_why">La proporción de personas que buscan trabajo y no lo encuentran. El empleo es lo que mantiene el gasto de los hogares, dos tercios de la economía.</string>
+    <string name="indicator_unrate_danger_note">Por encima de 5.5%, los despidos suelen alimentarse a sí mismos.</string>
+
+    <string name="indicator_icsa_title">Solicitudes iniciales de desempleo</string>
+    <string name="indicator_icsa_short_title">Solicitudes de desempleo</string>
+    <string name="indicator_icsa_why">Nuevas solicitudes de subsidio de desempleo cada semana: el dato duro más rápido sobre despidos, publicado cada jueves.</string>
+    <string name="indicator_icsa_danger_note">Lecturas sostenidas por encima de 300 mil han marcado todas las recesiones de los últimos 50 años.</string>
+
+    <string name="indicator_gdp_title">Crecimiento del PIB real</string>
+    <string name="indicator_gdp_short_title">Crecimiento del PIB</string>
+    <string name="indicator_gdp_why">Cuánto creció la economía el último trimestre descontando la inflación, como tasa anual.</string>
+    <string name="indicator_gdp_danger_note">Dos trimestres seguidos por debajo de cero es la definición de manual de una recesión.</string>
+
+    <string name="indicator_umcsent_title">Confianza del consumidor</string>
+    <string name="indicator_umcsent_short_title">Confianza</string>
+    <string name="indicator_umcsent_why">La encuesta mensual de la Universidad de Michigan sobre cómo ve la gente sus finanzas y la economía. Los hogares pesimistas dejan de gastar.</string>
+    <string name="indicator_umcsent_danger_note">Por debajo de 55 es territorio de 1980, 2008 y 2022.</string>
+
+    <string name="indicator_u6_title">Tasa de subempleo (U-6)</string>
+    <string name="indicator_u6_short_title">U-6</string>
+    <string name="indicator_u6_why">La tasa oficial de desempleo más amplia: los desempleados, más quienes trabajan a tiempo parcial y quieren tiempo completo, más quienes quieren un empleo pero dejaron de buscar. Suele ser casi el doble de la tasa principal.</string>
+    <string name="indicator_u6_danger_note">La U-6 promedió 8.3% en 2007 y superó 9.5% en mayo de 2008, cinco meses después de empezar esa recesión; tocó máximos de 17.2% en 2010 y 22.9% en abril de 2020.</string>
+
+    <string name="indicator_slackgap_title">Holgura oculta (U-6 menos U-3)</string>
+    <string name="indicator_slackgap_short_title">Holgura oculta</string>
+    <string name="indicator_slackgap_why">La parte del subempleo que la tasa principal no cuenta: quienes trabajan a tiempo parcial sin quererlo y quienes quieren trabajar pero no buscan. Cuando se amplía, el mercado laboral está más débil de lo que dice el titular.</string>
+    <string name="indicator_slackgap_danger_note">La brecha promedió 3.7 puntos en 2007 y superó 5 en octubre de 2008; tocó un máximo de 7.4 en 2011.</string>
+
+    <string name="indicator_primeepop_title">Tasa de empleo en edad central (25–54)</string>
+    <string name="indicator_primeepop_short_title">Empleo 25–54</string>
+    <string name="indicator_primeepop_why">La proporción de todas las personas de 25 a 54 años que tienen trabajo. No se maquilla cuando la gente deja de buscar, y esa franja de edad excluye la jubilación y los estudios, así que es la lectura más limpia de cuánta gente trabaja.</string>
+    <string name="indicator_primeepop_danger_note">Promedió 79.9% en 2007 y cayó por debajo de 78.5% en octubre de 2008, hasta tocar fondo en 74.8% a fines de 2009 (69.6% en abril de 2020).</string>
+
+    <string name="indicator_longterm_title">Desempleo de larga duración (27+ semanas)</string>
+    <string name="indicator_longterm_short_title">Desempleo largo</string>
+    <string name="indicator_longterm_why">De las personas desempleadas, la proporción que lleva más de seis meses buscando. Si sube, encontrar trabajo se está haciendo más difícil aunque los despidos no hayan aumentado.</string>
+    <string name="indicator_longterm_danger_note">Rondaba el 18% en 2007 y superó el 30% en 2009, camino del 45% en 2010. Se mantuvo cerca del 21% hasta 2019.</string>
+
+    <string name="indicator_insured_title">Tasa de desempleo asegurado (solicitudes continuas)</string>
+    <string name="indicator_insured_short_title">Desempleo asegurado</string>
+    <string name="indicator_insured_why">Las personas que siguen cobrando el subsidio de desempleo cada semana, como proporción de los empleos que cubre el seguro. Las solicitudes nuevas dicen cuántos están siendo despedidos; esta dice cuántos no logran encontrar el siguiente trabajo. Al ser una tasa, se puede comparar entre décadas, mientras que la cifra bruta crece con la fuerza laboral.</string>
+    <string name="indicator_insured_danger_note">Promedió 1.9% en 2007, pasó de 2% en diciembre de 2007 al empezar esa recesión y de 2.5% en agosto de 2008, con un máximo de 5.0% a mediados de 2009. Se mantuvo cerca de 1.2% hasta 2019.</string>
+
+    <string name="indicator_quits_title">Tasa de renuncias</string>
+    <string name="indicator_quits_short_title">Renuncias</string>
+    <string name="indicator_quits_why">La proporción de trabajadores que renuncian a su empleo cada mes. La gente renuncia cuando confía en encontrar algo mejor, así que es el voto de los propios trabajadores sobre el mercado laboral.</string>
+    <string name="indicator_quits_danger_note">Era de 2.1% en 2007 y bajó de 1.8% a fines de 2008, hasta tocar fondo en 1.2% en 2009. Llegó a un máximo de 3.0% en 2021–22.</string>
+
+    <string name="indicator_openings_title">Vacantes por persona desempleada</string>
+    <string name="indicator_openings_short_title">Vacantes por buscador</string>
+    <string name="indicator_openings_why">Empleos vacantes divididos entre las personas que buscan uno. Por encima de 1 hay más empleos que personas buscando; por debajo de 1 no alcanzan para todos.</string>
+    <string name="indicator_openings_danger_note">Promedió 0.66 en 2006–07, cayó por debajo de 0.5 en mayo de 2008 y tocó fondo en 0.15 en 2009. Llegó a un máximo de 2.0 en 2022 y estuvo en 1.2 hasta 2019.</string>
+
+    <string name="indicator_realwages_title">Crecimiento de los ingresos semanales reales</string>
+    <string name="indicator_realwages_short_title">Salario real</string>
+    <string name="indicator_realwages_why">Cuánto más compra el salario semanal de un trabajador típico de tiempo completo que hace un año, descontando la inflación. Por debajo de cero, los sueldos pierden ante los precios.</string>
+    <string name="indicator_realwages_danger_note">Por debajo de 0%, el sueldo mediano de tiempo completo compra menos que un año antes, como ocurrió en 2021–22. En las recesiones puede subir por una razón sombría: los trabajadores con menor salario pierden su empleo primero, lo que eleva la mediana de quienes siguen trabajando.</string>
+
+    <string name="indicator_temphelp_title">Empleos temporales, interanual</string>
+    <string name="indicator_temphelp_short_title">Empleos temporales</string>
+    <string name="indicator_temphelp_why">El personal temporal es el más fácil de sumar y el primero en irse, así que el empleo en agencias temporales suele cambiar de rumbo antes que el resto del mercado laboral.</string>
+    <string name="indicator_temphelp_danger_note">Se volvió negativo a fines de 2000 y a principios de 2007, meses antes de las recesiones de 2001 y 2008. También cayó durante 2019 y alrededor de 8% anual en 2023–24 sin que siguiera una recesión, así que es un indicio, no un veredicto.</string>
+
+    <string name="indicator_civpart_title">Participación en la fuerza laboral</string>
+    <string name="indicator_civpart_short_title">Participación</string>
+    <string name="indicator_civpart_why">La proporción de adultos que trabajan o buscan trabajo. Ha ido bajando desde 2000 sobre todo porque la población envejece, así que no tiene líneas de alerta; la tasa de empleo en edad central es la lectura más limpia.</string>
+
+    <string name="indicator_hy_title">Diferencial de bonos basura</string>
+    <string name="indicator_hy_short_title">Dif. HY</string>
+    <string name="indicator_hy_why">El rendimiento adicional que pagan las empresas más riesgosas sobre los bonos del Tesoro. Cuando los prestamistas temen impagos se dispara, y las empresas que necesitan financiarse no pueden.</string>
+    <string name="indicator_hy_danger_note">Por encima de 6%, los mercados de crédito descuentan una ola de impagos (en 2008 llegó cerca de 20%; en marzo de 2020, a 11%).</string>
+
+    <string name="indicator_stlfsi_title">Índice de estrés financiero</string>
+    <string name="indicator_stlfsi_short_title">Índice de estrés</string>
+    <string name="indicator_stlfsi_why">La combinación semanal de la Fed de St. Louis de 18 medidas de mercado: tasas, diferenciales, volatilidad. Cero es lo normal.</string>
+    <string name="indicator_stlfsi_danger_note">Por encima de 1, el sistema financiero está bajo verdadera presión; en 2008 llegó a 5.</string>
+
+    <string name="indicator_vix_title">VIX, el índice del miedo</string>
+    <string name="indicator_vix_short_title">VIX</string>
+    <string name="indicator_vix_why">La volatilidad esperada de la bolsa en los próximos 30 días, según los precios de las opciones.</string>
+    <string name="indicator_vix_danger_note">Por encima de 30 el mercado tiene miedo; los pánicos lo llevan a más de 50.</string>
+
+    <string name="indicator_ccdelinq_title">Morosidad de tarjetas de crédito</string>
+    <string name="indicator_ccdelinq_short_title">Morosidad tarjetas</string>
+    <string name="indicator_ccdelinq_why">La proporción de saldos de tarjetas de crédito con al menos 30 días de atraso en los bancos de EE. UU.: qué tan apretados están los hogares.</string>
+    <string name="indicator_ccdelinq_danger_note">Por encima de 4.5%, los hogares se están atrasando como lo hicieron al entrar en 2008.</string>
+
+    <string name="indicator_debtgdp_title">Deuda federal sobre PIB</string>
+    <string name="indicator_debtgdp_short_title">Deuda / PIB</string>
+    <string name="indicator_debtgdp_why">Todo lo que debe el gobierno federal, frente a un año de producción nacional.</string>
+    <string name="indicator_debtgdp_danger_note">Por encima de 125%, EE. UU. supera su máximo de la Segunda Guerra Mundial (119% en 1946), y cada subida de tasas cae sobre una montaña más grande.</string>
+
+    <string name="indicator_interest_title">Intereses como parte de la recaudación</string>
+    <string name="indicator_interest_short_title">Carga de intereses</string>
+    <string name="indicator_interest_why">Cuánto de cada dólar de impuestos se va en pagar intereses de la deuda nacional. El dinero que se gasta en intereses no se puede gastar en nada más, y pedir prestado para pagarlos es como empiezan las espirales de deuda.</string>
+    <string name="indicator_interest_danger_note">Por encima de 30%, el gobierno gasta más en intereses que en casi cualquier otra cosa.</string>
+
+    <string name="indicator_m2_title">Crecimiento de la oferta monetaria (M2)</string>
+    <string name="indicator_m2_short_title">Crec. M2</string>
+    <string name="indicator_m2_why">Qué tan rápido crece la cantidad de dinero en la economía. Los auges se alimentan de él; en 2023 se contrajo por primera vez desde los años treinta.</string>
+    <string name="indicator_m2_danger_note">Por debajo de 0%, el dinero se está retirando de la economía: es deflacionario y duro para los deudores.</string>
+
+    <string name="indicator_cpi_title">Inflación (IPC)</string>
+    <string name="indicator_cpi_short_title">IPC</string>
+    <string name="indicator_cpi_why">Cuánto subieron los precios en el último año, en todo lo que compra un hogar típico.</string>
+    <string name="indicator_cpi_danger_note">Por encima de 5%, la inflación se está comiendo los ingresos reales y obliga a la Fed a actuar.</string>
+
+    <string name="indicator_corecpi_title">Inflación subyacente (IPC sin alimentos ni energía)</string>
+    <string name="indicator_corecpi_short_title">IPC subyacente</string>
+    <string name="indicator_corecpi_why">La inflación sin los vaivenes de los alimentos y la gasolina: la parte que se queda.</string>
+
+    <string name="indicator_corepce_title">Inflación PCE subyacente</string>
+    <string name="indicator_corepce_short_title">PCE subyacente</string>
+    <string name="indicator_corepce_why">La medida de inflación que la Reserva Federal tiene como meta en 2%.</string>
+
+    <string name="indicator_dff_title">Tasa de fondos federales</string>
+    <string name="indicator_dff_short_title">Fondos federales</string>
+    <string name="indicator_dff_why">La tasa a un día que fija la Reserva Federal. Todas las demás tasas de interés del país parten de aquí.</string>
+
+    <string name="indicator_mortgage_title">Tasa hipotecaria a 30 años</string>
+    <string name="indicator_mortgage_short_title">Tasa hipotecaria</string>
+    <string name="indicator_mortgage_why">El promedio semanal de Freddie Mac de la tasa fija a 30 años: lo que cuesta financiar la compra de una casa.</string>
+    <string name="indicator_mortgage_danger_note">Por encima de 7.5%, comprar vivienda es lo menos asequible desde los años ochenta.</string>
+
+    <string name="indicator_homeprices_title">Precios de la vivienda (Case-Shiller)</string>
+    <string name="indicator_homeprices_short_title">Precios vivienda</string>
+    <string name="indicator_homeprices_why">Los precios de la vivienda en EE. UU. durante el último año. La casa es el mayor activo de la mayoría de las familias; la caída de los precios fue la mecha en 2008.</string>
+    <string name="indicator_homeprices_danger_note">Precios un 5% o más por debajo de hace un año significan menos patrimonio en los hogares e hipotecas que valen más que la casa.</string>
+
+    <string name="indicator_dgs10_title">Rendimiento del Tesoro a 10 años</string>
+    <string name="indicator_dgs10_short_title">Rend. 10A</string>
+    <string name="indicator_dgs10_why">La tasa que paga el deudor más seguro del mundo a diez años, y el ancla de las hipotecas y la deuda corporativa. Una subida desordenada significa que los compradores exigen más por tener deuda de EE. UU.</string>
+    <string name="indicator_dgs10_danger_note">Por encima de 5.5%, el costo de endeudarse está en niveles que no se veían desde antes de 2008.</string>
+
+    <string name="indicator_dgs2_title">Rendimiento del Tesoro a 2 años</string>
+    <string name="indicator_dgs2_short_title">Rend. 2A</string>
+    <string name="indicator_dgs2_why">Dónde esperan los mercados que esté la tasa de la Fed en los próximos dos años.</string>
+
+    <string name="indicator_dgs30_title">Rendimiento del Tesoro a 30 años</string>
+    <string name="indicator_dgs30_short_title">Rend. 30A</string>
+    <string name="indicator_dgs30_why">El bono largo: lo que piden los inversionistas por prestarle a Washington durante una generación.</string>
+</resources>

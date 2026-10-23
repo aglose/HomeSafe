@@ -24,6 +24,7 @@ import com.meticulouscreations.homesafe.weather.ui.WeatherDrawerCard
  */
 
 @Preview(name = "Drawer", widthDp = 412, heightDp = 915)
+@Preview(name = "Drawer, in Spanish", widthDp = 412, heightDp = 915, locale = "es")
 @Composable
 private fun ShellDrawerPreview() {
     FrigatePreview {

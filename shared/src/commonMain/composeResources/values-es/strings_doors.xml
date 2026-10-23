@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_doors.xml.
+  The door sensors: the Doors strip on Home, the Doors page it opens (also from Settings), and each
+  door's alert setting. Keys: doors_*. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="doors_title">Puertas</string>
+    <string name="doors_subtitle">Sensores de puerta y sus alertas</string>
+    <string name="doors_settings_summary">Sensores de puerta, y cuándo te avisa una apertura</string>
+    <string name="doors_home_open">Mostrar las puertas</string>
+
+    <string name="doors_chip_open">Abierta</string>
+    <string name="doors_chip_closed">Cerrada</string>
+    <string name="doors_chip_offline">Sin conexión</string>
+    <string name="doors_chip_unknown">Sin lectura</string>
+
+    <string name="doors_state_open">Abierta</string>
+    <string name="doors_state_closed">Cerrada</string>
+    <string name="doors_state_unknown">Esperando su primera lectura</string>
+    <string name="doors_state_opened_just_now">Se abrió hace un momento</string>
+    <string name="doors_state_closed_just_now">Se cerró hace un momento</string>
+    <plurals name="doors_state_open_minutes">
+        <item quantity="one">Abierta desde hace %1$d min</item>
+        <item quantity="other">Abierta desde hace %1$d min</item>
+    </plurals>
+    <plurals name="doors_state_closed_minutes">
+        <item quantity="one">Cerrada hace %1$d min</item>
+        <item quantity="other">Cerrada hace %1$d min</item>
+    </plurals>
+    <plurals name="doors_state_open_hours">
+        <item quantity="one">Abierta desde hace %1$d hora</item>
+        <item quantity="other">Abierta desde hace %1$d horas</item>
+    </plurals>
+    <plurals name="doors_state_closed_hours">
+        <item quantity="one">Cerrada desde hace %1$d hora</item>
+        <item quantity="other">Cerrada desde hace %1$d horas</item>
+    </plurals>
+    <plurals name="doors_state_open_days">
+        <item quantity="one">Abierta desde hace %1$d día</item>
+        <item quantity="other">Abierta desde hace %1$d días</item>
+    </plurals>
+    <plurals name="doors_state_closed_days">
+        <item quantity="one">Cerrada desde hace %1$d día</item>
+        <item quantity="other">Cerrada desde hace %1$d días</item>
+    </plurals>
+
+    <string name="doors_detail_battery">Batería %1$d%</string>
+    <string name="doors_detail_battery_low">Batería baja</string>
+    <string name="doors_detail_weak_signal">Señal débil</string>
+    <string name="doors_detail_offline">Sin noticias desde hace un día</string>
+
+    <string name="doors_notify_title">Avisarme</string>
+    <string name="doors_notify_away">En modo ausente</string>
+    <string name="doors_notify_always">Siempre</string>
+    <string name="doors_notify_never">Nunca</string>
+    <string name="doors_notify_caption">En modo ausente: solo mientras todos están fuera de casa. Siempre: cada vez que se abre, salvo en tus horas de silencio. La configuración es la misma en todos los teléfonos.</string>
+
+    <string name="doors_history_title">Últimos 7 días</string>
+    <string name="doors_history_empty">No se ha abierto ninguna puerta en la última semana.</string>
+    <string name="doors_history_opened">%1$s se abrió</string>
+    <string name="doors_history_closed">%1$s se cerró</string>
+    <string name="doors_history_notified">Avisado</string>
+    <string name="doors_day_today">Hoy</string>
+    <string name="doors_day_yesterday">Ayer</string>
+    <plurals name="doors_day_ago">
+        <item quantity="one">Hace %1$d día</item>
+        <item quantity="other">Hace %1$d días</item>
+    </plurals>
+
+    <string name="doors_none_title">Todavía no hay sensores de puerta</string>
+    <string name="doors_none_body">Empareja un sensor en la página de Zigbee2MQTT del servidor y ponle nombre ahí. Aparecerá aquí en unos segundos.</string>
+    <string name="doors_not_listening">El servidor no recibe señal de los sensores de puerta en este momento. Zigbee2MQTT o su broker no están funcionando.</string>
+    <string name="doors_unsupported">El relay de este servidor todavía no admite sensores de puerta. Actualízalo para usarlos.</string>
+    <string name="doors_load_failed">No se pudieron cargar las puertas: %1$s</string>
+    <string name="doors_plan_place">Ubicar puertas</string>
+    <string name="doors_plan_done">Listo</string>
+    <string name="doors_plan_place_hint">Elige una puerta y luego toca dónde está en el plano.</string>
+    <string name="doors_plan_remove">Quitar %1$s del plano</string>
+    <plurals name="doors_plan_unplaced">
+        <item quantity="one">%1$d puerta aún no está en el plano.</item>
+        <item quantity="other">%1$d puertas aún no están en el plano.</item>
+    </plurals>
+    <string name="doors_plan_marker">%1$s, %2$s</string>
+    <string name="doors_plan_marker_action">Mostrar los detalles de esta puerta</string>
+    <string name="doors_plan_stairs_up">Sube</string>
+    <string name="doors_plan_stairs_down">Baja</string>
+    <string name="doors_plan_stairs_up_to">Sube a: %1$s</string>
+    <string name="doors_plan_stairs_down_to">Baja a: %1$s</string>
+    <string name="doors_plan_street">%1$s (lado de la calle)</string>
+    <string name="doors_spot_save_failed">No se pudo guardar dónde está esa puerta: %1$s</string>
+    <string name="doors_save_failed">No se pudieron cambiar las alertas de esa puerta: %1$s</string>
+    <string name="doors_none_body_pair">Toca Emparejar un sensor y luego mantén presionado el botón del sensor hasta que parpadee su luz. Aparecerá aquí en unos segundos.</string>
+    <string name="doors_pairing_start">Emparejar un sensor</string>
+    <string name="doors_pairing_start_caption">Para un sensor nuevo, o uno que se desconectó y no vuelve.</string>
+    <string name="doors_pairing_stop">Detener emparejamiento</string>
+    <string name="doors_pairing_open_until">Emparejando hasta %1$s</string>
+    <string name="doors_pairing_open">Emparejando</string>
+    <string name="doors_pairing_hint">Mantén presionado el botón del sensor 5 segundos, hasta que parpadee su luz. Un sensor que se desconectó vuelve a unirse con su nombre anterior.</string>
+    <string name="doors_pairing_joined">Se unió un sensor. Configurándolo…</string>
+    <string name="doors_pairing_interviewing">Configurando un sensor nuevo…</string>
+    <string name="doors_pairing_rejoined">%1$s volvió</string>
+    <string name="doors_pairing_paired">Se emparejó %1$s</string>
+    <string name="doors_pairing_paired_unnamed">Sensor nuevo emparejado. Ponle nombre abajo.</string>
+    <string name="doors_pairing_paired_other">Se emparejó un dispositivo nuevo. No es un sensor de puerta, así que no aparecerá aquí.</string>
+    <string name="doors_pairing_join_failed">No se pudo configurar un sensor. Vuelve a mantener presionado su botón para intentarlo de nuevo.</string>
+    <string name="doors_pairing_failed">No se pudo cambiar el emparejamiento: %1$s</string>
+    <string name="doors_error_no_zigbee">El servidor no puede conectarse con Zigbee2MQTT</string>
+    <string name="doors_error_zigbee_silent">Zigbee2MQTT no respondió</string>
+    <string name="doors_name_it">Ponle nombre</string>
+    <string name="doors_rename_action">Cambiar el nombre de %1$s</string>
+    <string name="doors_rename_title">Ponle nombre a esta puerta</string>
+    <string name="doors_rename_label">Nombre</string>
+    <string name="doors_rename_placeholder">Puerta principal</string>
+    <string name="doors_rename_invalid">El nombre no puede estar vacío, tener más de 64 caracteres ni usar / + o #</string>
+    <string name="doors_rename_failed">No se pudo cambiar el nombre de esa puerta: %1$s</string>
+</resources>

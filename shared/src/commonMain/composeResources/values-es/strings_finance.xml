@@ -1,0 +1,300 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_finance.xml.
+  The finance app's screens: Wallet, Markets, Economy, Risk, the quote and indicator pages, and
+  the shell around them. Explainers, the narrator and the sheet screens keep their own files.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="finance_tab_wallet">Billetera</string>
+    <string name="finance_tab_markets">Mercados</string>
+    <string name="finance_tab_economy">Economía</string>
+    <string name="finance_tab_risk">Riesgo</string>
+    <string name="finance_title_chart_settings">Configuración del gráfico</string>
+    <string name="finance_title_connections">Cómo se relaciona</string>
+    <string name="finance_title_glossary">Traductor de jerga</string>
+    <string name="finance_title_sheet_sync">Sincronización de la hoja</string>
+    <string name="finance_close">Cerrar Finanzas</string>
+    <string name="finance_refreshing">Actualizando</string>
+    <string name="finance_refresh">Actualizar</string>
+    <string name="finance_offline_note">Sin conexión · guardado en este dispositivo</string>
+
+    <string name="finance_lock_title">Finanzas está bloqueado</string>
+    <string name="finance_lock_body">No hay conexión con el servidor en este momento. Desbloquea con %1$s para ver lo que este dispositivo guardó la última vez que la hubo.</string>
+    <string name="finance_lock_body_no_check">No hay conexión con el servidor en este momento, y este dispositivo no tiene desbloqueo con huella ni con rostro para confirmar que eres tú. Finanzas se abrirá de nuevo en cuanto se pueda llegar al servidor.</string>
+    <string name="finance_lock_unlock">Desbloquear con %1$s</string>
+    <string name="finance_lock_checking">Esperando %1$s…</string>
+    <string name="finance_lock_failed">No se pudo confirmar que eres tú</string>
+
+    <string name="finance_signal_none">Sin línea</string>
+    <string name="finance_range_52_week">Rango de 52 semanas</string>
+    <string name="finance_how_to_read">CÓMO LEERLO</string>
+    <string name="finance_stats_title">Estadísticas</string>
+    <string name="finance_callout_for_you">Qué significa para ti</string>
+    <string name="finance_change_with_percent">%1$s (%2$s)</string>
+    <string name="finance_change_at">%1$s  %2$s</string>
+    <string name="finance_change_since">%1$s  desde %2$s</string>
+
+    <string name="finance_month_jan">ene</string>
+    <string name="finance_month_feb">feb</string>
+    <string name="finance_month_mar">mar</string>
+    <string name="finance_month_apr">abr</string>
+    <string name="finance_month_may">may</string>
+    <string name="finance_month_jun">jun</string>
+    <string name="finance_month_jul">jul</string>
+    <string name="finance_month_aug">ago</string>
+    <string name="finance_month_sep">sep</string>
+    <string name="finance_month_oct">oct</string>
+    <string name="finance_month_nov">nov</string>
+    <string name="finance_month_dec">dic</string>
+    <string name="finance_date_month_day">%2$d %1$s</string>
+    <string name="finance_date_month_day_year">%2$d %1$s %3$d</string>
+    <string name="finance_date_month_year">%1$s %2$d</string>
+    <string name="finance_date_month_short_year">%1$s '%2$s</string>
+    <string name="finance_date_short_year">'%1$s</string>
+    <string name="finance_time_am">%1$s a. m.</string>
+    <string name="finance_time_pm">%1$s p. m.</string>
+    <string name="finance_date_time">%1$s, %2$s</string>
+
+    <string name="finance_range_1y">1A</string>
+    <string name="finance_range_3y">3A</string>
+    <string name="finance_range_5y">5A</string>
+    <string name="finance_range_10y">10A</string>
+    <string name="finance_range_max">MÁX</string>
+    <string name="finance_range_all">TODO</string>
+
+    <string name="finance_wallet_metric_assets">Activos totales</string>
+    <string name="finance_wallet_metric_debt">Deuda</string>
+    <string name="finance_wallet_metric_cash_flow">Ganancia mensual</string>
+    <string name="finance_wallet_caption_cash_flow">Ganancia mensual · por mes</string>
+    <string name="finance_wallet_chart_description">Historial de %1$s</string>
+    <string name="finance_wallet_not_enough_history">No hay suficiente historial en este rango</string>
+    <string name="finance_wallet_hero_how_to_read">Cada punto es un registro anotado en tu hoja de presupuesto, unidos en una línea, con la cifra de hoy al final. Desliza el dedo por la línea para ver cualquier registro, elige un rango arriba y cambia entre activos totales, deuda y ganancia mensual con los botones.</string>
+    <string name="finance_wallet_your_money">Tu dinero</string>
+    <string name="finance_wallet_topic_cash_flow">Flujo de caja</string>
+    <string name="finance_wallet_topic_vesting_taxes">Consolidación de acciones e impuestos</string>
+    <plurals name="finance_wallet_topic_accounts_note">
+        <item quantity="one">%1$d cuenta · %2$s invertidos</item>
+        <item quantity="other">%1$d cuentas · %2$s invertidos</item>
+    </plurals>
+    <string name="finance_wallet_topic_flow_note">Sobra el %1$s del sueldo neto</string>
+    <plurals name="finance_wallet_topic_debt_note">
+        <item quantity="one">%1$d préstamo abierto</item>
+        <item quantity="other">%1$d préstamos abiertos</item>
+    </plurals>
+    <string name="finance_wallet_topic_mortgage_note">Hipoteca de %1$s</string>
+    <string name="finance_wallet_topic_vest_note">Siguiente %1$s %2$s</string>
+    <string name="finance_wallet_topic_tax_note">%1$s: tasa efectiva del %2$s</string>
+    <plurals name="finance_wallet_topic_charts_note">
+        <item quantity="one">%1$d gráfico de la hoja</item>
+        <item quantity="other">%1$d gráficos de la hoja</item>
+    </plurals>
+    <string name="finance_wallet_charts_title">Gráficos de la hoja</string>
+    <string name="finance_wallet_charts_subtitle">Los gráficos de “%1$s”, en vivo desde la hoja</string>
+    <string name="finance_wallet_accounts_title">Cuentas</string>
+    <string name="finance_wallet_allocation_title">Dónde está tu dinero</string>
+    <string name="finance_wallet_allocation_subtitle">Toca una fila para resaltarla</string>
+    <string name="finance_wallet_cash_flow_title">Flujo de caja mensual</string>
+    <string name="finance_wallet_per_month">%1$s / mes</string>
+    <string name="finance_wallet_flow_history_title">Ingresos vs. gastos</string>
+    <string name="finance_wallet_flow_history_subtitle">Verde: lo que entró · naranja: lo que salió, en cada registro de tu hoja</string>
+    <string name="finance_wallet_flow_history_selected">%1$s: entraron %2$s, salieron %3$s</string>
+    <string name="finance_wallet_debt_title">Deuda</string>
+    <string name="finance_wallet_debt_excl_mortgage">%1$s sin hipoteca</string>
+    <string name="finance_wallet_home_title">Casa</string>
+    <string name="finance_wallet_mortgage_title">Planificador de hipoteca</string>
+    <string name="finance_wallet_mortgage_subtitle">Basado en la pestaña New House de la hoja: desliza para probar otra casa</string>
+    <string name="finance_wallet_vesting_title">Consolidación de acciones</string>
+    <string name="finance_wallet_after_tax">%1$s después de impuestos</string>
+    <string name="finance_wallet_taxes_title">Ingresos e impuestos</string>
+    <string name="finance_wallet_taxes_subtitle">Combinados, por año: toca un año</string>
+    <string name="finance_wallet_old_house_title">Última venta de casa</string>
+    <string name="finance_wallet_bought_for">Comprada por</string>
+    <string name="finance_wallet_sold_for">Vendida por</string>
+    <string name="finance_wallet_total_profit">Ganancia total</string>
+    <string name="finance_wallet_return">Rendimiento</string>
+    <string name="finance_wallet_cash_received">Efectivo recibido</string>
+
+    <string name="finance_wallet_quick_net_worth">Patrimonio neto</string>
+    <string name="finance_wallet_quick_take_home">Sueldo neto / mes</string>
+    <string name="finance_wallet_quick_spending">Gastos / mes</string>
+    <string name="finance_wallet_quick_left_over">Sobrante</string>
+    <string name="finance_wallet_quick_left_over_rate">Sobrante · %1$s</string>
+    <string name="finance_wallet_quick_runway">Reserva de efectivo</string>
+    <string name="finance_wallet_quick_runway_months">%1$s meses</string>
+    <string name="finance_wallet_quick_debt">Deuda sin hipoteca</string>
+    <string name="finance_wallet_explain_card">Explicar %1$s</string>
+
+    <string name="finance_wallet_owner_all">Todos</string>
+    <string name="finance_wallet_owner_chip">%1$s %2$s</string>
+    <string name="finance_wallet_allocation_total">Total</string>
+
+    <string name="finance_wallet_take_home_amount">%1$s de sueldo neto</string>
+    <string name="finance_wallet_flow_left_over">Sobrante</string>
+    <string name="finance_wallet_share_of_income">%1$s de los ingresos</string>
+    <string name="finance_wallet_show_less">Mostrar menos</string>
+    <plurals name="finance_wallet_show_all">
+        <item quantity="one">Mostrar %1$d</item>
+        <item quantity="other">Mostrar los %1$d</item>
+    </plurals>
+
+    <string name="finance_wallet_debt_history">Historial de deuda</string>
+    <string name="finance_wallet_apr">%1$s% anual</string>
+    <string name="finance_wallet_debt_secured">garantizada con la casa</string>
+    <string name="finance_wallet_paid_off">Pagado</string>
+    <string name="finance_wallet_debt_fine_print">El patrimonio neto cuenta la casa por el capital acumulado en ella, así que la hipoteca sobre su valor total aparece en la lista pero no se resta, igual que en la hoja.</string>
+
+    <string name="finance_wallet_home_value">Valor de la casa</string>
+    <string name="finance_wallet_equity">Capital propio</string>
+    <string name="finance_wallet_owed">Adeudado</string>
+    <string name="finance_wallet_value_added">Valor agregado</string>
+    <string name="finance_wallet_home_owned">Tienes el %1$s de la casa</string>
+    <string name="finance_wallet_improvements">Mejoras · %1$s %2$s</string>
+
+    <string name="finance_wallet_monthly_payment">Pago mensual</string>
+    <string name="finance_wallet_payment_parts">%1$s préstamo · %2$s impuestos · %3$s seguro</string>
+    <string name="finance_wallet_payment_parts_hoa">%1$s préstamo · %2$s impuestos · %3$s seguro · %4$s HOA</string>
+    <string name="finance_wallet_price">Precio</string>
+    <string name="finance_wallet_down_payment">Pago inicial</string>
+    <string name="finance_wallet_rate">Tasa</string>
+    <string name="finance_wallet_use_market_rate">Usar el promedio a 30 años de hoy: %1$s%</string>
+    <string name="finance_wallet_affordability_title">Frente a lo que el presupuesto puede sostener</string>
+    <string name="finance_wallet_affordability_fits">Alcanza · %1$s</string>
+    <string name="finance_wallet_affordability_over">Se pasa por %1$s · %2$s</string>
+
+    <string name="finance_wallet_paid_out">Liquidado</string>
+    <string name="finance_wallet_short_year">'%1$s</string>
+    <string name="finance_wallet_earned">Ganado</string>
+    <string name="finance_wallet_take_home">Sueldo neto</string>
+    <string name="finance_wallet_taxes">Impuestos</string>
+    <string name="finance_wallet_effective_rate">Tasa efectiva</string>
+    <string name="finance_wallet_invested">Invertido</string>
+    <string name="finance_wallet_of_take_home">Del sueldo neto</string>
+    <string name="finance_wallet_before_tax">Antes de impuestos</string>
+
+    <string name="finance_wallet_synced_from">Sincronizado desde “%1$s” · %2$s</string>
+    <string name="finance_wallet_open_sheet">Abrir la hoja</string>
+
+    <string name="finance_markets_prev_close">Cierre ant.</string>
+    <string name="finance_markets_volume">Volumen</string>
+    <string name="finance_markets_day_high">Máx. del día</string>
+    <string name="finance_markets_day_low">Mín. del día</string>
+    <string name="finance_markets_price">Precio</string>
+    <string name="finance_markets_52w_high">Máx. 52 sem.</string>
+    <string name="finance_markets_52w_low">Mín. 52 sem.</string>
+    <string name="finance_markets_symbol">Símbolo</string>
+    <string name="finance_markets_macro_title">Otras señales importantes</string>
+    <string name="finance_markets_macro_subtitle">Tasas de interés, oro, petróleo, cripto y el dólar: toca cualquiera para saber por qué importa</string>
+    <string name="finance_markets_watchlist_title">Lista de seguimiento</string>
+    <string name="finance_markets_fine_print">Cotizaciones de Yahoo Finance, con hasta 15 minutos de retraso. Se actualizan cada 15 segundos mientras los mercados están abiertos.</string>
+    <string name="finance_markets_fine_print_error">No se pudo actualizar: %1$s. Cotizaciones de Yahoo Finance, con hasta 15 minutos de retraso. Se actualizan cada 15 segundos mientras los mercados están abiertos.</string>
+    <string name="finance_markets_chart_description">Gráfico de %1$s, %2$s</string>
+    <string name="finance_markets_how_to_read_day">La línea es el precio de hoy, minuto a minuto. La línea punteada es el cierre de ayer: por encima (verde) el día va al alza; por debajo (naranja), a la baja. Desliza el dedo por el gráfico para ver el precio en cualquier momento y elige un rango para mirar más atrás.</string>
+    <string name="finance_markets_how_to_read_range">La línea es el precio en el periodo elegido (%1$s); es verde si ahora está más alto que al principio y naranja si está más bajo. Desliza el dedo por el gráfico para ver el precio de cualquier día.</string>
+    <string name="finance_markets_range_day">Hoy</string>
+    <string name="finance_markets_range_week">Última semana</string>
+    <string name="finance_markets_range_month">Último mes</string>
+    <string name="finance_markets_range_three_months">Últimos 3 meses</string>
+    <string name="finance_markets_range_ytd">Año a la fecha</string>
+    <string name="finance_markets_range_year">Último año</string>
+    <string name="finance_markets_range_five_years">Últimos 5 años</string>
+    <string name="finance_markets_range_max">Todo el historial</string>
+    <string name="finance_markets_open_closes">Mercado abierto · cierra a las %1$s</string>
+    <string name="finance_markets_opens">Abre a las %1$s</string>
+    <string name="finance_markets_closed">Mercado cerrado</string>
+    <string name="finance_markets_what_is_it">¿Qué es?</string>
+    <string name="finance_markets_why_it_matters">POR QUÉ TE IMPORTA</string>
+    <string name="finance_markets_about">Acerca de</string>
+    <string name="finance_markets_quote_fine_print">De Yahoo Finance; puede tener hasta 15 minutos de retraso. No es asesoría de inversión.</string>
+
+    <string name="finance_econ_inflation_title">Inflación</string>
+    <string name="finance_econ_inflation_subtitle">Cuánto más cuestan las cosas que hace un año</string>
+    <string name="finance_econ_jobs_title">El empleo detrás de la cifra oficial</string>
+    <string name="finance_econ_jobs_subtitle">La tasa oficial frente a la más amplia, que cuenta a los subempleados</string>
+    <string name="finance_econ_jobs_u3">Desempleo (U-3)</string>
+    <string name="finance_econ_jobs_u6">Subempleo (U-6)</string>
+    <string name="finance_econ_jobs_how_to_read">La línea de abajo es la tasa que citan las noticias. La de arriba suma a quienes trabajan a tiempo parcial pero quieren tiempo completo y a quienes quieren trabajo pero dejaron de buscar. Cuando la brecha entre ambas se amplía, el mercado laboral está más débil de lo que dice la cifra oficial. Las franjas grises son recesiones pasadas.</string>
+    <string name="finance_econ_curve_title">La curva de rendimientos</string>
+    <string name="finance_econ_curve_subtitle">Lo que paga el gobierno por pedir prestado, de 1 mes (izquierda) a 30 años (derecha)</string>
+    <string name="finance_econ_yields_title">Costo de endeudamiento del gobierno</string>
+    <string name="finance_econ_yields_subtitle">2, 10 y 30 años: las hipotecas siguen al de 10 años</string>
+    <string name="finance_econ_yield_2y">2A</string>
+    <string name="finance_econ_yield_10y">10A</string>
+    <string name="finance_econ_yield_30y">30A</string>
+    <string name="finance_econ_yields_how_to_read">Líneas más altas significan que pedir prestado cuesta más para todos. Las franjas grises son recesiones pasadas.</string>
+    <string name="finance_econ_real_title">¿Tu efectivo sigue el ritmo?</string>
+    <string name="finance_econ_real_subtitle">La tasa de la Fed frente a la inflación: por encima de cero, el ahorro le gana a la subida de precios</string>
+    <string name="finance_econ_real_value">%1$s% real</string>
+    <string name="finance_econ_fed_funds">Fondos federales</string>
+    <string name="finance_econ_cpi_inflation">Inflación IPC</string>
+    <string name="finance_econ_real_how_to_read">Cuando la línea amarilla (la tasa de la Fed) está por encima de la roja (la inflación), el efectivo ahorrado crece más rápido que los precios.</string>
+    <string name="finance_econ_rates_title">Tasas clave</string>
+    <string name="finance_econ_rates_subtitle">Toca cualquiera para ver la explicación completa</string>
+    <string name="finance_econ_fine_print">Datos económicos del Banco de la Reserva Federal de St. Louis (FRED), de la Oficina de Estadísticas Laborales y de otras agencias. La inflación es el cambio respecto al año anterior. Las líneas de vigilancia y de peligro son reglas generales basadas en crisis pasadas, no pronósticos.</string>
+    <string name="finance_econ_cpi_in">IPC en %1$s</string>
+    <string name="finance_econ_cpi_change">%1$s respecto al mes anterior · %2$s</string>
+    <string name="finance_econ_inflation_caption">Precios frente a hace un año</string>
+    <string name="finance_econ_cpi">IPC</string>
+    <string name="finance_econ_core_cpi">IPC subyacente</string>
+    <string name="finance_econ_core_pce">PCE subyacente</string>
+    <string name="finance_econ_fed_target">Meta de la Fed: 2%</string>
+    <string name="finance_econ_inflation_chart">Gráfico de inflación</string>
+    <string name="finance_econ_inflation_how_to_read">Cada línea muestra cuánto subieron los precios en los 12 meses anteriores. La roja lo cuenta todo; la amarilla y la azul dejan fuera los precios volátiles de alimentos y gasolina. La línea discontinua es la meta del 2% de la Fed, y las franjas grises son recesiones pasadas.</string>
+    <string name="finance_econ_curve_compare_month">hace 1 mes</string>
+    <string name="finance_econ_curve_compare_half">hace 6 meses</string>
+    <string name="finance_econ_curve_compare_year">hace 1 año</string>
+    <string name="finance_econ_curve_compare_two">hace 2 años</string>
+    <string name="finance_econ_curve_vs">vs. %1$s</string>
+    <string name="finance_econ_curve_failed_fred">Algunos plazos de la curva no se cargaron desde FRED. Desliza hacia abajo para volver a intentarlo.</string>
+    <string name="finance_econ_curve_failed">Algunos plazos de la curva no se cargaron. Desliza hacia abajo para volver a intentarlo.</string>
+    <string name="finance_econ_treasury">Bono del Tesoro a %1$s</string>
+    <string name="finance_econ_curve_vs_then">%1$s  vs. %2$s</string>
+    <string name="finance_econ_curve_spread">Diferencial 10A − 3M</string>
+    <string name="finance_econ_curve_inverted">Invertida</string>
+    <string name="finance_econ_curve_normal">Normal</string>
+    <string name="finance_econ_curve_today">Hoy</string>
+    <string name="finance_econ_curve_description">Curva de rendimientos del Tesoro</string>
+    <string name="finance_econ_curve_how_to_read_inverted">Los préstamos cortos están a la izquierda y los largos a la derecha. Normalmente la línea sube: prestar a más plazo rinde más. Ahora mismo las tasas a corto plazo están por encima de las de largo plazo, una forma invertida que ha precedido a todas las recesiones desde 1970.</string>
+    <string name="finance_econ_curve_how_to_read_normal">Los préstamos cortos están a la izquierda y los largos a la derecha. Normalmente la línea sube (prestar a más plazo rinde más), y hoy lo hace. Si alguna vez el extremo izquierdo sube por encima del derecho, es una señal clásica de recesión. La línea discontinua es la curva como estaba antes.</string>
+    <string name="finance_econ_couldnt_load">No se pudo cargar</string>
+    <string name="finance_econ_in_a_year">%1$s en un año</string>
+
+    <string name="finance_risk_stress">ESTRÉS</string>
+    <string name="finance_risk_reading">Leyendo los indicadores…</string>
+    <string name="finance_risk_counts">%1$d en peligro · %2$d a vigilar · %3$d en calma</string>
+    <string name="finance_risk_loading">%1$d de %2$d datos cargados</string>
+    <string name="finance_risk_how_to_read">Cada tarjeta de abajo es una señal de alerta que ha cambiado antes de crisis pasadas. El número grande es el dato de hoy, la frase explica qué significa y la barra de color muestra dónde está entre calma (verde), para vigilar (ámbar) y peligro (rojo). Una señal sola significa poco: los problemas han llegado cuando muchas se encienden a la vez.</string>
+    <string name="finance_risk_flashing_title">Encendidas ahora</string>
+    <string name="finance_risk_flashing_subtitle">Señales que pasaron su línea de vigilancia o de peligro: toca una para ver por qué</string>
+    <string name="finance_risk_how_title">Cómo funciona el medidor</string>
+    <string name="finance_risk_how_body">Cada señal vale 0 cuando está cómodamente en calma, 50 en su línea de vigilancia y 100 en su línea de peligro, y el medidor las promedia; las alarmas de recesión más confiables (la curva de rendimientos, la alarma del empleo, el costo de endeudamiento de las empresas riesgosas y el estrés financiero) son las que más pesan. Las líneas son reglas generales basadas en recesiones y crisis pasadas, no pronósticos. Nada de esto es asesoría financiera.</string>
+    <string name="finance_risk_vs_year_ago">%1$s vs. hace un año</string>
+    <string name="finance_risk_failed">No se pudo cargar desde FRED. Desliza hacia abajo para reintentar.</string>
+
+    <string name="finance_indicator_change">%1$s vs. hace un año · %2$s</string>
+    <string name="finance_indicator_chart_description">Gráfico de %1$s</string>
+    <string name="finance_indicator_how_to_read">Desliza el dedo por el gráfico para ver cualquier dato anterior. Las franjas grises son recesiones pasadas: mira qué hizo este indicador justo antes.</string>
+    <string name="finance_indicator_how_to_read_zones">Desliza el dedo por el gráfico para ver cualquier dato anterior. La franja ámbar es la zona para vigilar y la roja es la zona de peligro. Las franjas grises son recesiones pasadas: mira qué hizo este indicador justo antes.</string>
+    <string name="finance_indicator_how_to_read_reference">Desliza el dedo por el gráfico para ver cualquier dato anterior. La línea discontinua marca %1$s. Las franjas grises son recesiones pasadas: mira qué hizo este indicador justo antes.</string>
+    <string name="finance_indicator_how_to_read_zones_reference">Desliza el dedo por el gráfico para ver cualquier dato anterior. La franja ámbar es la zona para vigilar y la roja es la zona de peligro. La línea discontinua marca %1$s. Las franjas grises son recesiones pasadas: mira qué hizo este indicador justo antes.</string>
+    <string name="finance_indicator_right_now">Ahora mismo</string>
+    <string name="finance_indicator_analogy">Una comparación cotidiana</string>
+    <string name="finance_indicator_why">Por qué importa</string>
+    <string name="finance_indicator_normal">Qué es lo normal</string>
+    <string name="finance_indicator_danger_line_title">La línea de peligro</string>
+    <string name="finance_indicator_how_it_works">Cómo funciona</string>
+    <string name="finance_indicator_latest">Último</string>
+    <string name="finance_indicator_as_of">Fecha</string>
+    <string name="finance_indicator_year_ago">Hace 1 año</string>
+    <string name="finance_indicator_five_years_ago">Hace 5 años</string>
+    <string name="finance_indicator_range_high">Máx. %1$s</string>
+    <string name="finance_indicator_range_low">Mín. %1$s</string>
+    <string name="finance_indicator_watch_line">Línea de vigilancia</string>
+    <string name="finance_indicator_danger_line">Línea de peligro</string>
+    <string name="finance_indicator_updated">Actualizado</string>
+    <string name="finance_indicator_source">Fuente</string>
+    <string name="finance_indicator_source_value">FRED %1$s</string>
+    <string name="finance_indicator_open_fred">Abrir en FRED</string>
+    <string name="finance_zone_watch">Vigilar</string>
+    <string name="finance_zone_danger">Peligro</string>
+</resources>
