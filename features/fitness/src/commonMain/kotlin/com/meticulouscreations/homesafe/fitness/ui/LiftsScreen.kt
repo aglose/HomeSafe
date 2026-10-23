@@ -1,5 +1,10 @@
 package com.meticulouscreations.homesafe.fitness.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -270,6 +275,10 @@ internal fun ExerciseScreen(
             }
             RoundIconButton(Icons.Filled.Edit, stringResource(Res.string.fitness_exercise_edit), onEdit, Modifier.testTag("fitness_exercise_edit"), tint = colors.textMuted, fill = colors.surfaceRaised)
         }
+        // The rest after a set rides along here too, as it does on the workout: this page is where a set is logged outside one.
+        AnimatedVisibility(state.rest != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            state.rest?.let { rest -> RestBar(rest, state.nowEpochSeconds * 1000, tints, actions.onAdjustRest, actions.onSkipRest) }
+        }
 
         // The movement, performed; and under it, which of the three figures performs it (the Settings tab has the same choice).
         ExerciseFigure(match.kind, state.figureStyle, tints)
@@ -323,6 +332,8 @@ internal fun ExerciseScreen(
                 colors = tints,
                 onLog = { weight, reps -> actions.onLogSet(exercise.id, weight, reps) },
                 onDeleteSet = actions.onDeleteSet,
+                deleted = state.deletedSet,
+                onUndoDelete = actions.onUndoDeleteSet,
             )
         }
 

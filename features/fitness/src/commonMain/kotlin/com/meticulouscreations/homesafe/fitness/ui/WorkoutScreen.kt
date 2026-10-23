@@ -160,7 +160,8 @@ internal fun WorkoutScreen(
     modifier: Modifier = Modifier,
     /** The exercise whose logger is open to begin with. */
     initiallyOpen: String? = null,
-    heart: HeartUiState = HeartUiState(),
+    /** The heart rate, read only where it is shown, so the rest of the page isn't redrawn on every beat. */
+    heart: () -> HeartUiState = { HeartUiState() },
     onOpenHeart: () -> Unit = {},
     /** Exercises added from off the picked shelves, in the order they were added; held by the caller, so they outlast this page. */
     pulled: List<String> = emptyList(),
@@ -223,6 +224,7 @@ internal fun WorkoutScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "header") {
+            val beat = heart()
             Column {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
                     val minutes = ((state.nowEpochSeconds - workout.workout.startedAtEpochSeconds) / 60).coerceAtLeast(0).toInt()
@@ -230,7 +232,7 @@ internal fun WorkoutScreen(
                     Stat(workout.setCount.toString(), pluralStringResource(Res.plurals.fitness_workout_sets, workout.setCount))
                     Stat(workout.recordCount.toString(), pluralStringResource(Res.plurals.fitness_workout_records, workout.recordCount), color = if (workout.recordCount > 0) colors.gold else colors.text)
                     // With no sensor chosen yet the heart rate is only a way in, kept out of the way.
-                    if (heart.supported && !heart.wanted) {
+                    if (beat.supported && !beat.wanted) {
                         Spacer(Modifier.weight(1f))
                         RoundIconButton(
                             Icons.Filled.MonitorHeart,
@@ -242,11 +244,11 @@ internal fun WorkoutScreen(
                         )
                     }
                 }
-                if (heart.wanted) HeartPanel(heart, onOpenHeart, actions.onDismissZoneNotice, Modifier.padding(top = 14.dp))
+                if (beat.wanted) HeartPanel(beat, onOpenHeart, actions.onDismissZoneNotice, Modifier.padding(top = 14.dp))
                 AnimatedVisibility(state.rest != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                     state.rest?.let { rest ->
                         RestBar(rest, state.nowEpochSeconds * 1000, tints, actions.onAdjustRest, actions.onSkipRest, Modifier.padding(top = 14.dp)) {
-                            heart.recovery?.let { RecoveryLine(it, heart.zone, zoned = heart.bounds != null, Modifier.padding(top = 10.dp)) }
+                            beat.recovery?.let { RecoveryLine(it, beat.zone, zoned = beat.bounds != null, Modifier.padding(top = 10.dp)) }
                         }
                     }
                 }
@@ -469,6 +471,8 @@ private fun WorkoutExercise(
                     colors = tints,
                     onLog = { weight, reps -> actions.onLogSet(exercise.id, weight, reps) },
                     onDeleteSet = actions.onDeleteSet,
+                    deleted = state.deletedSet,
+                    onUndoDelete = actions.onUndoDeleteSet,
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -523,14 +527,14 @@ internal fun RestBar(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
+                // Read while drawing: the ring drains every frame, and the bar around it need only change once a second.
                 PlasmaRing(
-                    level = if (over) 1f else (remaining.floatValue / rest.totalSeconds).coerceIn(0f, 1f),
+                    level = { if (over) 1f else (remaining.floatValue / rest.totalSeconds).coerceIn(0f, 1f) },
                     tint = if (over) colors.gold else tints.first,
                     tint2 = if (over) colors.amber else tints.second,
                     track = colors.surfaceRaised,
                     modifier = Modifier.matchParentSize(),
                     thickness = 0.2f,
-                    sweepMillis = 0,
                 )
             }
             Spacer(Modifier.width(12.dp))

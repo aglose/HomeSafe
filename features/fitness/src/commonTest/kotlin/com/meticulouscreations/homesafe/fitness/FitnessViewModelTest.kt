@@ -853,6 +853,50 @@ class FitnessViewModelTest {
         assertEquals(0, assertNotNull(vm.uiState.value.board(benchId)).setCount)
     }
 
+    @Test
+    fun aDeletedSetCanBeBroughtBackAsItWas() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        val logged = h.repository.sets.first().single()
+        vm.deleteSet(logged.id)
+        runCurrent()
+        assertEquals(logged, vm.uiState.value.deletedSet)
+
+        vm.undoDeleteSet()
+        runCurrent()
+        assertNull(vm.uiState.value.deletedSet)
+        val back = h.repository.sets.first().single()
+        assertEquals(logged.copy(id = back.id), back)
+        assertEquals(1, assertNotNull(vm.uiState.value.board(benchId)).setCount)
+    }
+
+    @Test
+    fun aDeletedSetIsOfferedBackOnlyForAFewSeconds() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        vm.deleteSet(h.repository.sets.first().single().id)
+        runCurrent()
+        assertNotNull(vm.uiState.value.deletedSet)
+
+        advanceTimeBy(8_001)
+        runCurrent()
+        assertNull(vm.uiState.value.deletedSet)
+    }
+
+    @Test
+    fun loggingAnotherSetLetsTheDeletedOneGo() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        vm.deleteSet(h.repository.sets.first().single().id)
+        runCurrent()
+        vm.logSet(benchId, 135.0, 9)
+        runCurrent()
+        assertNull(vm.uiState.value.deletedSet)
+    }
+
     // ---- Records and the rest timer -----------------------------------------------------------
 
     @Test

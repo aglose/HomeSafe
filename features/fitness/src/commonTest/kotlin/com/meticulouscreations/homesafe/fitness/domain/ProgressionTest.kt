@@ -528,4 +528,33 @@ class ProgressionTest {
         assertEquals(10.0, Progression.inferIncrement(listOf(180.0, 190.0, 210.0), 10.0))
         assertEquals(5.0, Progression.inferIncrement(listOf(44.0, 45.0, 49.5), 5.0))
     }
+
+    // ---- Warming up ---------------------------------------------------------------------------
+
+    @Test
+    fun theWarmUpsClimbToTheTargetInTheExercisesOwnJumps() {
+        assertEquals(listOf(Warmup(115.0, 8), Warmup(160.0, 4), Warmup(190.0, 2)), Progression.warmups(bench, 225.0))
+    }
+
+    @Test
+    fun aBarbellWarmUpIsNeverUnderTheBarAndOneWeightComesOnce() {
+        assertEquals(listOf(Warmup(45.0, 8), Warmup(50.0, 2)), Progression.warmups(bench, 60.0))
+    }
+
+    @Test
+    fun aWarmUpAtTheTargetIsNoWarmUp() {
+        assertEquals(emptyList(), Progression.warmups(bench, 45.0))
+    }
+
+    @Test
+    fun offTheBarAWarmUpCanBeLighterThanOne() {
+        val curl = exercise(id = "biceps/curl", name = "Curl", bodyPart = BodyPart.BICEPS, equipment = Equipment.DUMBBELL, loadKind = LoadKind.PER_HAND, primary = Muscle.BICEPS, increment = 2.5)
+        assertEquals(listOf(Warmup(15.0, 8), Warmup(20.0, 4), Warmup(25.0, 2)), Progression.warmups(curl, 30.0))
+    }
+
+    @Test
+    fun theBodyAndAPinHaveNoWarmUps() {
+        assertEquals(emptyList(), Progression.warmups(pullUps, 25.0))
+        assertEquals(emptyList(), Progression.warmups(exercise(loadKind = LoadKind.LEVEL, equipment = Equipment.MACHINE), 12.0))
+    }
 }
