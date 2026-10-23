@@ -86,6 +86,19 @@
             android:name="com.meticulouscreations.homesafe.data.NotificationGroupReceiver"
             android:exported="false" />
 
+        <!-- The Doors tile in Quick Settings: whether a door is open, read from the relay as this
+             install when the shade comes down; a tap opens the Doors page. -->
+        <service
+            android:name="com.meticulouscreations.homesafe.tile.DoorsTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification_door"
+            android:label="@string/tile_doors_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name="com.meticulouscreations.homesafe.data.BootReceiver"
             android:exported="false">

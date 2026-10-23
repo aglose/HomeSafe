@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.AppVisibility
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
@@ -20,14 +21,17 @@ import dev.zacsweers.metro.SingleIn
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.error_no_location
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -47,12 +51,15 @@ import kotlin.time.TimeSource
  *    Either gone: stop. Idempotent, so it also re-arms after the OS dropped the fence.
  * 3. **Where the phone is.** The fence only speaks when the phone crosses it, so a phone already
  *    out when it became the tracked one (or when home was set, or the fence armed) would stay
- *    "home" until it came back. While the app runs, each fresh presence takes a location fix — at
- *    most every [LOCATION_CHECK_EVERY] — and puts it against home: well outside arms away with the
- *    dwell, inside brings an away phone home. Needs only "while in use".
+ *    "home" until it came back. While the app is on screen, each fresh presence takes a location
+ *    fix — at most every [LOCATION_CHECK_EVERY] — and puts it against home: well outside arms away
+ *    with the dwell, inside brings an away phone home. Needs only "while in use".
  * 4. **Cache home.** So [resyncGeofence] can re-arm after a reboot with no relay in reach.
  *
- * Crossings arrive through [onGeofenceTransition] from whatever the OS woke.
+ * Everything that reads the relay's presence does so only while the app is on screen
+ * ([inForeground]): collecting it is what keeps [PresenceRepository] polling every minute, and
+ * each fresh snapshot may take a location fix. In the background the fence alone watches, and
+ * crossings arrive through [onGeofenceTransition] from whatever the OS woke.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -66,6 +73,7 @@ class PresenceAutomationImpl(
     private val appScope: CoroutineScope,
     private val dwellSeconds: Int = DEFAULT_DWELL_SECONDS,
     private val timeSource: TimeSource = TimeSource.Monotonic,
+    private val inForeground: Flow<Boolean> = AppVisibility.inForeground,
 ) : PresenceAutomation {
 
     override val geofenceSupported: Boolean get() = geofenceMonitor.isSupported
@@ -94,7 +102,7 @@ class PresenceAutomationImpl(
                 }
                 launch {
                     var checkedAt: TimeMark? = null
-                    combine(presenceRepository.presence, geofenceMonitor.access) { presence, access -> presence.takeIf { access in FIX_ACCESS } }
+                    combine(foregroundPresence(), geofenceMonitor.access) { presence, access -> presence.takeIf { access in FIX_ACCESS } }
                         .filterNotNull()
                         .collect { presence ->
                             if (checkedAt?.let { it.elapsedNow() < LOCATION_CHECK_EVERY } == true) return@collect
@@ -108,7 +116,7 @@ class PresenceAutomationImpl(
                 geofenceMonitor.watch(null) // a fence armed back when this build could switch it on
             }
             launch {
-                presenceRepository.presence
+                foregroundPresence()
                     .filter { it !== HouseholdPresence.EMPTY } // "not answered yet" isn't "no home"
                     .map { it.home }
                     .distinctUntilChanged()
@@ -125,8 +133,18 @@ class PresenceAutomationImpl(
      */
     private fun home(): Flow<HomeLocation?> = flow {
         emit(identity.cachedHome())
-        emitAll(presenceRepository.presence.filter { it !== HouseholdPresence.EMPTY }.map { it.home })
+        emitAll(foregroundPresence().filter { it !== HouseholdPresence.EMPTY }.map { it.home })
     }.distinctUntilChanged()
+
+    /**
+     * The relay's presence while the app is on screen, nothing while it isn't. Collecting
+     * [PresenceRepository.presence] is what keeps it polling, so a collector that ran forever
+     * would poll — and, on a tracked phone, take a fix every [LOCATION_CHECK_EVERY] — in a
+     * pocket all day. Back on screen, the current snapshot comes straight away.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun foregroundPresence(): Flow<HouseholdPresence> =
+        inForeground.distinctUntilChanged().flatMapLatest { visible -> if (visible) presenceRepository.presence else emptyFlow() }
 
     /**
      * One fix against [home]. Out means past the circle by [LOCATION_MARGIN_METERS] too, so GPS
@@ -186,7 +204,7 @@ class PresenceAutomationImpl(
         /** How far past the circle a fix must be to count as out: a phone's fix indoors can be off by this much. */
         const val LOCATION_MARGIN_METERS = 100.0
 
-        /** A fix costs battery, and the dwell is ten minutes: one every five while the app runs is plenty. */
+        /** A fix costs battery, and the dwell is ten minutes: one every five while the app is on screen is plenty. */
         val LOCATION_CHECK_EVERY = 5.minutes
 
         /** What a one-off fix needs: the app is open, so "while in use" will do. */

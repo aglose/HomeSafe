@@ -51,6 +51,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.doors_chip_offline
 import homesafe.shared.generated.resources.doors_chip_open
 import homesafe.shared.generated.resources.doors_chip_unknown
+import homesafe.shared.generated.resources.doors_detail_battery_low
 import homesafe.shared.generated.resources.doors_home_open
 import homesafe.shared.generated.resources.home_glance_all_doors_closed
 import homesafe.shared.generated.resources.home_glance_doors_closed
@@ -123,12 +124,15 @@ private fun DoorPills(doors: List<Door>, onOpenDoors: () -> Unit) {
         glance.shown.forEach { door ->
             val open = door.open == true
             val offline = door.online == false
+            // A closed door is only here for its battery: say so, in the same warning colour as offline.
+            val lowBattery = !offline && door.open == false && door.needsBattery
             GlancePill(
                 label = door.name,
                 detail = stringResource(
                     when {
                         offline -> Res.string.doors_chip_offline
                         open -> Res.string.doors_chip_open
+                        lowBattery -> Res.string.doors_detail_battery_low
                         else -> Res.string.doors_chip_unknown
                     },
                 ),
@@ -136,7 +140,7 @@ private fun DoorPills(doors: List<Door>, onOpenDoors: () -> Unit) {
                 onClickLabel = openDoors,
                 container = if (open && !offline) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
                 content = if (open && !offline) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                detailColor = if (offline) MaterialTheme.colorScheme.error else null,
+                detailColor = if (offline || lowBattery) MaterialTheme.colorScheme.error else null,
                 leading = { PillIcon(if (open) Icons.Filled.MeetingRoom else Icons.Filled.DoorFront) },
             )
         }
@@ -245,7 +249,7 @@ private fun HomeGlanceRowsPreview() {
     }
 }
 
-/** Nothing parked, every door shut, one sensor not heard from in a day. */
+/** Nothing parked, every door shut, one sensor gone quiet. */
 @Preview(name = "Home glance rows, doors only", widthDp = 412)
 @Composable
 private fun HomeGlanceRowsDoorsPreview() {
@@ -253,6 +257,20 @@ private fun HomeGlanceRowsDoorsPreview() {
         HomeGlanceRows(
             inView = emptyList(),
             doors = listOf(Door("0x01", "Back door", open = false), Door("0x02", "Front door", open = false), Door("0x03", "Garage door", open = false, online = false)),
+            onOpenInView = {},
+            onOpenDoors = {},
+        )
+    }
+}
+
+/** Every door shut, but the front door's sensor wants a new battery. */
+@Preview(name = "Home glance rows, a low battery", widthDp = 412)
+@Composable
+private fun HomeGlanceRowsLowBatteryPreview() {
+    GlancePreviewFrame {
+        HomeGlanceRows(
+            inView = emptyList(),
+            doors = listOf(Door("0x01", "Back door", open = false), Door("0x02", "Front door", open = false, battery = 12), Door("0x03", "Garage door", open = false)),
             onOpenInView = {},
             onOpenDoors = {},
         )

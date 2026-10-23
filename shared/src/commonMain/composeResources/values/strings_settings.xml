@@ -21,6 +21,9 @@
     <string name="connection_server_url_hint">Your NVR's Tailscale address — works from anywhere.</string>
     <string name="connection_username_placeholder">Username</string>
     <string name="connection_password_placeholder">Password</string>
+    <!-- For screen readers, on the eye at the end of the password field. -->
+    <string name="connection_password_show">Show password</string>
+    <string name="connection_password_hide">Hide password</string>
     <!-- Debug builds only: fills the form from a local test-credentials file. -->
     <string name="connection_autofill_test_credentials">Autofill test credentials</string>
     <string name="connection_connect">Connect</string>
