@@ -24,7 +24,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -94,6 +94,8 @@ internal fun HourlyStrip(report: WeatherReport, nowEpochSeconds: Long, onScrub: 
     val high = remember(hours) { hours.maxOf { it.temperatureC } }
     val wettest = remember(hours) { max(1.5, hours.maxOf { it.precipitationMm }) }
     val nowLabel = stringResource(Res.string.weather_now)
+    // The columns that start a new day at the place: their label is the day's name, and a hairline runs down their edge.
+    val midnights = remember(report, hours) { hours.indices.filter { it > 0 && report.localHour(hours[it].epochSeconds) == 0 }.toSet() }
 
     // Where an hour's temperature sits in the curve's band, 0 the foot and 1 the top.
     fun rise(hour: HourForecast): Float = if (high - low < 0.5) 0.5f else ((hour.temperatureC - low) / (high - low)).toFloat()
@@ -127,30 +129,18 @@ internal fun HourlyStrip(report: WeatherReport, nowEpochSeconds: Long, onScrub: 
                     moveTo(change.position.x)
                 }
             }
-            .drawBehind {
+            // Built once per size and forecast: a scrub step only moves the highlight, read when drawn.
+            .drawWithCache {
                 val column = HourColumn.toPx()
                 val curveTop = HourTop.toPx()
                 val curveHeight = HourCurve.toPx()
-                // Night, shaded.
-                hours.forEachIndexed { i, hour ->
-                    if (!hour.isDay) drawRect(Color(0x10000000), Offset(i * column, 0f), Size(column, size.height))
-                }
-                if (scrubbed >= 0) {
-                    drawRoundRect(Color(0x24FFFFFF), Offset(scrubbed * column + 2.dp.toPx(), 0f), Size(column - 4.dp.toPx(), size.height), CornerRadius(12.dp.toPx()))
-                }
-                // What falls, along the foot: taller for more, fainter for less likely.
-                hours.forEachIndexed { i, hour ->
-                    if (hour.precipitationMm >= 0.05) {
-                        val barHeight = (sqrt(hour.precipitationMm / wettest).toFloat() * (HourBars.toPx() - 4.dp.toPx())).coerceAtLeast(2.dp.toPx())
-                        val alpha = 0.35f + 0.65f * ((hour.precipitationProbability ?: 70) / 100f)
-                        drawRoundRect(
-                            (if (hour.kind.isSnow) colors.snow else colors.rain).copy(alpha = alpha),
-                            Offset(i * column + column * 0.3f, size.height - barHeight),
-                            Size(column * 0.4f, barHeight),
-                            CornerRadius(3.dp.toPx()),
-                        )
-                    }
-                }
+                val hairline = 1.dp.toPx()
+                val highlightInset = 2.dp.toPx()
+                val highlightSize = Size(column - 4.dp.toPx(), size.height)
+                val highlightCorner = CornerRadius(12.dp.toPx())
+                val barCorner = CornerRadius(3.dp.toPx())
+                val barRoom = HourBars.toPx() - 4.dp.toPx()
+                val barMin = 2.dp.toPx()
                 val points = hours.mapIndexed { i, hour -> Offset((i + 0.5f) * column, curveTop + curvePointY(rise(hour), curveHeight)) }
                 val line = smoothPath(points)
                 // The wash under the curve runs out to both edges of the strip, level from the first and last points.
@@ -163,14 +153,48 @@ internal fun HourlyStrip(report: WeatherReport, nowEpochSeconds: Long, onScrub: 
                     close()
                 }
                 val stops = hours.mapIndexed { i, hour -> (i + 0.5f) / hours.size to colors.temperature(hour.temperatureC) }.toTypedArray()
-                drawPath(fill, Brush.verticalGradient(listOf(Color(0x1CFFFFFF), Color.Transparent), startY = curveTop + curveHeight * 0.3f, endY = curveTop + curveHeight))
-                drawPath(line, Brush.horizontalGradient(*stops, startX = 0f, endX = size.width), style = Stroke(2.6.dp.toPx(), cap = StrokeCap.Round))
-                drawCircle(Color.White, 4.5.dp.toPx(), points.first())
-                drawCircle(colors.temperature(hours.first().temperatureC), 2.6.dp.toPx(), points.first())
+                val fillBrush = Brush.verticalGradient(listOf(Color(0x1CFFFFFF), Color.Transparent), startY = curveTop + curveHeight * 0.3f, endY = curveTop + curveHeight)
+                val lineBrush = Brush.horizontalGradient(*stops, startX = 0f, endX = size.width)
+                val lineStroke = Stroke(2.6.dp.toPx(), cap = StrokeCap.Round)
+                val dotOuter = 4.5.dp.toPx()
+                val dotInner = 2.6.dp.toPx()
+                val dotColor = colors.temperature(hours.first().temperatureC)
+                onDrawBehind {
+                    // Night, shaded.
+                    hours.forEachIndexed { i, hour ->
+                        if (!hour.isDay) drawRect(Color(0x10000000), Offset(i * column, 0f), Size(column, size.height))
+                    }
+                    // Where one day gives way to the next.
+                    midnights.forEach { i -> drawLine(colors.hairline, Offset(i * column, 0f), Offset(i * column, size.height), hairline) }
+                    val held = scrubbed
+                    if (held >= 0) {
+                        drawRoundRect(Color(0x24FFFFFF), Offset(held * column + highlightInset, 0f), highlightSize, highlightCorner)
+                    }
+                    // What falls, along the foot: taller for more, fainter for less likely.
+                    hours.forEachIndexed { i, hour ->
+                        if (hour.precipitationMm >= 0.05) {
+                            val barHeight = (sqrt(hour.precipitationMm / wettest).toFloat() * barRoom).coerceAtLeast(barMin)
+                            val alpha = 0.35f + 0.65f * ((hour.precipitationProbability ?: 70) / 100f)
+                            drawRoundRect(
+                                (if (hour.kind.isSnow) colors.snow else colors.rain).copy(alpha = alpha),
+                                Offset(i * column + column * 0.3f, size.height - barHeight),
+                                Size(column * 0.4f, barHeight),
+                                barCorner,
+                            )
+                        }
+                    }
+                    drawPath(fill, fillBrush)
+                    drawPath(line, lineBrush, style = lineStroke)
+                    drawCircle(Color.White, dotOuter, points.first())
+                    drawCircle(dotColor, dotInner, points.first())
+                }
             },
     ) {
         hours.forEachIndexed { i, hour ->
             val time = if (i == 0) nowLabel else WeatherFormat.hour(hour.epochSeconds, report.offsetAt(hour.epochSeconds)).resolve()
+            // A new day is headed by its name; a screen reader still hears the hour.
+            val newDay = i in midnights
+            val heading = if (newDay) stringResource(WeatherFormat.weekday(hour.epochSeconds, report.offsetAt(hour.epochSeconds))) else time
             val temperature = WeatherFormat.degrees(hour.temperatureC, units)
             val chance = hour.precipitationProbability?.takeIf { (it >= 20 && hour.kind.isPrecipitation) || it >= 35 }
             val description = stringResource(Res.string.weather_hour_description, time, temperature, stringResource(hour.kind.label(hour.isDay)))
@@ -179,7 +203,7 @@ internal fun HourlyStrip(report: WeatherReport, nowEpochSeconds: Long, onScrub: 
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(2.dp))
-                Text(time, style = type.label, color = if (i == 0) colors.onSky else colors.onSkyMuted, maxLines = 1)
+                Text(heading, style = type.label, color = if (i == 0 || newDay) colors.onSky else colors.onSkyMuted, maxLines = 1)
                 Spacer(Modifier.height(6.dp))
                 WeatherGlyph(hour.kind, hour.isDay, Modifier.size(26.dp))
                 Text(chance?.let { WeatherFormat.percent(it) } ?: "", style = type.micro.copy(letterSpacing = type.label.letterSpacing), color = colors.rain, modifier = Modifier.height(15.dp))

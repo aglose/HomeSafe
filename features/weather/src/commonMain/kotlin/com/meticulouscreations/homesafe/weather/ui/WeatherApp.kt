@@ -68,6 +68,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -276,6 +277,8 @@ fun WeatherAppContent(
     }
     // The hour a finger is holding on the hourly strip: the whole sky turns to it.
     var scrub by remember { mutableStateOf<Long?>(null) }
+    // Counts taps on the tab already up: each scrolls the place in view back to its top.
+    var scrollToTop by remember { mutableIntStateOf(0) }
     val dim = remember { mutableFloatStateOf(0f) }
     val haptics = LocalHapticFeedback.current
 
@@ -367,6 +370,7 @@ fun WeatherAppContent(
                         onOpenRadar = { tab = WeatherTab.RADAR },
                         onOpenPlaces = { pages += WeatherPage.Places },
                         animated = active && !state.preferences.stillSky,
+                        scrollToTop = scrollToTop,
                     )
 
                     WeatherTab.RADAR -> RadarScreen(
@@ -434,6 +438,7 @@ fun WeatherAppContent(
             val onPickTab: (WeatherTab) -> Unit = { picked ->
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 scrub = null
+                if (picked == tab && pages.isEmpty() && picked != WeatherTab.RADAR) scrollToTop++
                 tab = picked
             }
             // With nowhere to forecast for there is nothing behind the tabs to go to.
@@ -478,6 +483,7 @@ private fun PlacePager(
     onOpenRadar: () -> Unit,
     onOpenPlaces: () -> Unit,
     animated: Boolean,
+    scrollToTop: Int,
     modifier: Modifier = Modifier,
 ) {
     if (state.places.isEmpty()) {
@@ -528,6 +534,7 @@ private fun PlacePager(
                 onOpenRadar = onOpenRadar,
                 onRetry = actions.onRefresh,
                 animated = animated,
+                scrollToTop = scrollToTop,
             )
         }
     }
@@ -550,10 +557,19 @@ private fun PlacePage(
     onOpenRadar: () -> Unit,
     onRetry: () -> Unit,
     animated: Boolean,
+    scrollToTop: Int,
 ) {
     val todayList = rememberLazyListState(cacheWindow = PageCacheWindow)
     val forecastList = rememberLazyListState(cacheWindow = PageCacheWindow)
     val list = if (tab == WeatherTab.FORECAST) forecastList else todayList
+    // A tap on the tab already up takes the page in view back to its top. Only a tap made since
+    // this page was composed: one counted before it, coming back into view, is not for it.
+    var scrolledToTop by remember { mutableIntStateOf(scrollToTop) }
+    LaunchedEffect(scrollToTop) {
+        if (scrollToTop == scrolledToTop) return@LaunchedEffect
+        scrolledToTop = scrollToTop
+        if (current) list.animateScrollToItem(0)
+    }
     val dimmed by rememberUpdatedState(onDim)
     // How far the cards have come up over the sky, for the page in view: the sky dims behind them.
     LaunchedEffect(list, current) {
