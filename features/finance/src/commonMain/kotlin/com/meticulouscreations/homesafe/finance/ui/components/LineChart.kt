@@ -123,7 +123,15 @@ fun LineChart(
     val currentOnScrub by rememberUpdatedState(onScrub)
     val sharp = style.sharpness != LineSharpness.SMOOTH
 
-    val target = remember(lines, baseline, zones, rules, timeAxis, extent, fitZones, sharp) { geometryOf(lines, baseline, zones, rules, timeAxis, extent, fitZones, sharp) }
+    // Keyed on only what the geometry reads, not on the lines and zones themselves: a recolour
+    // (a price crossing its baseline) or a new list of the same series mustn't resample every
+    // line and restart the morph. Colours and labels are read as each frame is drawn.
+    val seriesKey = lines.map { it.series }
+    val zonesKey = zones.map { it.from to it.to }
+    val rulesKey = rules.map { it.value to it.always }
+    val target = remember(seriesKey, baseline, zonesKey, rulesKey, timeAxis, extent, fitZones, sharp) {
+        geometryOf(lines, baseline, zones, rules, timeAxis, extent, fitZones, sharp)
+    }
     var from by remember { mutableStateOf<Geometry?>(null) }
     var to by remember { mutableStateOf(target) }
     val progress = remember { Animatable(1f) }

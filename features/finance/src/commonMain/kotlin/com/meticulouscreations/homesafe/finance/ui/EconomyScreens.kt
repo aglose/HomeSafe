@@ -411,7 +411,11 @@ private fun YieldCurveBlock(state: FinanceUiState) {
     val colors = FinanceTheme.colors
     var compare by rememberSaveable { mutableStateOf(CurveCompare.YEAR) }
     var scrub by remember { mutableStateOf<Int?>(null) }
-    val latestTime = YieldCurve.tenors.mapNotNull { state.curve[it.fredId]?.lastTime }.maxOrNull()
+    val curve = state.curve
+    val latestTime = YieldCurve.tenors.mapNotNull { curve[it.fredId]?.lastTime }.maxOrNull()
+    // Remembered, so a scrub's recomposition hands the chart the same curves and it doesn't start a morph.
+    val today = remember(curve, latestTime) { latestTime?.let { curveAt(curve, it) } }
+    val then = remember(curve, latestTime, compare) { latestTime?.let { curveAt(curve, it - compare.daysBack * Series.DAY_SECONDS) } }
     if (state.failedTenors.isNotEmpty() && state.curveSettled) {
         FinePrint(stringResource(Res.string.finance_econ_curve_failed_fred))
         return
@@ -420,17 +424,10 @@ private fun YieldCurveBlock(state: FinanceUiState) {
         Shimmer(Modifier.fillMaxWidth().height(260.dp).padding(horizontal = PageGutter), corner = 14.dp)
         return
     }
-    fun curveAt(t: Long): Series? {
-        val values = YieldCurve.tenors.map { state.curve[it.fredId]?.valueAtOrBefore(t) }
-        if (values.any { it == null }) return null
-        return Series(LongArray(values.size) { it.toLong() }, DoubleArray(values.size) { values[it]!! })
-    }
-    val today = curveAt(latestTime)
     if (today == null) {
         FinePrint(stringResource(Res.string.finance_econ_curve_failed))
         return
     }
-    val then = curveAt(latestTime - compare.daysBack * Series.DAY_SECONDS)
     val inverted = today.values[1] > today.values[8]
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter), verticalAlignment = Alignment.CenterVertically) {
@@ -480,6 +477,13 @@ private fun YieldCurveBlock(state: FinanceUiState) {
         ChipRow(CurveCompare.entries, compare, { stringResource(Res.string.finance_econ_curve_vs, stringResource(it.label)) }, colors.accent, { compare = it })
         HowToRead(stringResource(if (inverted) Res.string.finance_econ_curve_how_to_read_inverted else Res.string.finance_econ_curve_how_to_read_normal))
     }
+}
+
+/** The curve across [YieldCurve.tenors] as it stood at [t], indexed by tenor; null if any tenor has no reading by then. */
+private fun curveAt(curve: Map<String, Series>, t: Long): Series? {
+    val values = YieldCurve.tenors.map { curve[it.fredId]?.valueAtOrBefore(t) }
+    if (values.any { it == null }) return null
+    return Series(LongArray(values.size) { it.toLong() }, DoubleArray(values.size) { values[it]!! })
 }
 
 /** Several readings overlaid on one chart with their own range row, and a legend that follows the finger. */
