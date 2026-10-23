@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.GeofenceMonitor
@@ -26,9 +27,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * See [PresenceAutomation]. On an install that can be tracked ([DeviceInfo.canBeTracked]), three
@@ -40,7 +45,12 @@ import kotlinx.coroutines.launch
  *    fix, no fence.
  * 2. **The fence follows its inputs.** Location "always" and a home from the relay: watch it.
  *    Either gone: stop. Idempotent, so it also re-arms after the OS dropped the fence.
- * 3. **Cache home.** So [resyncGeofence] can re-arm after a reboot with no relay in reach.
+ * 3. **Where the phone is.** The fence only speaks when the phone crosses it, so a phone already
+ *    out when it became the tracked one (or when home was set, or the fence armed) would stay
+ *    "home" until it came back. While the app runs, each fresh presence takes a location fix — at
+ *    most every [LOCATION_CHECK_EVERY] — and puts it against home: well outside arms away with the
+ *    dwell, inside brings an away phone home. Needs only "while in use".
+ * 4. **Cache home.** So [resyncGeofence] can re-arm after a reboot with no relay in reach.
  *
  * Crossings arrive through [onGeofenceTransition] from whatever the OS woke.
  */
@@ -55,6 +65,7 @@ class PresenceAutomationImpl(
     private val identity: DeviceIdentityStore,
     private val appScope: CoroutineScope,
     private val dwellSeconds: Int = DEFAULT_DWELL_SECONDS,
+    private val timeSource: TimeSource = TimeSource.Monotonic,
 ) : PresenceAutomation {
 
     override val geofenceSupported: Boolean get() = geofenceMonitor.isSupported
@@ -81,6 +92,18 @@ class PresenceAutomationImpl(
                         .distinctUntilChanged()
                         .collect { geofenceMonitor.watch(it) }
                 }
+                launch {
+                    var checkedAt: TimeMark? = null
+                    combine(presenceRepository.presence, geofenceMonitor.access) { presence, access -> presence.takeIf { access in FIX_ACCESS } }
+                        .filterNotNull()
+                        .collect { presence ->
+                            if (checkedAt?.let { it.elapsedNow() < LOCATION_CHECK_EVERY } == true) return@collect
+                            val me = presence.thisDevice ?: return@collect
+                            val home = presence.home ?: return@collect
+                            checkedAt = timeSource.markNow()
+                            checkWhereThePhoneIs(me, home)
+                        }
+                }
             } else {
                 geofenceMonitor.watch(null) // a fence armed back when this build could switch it on
             }
@@ -104,6 +127,23 @@ class PresenceAutomationImpl(
         emit(identity.cachedHome())
         emitAll(presenceRepository.presence.filter { it !== HouseholdPresence.EMPTY }.map { it.home })
     }.distinctUntilChanged()
+
+    /**
+     * One fix against [home]. Out means past the circle by [LOCATION_MARGIN_METERS] too, so GPS
+     * wobble near the edge doesn't arm a departure; an armed or finished departure isn't armed
+     * again. In means inside the circle itself.
+     */
+    private suspend fun checkWhereThePhoneIs(me: PresenceDevice, home: HomeLocation) {
+        val here = geofenceMonitor.currentLocation() ?: return
+        val distance = home.distanceMeters(here.latitude, here.longitude)
+        when {
+            distance > home.radiusMeters + LOCATION_MARGIN_METERS && !me.away && !me.pendingAway ->
+                presenceRepository.setThisDeviceAway(true, PresenceSource.LOCATION, dwellSeconds)
+
+            distance <= home.radiusMeters && (me.away || me.pendingAway) ->
+                presenceRepository.setThisDeviceAway(false, PresenceSource.LOCATION)
+        }
+    }
 
     /** Only if the relay thinks we're out: a phone that's home already has nothing to report. */
     private suspend fun comeHomeViaLan() {
@@ -142,5 +182,14 @@ class PresenceAutomationImpl(
 
         /** Wide enough that GPS wobble indoors doesn't cross it; Android won't fire reliably under ~100 m anyway. */
         const val DEFAULT_RADIUS_METERS = 150.0
+
+        /** How far past the circle a fix must be to count as out: a phone's fix indoors can be off by this much. */
+        const val LOCATION_MARGIN_METERS = 100.0
+
+        /** A fix costs battery, and the dwell is ten minutes: one every five while the app runs is plenty. */
+        val LOCATION_CHECK_EVERY = 5.minutes
+
+        /** What a one-off fix needs: the app is open, so "while in use" will do. */
+        private val FIX_ACCESS = setOf(LocationAccess.WHILE_IN_USE, LocationAccess.ALWAYS)
     }
 }

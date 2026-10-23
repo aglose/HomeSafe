@@ -32,6 +32,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import kotlin.time.TestTimeSource
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PresenceAutomationImplTest {
@@ -122,7 +123,8 @@ class PresenceAutomationImplTest {
         val fence = FakeFence(access)
         val dao = InMemorySettingsDao()
         val identity = DeviceIdentityStore(dao)
-        val automation = PresenceAutomationImpl(presence, deviceInfo, connection, fence, identity, scope.backgroundScope, dwellSeconds = 600)
+        val clock = TestTimeSource()
+        val automation = PresenceAutomationImpl(presence, deviceInfo, connection, fence, identity, scope.backgroundScope, dwellSeconds = 600, timeSource = clock)
         val cached = cachedHome
     }
 
@@ -281,5 +283,86 @@ class PresenceAutomationImplTest {
         debug.identity.saveCachedHome(home)
         debug.automation.resyncGeofence()
         assertEquals(listOf<HomeLocation?>(null), debug.fence.watched)
+    }
+
+    // ---- Where the phone is, by a fix while the app runs ------------------------------------------
+
+    /** About [meters] north of [home]'s middle: a degree of latitude is ~111 km. */
+    private fun north(meters: Double) = GeoPoint(home.latitude + meters / 111_195.0, home.longitude)
+
+    @Test
+    fun aPhoneAlreadyOutWhenItBecameTheTrackedOneIsArmedAwayByAFix() = runTest {
+        val h = Harness(this).started()
+        h.fence.here = north(5_000.0)
+        h.presence.me(away = false, home = home)
+        settle()
+        assertEquals(listOf(Triple(true, PresenceSource.LOCATION, 600)), h.presence.calls, "armed with the dwell, like a crossing")
+    }
+
+    @Test
+    fun aPhoneMarkedAwayThatIsInsideComesHome() = runTest {
+        val h = Harness(this).started()
+        h.fence.here = north(40.0)
+        h.presence.me(away = true, home = home)
+        settle()
+        assertEquals(listOf(Triple(false, PresenceSource.LOCATION, 0)), h.presence.calls)
+    }
+
+    @Test
+    fun aFixJustPastTheCircleOrAnAlreadyArmedDepartureSaysNothing() = runTest {
+        val h = Harness(this).started()
+        h.fence.here = north(200.0)
+        h.presence.me(away = false, home = home)
+        settle()
+        assertTrue(h.presence.calls.isEmpty(), "within the margin past a 150 m circle: GPS wobble, not a departure")
+
+        val leaving = Harness(this).started()
+        leaving.fence.here = north(5_000.0)
+        leaving.presence.me(away = false, pending = true, home = home)
+        settle()
+        assertTrue(leaving.presence.calls.isEmpty(), "already leaving: arming again would only restart nothing")
+    }
+
+    @Test
+    fun theFixIsTakenAtMostEveryFiveMinutes() = runTest {
+        val h = Harness(this).started()
+        h.fence.here = north(40.0)
+        h.presence.me(away = true, home = home)
+        settle()
+        h.presence.me(away = true, home = home.copy(radiusMeters = 151.0)) // a fresh snapshot, a minute later
+        settle()
+        assertEquals(1, h.presence.calls.size)
+
+        h.clock += PresenceAutomationImpl.LOCATION_CHECK_EVERY
+        h.presence.me(away = true, home = home)
+        settle()
+        assertEquals(2, h.presence.calls.size)
+    }
+
+    @Test
+    fun noFixWithoutLocationAccessAHomeOrATrackedBuild() = runTest {
+        val notAsked = Harness(this, access = LocationAccess.NOT_ASKED).started()
+        notAsked.fence.here = north(5_000.0)
+        notAsked.presence.me(away = false, home = home)
+        settle()
+        assertTrue(notAsked.presence.calls.isEmpty())
+
+        val whileInUse = Harness(this, access = LocationAccess.WHILE_IN_USE).started()
+        whileInUse.fence.here = north(5_000.0)
+        whileInUse.presence.me(away = false, home = home)
+        settle()
+        assertEquals(1, whileInUse.presence.calls.size, "the app is open, so a fix needs only \"while in use\"")
+
+        val noHome = Harness(this).started()
+        noHome.fence.here = north(5_000.0)
+        noHome.presence.me(away = false, home = null)
+        settle()
+        assertTrue(noHome.presence.calls.isEmpty())
+
+        val debug = Harness(this, build = "debug").started()
+        debug.fence.here = north(5_000.0)
+        debug.presence.me(away = false, home = home)
+        settle()
+        assertTrue(debug.presence.calls.isEmpty())
     }
 }

@@ -121,6 +121,15 @@ Two signals, one per direction, chosen for how they fail:
 - **Away** — leaving the geofence. Armed with a **10-minute dwell** (`PresenceAutomationImpl.DEFAULT_DWELL_SECONDS`)
   so the mailbox, the bins and a chat at the kerb aren't departures; any "home" in between
   cancels it. A false "away" would turn every delivery into an alarm, hence the caution.
+- **Where the phone is** — the fence only speaks on a crossing, so a phone already out when it
+  became the tracked one (which starts it at home) stayed "home" until it came back (2026-10-22,
+  the Pixel's first day as the tracked phone). Two things now say which side it's on without a
+  crossing: Android's fence reports its starting side whenever it's registered
+  (`INITIAL_TRIGGER_ENTER | INITIAL_TRIGGER_EXIT`: every new process, reboot and update), and
+  while the app runs `PresenceAutomationImpl` takes a fix with each fresh presence, at most every
+  5 minutes (`LOCATION_CHECK_EVERY`), needing only "while in use". More than 100 m past the circle
+  (`LOCATION_MARGIN_METERS`) arms away with the dwell; inside it brings an away phone home.
+  Source `"location"`. A manual "I'm away" at home is undone the next time the app looks.
 
 The manual switch keeps working throughout as the override. **Always on, with no switch**, on a
 tracked phone (`DeviceInfo.canBeTracked`: a release build that isn't an emulator); a debug build
@@ -138,7 +147,7 @@ the relay, so the second phone only has to allow location "Always". Each phone a
 `createX(platformContext)` actuals; desktop and web are unavailable no-ops.
 
 - **Android** — Play Services `GeofencingClient` (`play-services-location`), one fence, ENTER|EXIT,
-  never expires, 60 s responsiveness, no initial trigger. Delivered to `GeofenceBroadcastReceiver`
+  never expires, 60 s responsiveness, initial trigger on enter and exit. Delivered to `GeofenceBroadcastReceiver`
   (shared `androidMain`, declared in `shared/src/androidMain/AndroidManifest.xml`), which runs with
   no Activity: it builds the process-wide `BackgroundGraph` — `AlertNotifier` and
   `BiometricCredentialStore` have headless fallbacks for a non-Activity context — and calls
