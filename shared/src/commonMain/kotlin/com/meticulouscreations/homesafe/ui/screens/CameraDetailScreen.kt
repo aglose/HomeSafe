@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,6 +51,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -95,15 +98,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
+import com.meticulouscreations.homesafe.ui.components.KeepScreenOn
 import com.meticulouscreations.homesafe.ui.components.MeasuredVideoShapes
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -112,6 +118,8 @@ import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.TapEdge
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.cropAsZoomRest
+import com.meticulouscreations.homesafe.ui.components.detectionStep
+import com.meticulouscreations.homesafe.ui.components.eventThumbnailRequest
 import com.meticulouscreations.homesafe.ui.components.isOnItsSide
 import com.meticulouscreations.homesafe.ui.components.pictureInBox
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
@@ -145,8 +153,10 @@ import homesafe.shared.generated.resources.camera_menu_stats_hide
 import homesafe.shared.generated.resources.camera_menu_stats_show
 import homesafe.shared.generated.resources.camera_menu_tag_cars
 import homesafe.shared.generated.resources.camera_moment_clip_length
+import homesafe.shared.generated.resources.camera_next_detection
 import homesafe.shared.generated.resources.camera_no_recordings
 import homesafe.shared.generated.resources.camera_play
+import homesafe.shared.generated.resources.camera_previous_detection
 import homesafe.shared.generated.resources.camera_recent_activity
 import homesafe.shared.generated.resources.camera_recent_empty
 import homesafe.shared.generated.resources.camera_recent_loading
@@ -204,6 +214,12 @@ fun CameraDetailScreen(
     tagCarOnOpen: Boolean = false,
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
+    // The timeline's history is kept fresh only while this page is started: not in the
+    // background, nor under the clip editor.
+    LifecycleStartEffect(viewModel) {
+        viewModel.setWatched(true)
+        onStopOrDispose { viewModel.setWatched(false) }
+    }
     val tagViewModel: MomentCarTagViewModel = metroViewModel()
     val tagState by tagViewModel.uiState.collectAsStateWithLifecycle()
     val personViewModel: LandedPersonViewModel = metroViewModel()
@@ -550,6 +566,10 @@ private fun PlayerSurface(
     // all: only a Nest camera's ([videoFit]) is measured, and its recordings are the same picture.
     val shapeUrl = (uiState as? CameraDetailUiState.Found)?.streamUrl ?: warmStreamUrl
     val request = playback.playerRequest
+    // Someone watching a camera isn't touching the screen: it stays lit while the video plays
+    // (live or recorded, the card's stream included until the view model's arrives), and may
+    // sleep again once it's paused.
+    if (playback.isPlaying && (request != null || warmStreamUrl != null)) KeepScreenOn()
     val zoom = rememberPinchZoomState()
     // The crop the camera was framed with is where the zoom rests, rather than a cut of the
     // picture: the page opens on the same view, and a pinch can pan past the crop's edges, as far
@@ -1165,6 +1185,38 @@ internal fun TimelineSection(cameraName: String, modifier: Modifier = Modifier, 
             },
         )
 
+        // Step from one detection to the next without aiming for its dot: from wherever the
+        // scrub, the playhead or the live edge is, each played from its start like a dot's tap.
+        if (detections.isNotEmpty()) {
+            val from = playback.scrubEpochSeconds ?: playback.playheadEpochSeconds ?: now
+            val previous = detectionStep(detections, from, forward = false)
+            val next = detectionStep(detections, from, forward = true)
+            val tint = if (overVideo) Color.White else MaterialTheme.colorScheme.primary
+            val colors = IconButtonDefaults.iconButtonColors(contentColor = tint, disabledContentColor = tint.copy(alpha = DISABLED_DETECTION_STEP_ALPHA))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                IconButton(
+                    onClick = {
+                        onTouch()
+                        previous?.let(viewModel::playMoment)
+                    },
+                    enabled = previous != null,
+                    colors = colors,
+                ) {
+                    Icon(imageVector = Icons.Filled.SkipPrevious, contentDescription = stringResource(Res.string.camera_previous_detection))
+                }
+                IconButton(
+                    onClick = {
+                        onTouch()
+                        next?.let(viewModel::playMoment)
+                    },
+                    enabled = next != null,
+                    colors = colors,
+                ) {
+                    Icon(imageVector = Icons.Filled.SkipNext, contentDescription = stringResource(Res.string.camera_next_detection))
+                }
+            }
+        }
+
         val historyError = playback.historyError
         val hint = when {
             historyError != null && playback.segments.isEmpty() -> historyError.resolve()
@@ -1180,6 +1232,9 @@ internal fun TimelineSection(cameraName: String, modifier: Modifier = Modifier, 
         }
     }
 }
+
+/** Material's disabled-content alpha, for a detection step with nowhere to go. */
+private const val DISABLED_DETECTION_STEP_ALPHA = 0.38f
 
 @Composable
 internal fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit) {
@@ -1295,8 +1350,14 @@ private fun RecentMomentCard(item: MomentItem, onClick: () -> Unit, onTagCar: ()
             contentAlignment = Alignment.Center,
         ) {
             // Coil rides the app's authenticated Ktor client, which is what lets this hit Frigate's thumbnail endpoint.
-            if (item.thumbnailUrl != null) {
-                AsyncImage(model = item.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            val thumbnailUrl = item.thumbnailUrl
+            if (thumbnailUrl != null) {
+                // Cached by the detection, not the route-bearing URL, and fetched afresh once it has ended.
+                val platformContext = LocalPlatformContext.current
+                val request = remember(platformContext, thumbnailUrl, item.event.id, item.event.isInProgress) {
+                    eventThumbnailRequest(platformContext, thumbnailUrl, item.event.id, item.event.isInProgress)
+                }
+                AsyncImage(model = request, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             } else {
                 Icon(imageVector = Icons.Filled.Videocam, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }

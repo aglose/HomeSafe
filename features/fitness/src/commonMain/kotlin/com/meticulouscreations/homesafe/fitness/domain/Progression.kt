@@ -43,6 +43,10 @@ data class Target(
     val ofBest: Float = 1f,
 )
 
+/** A lighter set to work up to the first real one with: [weight] for [reps]. */
+@Immutable
+data class Warmup(val weight: Double, val reps: Int)
+
 /**
  * Turns an exercise's history into next session's [Target] by double progression: work the reps
  * up through the exercise's band at one weight, then add weight and start again lower in the
@@ -218,4 +222,28 @@ object Progression {
     }
 
     private val NICE_STEPS = listOf(1.0, 2.5, 5.0, 10.0, 20.0, 50.0)
+
+    /**
+     * Sets to work up to [target] pounds with: half of it for 8, seventy percent for 4, then
+     * eighty-five for 2, each brought to the exercise's own jump and, on a barbell, never under
+     * the bar. Lightest first; one that lands on the same weight as the one before it, or on the
+     * target itself or above, is left out. A pin number or the body itself has nothing to warm
+     * up through, so those have none.
+     */
+    fun warmups(exercise: Exercise, target: Double): List<Warmup> {
+        if (exercise.loadKind == LoadKind.LEVEL || exercise.loadKind == LoadKind.BODYWEIGHT || target <= 0.0) return emptyList()
+        val step = exercise.increment.takeIf { it > 0.0 } ?: 5.0
+        val least = if (exercise.equipment == Equipment.BARBELL) Plates.BAR_POUNDS else 0.0
+        return WARMUP_RAMP
+            .map { (percent, reps) ->
+                // Whole percents, so the share of a round weight comes out exact before it is rounded to the jump.
+                val share = target * percent / 100.0
+                Warmup((floor(share / step + 0.5) * step).coerceAtLeast(least), reps)
+            }
+            .filter { it.weight > 0.0 && it.weight < target - 1e-6 }
+            .distinctBy { it.weight }
+    }
+
+    /** The share of the target, in percent, and the reps of each warm-up set. */
+    private val WARMUP_RAMP = listOf(50 to 8, 70 to 4, 85 to 2)
 }

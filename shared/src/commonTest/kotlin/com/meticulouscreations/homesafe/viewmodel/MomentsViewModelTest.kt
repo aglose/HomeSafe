@@ -113,7 +113,7 @@ class MomentsViewModelTest {
             refreshCalls++
             refreshAnswer?.await()
         }
-        override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")
+        override suspend fun getClipStream(eventId: String): RecordingStream = RecordingStream("http://frigate.test:8971/clip/$eventId", emptyMap())
         override suspend fun getClipDownloadUrl(eventId: String): RecordingStream = fail("unused")
     }
 
@@ -128,7 +128,7 @@ class MomentsViewModelTest {
         override fun liveStillUrl(serverUrl: String, streamName: String) = "$serverUrl/still/$streamName"
         override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?) = fail("unused")
         override fun eventThumbnailUrl(serverUrl: String, eventId: String) = "$serverUrl/thumb/$eventId"
-        override fun recordingSnapshotUrl(serverUrl: String, cameraName: String, epochSeconds: Double, height: Int?) = fail("unused")
+        override fun recordingSnapshotUrl(serverUrl: String, cameraName: String, epochSeconds: Double, height: Int?) = "$serverUrl/snapshot/$cameraName/$epochSeconds"
     }
 
     private object FakeConnection : ConnectionRepository {
@@ -485,5 +485,59 @@ class MomentsViewModelTest {
         harness.viewModel.selectCategory(MomentCategory.VEHICLES)
         advanceUntilIdle()
         assertEquals(listOf("stranger"), harness.viewModel.uiState.value.ids, "and combines with the type")
+    }
+
+    @Test
+    fun aVisitPlaysStraightThroughItsClipsAndStopsAtTheEnd() = runTest(dispatcher) {
+        val harness = Harness(events = evening)
+        val visit = state(harness.viewModel).groups.flatMap { it.items }.single { it.kind == VisitKind.VISIT }
+        harness.viewModel.toggleExpanded(visit.clips[3].event)
+        advanceUntilIdle()
+
+        harness.viewModel.onClipEnded()
+        advanceUntilIdle()
+        assertEquals("p4", harness.viewModel.uiState.value.expandedEventId, "the next clip plays on its own")
+        assertEquals(true, harness.viewModel.uiState.value.clipRequest?.playWhenReady)
+
+        harness.viewModel.onClipEnded()
+        advanceUntilIdle()
+        val ended = harness.viewModel.uiState.value
+        assertEquals("p4", ended.expandedEventId, "the last clip stays open")
+        assertEquals(false, ended.clipRequest?.playWhenReady, "and rests on its last frame")
+
+        harness.viewModel.toggleClipPaused()
+        advanceUntilIdle()
+        val again = harness.viewModel.uiState.value.clipRequest
+        assertEquals(true, again?.playWhenReady)
+        assertEquals(0L, again?.seek?.positionMs, "a tap plays it again from the start")
+    }
+
+    @Test
+    fun aRoutineDoesNotPlayOnIntoItsNextSighting() = runTest(dispatcher) {
+        val harness = Harness(events = evening)
+        val routine = state(harness.viewModel).groups.flatMap { it.items }.single { it.kind == VisitKind.ROUTINE }
+        harness.viewModel.toggleExpanded(routine.clips[0].event)
+        advanceUntilIdle()
+
+        harness.viewModel.onClipEnded()
+        advanceUntilIdle()
+        assertEquals(routine.clips[0].event.id, harness.viewModel.uiState.value.expandedEventId)
+    }
+
+    @Test
+    fun aTapPausesTheOpenClipAndAnotherPlaysItOn() = runTest(dispatcher) {
+        val harness = Harness()
+        state(harness.viewModel)
+        harness.viewModel.toggleExpanded(feed[0])
+        advanceUntilIdle()
+
+        harness.viewModel.toggleClipPaused()
+        advanceUntilIdle()
+        assertEquals(false, harness.viewModel.uiState.value.clipRequest?.playWhenReady)
+        harness.viewModel.toggleClipPaused()
+        advanceUntilIdle()
+        val playing = harness.viewModel.uiState.value.clipRequest
+        assertEquals(true, playing?.playWhenReady)
+        assertNull(playing?.seek, "playing on is not a seek")
     }
 }

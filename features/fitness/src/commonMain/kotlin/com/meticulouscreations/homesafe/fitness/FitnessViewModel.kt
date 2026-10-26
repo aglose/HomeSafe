@@ -158,6 +158,8 @@ data class FitnessUiState(
     val copyUnsent: Boolean = false,
     /** How the figure that performs each exercise is drawn. */
     val figureStyle: FigureStyle = FigureStyle.DEFAULT,
+    /** The set deleted last, offered back for a few seconds under its exercise's logger. */
+    val deletedSet: LoggedSet? = null,
 ) {
     fun board(exerciseId: String): ExerciseBoard? = boards.firstOrNull { it.exercise.id == exerciseId }
 
@@ -208,6 +210,7 @@ class FitnessViewModel(
     private var tick: Job? = null
     private var starting: Job? = null
     private var importing: Job? = null
+    private var forgetting: Job? = null
     private var flashes = 0
 
     private var heartSettings = HeartSettings()
@@ -305,6 +308,7 @@ class FitnessViewModel(
         closing = id
         tally = null
         restPeak = null
+        forgetDeletedSet()
         _uiState.update { it.copy(rest = null) }
         _heart.update { it.copy(summary = null, recovery = null) }
         return heart
@@ -316,6 +320,8 @@ class FitnessViewModel(
      */
     fun logSet(exerciseId: String, weight: Double, reps: Int) {
         if (reps <= 0) return
+        // A new set moves on from the one deleted before it: that is no longer what a tap would bring back.
+        forgetDeletedSet()
         val state = _uiState.value
         val exercise = state.board(exerciseId)?.exercise ?: return
         val at = now()
@@ -338,8 +344,33 @@ class FitnessViewModel(
         }
     }
 
+    /** Deletes a set, offering it back ([undoDeleteSet]) for a few seconds. */
     fun deleteSet(id: Long) {
+        val set = log.sets.firstOrNull { it.id == id }
+        if (set != null) {
+            forgetting?.cancel()
+            _uiState.update { it.copy(deletedSet = set) }
+            forgetting = viewModelScope.launch {
+                delay(UNDO_MS)
+                _uiState.update { state -> if (state.deletedSet == set) state.copy(deletedSet = null) else state }
+            }
+        }
         viewModelScope.launch { repository.deleteSet(id) }
+    }
+
+    /** Puts the set deleted last back as it was: its weight, reps and time, and the workout it was in if that is still there. */
+    fun undoDeleteSet() {
+        val set = _uiState.value.deletedSet ?: return
+        forgetDeletedSet()
+        viewModelScope.launch {
+            repository.addSets(listOf(SetDraft(set.exerciseId, set.weight, set.reps, set.epochSeconds, set.bodyweight, set.note, set.imported, set.workoutId)))
+        }
+    }
+
+    private fun forgetDeletedSet() {
+        forgetting?.cancel()
+        forgetting = null
+        if (_uiState.value.deletedSet != null) _uiState.update { it.copy(deletedSet = null) }
     }
 
     fun dismissFlash() = _uiState.update { it.copy(flash = null) }
@@ -707,6 +738,9 @@ class FitnessViewModel(
 
     private companion object {
         const val TICK_MS = 60_000L
+
+        /** How long a deleted set is offered back. */
+        const val UNDO_MS = 8_000L
 
         /** How long a finished rest stays on screen, saying it is over, before it is cleared. */
         const val REST_LINGER_MS = 5 * 60_000L

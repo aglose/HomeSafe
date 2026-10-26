@@ -124,7 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Unit tests
-        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py scripts/ci/test_copilot_review.py
+        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py scripts/ci/test_watch_ios_job.py scripts/ci/test_copilot_review.py
       - name: Build the relay image
         run: docker build --tag homesafe-relay relay
       - name: Import the relay against its installed packages
@@ -421,143 +421,175 @@ jobs:
             build/startup-perf/go2rtc.yaml
           retention-days: 14
 
-  # Which Mac the iOS job runs on. The self-hosted Mac comes first: it has everything built
-  # already and takes a few minutes. When it is offline, a job sent to it would sit queued for up
-  # to a day, so the job goes to a GitHub-hosted Mac instead, which is slower but always there.
+  # Where the iOS job runs, decided before it is queued: a job sent to the self-hosted Mac while
+  # the Mac is asleep or its runner has stopped waits there for good (up to a day), and ci-green
+  # with it. So the Mac is asked first whether it is online, and when it isn't, the job goes to a
+  # GitHub-hosted macOS runner instead: slower (it builds from nothing), but it finishes.
   #
-  # Only an admin token can see the runners (GITHUB_TOKEN cannot), so this reads the optional
-  # RUNNER_STATUS_TOKEN secret: a fine-grained token for this repository with Administration
-  # read-only and nothing else. Without it, every run goes to the self-hosted Mac, as before.
+  # - A fork's pull request must never execute on the Mac, so it always goes hosted (it needs no
+  #   secrets). So does a Dependabot branch, whether the run is its pull request's or one the
+  #   Dependency updates workflow started on it: it builds versions of plugins nobody has vetted
+  #   yet, and those should run on a machine that is thrown away afterwards.
+  # - The repository variable IOS_RUNNER set to `hosted` or `self-hosted` decides outright, for
+  #   when the Mac is known to be away (or known to be back).
+  # - Otherwise the Mac's status comes from the repository's runner list, which GITHUB_TOKEN may
+  #   not read: it takes the secret RUNNER_STATUS_TOKEN, a fine-grained token for this repository
+  #   with "Administration: Read-only" and nothing else. With no token, or the list unreadable,
+  #   the job goes to the Mac as it always did, with a warning on the run.
   #
-  # A fork's pull request must never execute on the self-hosted Mac, so it always gets a hosted
-  # one (it needs no secrets). So does a Dependabot branch, whether the run is its pull request's
-  # or one the Dependency updates workflow started on it: it builds versions of plugins nobody has
-  # vetted yet, and those should run on a machine that is thrown away afterwards.
-  mac:
-    name: Pick the Mac
+  # The Mac can also be online here and still not finish: busy past the point of starting the job,
+  # or asleep halfway through it. ios-watch covers that (below).
+  #
+  # A rerun of only the failed jobs keeps this job's answer; "Re-run all jobs" asks again.
+  ios-runner:
+    name: Pick the iOS runner
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       runs-on: ${{ steps.pick.outputs.runs-on }}
+      on-mac: ${{ steps.pick.outputs.on-mac }}
     steps:
-      - name: Self-hosted if it is online, else GitHub-hosted
+      - name: Is the Mac online?
         id: pick
         env:
-          GH_TOKEN: ${{ secrets.RUNNER_STATUS_TOKEN }}
           UNTRUSTED: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || startsWith(github.head_ref, 'dependabot/') || startsWith(github.ref, 'refs/heads/dependabot/') }}
+          OVERRIDE: ${{ vars.IOS_RUNNER }}
+          GH_TOKEN: ${{ secrets.RUNNER_STATUS_TOKEN }}
         run: |
+          set -o pipefail
+          hosted='"macos-latest"'
+          mac='["self-hosted", "macOS"]'
           pick() {
             echo "runs-on=$1" >> "$GITHUB_OUTPUT"
-            echo "$2" | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 0
+            echo "on-mac=$([ "$1" = "$mac" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "iOS job runs on: $1"
           }
-          self_hosted='["self-hosted","macOS"]'
-          hosted='"macos-latest"'
 
           if [ "$UNTRUSTED" = "true" ]; then
-            pick "$hosted" "A fork's or Dependabot's branch: the GitHub-hosted Mac."
+            pick "$hosted"
+            exit 0
           fi
+          case "$OVERRIDE" in
+            hosted)
+              echo "::notice::IOS_RUNNER=hosted: the iOS job runs on a GitHub-hosted Mac."
+              pick "$hosted"
+              exit 0
+              ;;
+            self-hosted)
+              pick "$mac"
+              exit 0
+              ;;
+          esac
           if [ -z "$GH_TOKEN" ]; then
-            pick "$self_hosted" "No RUNNER_STATUS_TOKEN to check the self-hosted Mac with, so it is used whether or not it is online."
+            echo "::warning::RUNNER_STATUS_TOKEN isn't set, so whether the self-hosted Mac is online can't be checked; the iOS job is sent to it regardless. See the ios-runner job in ci.yml."
+            pick "$mac"
+            exit 0
           fi
-          # An answer that can't be read is treated like an offline Mac: a hosted run is slower,
-          # but a job queued for a Mac that never comes holds the pull request up for a day.
-          if ! runners=$(gh api "repos/$GITHUB_REPOSITORY/actions/runners" --paginate \
-            --jq '.runners[] | select(any(.labels[]; .name == "self-hosted") and any(.labels[]; .name == "macOS")) | "\(.status)\tbusy=\(.busy)\t\(.name)"'); then
-            echo "::warning::Could not list the runners with RUNNER_STATUS_TOKEN (does it have Administration: read?)."
-            pick "$hosted" "Could not tell whether the self-hosted Mac is online: the GitHub-hosted Mac."
+          if ! online=$(gh api "repos/$GITHUB_REPOSITORY/actions/runners" --paginate \
+              --jq '[.runners[] | select(.status == "online" and any(.labels[]; .name == "self-hosted") and any(.labels[]; .name == "macOS"))] | length' \
+              | awk '{ n += $1 } END { print n + 0 }'); then
+            echo "::warning::Couldn't read the repository's runners with RUNNER_STATUS_TOKEN; the iOS job is sent to the self-hosted Mac regardless."
+            pick "$mac"
+            exit 0
           fi
-          echo "Self-hosted Macs:"
-          echo "${runners:-none}"
-          # Online and busy is still the self-hosted Mac: it is another run's iOS job, a few
-          # minutes, and still quicker than starting a hosted Mac from nothing.
-          if grep -q '^online' <<< "$runners"; then
-            pick "$self_hosted" "The self-hosted Mac is online."
+          if [ "$online" -gt 0 ]; then
+            pick "$mac"
+          else
+            echo "::notice::The self-hosted Mac is offline, so the iOS job runs on a GitHub-hosted Mac instead."
+            pick "$hosted"
           fi
-          echo "::notice::The self-hosted Mac is offline, so iOS runs on a GitHub-hosted Mac."
-          pick "$hosted" "The self-hosted Mac is offline: the GitHub-hosted Mac."
 
   ios:
     name: iOS tests and build
-    needs: mac
-    # See the mac job above for which Mac this is.
-    runs-on: ${{ fromJSON(needs.mac.outputs.runs-on) }}
+    needs: ios-runner
+    runs-on: ${{ fromJSON(needs.ios-runner.outputs.runs-on) }}
+    # ci-green reads this job through ios-watch, not directly: a Mac that never picks it up would
+    # otherwise hold ci-green for a day, and one that drops off halfway would turn it red although
+    # the hosted fallback passed.
+    continue-on-error: true
     # The Mac takes a few minutes, with everything already built once. A hosted runner starts
     # from nothing each time: Kotlin/Native to download, and the whole of :shared to compile.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      # The Mac has its own JDK and a persistent ~/.konan; only the hosted runner needs these.
-      - uses: actions/setup-java@v6
-        if: runner.environment == 'github-hosted'
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Cache Kotlin/Native
-        if: runner.environment == 'github-hosted'
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          # A Dependabot pull request changes the catalog every time; an older ~/.konan still
-          # holds most of what the new one needs.
-          restore-keys: konan-${{ runner.os }}-
-      - uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - uses: ./.github/actions/ios-tests-and-build
 
-      # The Mac's disk is shared with everything else done on it, and when it fills, this job is
-      # where it shows: the two links below each write a few gigabytes, and both have failed on
-      # main with nothing but "ld: write() failed, errno=28". Under 15 GB free, what this runner
-      # can rebuild is cleared first (Xcode's derived data and the simulators' caches; ~/.konan
-      # and Gradle's caches are left, they are the slow ones to get back). Under 8 GB after that,
-      # the job stops here and says so, instead of twenty minutes later as a linker error.
-      - name: Check the Mac has room to link
-        if: runner.environment == 'self-hosted'
-        run: |
-          free_gb() { df -g "$HOME" | awk 'NR == 2 { print $4 }'; }
-          echo "$(free_gb) GB free on the disk holding $HOME."
-          if [ "$(free_gb)" -lt 15 ]; then
-            echo "::warning::Only $(free_gb) GB free on the Mac; clearing this runner's Xcode derived data and simulator caches."
-            rm -rf "$HOME/Library/Developer/Xcode/DerivedData" "$HOME/Library/Developer/CoreSimulator/Caches"
-            echo "$(free_gb) GB free afterwards."
-          fi
-          if [ "$(free_gb)" -lt 8 ]; then
-            echo "::error::The Mac that runs this job has $(free_gb) GB of disk left, too little to link the iOS tests and app. Free some space on it and run this job again."
-            exit 1
-          fi
+  # Watches the ios job from a hosted runner and says how it went (scripts/ci/watch-ios-job.sh):
+  # passed; failed by itself (a test, the build), which fails this job too so that "Re-run failed
+  # jobs" runs the pair again; or never finished on the Mac, because it sat queued for 15 minutes
+  # or its runner went away partway through (the job then ends with a step still in progress and
+  # no log). In that last case ios-hosted runs the same work on a GitHub-hosted Mac. The job left
+  # queued on the Mac stays queued until the Mac takes it or GitHub drops it after a day; ci-green
+  # doesn't wait for it.
+  ios-watch:
+    name: Watch the iOS job
+    needs: ios-runner
+    runs-on: ubuntu-24.04
+    # 15 minutes for the Mac to start, the ios job's 60, and the few GitHub takes to notice a
+    # runner that went silent.
+    timeout-minutes: 100
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      result: ${{ steps.watch.outputs.result }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci/watch-ios-job.sh
+          sparse-checkout-cone-mode: false
+      - name: Wait for the iOS job
+        id: watch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          JOB_NAME: iOS tests and build
+          ON_MAC: ${{ needs.ios-runner.outputs.on-mac }}
+        run: scripts/ci/watch-ios-job.sh
 
-      # Each module links its own iOS test binary, in the Gradle daemon's own heap. On the Mac's
-      # twelve cores they all linked at once and ran a 4 GB heap out of memory, so at most two
-      # link at a time, in a heap of 6 GB (the Mac has 24).
-      - name: iOS simulator unit tests
-        run: ./gradlew iosSimulatorArm64Test --continue --stacktrace --max-workers=2 "-Dorg.gradle.jvmargs=-Xmx6144M -Dfile.encoding=UTF-8"
-
-      - name: Build iOS app
-        run: |
-          xcodebuild build \
-            -project iosApp/iosApp.xcodeproj \
-            -scheme iosApp \
-            -destination 'generic/platform=iOS Simulator' \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+  ios-hosted:
+    name: iOS tests and build (GitHub-hosted fallback)
+    needs: ios-watch
+    if: needs.ios-watch.outputs.result == 'fallback'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ios-tests-and-build
 
   ci-green:
     name: ci-green
     # The single required status check. Jobs can be added or renamed without touching
     # branch protection, as long as they are listed here.
     if: always()
-    needs: [gradle, relay, android-ui, startup-perf, mac, ios]
+    # Not the ios job itself: ios-watch stands for it, and ios-hosted when the Mac couldn't finish.
+    needs: [gradle, relay, android-ui, startup-perf, ios-runner, ios-watch, ios-hosted]
     runs-on: ubuntu-24.04
     steps:
       - name: Show job results
         run: echo '${{ toJSON(needs) }}'
+      # Every job succeeded, except ios-hosted, which runs only when ios-watch says the Mac didn't
+      # finish, and then has to have succeeded.
       - name: Fail unless every job succeeded
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
-        run: exit 1
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          failed=$(jq -r 'to_entries | map(select(.key != "ios-hosted" and .value.result != "success") | "\(.key): \(.value.result)") | join(", ")' <<< "$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "::error::Not every job succeeded: $failed"
+            exit 1
+          fi
+          ios=$(jq -r '.["ios-watch"].outputs.result' <<< "$NEEDS")
+          hosted=$(jq -r '.["ios-hosted"].result' <<< "$NEEDS")
+          if [ "$ios" = "fallback" ] && [ "$hosted" != "success" ]; then
+            echo "::error::The iOS job fell back to a GitHub-hosted Mac, and that run ended $hosted."
+            exit 1
+          fi
+          if [ "$ios" != "passed" ] && [ "$ios" != "fallback" ]; then
+            echo "::error::ios-watch said \"$ios\" about the iOS job."
+            exit 1
+          fi
 
   publish-internal:
     name: Publish to Play internal testing

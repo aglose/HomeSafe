@@ -385,12 +385,13 @@ fun Meter(fraction: Float, color: Color, modifier: Modifier = Modifier, height: 
 @Composable
 fun Shimmer(modifier: Modifier = Modifier, corner: Dp = 10.dp) {
     val transition = rememberInfiniteTransition(label = "shimmer")
-    val x by transition.animateFloat(-1f, 2f, infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Restart), label = "shimmerX")
+    // Kept as the state and read while drawing, so the sweep redraws the placeholder without recomposing it.
+    val x = transition.animateFloat(-1f, 2f, infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Restart), label = "shimmerX")
     val base = FinanceTheme.colors.surfaceRaised
     val glint = FinanceTheme.colors.hairline
     Canvas(modifier.clip(RoundedCornerShape(corner))) {
         drawRect(base)
-        val cx = size.width * x
+        val cx = size.width * x.value
         drawRect(Brush.linearGradient(listOf(Color.Transparent, glint, Color.Transparent), start = Offset(cx - size.width * 0.4f, 0f), end = Offset(cx + size.width * 0.4f, size.height)))
     }
 }

@@ -12,6 +12,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
+import com.meticulouscreations.homesafe.appicon.AppShortcuts
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
@@ -71,6 +72,9 @@ class MainActivity : FragmentActivity() {
                 App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
             }
         }
+        // The launcher's long-press shortcuts (Doors, Radar, Budget), on a background thread so the
+        // first frame doesn't wait on them; skipped when the launcher already has them.
+        AppShortcuts.publish(applicationContext)
     }
 
     /**

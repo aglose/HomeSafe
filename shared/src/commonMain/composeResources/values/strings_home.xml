@@ -138,6 +138,9 @@
     <string name="camera_span_3h">3h</string>
     <string name="camera_span_12h">12h</string>
     <string name="camera_span_24h">24h</string>
+    <!-- The buttons under the timeline that jump to the detection before or after the one playing. -->
+    <string name="camera_previous_detection">Previous detection</string>
+    <string name="camera_next_detection">Next detection</string>
     <string name="camera_no_recordings">No recordings in this window yet</string>
     <!-- %1$s is the reason, as the server or the platform gave it. -->
     <string name="camera_history_error">Couldn't load recordings: %1$s</string>

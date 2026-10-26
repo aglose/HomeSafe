@@ -73,13 +73,18 @@ import homesafe.shared.generated.resources.weather_forecast_days_title
 import homesafe.shared.generated.resources.weather_forecast_less_certain
 import homesafe.shared.generated.resources.weather_forecast_trend_title
 import homesafe.shared.generated.resources.weather_stat_amount_chance
+import homesafe.shared.generated.resources.weather_stat_daylight
+import homesafe.shared.generated.resources.weather_stat_daylight_value
 import homesafe.shared.generated.resources.weather_stat_feels
 import homesafe.shared.generated.resources.weather_stat_high_low
+import homesafe.shared.generated.resources.weather_stat_hours_value
 import homesafe.shared.generated.resources.weather_stat_precipitation
 import homesafe.shared.generated.resources.weather_stat_sunrise
 import homesafe.shared.generated.resources.weather_stat_sunset
 import homesafe.shared.generated.resources.weather_stat_uv
+import homesafe.shared.generated.resources.weather_stat_wet_hours
 import homesafe.shared.generated.resources.weather_stat_wind
+import homesafe.shared.generated.resources.weather_stat_wind_from_gusts
 import homesafe.shared.generated.resources.weather_stat_wind_gusts
 import homesafe.shared.generated.resources.weather_today
 import kotlinx.coroutines.Job
@@ -335,10 +340,25 @@ private fun DayDetail(report: WeatherReport, place: Place, day: DayForecast, ind
                     day.precipitationProbability?.let { stringResource(Res.string.weather_stat_amount_chance, amount.resolve(), WeatherFormat.percent(it)) } ?: amount.resolve()
                     ),
             )
-            add(Res.string.weather_stat_wind to stringResource(Res.string.weather_stat_wind_gusts, WeatherFormat.speed(day.windMaxKmh, units).resolve(), WeatherFormat.speed(day.gustMaxKmh, units).resolve()))
+            // How many of its hours it rains or snows: worth saying once it is an hour or more.
+            val wetHours = day.precipitationHours.roundToInt()
+            if (wetHours >= 1) add(Res.string.weather_stat_wet_hours to pluralStringResource(Res.plurals.weather_stat_hours_value, wetHours, wetHours))
+            val wind = WeatherFormat.speed(day.windMaxKmh, units).resolve()
+            val gusts = WeatherFormat.speed(day.gustMaxKmh, units).resolve()
+            // Where it blows from, unless there is next to none of it to come from anywhere.
+            val windValue = if (WeatherFormat.speedValue(day.windMaxKmh, units) >= 1) {
+                stringResource(Res.string.weather_stat_wind_from_gusts, wind, stringResource(WeatherFormat.compass(day.windDirectionDeg)), gusts)
+            } else {
+                stringResource(Res.string.weather_stat_wind_gusts, wind, gusts)
+            }
+            add(Res.string.weather_stat_wind to windValue)
             // By the clock as it will stand that morning and evening, which may not be today's.
             day.sunriseEpochSeconds?.let { add(Res.string.weather_stat_sunrise to WeatherFormat.clock(it, report.offsetAt(it)).resolve()) }
             day.sunsetEpochSeconds?.let { add(Res.string.weather_stat_sunset to WeatherFormat.clock(it, report.offsetAt(it)).resolve()) }
+            day.daylightSeconds?.takeIf { it > 0 }?.let { seconds ->
+                val minutes = ((seconds + 30) / 60).toInt()
+                add(Res.string.weather_stat_daylight to stringResource(Res.string.weather_stat_daylight_value, minutes / 60, minutes % 60))
+            }
             day.uvIndexMax?.let { add(Res.string.weather_stat_uv to it.roundToInt().toString()) }
             if (day.feelsHighC != null && day.feelsLowC != null) {
                 add(Res.string.weather_stat_feels to stringResource(Res.string.weather_stat_high_low, WeatherFormat.degrees(day.feelsHighC, units), WeatherFormat.degrees(day.feelsLowC, units)))

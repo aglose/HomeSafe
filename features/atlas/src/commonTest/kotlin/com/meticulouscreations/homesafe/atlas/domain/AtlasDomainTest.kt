@@ -256,6 +256,10 @@ class AtlasAnalysisTest {
         assertTrue(desertYear.placeKeys.all { it in apart.placeKeys })
         assertTrue(AtlasFixtures.lake.key !in apart.placeKeys)
         assertEquals(0, YearsCovered.of(history, setOf(2019)).placeKeys.size)
+        // The analysis keeps the same answers ready, for the map to look up without the history.
+        val kept = analysis.yearsIndex.covered(setOf(2023, 2025))
+        assertEquals(apart.placeKeys, kept.placeKeys)
+        assertEquals(apart.regions, kept.regions)
     }
 
     @Test

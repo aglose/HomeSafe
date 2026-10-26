@@ -47,12 +47,10 @@ main merged into it, and CI goes round again.
 ## iOS: the self-hosted Mac first, then GitHub's
 
 CI's iOS job runs on the self-hosted Mac, which has everything built already and takes a few
-minutes. When that Mac is offline, the job used to sit queued for up to a day. Now a small `mac`
-job in [`ci.yml`](../.github/workflows/ci.yml) asks GitHub whether the Mac is online first, and
-sends the iOS job to a GitHub-hosted Mac (`macos-latest`) when it isn't. That's slower, since it
-starts from nothing, but it is always there. A Mac that is online but busy is still used: it is
-another run's iOS job, and it finishes sooner than a hosted Mac can start. Forks and Dependabot
-always get the hosted Mac, as before.
+minutes. When the Mac is offline, the `ios-runner` job sends it to a GitHub-hosted Mac instead, and
+when it doesn't start within 15 minutes or the Mac drops off partway, `ios-watch` runs it there
+(`ios-hosted`). So an asleep Mac costs a pull request at most about 15 minutes, and never blocks
+the merge. How it works: [When CI goes red on main](testing.md#when-ci-goes-red-on-main).
 
 ## Setup
 
@@ -63,7 +61,7 @@ Repository secrets (Settings → Secrets and variables → Actions):
 | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Claude's review and fixes (already set for the dependency updates) | A pull request merges only when Copilot reviewed it and found nothing |
 | `BASELINE_PROFILE_TOKEN` (already set for the [Baseline Profile](testing.md) workflow) | The owner's fine-grained token with **Contents** and **Pull requests**, read and write. It asks Copilot for reviews (`GITHUB_TOKEN` can't), and its pushes and merges start CI by themselves | No re-asking Copilot; CI is started by hand after each push and merge |
 | `PR_AUTOPILOT_TOKEN` (optional) | Used instead of the Baseline Profile token when set. With **Workflows: read and write** as well, it also merges pull requests that change `.github/workflows/`, which neither `GITHUB_TOKEN` nor the Baseline Profile token may do | Those pull requests are left for a person, with GitHub's error in the comment |
-| `RUNNER_STATUS_TOKEN` | A fine-grained token for this repository with **Administration: read-only** and nothing else. Only an admin token can see whether the Mac is online | iOS always goes to the self-hosted Mac, online or not |
+| `RUNNER_STATUS_TOKEN` | A fine-grained token for this repository with **Administration: read-only** and nothing else. Only an admin token can see whether the Mac is online, so an offline Mac is skipped straight away | iOS tries the Mac first, and `ios-watch` moves it to a GitHub-hosted Mac after 15 minutes |
 
 Copilot's own setting: a repository ruleset for `main` with **Automatically request Copilot code
 review** and **Review new pushes** turned on. The autopilot works without it, but every review

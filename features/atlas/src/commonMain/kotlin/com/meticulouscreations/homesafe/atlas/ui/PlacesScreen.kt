@@ -20,11 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -42,7 +45,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
@@ -53,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.domain.AtlasAnalyzer
 import com.meticulouscreations.homesafe.atlas.domain.CivilDate
+import com.meticulouscreations.homesafe.atlas.domain.Place
 import com.meticulouscreations.homesafe.atlas.domain.PlaceKind
 import com.meticulouscreations.homesafe.atlas.domain.PlaceStat
 import com.meticulouscreations.homesafe.atlas.domain.VisitRole
@@ -62,6 +68,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.atlas_day_span
 import homesafe.shared.generated.resources.atlas_day_visit_detail
 import homesafe.shared.generated.resources.atlas_place_gap
+import homesafe.shared.generated.resources.atlas_place_open_in_maps
 import homesafe.shared.generated.resources.atlas_place_recent_title
 import homesafe.shared.generated.resources.atlas_place_rhythm_description
 import homesafe.shared.generated.resources.atlas_place_rhythm_title
@@ -71,12 +78,15 @@ import homesafe.shared.generated.resources.atlas_place_stat_gap
 import homesafe.shared.generated.resources.atlas_place_stat_last
 import homesafe.shared.generated.resources.atlas_place_stat_time
 import homesafe.shared.generated.resources.atlas_place_stat_visits
+import homesafe.shared.generated.resources.atlas_place_visits_more
+import homesafe.shared.generated.resources.atlas_place_year_visits_title
 import homesafe.shared.generated.resources.atlas_place_years_title
 import homesafe.shared.generated.resources.atlas_places_none
 import homesafe.shared.generated.resources.atlas_places_row_detail
 import homesafe.shared.generated.resources.atlas_places_row_last
 import homesafe.shared.generated.resources.atlas_places_row_where
 import homesafe.shared.generated.resources.atlas_places_search
+import homesafe.shared.generated.resources.atlas_places_search_clear
 import homesafe.shared.generated.resources.atlas_places_sort_missed
 import homesafe.shared.generated.resources.atlas_places_sort_recent
 import homesafe.shared.generated.resources.atlas_places_sort_time
@@ -107,12 +117,24 @@ internal fun PlacesScreen(state: AtlasUiState, padding: PaddingValues, onOpenPla
     var sort by rememberSaveable { mutableStateOf(PlaceSort.TIME) }
     var query by rememberSaveable { mutableStateOf("") }
     val places = state.analysis.places
-    val shown = remember(places, sort, query) {
+    val history = state.history
+    // Everything a place can be found by, lowercased once and only when first searched: a place
+    // with no town of its own goes by the one it is near, as its "Near Fairview" says.
+    val haystacks = remember(places, history) {
+        lazy {
+            places.associate { stat ->
+                val place = stat.place
+                val near = if (place.city == null) history.locality(place)?.let { listOfNotNull(it.city, it.region, it.country) }.orEmpty() else emptyList()
+                place.key to (listOfNotNull(place.name, place.city, place.address, place.region) + near).joinToString("\n").lowercase()
+            }
+        }
+    }
+    val shown = remember(places, sort, query, haystacks) {
         val wanted = query.trim().lowercase()
         val matching = if (wanted.isEmpty()) {
             places
         } else {
-            places.filter { stat -> listOfNotNull(stat.place.name, stat.place.city, stat.place.address, stat.place.region).any { wanted in it.lowercase() } }
+            places.filter { stat -> wanted in haystacks.value[stat.place.key].orEmpty() }
         }
         when (sort) {
             PlaceSort.TIME -> matching
@@ -141,6 +163,17 @@ internal fun PlacesScreen(state: AtlasUiState, padding: PaddingValues, onOpenPla
                             textStyle = AtlasTheme.type.body.copy(color = colors.text),
                             cursorBrush = SolidColor(colors.trail),
                             modifier = Modifier.fillMaxWidth().testTag("atlas_places_search"),
+                        )
+                    }
+                    if (query.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        AtlasRoundButton(
+                            Icons.Filled.Close,
+                            stringResource(Res.string.atlas_places_search_clear),
+                            { query = "" },
+                            Modifier.testTag("atlas_places_search_clear"),
+                            size = 28.dp,
+                            tint = colors.textMuted,
                         )
                     }
                 }
@@ -230,10 +263,15 @@ internal fun PlaceScreen(
         PlaceKind.OTHER -> VisitRole.OTHER
     }
     val map = remember(placeKey) { AtlasMapState() }
+    val uriHandler = LocalUriHandler.current
     LaunchedEffect(placeKey) { map.show(MapBounds(place.latitude - 0.006, place.longitude - 0.008, place.latitude + 0.006, place.longitude + 0.008)) }
     val visits = remember(history, placeKey) { history.visits.filter { it.placeKey == placeKey } }
     val rhythm = remember(history, placeKey) { AtlasAnalyzer.rhythm(history, placeKey) }
     val byYear = remember(visits) { visits.groupingBy { CivilDate.of(it.startDay).year }.eachCount().toList().sortedBy { it.first } }
+    // A year picked from the bars, to list its visits; none is the latest visits whenever they were.
+    var pickedYear by rememberSaveable(placeKey) { mutableStateOf<Int?>(null) }
+    val year = pickedYear?.takeIf { picked -> byYear.size > 1 && byYear.any { it.first == picked } }
+    val yearVisits = remember(visits, year) { year?.let { picked -> visits.filter { CivilDate.of(it.startDay).year == picked }.asReversed() } }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).testTag("atlas_place"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(Modifier.padding(horizontal = AtlasGutter + 4.dp)) {
@@ -242,6 +280,15 @@ internal fun PlaceScreen(
         }
         Box(Modifier.padding(horizontal = AtlasGutter).fillMaxWidth().height(200.dp).clip(AtlasCardShape).border(1.dp, colors.hairline, AtlasCardShape)) {
             AtlasMap(map, tiles, Modifier.fillMaxSize(), paths = state.paths, markers = listOf(MapMarker(place.key, place.latitude, place.longitude, role, 0.6f)), animated = active)
+            AtlasRoundButton(
+                Icons.AutoMirrored.Filled.OpenInNew,
+                stringResource(Res.string.atlas_place_open_in_maps),
+                // No browser or maps app to hand it to: nothing to do but stay here.
+                { runCatching { uriHandler.openUri(googleMapsUrl(place)) } },
+                Modifier.align(Alignment.BottomEnd).padding(10.dp).testTag("atlas_place_open_in_maps"),
+                size = 40.dp,
+                fill = colors.background.copy(alpha = 0.78f),
+            )
         }
         AtlasCard(Modifier.padding(horizontal = AtlasGutter)) {
             Row(Modifier.fillMaxWidth()) {
@@ -270,18 +317,31 @@ internal fun PlaceScreen(
             AtlasCard(Modifier.padding(horizontal = AtlasGutter), title = stringResource(Res.string.atlas_place_years_title)) {
                 val most = byYear.maxOf { it.second }
                 Row(Modifier.fillMaxWidth().height(96.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
-                    byYear.forEach { (year, count) ->
-                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(count.toString(), style = AtlasTheme.type.micro, color = colors.textMuted, maxLines = 1)
-                            Box(Modifier.fillMaxWidth().height((56 * count.toFloat() / most).coerceAtLeast(2f).dp).clip(RoundedCornerShape(6.dp)).background(colors.role(role)))
-                            Text((year % 100).toString().padStart(2, '0'), style = AtlasTheme.type.micro, color = colors.textFaint, maxLines = 1)
+                    byYear.forEach { (each, count) ->
+                        val picked = each == year
+                        // The others stand back while one year is picked.
+                        val dimmed = year != null && !picked
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .selectable(selected = picked, role = Role.Tab) { pickedYear = if (picked) null else each }
+                                .testTag("atlas_place_year_$each"),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(count.toString(), style = AtlasTheme.type.micro, color = if (picked) colors.text else colors.textMuted, maxLines = 1)
+                            Box(Modifier.fillMaxWidth().height((56 * count.toFloat() / most).coerceAtLeast(2f).dp).clip(RoundedCornerShape(6.dp)).background(colors.role(role).copy(alpha = if (dimmed) 0.3f else 1f)))
+                            Text((each % 100).toString().padStart(2, '0'), style = AtlasTheme.type.micro, color = if (picked) colors.text else colors.textFaint, maxLines = 1)
                         }
                     }
                 }
             }
         }
-        AtlasCard(Modifier.padding(horizontal = AtlasGutter), title = stringResource(Res.string.atlas_place_recent_title)) {
-            visits.takeLast(25).asReversed().forEach { visit ->
+        AtlasCard(
+            Modifier.padding(horizontal = AtlasGutter),
+            title = if (year != null) stringResource(Res.string.atlas_place_year_visits_title, year) else stringResource(Res.string.atlas_place_recent_title),
+        ) {
+            (yearVisits?.take(YEAR_VISITS_SHOWN) ?: visits.takeLast(25).asReversed()).forEach { visit ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onOpenDay(visit.startDay) }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(dateText(visit.startDay, weekday = true), style = AtlasTheme.type.body, color = colors.text, modifier = Modifier.weight(1f), maxLines = 1)
                     Text(
@@ -296,9 +356,42 @@ internal fun PlaceScreen(
                     )
                 }
             }
+            val more = (yearVisits?.size ?: 0) - YEAR_VISITS_SHOWN
+            if (more > 0) {
+                Text(pluralStringResource(Res.plurals.atlas_place_visits_more, more, more), style = AtlasTheme.type.label, color = colors.textFaint, modifier = Modifier.padding(top = 6.dp))
+            }
         }
     }
 }
+
+/** How many of a picked year's visits the place page lists. */
+private const val YEAR_VISITS_SHOWN = 100
+
+/**
+ * The place on Google Maps: its own page where Google gave it an id, otherwise the spot. Built
+ * from [Double.toString], which is the same in every language: no decimal comma to break the link.
+ */
+internal fun googleMapsUrl(place: Place): String {
+    val at = "https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}"
+    return if (place.key.startsWith("@")) at else "$at&query_place_id=${encodeQueryValue(place.key)}"
+}
+
+/** A value made safe to put in a link's query: letters, digits and -_.~ as they are, everything else percent-encoded as UTF-8. */
+private fun encodeQueryValue(value: String): String = buildString {
+    value.encodeToByteArray().forEach { byte ->
+        val c = byte.toInt() and 0xFF
+        val ch = c.toChar()
+        if (ch in 'A'..'Z' || ch in 'a'..'z' || ch in '0'..'9' || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+            append(ch)
+        } else {
+            append('%')
+            append(HEX[c shr 4])
+            append(HEX[c and 0x0F])
+        }
+    }
+}
+
+private const val HEX = "0123456789ABCDEF"
 
 /**
  * A week as a grid: a row a day from Monday, a column an hour from midnight, each square the

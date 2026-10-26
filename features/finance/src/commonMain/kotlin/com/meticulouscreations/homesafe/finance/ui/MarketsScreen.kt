@@ -128,6 +128,11 @@ fun MarketsScreen(
 ) {
     var selected by rememberSaveable { mutableStateOf(MarketCatalog.SP500.symbol) }
     var range by rememberSaveable { mutableStateOf(ChartRange.DAY) }
+    // Saved by name, so a sort that's gone after an update falls back to the list's own order.
+    var sortName by rememberSaveable { mutableStateOf(WatchSort.LIST.name) }
+    // Ordering by what's held is offered only when something is.
+    val sorts = if (state.watchEntries.any { it.position != null }) WatchSort.entries else WatchSort.entries - WatchSort.HELD
+    val sort = sorts.firstOrNull { it.name == sortName } ?: WatchSort.LIST
 
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxWidth()) {
         item(key = "tape") { TickerTape(state.quotes, onOpenQuote) }
@@ -190,7 +195,12 @@ fun MarketsScreen(
         item(key = "watch-h") {
             SectionHeader(stringResource(Res.string.finance_markets_watchlist_title), subtitle = stringResource(watchlistSubtitle(state)), action = { AddSymbolButton(onAddSymbol) })
         }
-        watchlistItems(state, "watch", onOpenQuote)
+        if (state.watchEntries.size > 1) {
+            item(key = "watch-sort") {
+                ChipRow(sorts, sort, { stringResource(it.label) }, FinanceTheme.colors.accent, { sortName = it.name }, Modifier.padding(bottom = 8.dp))
+            }
+        }
+        watchlistItems(state, "watch", sort, onOpenQuote)
         item(key = "fine") {
             FinePrint(
                 state.quotesError?.let { stringResource(Res.string.finance_markets_fine_print_error, it.resolve()) }

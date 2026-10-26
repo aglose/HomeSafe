@@ -1,0 +1,74 @@
+name: Preview APK
+
+# A release APK of a pull request that installs beside the real HomeSafe on a phone: label the PR
+# `preview-apk` and every push to it builds one (androidApp/build.gradle.kts, -PpreviewBuild=true:
+# package ...homesafe.preview, "HomeSafe Preview" on the launcher, a violet icon). It is release
+# bytecode with R8 and the Baseline Profile, so it runs as the shipped app would.
+#
+# The APK is kept two ways: as this run's artifact, and on a pre-release named preview-pr<N>
+# (replaced on each push), which is the easy one to find from a phone's browser.
+#
+# It is signed with the runner's throwaway debug key (the release key lives in the play-internal
+# environment, for main only), so each build has a new signature: uninstall HomeSafe Preview
+# before installing a newer one. Push is off in it (Firebase has no client for the package).
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+concurrency:
+  group: preview-apk-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build the preview APK
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'preview-apk') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: ./gradlew :androidApp:assembleRelease -PpreviewBuild=true
+        run: |
+          ./gradlew :androidApp:assembleRelease \
+            -PpreviewBuild=true \
+            -PversionCode="${{ github.run_number }}" \
+            -PreleasePr="${{ github.event.pull_request.number }}" \
+            --stacktrace
+          mkdir -p build/preview-apk
+          cp androidApp/build/outputs/apk/release/androidApp-release.apk \
+            "build/preview-apk/HomeSafe-Preview-pr${{ github.event.pull_request.number }}.apk"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HomeSafe-Preview-pr${{ github.event.pull_request.number }}
+          path: build/preview-apk/*.apk
+          retention-days: 14
+
+      - name: Put it on the preview-pr${{ github.event.pull_request.number }} pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          tag="preview-pr$PR"
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create "$tag" build/preview-apk/*.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --prerelease \
+            --title "HomeSafe Preview — PR #$PR (${SHA:0:7})" \
+            --notes "Installs beside HomeSafe as \"HomeSafe Preview\". Built from ${SHA:0:7} of #$PR. Uninstall the previous preview before installing this one (each build is signed with a new debug key)."

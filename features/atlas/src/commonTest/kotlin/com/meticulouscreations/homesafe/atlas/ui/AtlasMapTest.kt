@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.atlas.ui
 
+import com.meticulouscreations.homesafe.atlas.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.WebMercator
 import kotlin.math.abs
 import kotlin.test.Test
@@ -10,6 +11,19 @@ import kotlin.test.assertTrue
 
 class AtlasMapTest {
     private val tilePx = 256f
+
+    @Test
+    fun aPlaceOpensOnGoogleMapsByItsIdOrWhereItIs() {
+        assertEquals(
+            "https://www.google.com/maps/search/?api=1&query=40.045,-89.03&query_place_id=ChIJwork",
+            googleMapsUrl(AtlasFixtures.work),
+        )
+        // A stay Google matched to nothing has no id to give, only the spot.
+        assertEquals(
+            "https://www.google.com/maps/search/?api=1&query=40.5,-89.25",
+            googleMapsUrl(Place("@40500,-89250", 40.5, -89.25)),
+        )
+    }
 
     @Test
     fun theBoxRoundSomePlaces() {

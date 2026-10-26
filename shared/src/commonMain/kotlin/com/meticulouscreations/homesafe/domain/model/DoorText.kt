@@ -95,16 +95,16 @@ fun doorDayText(daysAgo: Int): UiText = when {
 
 /** How Home's glance row shows the doors: each one that needs a look on its own, the rest as a count. */
 data class DoorGlance(
-    /** Open, offline, or never heard from: open ones first, in the relay's order. */
+    /** Open, offline, never heard from, or wanting a battery: open ones first, in the relay's order. */
     val shown: List<Door>,
-    /** The doors that are closed and online, told as one number. */
+    /** The doors that are closed, online and on a good battery, told as one number. */
     val closedCount: Int,
     /** Every door is closed (and there is at least one): "All doors closed". */
     val allClosed: Boolean,
 )
 
 fun doorGlance(doors: List<Door>): DoorGlance {
-    val needsALook = doors.filter { it.open != false || it.online == false }
+    val needsALook = doors.filter { it.open != false || it.online == false || it.needsBattery }
     val shown = needsALook.sortedByDescending { it.open == true && it.online != false }
     val closedCount = doors.size - needsALook.size
     return DoorGlance(shown = shown, closedCount = closedCount, allClosed = needsALook.isEmpty() && closedCount > 0)

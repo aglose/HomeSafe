@@ -115,6 +115,9 @@
     <string name="atlas_day_play">Replay the day</string>
     <string name="atlas_day_pause">Pause</string>
     <string name="atlas_day_nothing">Nothing on record for this day</string>
+    <!-- Under "Nothing on record": the nearest day before or after that has something. %1$s is a date, e.g. "Mar 4, 2019". -->
+    <string name="atlas_day_jump_earlier">Back to %1$s</string>
+    <string name="atlas_day_jump_later">On to %1$s</string>
     <string name="atlas_day_ribbon">The day from midnight to midnight: where it was spent and how it was travelled. Drag to move through it.</string>
     <!-- Read out for the ribbon when nothing is being replayed. -->
     <string name="atlas_day_ribbon_whole">The whole day</string>
@@ -132,6 +135,7 @@
 
     <!-- The list of places. -->
     <string name="atlas_places_search">Search places</string>
+    <string name="atlas_places_search_clear">Clear the search</string>
     <string name="atlas_places_sort_time">Most time</string>
     <string name="atlas_places_sort_visits">Most visits</string>
     <string name="atlas_places_sort_recent">Lately</string>
@@ -164,6 +168,14 @@
     <string name="atlas_place_rhythm_description">The week by hour: brighter where more of your time here falls</string>
     <string name="atlas_place_years_title">Visits by year</string>
     <string name="atlas_place_recent_title">Latest visits</string>
+    <!-- The visits of one year picked from "Visits by year"; %1$d is the year. -->
+    <string name="atlas_place_year_visits_title">Visits in %1$d</string>
+    <!-- Under a list of visits cut short; %1$d is how many are not listed. -->
+    <plurals name="atlas_place_visits_more">
+        <item quantity="one">And %1$d more</item>
+        <item quantity="other">And %1$d more</item>
+    </plurals>
+    <string name="atlas_place_open_in_maps">Open in Google Maps</string>
 
     <!-- Trips, and where home has been. -->
     <string name="atlas_trips_coverage_title">How far it reaches</string>
@@ -197,6 +209,8 @@
         <item quantity="other">%1$d stops</item>
     </plurals>
     <string name="atlas_trip_days_title">Day by day</string>
+    <string name="atlas_trip_earlier">Earlier trip</string>
+    <string name="atlas_trip_later">Later trip</string>
     <string name="atlas_eras_title">Where you've lived</string>
     <!-- From one date to another, e.g. "Jan 2023 – Mar 2024". -->
     <string name="atlas_era_span">%1$s – %2$s</string>

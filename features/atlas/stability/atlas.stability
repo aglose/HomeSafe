@@ -197,6 +197,15 @@ private fun com.meticulouscreations.homesafe.atlas.ui.CommuteLegBlock(label: kot
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.DayJump(label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.atlas.ui.DayRibbon(plan: com.meticulouscreations.homesafe.atlas.ui.DayPlan, head: kotlin.Function0<kotlin.Float>, onScrub: kotlin.Function1<kotlin.Float, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -414,7 +423,7 @@ private fun com.meticulouscreations.homesafe.atlas.ui.TripCard(trip: com.meticul
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.atlas.ui.TripScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, trip: com.meticulouscreations.homesafe.atlas.domain.Trip, padding: androidx.compose.foundation.layout.PaddingValues, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.atlas.ui.TripScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, trip: com.meticulouscreations.homesafe.atlas.domain.Trip, padding: androidx.compose.foundation.layout.PaddingValues, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onEarlier: kotlin.Function0<kotlin.Unit>?, onLater: kotlin.Function0<kotlin.Unit>?, active: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -425,10 +434,12 @@ internal fun com.meticulouscreations.homesafe.atlas.ui.TripScreen(state: com.met
     - onOpenDay: STABLE (function type)
     - onOpenPlace: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onEarlier: STABLE (function type)
+    - onLater: STABLE (function type)
     - active: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.atlas.ui.TripsScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenTrip: kotlin.Function1<kotlin.Int, kotlin.Unit>, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.atlas.ui.TripsScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenTrip: kotlin.Function1<kotlin.Long, kotlin.Unit>, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:

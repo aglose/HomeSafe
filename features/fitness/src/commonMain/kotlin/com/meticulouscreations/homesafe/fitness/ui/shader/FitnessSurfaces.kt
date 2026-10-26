@@ -41,24 +41,42 @@ private const val STILL_SECONDS = 14f
  * Seconds for a shader's `time`, ticking every frame while [running] and starting over every
  * ten minutes so a float always has room for it. Still in a preview. Read it only while
  * drawing: a read during composition would recompose every frame.
+ *
+ * With [frameSeconds] it moves no more often than that: a glow or a ring of plasma looks the
+ * same stepped thirty times a second as a hundred and twenty, and whatever reads this is drawn
+ * again, over the whole of itself, each time it moves.
  */
 @Composable
-internal fun rememberFitnessClock(running: Boolean = true): FloatState {
+internal fun rememberFitnessClock(running: Boolean = true, frameSeconds: Float = 0f): FloatState {
     val still = LocalInspectionMode.current
     val time = remember { mutableFloatStateOf(STILL_SECONDS) }
-    LaunchedEffect(running, still) {
+    LaunchedEffect(running, still, frameSeconds) {
         if (!running || still) return@LaunchedEffect
         // An infinite animation's frames, so anything waiting for animations to settle doesn't wait on this.
         var last = withInfiniteAnimationFrameNanos { it }
+        var owed = 0f
         while (true) {
             withInfiniteAnimationFrameNanos { now ->
-                time.floatValue = (time.floatValue + ((now - last) / 1e9f).coerceIn(0f, 0.1f)) % 600f
+                owed += ((now - last) / 1e9f).coerceIn(0f, 0.1f)
                 last = now
+                // A little short of the step is the step: frames don't land to the microsecond.
+                if (owed >= frameSeconds - FRAME_SLACK_SECONDS) {
+                    time.floatValue = (time.floatValue + owed) % 600f
+                    owed = 0f
+                }
             }
         }
     }
     return time
 }
+
+private const val FRAME_SLACK_SECONDS = 0.002f
+
+/** How often a slow surface (the forge, a ring) moves on: thirty times a second. */
+private const val SLOW_FRAME_SECONDS = 1f / 30f
+
+/** How often the fibres move on: sixty times a second, since a finger drags them round. */
+private const val FIBER_FRAME_SECONDS = 1f / 60f
 
 @Composable
 private fun rememberShader(source: String): FitnessShader? {
@@ -77,7 +95,7 @@ internal fun ForgeBackground(tint: Color, tint2: Color, modifier: Modifier = Mod
     val animatedTint by animateColorAsState(tint, tween(700), label = "forgeTint")
     val animatedTint2 by animateColorAsState(tint2, tween(700), label = "forgeTint2")
     val animatedHeat by animateFloatAsState(heat.coerceIn(0f, 1f), tween(900), label = "forgeHeat")
-    val time = rememberFitnessClock(running)
+    val time = rememberFitnessClock(running, frameSeconds = SLOW_FRAME_SECONDS)
     Box(
         modifier.drawBehind {
             if (shader != null) {
@@ -120,7 +138,7 @@ internal fun FiberField(
 ) {
     val shader = rememberShader(FIBER_SHADER)
     val animatedEnergy by animateFloatAsState(energy.coerceIn(0f, 1f), tween(500), label = "fiberEnergy")
-    val time = rememberFitnessClock(running)
+    val time = rememberFitnessClock(running, frameSeconds = FIBER_FRAME_SECONDS)
     Box(
         modifier.drawBehind {
             val now = time.floatValue
@@ -248,15 +266,34 @@ internal fun PlasmaRing(
     sweepMillis: Int = 900,
     running: Boolean = true,
 ) {
-    val shader = rememberShader(RING_SHADER)
     val still = LocalInspectionMode.current
-    val animated by animateFloatAsState(level.coerceIn(0f, 1f), if (still) tween(0) else tween(sweepMillis, easing = FastOutSlowInEasing), label = "ringLevel")
-    val time = rememberFitnessClock(running)
+    val animated = animateFloatAsState(level.coerceIn(0f, 1f), if (still) tween(0) else tween(sweepMillis, easing = FastOutSlowInEasing), label = "ringLevel")
+    PlasmaRing({ animated.value }, tint, tint2, track, modifier, thickness, running)
+}
+
+/**
+ * [PlasmaRing] at a [level] that moves every frame, a rest draining say: it is read only while
+ * drawing, so nothing around the ring is composed again as it moves, and it is drawn as it is,
+ * with no sweep.
+ */
+@Composable
+internal fun PlasmaRing(
+    level: () -> Float,
+    tint: Color,
+    tint2: Color,
+    track: Color,
+    modifier: Modifier = Modifier,
+    thickness: Float = 0.16f,
+    running: Boolean = true,
+) {
+    val shader = rememberShader(RING_SHADER)
+    val time = rememberFitnessClock(running, frameSeconds = SLOW_FRAME_SECONDS)
     Canvas(modifier) {
+        val filled = level().coerceIn(0f, 1f)
         if (shader != null) {
             shader.setUniform("size", size.width, size.height)
             shader.setUniform("time", time.floatValue)
-            shader.setUniform("level", animated)
+            shader.setUniform("level", filled)
             shader.setUniform("tint", tint)
             shader.setUniform("tint2", tint2)
             shader.setUniform("track", track)
@@ -271,7 +308,7 @@ internal fun PlasmaRing(
             drawArc(
                 Brush.sweepGradient(listOf(tint2, tint, tint2)),
                 -90f,
-                360f * animated,
+                360f * filled,
                 false,
                 Offset(inset, inset),
                 arcSize,

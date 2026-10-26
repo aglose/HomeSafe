@@ -155,6 +155,9 @@
     <string name="moments_show_clips">Show clips</string>
     <string name="moments_hide_clips">Hide clips</string>
     <string name="moments_play_full_screen">Play full screen</string>
+    <!-- What a tap on the open clip's video does: pause it, or play it on (or again, once it has ended). -->
+    <string name="moments_clip_pause">Pause clip</string>
+    <string name="moments_clip_resume">Play clip</string>
     <string name="moments_download_clip">Download clip</string>
     <string name="moments_downloaded">Downloaded</string>
     <!-- %1$s is why, often the server's own words. -->

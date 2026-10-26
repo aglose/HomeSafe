@@ -122,4 +122,25 @@ class TimelineMarksTest {
         assertEquals(drawnOrdinals(0f).filter { it % 2 == 0L }, drawnOrdinals(0f))
         assertEquals(drawnOrdinals(6f).filter { it % 2 == 0L }, drawnOrdinals(6f))
     }
+
+    @Test
+    fun previousDetectionStepsPastTheOneJustReached() {
+        val detections = listOf(at(10), at(50), at(100))
+        val onSecond = windowStart + 50 * 36.0
+
+        assertEquals(windowStart + 360.0, detectionStep(detections, onSecond + 2.0, forward = false), "two seconds into one is still on it")
+        assertEquals(onSecond, detectionStep(detections, onSecond + 10.0, forward = false), "well into one goes back to its start")
+        assertNull(detectionStep(detections, windowStart + 360.0, forward = false), "nothing before the first")
+    }
+
+    @Test
+    fun nextDetectionIsTheFirstThatStartsAhead() {
+        val detections = listOf(at(100), at(10), at(50))
+        val onSecond = windowStart + 50 * 36.0
+
+        assertEquals(windowStart + 100 * 36.0, detectionStep(detections, onSecond, forward = true), "not the one already playing")
+        assertEquals(onSecond, detectionStep(detections, windowStart + 20 * 36.0, forward = true), "in any order they came in")
+        assertNull(detectionStep(detections, windowStart + 100 * 36.0, forward = true), "nothing after the last")
+        assertNull(detectionStep(emptyList(), windowStart, forward = true))
+    }
 }

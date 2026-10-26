@@ -10,7 +10,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -69,7 +68,8 @@ internal fun MuscleMap(volumes: List<MuscleVolume>, modifier: Modifier = Modifie
     val still = LocalInspectionMode.current
     val reveal = remember { Animatable(if (still) 1f else 0f) }
     LaunchedEffect(Unit) { if (!still) reveal.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }
-    val breath by rememberInfiniteTransition(label = "muscles").animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "muscleBreath")
+    // Read while drawing, so the map isn't composed again each frame.
+    val breath = rememberInfiniteTransition(label = "muscles").animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "muscleBreath")
 
     Canvas(modifier.semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription }) {
         // Two figures side by side with a gap, as large as the space allows.
@@ -80,9 +80,9 @@ internal fun MuscleMap(volumes: List<MuscleVolume>, modifier: Modifier = Modifie
         val top = (size.height - FIGURE_HEIGHT * unit) / 2
         listOf(FRONT to Offset(left, top), BACK to Offset(left + figureWidth + gap, top)).forEachIndexed { figure, (regions, origin) ->
             silhouette(origin, unit, colors.surfaceRaised)
-            if (figure == 1) traps(origin, unit, tone(byMuscle[Muscle.TRAPS], colors, reveal.value, breath, order = 0f))
+            if (figure == 1) traps(origin, unit, tone(byMuscle[Muscle.TRAPS], colors, reveal.value, breath.value, order = 0f))
             regions.forEachIndexed { i, region ->
-                val color = tone(byMuscle[region.muscle], colors, reveal.value, breath, order = i / regions.size.toFloat())
+                val color = tone(byMuscle[region.muscle], colors, reveal.value, breath.value, order = i / regions.size.toFloat())
                 val center = origin + Offset(region.cx * unit, region.cy * unit)
                 val half = Size(region.rx * unit, region.ry * unit)
                 if (region.slab) {

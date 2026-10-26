@@ -44,6 +44,8 @@
     <string name="weather_feels_like">Feels like %1$s</string>
     <!-- The hour the sky is being shown for while a finger holds the hourly strip: %1$s is "3 PM" -->
     <string name="weather_scrub_at">The sky at %1$s</string>
+    <!-- The same, for an hour on another day: %1$s the day's full name ("Friday"), %2$s is "3 PM" -->
+    <string name="weather_scrub_at_day">The sky on %1$s at %2$s</string>
     <string name="weather_tip_umbrella">Take an umbrella</string>
     <string name="weather_tip_sunscreen">Sunscreen</string>
     <string name="weather_tip_layers">Wear layers</string>
@@ -130,6 +132,9 @@
     <string name="weather_tile_moon">Moon</string>
     <!-- %1$d a percentage of the moon's face -->
     <string name="weather_tile_moon_lit">%1$d% lit</string>
+    <!-- When the moon next comes up or goes down, from now: %1$s a time ("10:15 PM") -->
+    <string name="weather_tile_moon_rises">Rises %1$s</string>
+    <string name="weather_tile_moon_sets">Sets %1$s</string>
     <!-- %1$s a date ("Oct 25") -->
     <string name="weather_tile_moon_next_full">Full moon on %1$s</string>
     <string name="weather_tile_moon_next_new">New moon on %1$s</string>
@@ -175,8 +180,19 @@
     <string name="weather_stat_wind">Wind</string>
     <!-- %1$s a speed, %2$s the gusts' speed -->
     <string name="weather_stat_wind_gusts">%1$s, gusts %2$s</string>
+    <!-- %1$s a speed, %2$s a compass point the wind comes from ("NW"), %3$s the gusts' speed -->
+    <string name="weather_stat_wind_from_gusts">%1$s from the %2$s, gusts %3$s</string>
     <string name="weather_stat_sunrise">Sunrise</string>
     <string name="weather_stat_sunset">Sunset</string>
+    <string name="weather_stat_daylight">Daylight</string>
+    <!-- How long from sunrise to sunset: %1$d hours, %2$d minutes -->
+    <string name="weather_stat_daylight_value">%1$d h %2$d min</string>
+    <!-- How many hours of the day it rains or snows, the number below -->
+    <string name="weather_stat_wet_hours">Rain or snow for</string>
+    <plurals name="weather_stat_hours_value">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
     <string name="weather_stat_uv">UV index</string>
     <string name="weather_stat_feels">Feels like</string>
     <!-- %1$s a high, %2$s a low -->
@@ -212,6 +228,8 @@
     <string name="weather_places_no_results">Nowhere found called "%1$s"</string>
     <string name="weather_places_added">Already added</string>
     <string name="weather_places_add">Add %1$s</string>
+    <!-- On a city's card, when its clock differs from the phone's: %1$s the sky in a word or two, %2$s the time there ("3:15 PM") -->
+    <string name="weather_places_conditions_time">%1$s · %2$s</string>
     <string name="weather_places_yours">Your places</string>
     <string name="weather_places_edit">Edit</string>
     <string name="weather_places_remove">Remove %1$s</string>
