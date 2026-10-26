@@ -94,7 +94,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.assistant.AssistantModelFamily
 import com.meticulouscreations.homesafe.text.resolve
-import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.viewmodel.AssistantTurn
 import com.meticulouscreations.homesafe.viewmodel.AssistantUiState
@@ -151,11 +150,7 @@ fun AssistantRoot(modifier: Modifier = Modifier, host: AssistantHost = remember 
                         drawContent()
                     }
                 },
-            ) {
-                // Back is the assistant's while it is up, however recently something beneath registered
-                // a handler of its own (a camera's quick look opened behind it).
-                BackScope(enabled = !host.isOpen) { content() }
-            }
+            ) { content() }
             AssistantLayer(host)
         }
     }
