@@ -30,12 +30,13 @@ name: PR autopilot
 # Secrets:
 # - ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN (the ones the dependency updates use): the agent.
 #   Without one, a pull request merges only when Copilot reviewed it and found nothing.
-# - PR_AUTOPILOT_TOKEN, optional but recommended: a fine-grained token of the repository owner's,
-#   for this repository, with Contents, Pull requests, Actions and Workflows: read and write. With
-#   it, Copilot can be asked for a review (GitHub does not let GITHUB_TOKEN ask), a pull request
-#   that changes a workflow can be merged (GITHUB_TOKEN may not), and pushes and merges set off CI
-#   by themselves. Without it, CI is started by hand after each push and merge, as the dependency
-#   updates do.
+# - BASELINE_PROFILE_TOKEN, the owner's fine-grained token the Baseline Profile workflow already
+#   uses (Contents and Pull requests: read and write). With it, Copilot can be asked for a review
+#   (GitHub does not let GITHUB_TOKEN ask), and pushes and merges set off CI by themselves. Without
+#   it, CI is started by hand after each push and merge, as the dependency updates do.
+# - PR_AUTOPILOT_TOKEN, optional: used instead when set. Give it Workflows: read and write as well,
+#   and pull requests that change a workflow merge too (neither GITHUB_TOKEN nor the Baseline
+#   Profile token may merge those; such a pull request is left for a person, saying so).
 
 on:
   workflow_run:
@@ -169,7 +170,7 @@ jobs:
         if: steps.pr.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          COPILOT_REQUEST_TOKEN: ${{ secrets.PR_AUTOPILOT_TOKEN }}
+          COPILOT_REQUEST_TOKEN: ${{ secrets.PR_AUTOPILOT_TOKEN || secrets.BASELINE_PROFILE_TOKEN }}
           PR: ${{ steps.pr.outputs.pr }}
           SHA: ${{ steps.pr.outputs.sha }}
         run: |
@@ -314,7 +315,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       # Optional; see the top of this file.
-      OWNER_TOKEN: ${{ secrets.PR_AUTOPILOT_TOKEN }}
+      OWNER_TOKEN: ${{ secrets.PR_AUTOPILOT_TOKEN || secrets.BASELINE_PROFILE_TOKEN }}
       PR: ${{ needs.triage.outputs.pr }}
       SHA: ${{ needs.triage.outputs.sha }}
       BRANCH: ${{ needs.triage.outputs.branch }}
@@ -329,7 +330,7 @@ jobs:
         with:
           ref: ${{ needs.triage.outputs.branch }}
           fetch-depth: 0
-          token: ${{ secrets.PR_AUTOPILOT_TOKEN || github.token }}
+          token: ${{ secrets.PR_AUTOPILOT_TOKEN || secrets.BASELINE_PROFILE_TOKEN || github.token }}
       - uses: actions/download-artifact@v8
         if: needs.fix.outputs.ran == 'true'
         continue-on-error: true
