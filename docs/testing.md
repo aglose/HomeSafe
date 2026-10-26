@@ -135,6 +135,13 @@ a repository secret `RUNNER_STATUS_TOKEN`: a fine-grained token for this reposit
 and nothing else. Without it the job goes to the Mac as before, with a warning on the run. The repository variable
 `IOS_RUNNER` (`hosted` or `self-hosted`) overrides the check either way.
 
+A Mac that is online can still fail to finish: busy with something else so the job never starts, or asleep halfway
+through it (the job then ends with a step still "in progress" and no log). `ios-watch` follows the job from a hosted
+runner ([`scripts/ci/watch-ios-job.sh`](../scripts/ci/watch-ios-job.sh)): when it hasn't started within 15 minutes, or
+its runner went away, `ios-hosted` runs the same steps (the `ios-tests-and-build` action in `.github/actions/`) on a
+GitHub-hosted Mac, and ci-green takes that run's result. A job that fails by itself (a test, the build) fails ci-green
+as before, and "Re-run failed jobs" runs it and its watcher again.
+
 ## Android CLI journeys
 
 `androidApp/src/journeysTest/*.journey.xml` are journeys in the format documented for
