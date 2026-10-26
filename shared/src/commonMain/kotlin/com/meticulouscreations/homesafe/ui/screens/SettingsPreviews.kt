@@ -30,9 +30,15 @@ import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.StorageUsage
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.viewmodel.BudgetAlertsState
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.alerts_finance_error
 import homesafe.shared.generated.resources.alerts_title
 import homesafe.shared.generated.resources.presence_title
 import homesafe.shared.generated.resources.settings_alerts_subtitle
@@ -85,6 +91,8 @@ private val previewSettings = SettingsUiState(
     notificationPermission = NotificationPermission.GRANTED,
     classifiers = listOf(ClassifierModel(name = "known_cars", objects = listOf("car"))),
     appIconsSupported = true,
+    weatherNotices = WeatherNoticeSettings(dailyOutlook = false),
+    budgetAlerts = BudgetAlertsState.Ready(BudgetAlertSwitches(total = true, buckets = true)),
     presence = HouseholdPresence(
         devices = listOf(
             PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel"),
@@ -99,7 +107,7 @@ private fun SettingsHomePreviewContent(state: SettingsUiState, initialFold: Sett
     FrigatePreview {
         SettingsHome(
             state = state,
-            onOpenAlerts = {},
+            onOpenNotifications = {},
             onOpenAway = {},
             onOpenClassifier = {},
             onOpenFaces = {},
@@ -155,17 +163,40 @@ private fun SettingsHomeAppIconPreview() {
     SettingsHomePreviewContent(previewSettings, initialFold = SettingsFold.APP_ICON)
 }
 
-@Preview(name = "Settings · Alerts page", widthDp = 412, heightDp = 915)
+@Preview(name = "Settings · Notifications page", widthDp = 412, heightDp = 915)
+@Preview(name = "Settings · Notifications page, in Spanish", widthDp = 412, heightDp = 915, locale = "es")
 @Composable
-private fun AlertsPagePreview() {
-    FrigatePreview { AlertsPage() }
+private fun NotificationsPagePreview() {
+    FrigatePreview { NotificationsPage() }
+}
+
+/** All of it, every app's card down to the budget's. */
+@Preview(name = "Settings · Notifications page, whole", widthDp = 412, heightDp = 3000)
+@Composable
+private fun NotificationsPageWholePreview() {
+    FrigatePreview { NotificationsPage() }
+}
+
+/** The cameras' notifications off, the weather app's switched off too, and the relay not answering about the budget. */
+@Preview(name = "Settings · Notifications page, apps off", widthDp = 412, heightDp = 1500)
+@Composable
+private fun NotificationsPageAppsOffPreview() {
+    FrigatePreview {
+        NotificationsPage(
+            previewSettings.copy(
+                alerts = AlertSettings.DEFAULT,
+                weatherNotices = WeatherNoticeSettings(enabled = false),
+                budgetAlerts = BudgetAlertsState.Failed(UiText.of(Res.string.alerts_finance_error, "HTTP 502".asUiText())),
+            ),
+        )
+    }
 }
 
 @Composable
-private fun AlertsPage() {
+private fun NotificationsPage(state: SettingsUiState = previewSettings) {
     SettingsPage(title = stringResource(Res.string.alerts_title), subtitle = stringResource(Res.string.settings_alerts_subtitle), onBack = {}) {
         AlertsSection(
-            state = previewSettings,
+            state = state,
             onPushNotifications = {},
             onZoneCategory = { _, _, _ -> },
             onPreset = {},
@@ -176,14 +207,15 @@ private fun AlertsPage() {
             onOpenSettings = {},
             onSendTest = {},
         )
+        OtherAppsNotifications(state = state, onOpenDoors = {}, onWeatherNotices = {}, onAllowNotifications = {}, onBudgetAlerts = {}, onRetryBudget = {})
     }
 }
 
-/** A tablet on its side: the list down the start side, with Alerts open beside it and its row marked. */
+/** A tablet on its side: the list down the start side, with Notifications open beside it and its row marked. */
 @Preview(name = "Settings, two panes", widthDp = 1194, heightDp = 834)
 @Composable
 private fun SettingsTwoPanesPreview() {
-    SettingsTwoPanesPreviewContent(open = AlertsRoute)
+    SettingsTwoPanesPreviewContent(open = NotificationsRoute)
 }
 
 /** The same before a row has been picked. */
@@ -211,12 +243,12 @@ private fun SettingsTwoPanesPreviewPanes(open: Any?) {
     val backStack = remember { mutableStateListOf<Any>(SettingsHomeRoute).apply { open?.let(::add) } }
     val pages = entryProvider<Any> {
         entry<SettingsHomeRoute> {}
-        entry<AlertsRoute> { AlertsPage() }
+        entry<NotificationsRoute> { NotificationsPage() }
     }
     SettingsTwoPanes(backStack, pages) {
         SettingsHome(
             state = previewSettings,
-            onOpenAlerts = {},
+            onOpenNotifications = {},
             onOpenAway = {},
             onOpenClassifier = {},
             onOpenFaces = {},

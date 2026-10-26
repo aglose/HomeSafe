@@ -17,6 +17,8 @@ import homesafe.shared.generated.resources.settings_alerts_summary_quiet
 import homesafe.shared.generated.resources.settings_alerts_summary_relay
 import homesafe.shared.generated.resources.settings_alerts_summary_strangers
 import homesafe.shared.generated.resources.settings_alerts_summary_unsupported
+import homesafe.shared.generated.resources.settings_alerts_summary_weather
+import homesafe.shared.generated.resources.settings_alerts_summary_weather_only
 import homesafe.shared.generated.resources.settings_away_summary_automatic
 import homesafe.shared.generated.resources.settings_away_summary_away
 import homesafe.shared.generated.resources.settings_away_summary_checking
@@ -38,22 +40,28 @@ import homesafe.shared.generated.resources.settings_cameras_summary_some
  */
 
 /**
- * The Alerts row: why nothing can arrive ("Blocked in system settings"), or "Off", or while
- * notifications are on what they amount to — "On · People only · quiet 10:00 PM – 7:00 AM". The
- * parts follow what the Alerts page shows: with only Away alerts left the rules decide nothing, so
- * that is all the line says; where the relay pushes, the relay stands in for the preset; and the
- * preset is left out until the cameras it is matched against have been read.
+ * The Notifications row: why nothing can arrive ("Blocked in system settings"), or "Off", or while
+ * the cameras' notifications are on what they amount to — "On · People only · quiet 10:00 PM –
+ * 7:00 AM" — and "weather" after them while the weather app's are on too ("Weather only" with the
+ * cameras' off). The camera parts follow what the page shows: with only Away alerts left the
+ * rules decide nothing, so that is all the line says; where the relay pushes, the relay stands in
+ * for the preset; and the preset is left out until the cameras it is matched against have been
+ * read. The budget's alerts are the household's, read from the relay only on the page, so the
+ * line doesn't speak for them.
  */
 internal fun alertsSummary(state: SettingsUiState): UiText {
     val alerts = state.alerts
+    val weather = UiText.of(Res.string.settings_alerts_summary_weather).takeIf { state.weatherNoticesActive }
     return when {
         !state.notificationsSupported -> UiText.of(Res.string.settings_alerts_summary_unsupported)
 
         state.notificationPermission == NotificationPermission.DENIED -> UiText.of(Res.string.settings_alerts_summary_blocked)
 
+        !state.pushNotificationsActive && weather != null -> UiText.of(Res.string.settings_alerts_summary_weather_only)
+
         !state.pushNotificationsActive -> UiText.of(Res.string.settings_alerts_summary_off)
 
-        alerts.onlyWhenAway -> UiText.of(Res.string.settings_alerts_summary_only_away)
+        alerts.onlyWhenAway -> UiText.of(Res.string.settings_alerts_summary_only_away).let { if (weather == null) it else summaryOf(it, weather) }
 
         else -> {
             val places = state.alertPlaces
@@ -69,7 +77,7 @@ internal fun alertsSummary(state: SettingsUiState): UiText {
             // The stranger rule only does anything with face recognition on, which is also when its switch can be.
             val strangers = UiText.of(Res.string.settings_alerts_summary_strangers)
                 .takeIf { alerts.quietFamiliarPeople && state.overview?.faceRecognitionEnabled == true }
-            summaryOf(UiText.of(Res.string.settings_alerts_summary_on), rules, quiet, strangers)
+            summaryOf(UiText.of(Res.string.settings_alerts_summary_on), rules, quiet, strangers, weather)
         }
     }
 }

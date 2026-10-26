@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Spanish translation of values/strings_settings.xml.
-  The Settings tab (alerts, away mode, recognition, cameras, the server's diagnostics) and the
+  The Settings tab (notifications, away mode, recognition, cameras, the server's diagnostics) and the
   sign-in screen. Keys: settings_* (the tab, its rows' one-line summaries and the server page),
-  alerts_* (the Alerts page), presence_* (the Away mode page and the household's devices),
+  alerts_* (the Notifications page, every app's notifications; it was called Alerts), presence_* (the Away mode page and the household's devices),
   connection_* (sign-in and connection routes).
   See AGENTS.md, "Strings and localization".
 -->
@@ -66,7 +66,7 @@
     <string name="settings_dismiss">Descartar</string>
     <string name="settings_refresh">Actualizar</string>
 
-    <string name="settings_alerts_subtitle">De qué te avisa este teléfono, y cuándo</string>
+    <string name="settings_alerts_subtitle">Lo que cada app le dice a este teléfono</string>
     <string name="settings_alerts_summary_unsupported">No disponible en esta plataforma</string>
     <string name="settings_alerts_summary_blocked">Bloqueadas en la configuración del sistema</string>
     <string name="settings_alerts_summary_off">Desactivadas</string>
@@ -76,6 +76,8 @@
     <string name="settings_alerts_summary_custom">reglas personalizadas</string>
     <string name="settings_alerts_summary_quiet">silencio %1$s – %2$s</string>
     <string name="settings_alerts_summary_strangers">solo desconocidos</string>
+    <string name="settings_alerts_summary_weather">clima</string>
+    <string name="settings_alerts_summary_weather_only">Solo el clima</string>
     <string name="settings_away_subtitle">Quién está en casa, según los dos teléfonos</string>
     <string name="settings_away_summary_unreachable">No se puede contactar con el relay</string>
     <string name="settings_away_summary_checking">Comprobando quién está en casa…</string>
@@ -175,8 +177,14 @@
 
     <string name="settings_recording_clip_save_failed">No se pudo guardar el clip</string>
 
-    <string name="alerts_title">Alertas</string>
-    <string name="alerts_notifications">Notificaciones</string>
+    <string name="alerts_title">Notificaciones</string>
+    <string name="alerts_section_cameras">Cámaras</string>
+    <string name="alerts_section_weather">Clima</string>
+    <string name="alerts_section_finance">Finanzas</string>
+    <string name="alerts_finance_loading">Leyendo las alertas del presupuesto…</string>
+    <string name="alerts_finance_error">No se pudieron leer las alertas del presupuesto: %1$s</string>
+    <string name="alerts_finance_save_error">No se pudieron guardar las alertas del presupuesto: %1$s</string>
+    <string name="alerts_notifications">Notificaciones de cámaras</string>
     <string name="alerts_notifications_unsupported">No disponible en esta plataforma. Usa la app de Android o iOS para recibir alertas.</string>
     <string name="alerts_notifications_blocked">Bloqueadas en la configuración del sistema. Permite las notificaciones de HomeSafe para activarlas.</string>
     <string name="alerts_notifications_on_relay">Activadas — desde el relay de HomeSafe, incluso con la app cerrada.</string>

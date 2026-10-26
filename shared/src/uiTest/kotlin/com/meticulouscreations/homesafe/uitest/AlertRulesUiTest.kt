@@ -40,7 +40,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * The Alerts page's card, rendered for real: the notifications switch in each of its
+ * The Notifications page's cameras card, rendered for real: the notifications switch in each of its
  * states, and once it's on, the presets, the per-zone grid behind them, quiet hours with its
  * clock, the stranger rule and the test button. [AlertsSection] is stateless, so every state is
  * a [SettingsUiState] fixture and every control is checked by the callback it fires. Which preset
@@ -165,7 +165,7 @@ class AlertRulesUiTest {
     @Test
     fun withoutNotificationsOnThisPlatformTheSwitchIsLockedOff() = runAlerts(SettingsUiState(notificationsSupported = false)) {
         onNodeWithText("Not available on this platform. Use the Android or iOS app for alerts.").assertIsDisplayed()
-        switchFor("Notifications").assertIsOff().assertIsNotEnabled()
+        switchFor("Camera notifications").assertIsOff().assertIsNotEnabled()
         onAllNodesWithText("Send test notification").assertCountEquals(0)
     }
 
@@ -178,7 +178,7 @@ class AlertRulesUiTest {
             onOpenSettings = { opened++ },
         ) {
             onNodeWithText("Blocked in system settings. Allow notifications for HomeSafe to turn this on.").assertIsDisplayed()
-            switchFor("Notifications").assertIsOff().assertIsNotEnabled()
+            switchFor("Camera notifications").assertIsOff().assertIsNotEnabled()
             onAllNodesWithText("What to hear about").assertCountEquals(0)
             onNodeWithText("Open notification settings").performClick()
             assertEquals(1, opened)
@@ -192,7 +192,7 @@ class AlertRulesUiTest {
             onNodeWithText("Get a notification when a camera sees something.").assertIsDisplayed()
             onAllNodesWithText("What to hear about").assertCountEquals(0)
             onAllNodesWithText("Send test notification").assertCountEquals(0)
-            switchFor("Notifications").assertIsOff().assertIsEnabled().performClick()
+            switchFor("Camera notifications").assertIsOff().assertIsEnabled().performClick()
             assertEquals(true, asked)
         }
     }
@@ -206,7 +206,7 @@ class AlertRulesUiTest {
             onNodeWithText("Quiet hours").assertExists()
             onNodeWithText("Only strangers").assertExists()
             onNodeWithText("Send test notification").assertExists()
-            switchFor("Notifications").assertIsOn().performClick()
+            switchFor("Camera notifications").assertIsOn().performClick()
             assertEquals(false, asked)
         }
     }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -90,6 +92,7 @@ import homesafe.shared.generated.resources.alerts_quiet_to_button
 import homesafe.shared.generated.resources.alerts_quiet_until_title
 import homesafe.shared.generated.resources.alerts_relay_policy
 import homesafe.shared.generated.resources.alerts_relay_what_youll_hear
+import homesafe.shared.generated.resources.alerts_section_cameras
 import homesafe.shared.generated.resources.alerts_send_test
 import homesafe.shared.generated.resources.alerts_test_sent
 import homesafe.shared.generated.resources.alerts_time_am
@@ -102,8 +105,8 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
 /**
- * The Alerts page's one card ([AlertsSettingsScreen]): the notifications switch and, once it's on,
- * what to hear about and when. The rules are per place — every zone on every camera, plus each camera's
+ * The cameras' card on the Notifications page ([NotificationsSettingsScreen]): their notifications
+ * switch and, once it's on, what to hear about and when. The rules are per place — every zone on every camera, plus each camera's
  * "anywhere else" — which on a real install is a couple of dozen switches, so they're led by a
  * row of presets and only laid out in full when the user asks, or when they've been tuned into
  * something no preset describes. Where last week's detections say a rule would be noisy, its
@@ -126,7 +129,7 @@ internal fun AlertsSection(
     onOpenSettings: () -> Unit,
     onSendTest: () -> Unit,
 ) {
-    SettingsCard {
+    SettingsSection(title = stringResource(Res.string.alerts_section_cameras), icon = Icons.Filled.Videocam) {
         if (!state.notificationsSupported) {
             SettingsToggleRow(
                 title = stringResource(Res.string.alerts_notifications),
@@ -135,7 +138,7 @@ internal fun AlertsSection(
                 enabled = false,
                 onCheckedChange = {},
             )
-            return@SettingsCard
+            return@SettingsSection
         }
         val blocked = state.notificationPermission == NotificationPermission.DENIED
         SettingsToggleRow(
@@ -432,7 +435,7 @@ private fun presetDescription(preset: AlertPreset): StringResource = when (prese
 @Composable
 internal fun formatMinuteOfDay(minuteOfDay: Int): String = minuteOfDayText(minuteOfDay).resolve()
 
-/** [formatMinuteOfDay] for text put together outside a composable, such as the Alerts row's summary. */
+/** [formatMinuteOfDay] for text put together outside a composable, such as the Notifications row's summary. */
 internal fun minuteOfDayText(minuteOfDay: Int): UiText {
     val hour = (minuteOfDay / 60) % 24
     val minute = minuteOfDay % 60

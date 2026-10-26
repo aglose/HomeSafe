@@ -196,7 +196,7 @@ import kotlin.time.ExperimentalTime
 /**
  * The "Settings" tab: a short list of rows, everyday things first, each saying in a line how its
  * section stands. See [SettingsHome] for what's on it. [onOpen] is handed the route of the page a
- * row opens ([AlertsRoute], [ClassifierRoute], …).
+ * row opens ([NotificationsRoute], [ClassifierRoute], …).
  */
 @Composable
 fun SettingsTabContent(
@@ -220,7 +220,7 @@ fun SettingsTabContent(
     LaunchedEffect(scrollState, scrollToTopRequests) { scrollToTopRequests.collect { scrollState.animateScrollTo(0) } }
     SettingsHome(
         state = state,
-        onOpenAlerts = { onOpen(AlertsRoute) },
+        onOpenNotifications = { onOpen(NotificationsRoute) },
         onOpenAway = { onOpen(AwayRoute) },
         onOpenDoors = { onOpen(DoorsRoute) },
         onOpenClassifier = { onOpen(ClassifierRoute(it)) },
@@ -247,8 +247,8 @@ fun SettingsTabContent(
 internal enum class SettingsFold { CAMERAS, ECONOMY, FINANCE_DRAWER, FIGURES, APP_ICON }
 
 /**
- * The Settings tab's page, from a [SettingsUiState]. Three groups of rows: this device's alerts
- * and away mode, each a page of its own; teaching the server faces and cars; then the cameras'
+ * The Settings tab's page, from a [SettingsUiState]. Three groups of rows: every app's
+ * notifications and away mode, each a page of its own; teaching the server faces and cars; then the cameras'
  * detection switches, how Finance talks about the economy, what its card in the drawer shows, how
  * Fitness draws its exercises and the app's home-screen icon — a few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
  * is that section in brief (see SettingsSummaries.kt), so most visits end on this page.
@@ -259,7 +259,7 @@ internal enum class SettingsFold { CAMERAS, ECONOMY, FINANCE_DRAWER, FIGURES, AP
 @Composable
 internal fun SettingsHome(
     state: SettingsUiState,
-    onOpenAlerts: () -> Unit,
+    onOpenNotifications: () -> Unit,
     onOpenAway: () -> Unit,
     onOpenClassifier: (String) -> Unit,
     onOpenFaces: () -> Unit,
@@ -282,8 +282,8 @@ internal fun SettingsHome(
                 icon = Icons.Filled.Notifications,
                 title = stringResource(Res.string.alerts_title),
                 summary = alertsSummary(state).resolve(),
-                onClick = onOpenAlerts,
-                opens = AlertsRoute,
+                onClick = onOpenNotifications,
+                opens = NotificationsRoute,
             )
             SettingsRowDivider()
             SettingsNavRow(

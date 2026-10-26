@@ -50,7 +50,7 @@ class ShellSidebarNavigationTest {
     @Test
     fun settingsInTwoPanesKeepsTheTopBarOverItsListWhileAPageIsOpen() {
         val nav = ShellNavigation()
-        nav.settingsBackStack.add(AlertsRoute)
+        nav.settingsBackStack.add(NotificationsRoute)
         assertFalse(nav.showsTopBar(TopLevelRoute.Settings))
         nav.twoPanes = true
         assertTrue(nav.showsTopBar(TopLevelRoute.Settings))

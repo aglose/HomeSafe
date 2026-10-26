@@ -199,7 +199,7 @@ somebody is home, behave exactly as before.
 
 ### Quiet hours and "only when everyone's away"
 
-Two per-phone choices under Settings → Alerts hold back *ordinary* alerts and never Away ones:
+Two per-phone choices under Settings → Notifications (the Cameras card) hold back *ordinary* alerts and never Away ones:
 quiet hours (a daily window, e.g. 10 PM to 7 AM, that may wrap midnight) and "only when
 everyone's away" (ordinary alerts never; the phone hears only the escalated pushes above). The
 app sends them on every registration as `quiet_start` / `quiet_end` (minutes after local
@@ -239,7 +239,7 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
   urgent ones on the `away_alerts_v2` channel (IMPORTANCE_HIGH, vibration, no sound, `CATEGORY_ALARM`;
   the first `away_alerts` rang the phone's alarm and is deleted, since a channel's sound can't change);
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.
-- Settings tab: an "Away mode" row after Alerts, saying in a line where this phone stands
+- Settings tab: an "Away mode" row after Notifications, saying in a line where this phone stands
   (`awaySummary`), which opens the Away mode page (`AwaySettingsScreen`, route `AwayRoute`) —
   "I'm away" switch for this phone (locked, with the reason, on an install that isn't tracked),
   then the two tracked phones, each with its status (`away since 4:12 PM` / `home` / `leaving…`)

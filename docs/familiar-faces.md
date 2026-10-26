@@ -23,7 +23,7 @@ Files: `network/FrigateFaceApi.kt`, `domain/model/FaceLibrary.kt`, `domain/repos
 `domain/usecase/FaceUseCases.kt`, `data/FaceRepositoryImpl.kt`, `viewmodel/FaceLibraryViewModel.kt`,
 `ui/screens/FaceLibraryScreen.kt`, route `FacesRoute` in `SettingsTabNav.kt`.
 
-## "Only strangers" — Settings › Alerts
+## "Only strangers" — Settings › Notifications
 
 `AlertSettings.quietFamiliarPeople` (Room column `SettingsEntity.quietFamiliarPeople`, schema 7,
 default off). `AlertSettings.notifies(camera, zones, category, recognized)` returns false for a
@@ -49,7 +49,7 @@ clips into a visit and the unnamed clips around it are the same person.
 `face_recognition: enabled: true` in Frigate's config (applied 2026-09-05 with `model_size: small`;
 the processor is only created at startup, so a `docker restart frigate` was needed). Faces need
 about 750 px² on the detect stream to be considered, so the cameras only collect attempts when
-someone is reasonably close. The Settings › Alerts toggle is disabled with an explanation when
+someone is reasonably close. The Settings › Notifications toggle is disabled with an explanation when
 the server reports face recognition off.
 
 ## Push relay

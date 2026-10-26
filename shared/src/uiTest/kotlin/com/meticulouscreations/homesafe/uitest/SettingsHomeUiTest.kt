@@ -114,7 +114,7 @@ class SettingsHomeUiTest {
             FrigatePreview {
                 SettingsHome(
                     state = state,
-                    onOpenAlerts = { onOpen("alerts") },
+                    onOpenNotifications = { onOpen("notifications") },
                     onOpenAway = { onOpen("away") },
                     onOpenClassifier = { onOpen("classifier:$it") },
                     onOpenFaces = { onOpen("faces") },
@@ -145,7 +145,7 @@ class SettingsHomeUiTest {
 
     @Test
     fun everyRowSaysHowItsSectionStands() = runHome {
-        onNode(hasText("Alerts") and hasText("On · People + vehicles")).assertIsDisplayed()
+        onNode(hasText("Notifications") and hasText("On · People + vehicles · weather")).assertIsDisplayed()
         onNode(hasText("Away mode") and hasText("This phone is home")).assertIsDisplayed()
         onNodeWithText("Recognition").assertIsDisplayed()
         onNode(hasText("Faces") and hasClickAction()).assertIsDisplayed()
@@ -157,7 +157,7 @@ class SettingsHomeUiTest {
 
     @Test
     fun beforeAnythingHasAnsweredEveryRowStillHasALine() = runHome(SettingsUiState(notificationsSupported = true)) {
-        onNode(hasText("Alerts") and hasText("Off")).assertIsDisplayed()
+        onNode(hasText("Notifications") and hasText("Off")).assertIsDisplayed()
         onNode(hasText("Away mode") and hasText("Checking who's home…")).assertIsDisplayed()
         onNode(hasText("Cameras") and hasText("Reading camera pipelines…")).assertIsDisplayed()
         onNode(hasText("Server") and hasText("checking…")).assertIsDisplayed()
@@ -169,9 +169,9 @@ class SettingsHomeUiTest {
     fun theRowsWithAChevronAskForTheirPages() {
         val opened = mutableListOf<String>()
         runHome(onOpen = { opened += it }) {
-            listOf("Alerts", "Away mode", "Faces", "Known Cars", "Server").forEach { tapRow(it) }
+            listOf("Notifications", "Away mode", "Faces", "Known Cars", "Server").forEach { tapRow(it) }
 
-            assertEquals(listOf("alerts", "away", "faces", "classifier:known_cars", "server"), opened)
+            assertEquals(listOf("notifications", "away", "faces", "classifier:known_cars", "server"), opened)
             // None of them opened anything out on this page.
             onAllNodes(isToggleable()).assertCountEquals(0)
         }
