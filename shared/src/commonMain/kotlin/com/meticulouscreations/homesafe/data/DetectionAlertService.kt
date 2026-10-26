@@ -106,6 +106,9 @@ class DetectionAlertService(
     private val settings: StateFlow<AlertSettings> =
         settingsRepository.observeSettings().stateIn(scope, SharingStarted.Eagerly, AlertSettings.DEFAULT)
 
+    /** [muted] as it is now, for posts that outlive the poll loop muting stops: a notification's picture and clip. */
+    private val mutedNow: StateFlow<Boolean> = muted.stateIn(scope, SharingStarted.Eagerly, false)
+
     private var job: Job? = null
 
     /**
@@ -301,6 +304,7 @@ class DetectionAlertService(
             offerCarTag = moment.isGenericCar,
             subject = moment.category,
         )
+        if (mutedNow.value) return
         notifier.notify(text)
         // Off the poll loop: the next detection mustn't wait on this one's downloads.
         scope.launch {
@@ -310,7 +314,7 @@ class DetectionAlertService(
                 clock = clock,
                 thumbnail = { apiClient.getEventThumbnail(url, moment.id) },
                 previewGif = { apiClient.getEventPreviewGif(url, moment.id) },
-                post = { notifier.notify(it) },
+                post = { if (!mutedNow.value) notifier.notify(it) },
                 windowSeconds = previewWindowSeconds,
                 retryDelaysMs = previewRetryDelaysMs,
             )

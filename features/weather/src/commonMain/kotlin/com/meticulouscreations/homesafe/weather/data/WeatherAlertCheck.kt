@@ -120,6 +120,8 @@ class WeatherAlertCheck(
         val notices = WeatherNoticePlanner.plan(report, place.name.takeIf { it.isNotBlank() }, prefs.notices, prefs.units, now, ledger.sent(now))
         // Marked as said only once it has been: one the OS wouldn't take is tried again next time.
         return notices.count { notice ->
+            // Muted while the forecast was being fetched: held back, and not marked as said.
+            if (mute.muted.value) return@count false
             val posted = notifier.notify(notice.toNotification(place))
             if (posted) ledger.record(notice.key, now)
             posted
