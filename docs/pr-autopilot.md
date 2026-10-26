@@ -15,8 +15,8 @@ finishes on a pull request's branch, and does this:
    requests. Once that's spent, or if no review arrives, Claude (Sonnet, set by `REVIEW_MODEL` in
    the workflow) reviews the change instead.
    [`scripts/ci/copilot_review.py`](../scripts/ci/copilot_review.py) decides which.
-4. **Findings are fixed automatically.** If Copilot left comments, Claude checks each one against
-   the code and fixes the real ones. If Claude reviewed, it fixes what it found. The fix is pushed
+4. **Findings are fixed automatically.** If Copilot left comments (on this commit, or on earlier
+   ones and still unresolved), Claude checks each one against the code and fixes the real ones. If Claude reviewed, it fixes what it found. The fix is pushed
    to the branch as a commit ending in `PR-Autopilot: fix`, and CI and the review run again on it.
    After two such fixes, a third one goes to a person instead of looping.
 5. **Then it merges** (squash, the way the repository merges) the exact commit CI passed and was

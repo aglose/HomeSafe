@@ -88,7 +88,8 @@ jobs:
       actions: read
       checks: read
     outputs:
-      go: ${{ steps.pr.outputs.go }}
+      # Not when the branch moved while Copilot was being waited for: that commit's CI run comes back.
+      go: ${{ steps.pr.outputs.go == 'true' && steps.copilot.outputs.state != 'moved' }}
       pr: ${{ steps.pr.outputs.pr }}
       sha: ${{ steps.pr.outputs.sha }}
       branch: ${{ steps.pr.outputs.branch }}
@@ -260,6 +261,10 @@ jobs:
           if [ -n "$OAUTH_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$OAUTH_TOKEN"; fi
           unset API_KEY OAUTH_TOKEN
 
+          # Only an answer written by this run counts. A branch could carry a result.json of its own
+          # (build/ is ignored, but a file can be added anyway), and an agent that failed partway
+          # may have left one behind; with none, finish takes it that the review did not finish.
+          rm -f build/pr-autopilot/result.json
           status=0
           timeout 35m claude -p "$(cat ../trusted/scripts/ci/pr-review-prompt.md)" \
             --model "$REVIEW_MODEL" \
@@ -268,6 +273,10 @@ jobs:
             > build/pr-autopilot/agent.log 2>&1 || status=$?
           tail -n 40 build/pr-autopilot/agent.log
           echo "The agent exited with $status."
+          if [ "$status" -ne 0 ]; then
+            rm -f build/pr-autopilot/result.json
+            echo "::warning::The agent did not finish (exit $status), so its answer is not used."
+          fi
 
       # Whatever the agent left in the working tree, as a patch against the pull request's head.
       # build/ is ignored, so its notes stay out of it.
@@ -327,6 +336,11 @@ jobs:
         with:
           name: pr-autopilot-fix
           path: ${{ runner.temp }}/fix
+      # Which of Copilot's threads the review looked at.
+      - uses: actions/download-artifact@v8
+        with:
+          name: pr-autopilot-review
+          path: ${{ runner.temp }}/review
 
       - name: Merge, push the fix, or ask for help
         env:
@@ -478,19 +492,11 @@ jobs:
               ;;
           esac
 
-          # Copilot's threads have all been answered by now (it found nothing on this commit, or the
-          # agent went through each one), so they are resolved, in case branch protection wants
-          # every conversation resolved. Anyone else's are left for them.
-          # shellcheck disable=SC2016 # jq's and GraphQL's own $variables
-          threads=$(gh api graphql -F owner="$GITHUB_REPOSITORY_OWNER" -F name="${GITHUB_REPOSITORY#*/}" -F pr="$PR" -f query='
-            query($owner: String!, $name: String!, $pr: Int!) {
-              repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
-                reviewThreads(first: 100) { nodes { id isResolved comments(first: 1) { nodes { author { login } } } } }
-              } }
-            }' --jq '.data.repository.pullRequest.reviewThreads.nodes[]
-              | select((.isResolved | not) and ((.comments.nodes[0].author.login // "") | startswith("copilot-pull-request-reviewer"))) | .id') || true
-          for thread in $threads; do
-            # shellcheck disable=SC2016 # jq's and GraphQL's own $variables
+          # The review has been through each of Copilot's open threads (or there were none), so
+          # those are resolved, in case branch protection wants every conversation resolved. Only
+          # the ones it was given: a thread opened since then, or anyone else's, is left alone.
+          for thread in $(jq -r '(.threads // [])[]' "$RUNNER_TEMP/review/copilot.json"); do
+            # shellcheck disable=SC2016 # GraphQL's own $id
             gh api graphql --silent -f id="$thread" -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }' || true
           done
 

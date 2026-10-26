@@ -24,16 +24,17 @@ def review(id, sha=SHA, body="", login=COPILOT_REVIEWER, at="2026-10-26T21:50:00
     return {"id": id, "commit_id": sha, "body": body, "user": {"login": login}, "submitted_at": at}
 
 
-def check(status="completed", conclusion="success", completed=NOW - timedelta(minutes=10)):
+def check(status="completed", conclusion="success", completed=NOW - timedelta(minutes=10), started=None):
     return {
         "name": COPILOT_CHECK,
+        "started_at": (started or completed - timedelta(minutes=3)).isoformat().replace("+00:00", "Z"),
         "status": status,
         "conclusion": conclusion if status == "completed" else None,
         "completed_at": completed.isoformat().replace("+00:00", "Z") if status == "completed" else None,
     }
 
 
-def run(reviews=(), comments=None, check_runs=(), requested=False, waited=timedelta(0)):
+def run(reviews=(), comments=None, check_runs=(), requested=False, waited=timedelta(0), asked_at=None):
     comments = comments or {}
     return judge(
         sha=SHA,
@@ -43,6 +44,7 @@ def run(reviews=(), comments=None, check_runs=(), requested=False, waited=timede
         requested=requested,
         now=NOW,
         started=NOW - waited,
+        asked_at=asked_at,
     )
 
 
@@ -105,6 +107,57 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(run(waited=timedelta(minutes=5)).state, "unavailable")
 
 
+class AskedAgainTest(unittest.TestCase):
+    """Once Copilot is asked again, what its earlier attempt left behind no longer decides."""
+
+    ASKED = NOW - timedelta(minutes=1)
+
+    def test_an_old_finished_check_does_not_end_the_wait(self):
+        found = run(check_runs=[check(conclusion="failure")], requested=True, asked_at=self.ASKED)
+        self.assertEqual(found.state, "pending")
+
+    def test_an_old_could_not_review_answer_does_not_end_the_wait(self):
+        old = review(1, body="Copilot wasn't able to review any files.", at="2026-10-26T21:00:00Z")
+        self.assertEqual(run(reviews=[old], requested=True, asked_at=self.ASKED).state, "pending")
+
+    def test_the_new_attempt_counts(self):
+        new = review(2, body="Looks good.", at="2026-10-26T21:59:30Z")
+        found = run(reviews=[new], check_runs=[check(conclusion="failure")], asked_at=self.ASKED)
+        self.assertEqual(found.state, "reviewed")
+
+    def test_a_new_check_that_finished_without_a_review_is_unavailable(self):
+        new_check = check(conclusion="failure", started=NOW - timedelta(seconds=50), completed=NOW - timedelta(seconds=40))
+        self.assertEqual(run(check_runs=[new_check], asked_at=NOW - timedelta(minutes=5)).state, "pending")
+        self.assertEqual(
+            judge(
+                sha=SHA, reviews=[], comments_of=lambda _: [], check_runs=[new_check], requested=True,
+                now=NOW + timedelta(minutes=5), started=NOW, asked_at=NOW - timedelta(minutes=5),
+            ).state,
+            "unavailable",
+        )
+
+
+def thread(id, login="copilot-pull-request-reviewer", resolved=False, comment_id=100, path="a.kt", line=3):
+    return {
+        "id": id, "isResolved": resolved, "path": path, "line": line, "originalLine": line,
+        "comments": {"nodes": [{"databaseId": comment_id, "body": f"Finding {id}", "author": {"login": login}}]},
+    }
+
+
+class OpenThreadsTest(unittest.TestCase):
+    def test_keeps_copilots_unresolved_threads(self):
+        ids, earlier = copilot_review.open_threads(
+            [thread("T1"), thread("T2", resolved=True), thread("T3", login="aglose"), thread("T4", comment_id=7)],
+            head_comment_ids={7},
+        )
+        self.assertEqual(ids, ["T1", "T4"])
+        # T4 started on the head commit's review, so it is among that review's comments already.
+        self.assertEqual([c["body"] for c in earlier], ["Finding T1"])
+
+    def test_a_thread_with_no_comments_is_skipped(self):
+        self.assertEqual(copilot_review.open_threads([{"id": "T", "isResolved": False, "comments": {"nodes": []}}], set()), ([], []))
+
+
 class MarkdownTest(unittest.TestCase):
     def test_lists_each_comment_with_where_it_is(self):
         found = copilot_review.Copilot(
@@ -117,11 +170,26 @@ class MarkdownTest(unittest.TestCase):
                 {"id": 9, "path": "c.kt", "line": None, "original_line": 4, "body": "Outdated"},
             ],
         )
-        text = copilot_review.as_markdown(found)
+        text = copilot_review.as_markdown(found, SHA)
+        self.assertIn(f"# Copilot reviewed {SHA}", text)
         self.assertIn("Overview", text)
         self.assertIn("### a.kt:12 (comment 7)", text)
         self.assertIn("### b.kt:3-5 (comment 8)", text)
         self.assertIn("### c.kt:4 (comment 9)", text)
+
+
+
+class MarkdownWithoutAReviewTest(unittest.TestCase):
+    def test_says_who_reviews_and_lists_earlier_comments(self):
+        found = copilot_review.Copilot(
+            "unavailable", "No review from Copilot after 15 minutes.",
+            earlier=[{"id": 5, "path": "d.kt", "line": 9, "body": "Still racy"}],
+        )
+        text = copilot_review.as_markdown(found, SHA)
+        self.assertIn(f"# Copilot did not review {SHA}", text)
+        self.assertIn("You are the reviewer.", text)
+        self.assertIn("still open", text)
+        self.assertIn("### d.kt:9 (comment 5)", text)
 
 
 if __name__ == "__main__":

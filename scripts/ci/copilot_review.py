@@ -11,9 +11,16 @@ Copilot has not reviewed the commit CI just passed, the workflow has Claude revi
     python3 scripts/ci/copilot_review.py --repo owner/name --pr 123 --sha <head> --out <dir> \
         [--wait-minutes 15] [--request]
 
-It prints `state=reviewed|unavailable` and `findings=<n>` (for $GITHUB_OUTPUT), and writes
-<dir>/copilot.json and, when there is a review, <dir>/copilot-review.md for the agent that fixes
-what it found. The exact words Copilot leaves when it is out of budget are not documented, so
+It prints `state=reviewed|unavailable|moved` and `findings=<n>` (for $GITHUB_OUTPUT), and writes
+<dir>/copilot.json and, when there is anything of Copilot's to check, <dir>/copilot-review.md for
+the agent that fixes what it found. `moved` means the pull request has a newer commit than --sha,
+whose own CI run will bring the workflow back.
+
+The findings are the comments on Copilot's review of this commit, and also any of Copilot's
+threads from earlier commits that nobody has resolved: a review of a new push looks at what
+changed, and does not say whether what it found before still holds. copilot.json lists the ids of
+all those threads, so that once the agent has checked them (or there were none) exactly those, and
+no thread that arrives later, are resolved. The exact words Copilot leaves when it is out of budget are not documented, so
 "unavailable" is decided by what is missing rather than by what it says:
 
 - No review of this commit, and Copilot's check run has finished without leaving one.
@@ -56,10 +63,13 @@ DID_NOT_REVIEW = re.compile(
 
 @dataclass
 class Copilot:
-    state: str  # "reviewed", "pending" or "unavailable"
+    state: str  # "reviewed", "pending", "unavailable" or "moved"
     reason: str
     review: dict | None = None
     comments: list[dict] = field(default_factory=list)
+    # Copilot's unresolved threads from earlier commits, and the ids of every unresolved one.
+    earlier: list[dict] = field(default_factory=list)
+    threads: list[str] = field(default_factory=list)
 
 
 def _time(stamp: str | None) -> datetime | None:
@@ -81,9 +91,21 @@ def judge(
     requested: bool,
     now: datetime,
     started: datetime,
+    asked_at: datetime | None = None,
 ) -> Copilot:
-    """What Copilot has done about `sha` so far. Pure apart from `comments_of(review_id)`."""
-    mine = [r for r in reviews if is_copilot(r.get("user")) and r.get("commit_id") == sha]
+    """What Copilot has done about `sha` so far. Pure apart from `comments_of(review_id)`.
+
+    `asked_at` is when this script asked Copilot again: reviews and check runs from before then are
+    the attempt that came to nothing, and only the new one counts.
+    """
+
+    def since_asked(stamp: str | None) -> bool:
+        return asked_at is None or (_time(stamp) or now) >= asked_at
+
+    mine = [
+        r for r in reviews
+        if is_copilot(r.get("user")) and r.get("commit_id") == sha and since_asked(r.get("submitted_at"))
+    ]
     if mine:
         review = max(mine, key=lambda r: r.get("submitted_at") or "")
         comments = comments_of(review["id"])
@@ -91,7 +113,7 @@ def judge(
             return Copilot("unavailable", "Copilot left a review saying it could not review this commit.", review)
         return Copilot("reviewed", f"Copilot reviewed this commit with {len(comments)} comment(s).", review, comments)
 
-    runs = [r for r in check_runs if r.get("name") == COPILOT_CHECK]
+    runs = [r for r in check_runs if r.get("name") == COPILOT_CHECK and since_asked(r.get("started_at"))]
     if any(r.get("status") != "completed" for r in runs):
         return Copilot("pending", "Copilot's review is running.")
     if runs:
@@ -107,18 +129,58 @@ def judge(
     return Copilot("pending", "No sign of Copilot yet.")
 
 
-def as_markdown(found: Copilot) -> str:
-    review = found.review or {}
-    lines = [f"# Copilot's review of {review.get('commit_id', '')}", "", (review.get("body") or "").strip(), ""]
-    if found.comments:
-        lines += ["## Comments on the code", ""]
-        for comment in found.comments:
-            where = comment.get("path", "?")
-            line = comment.get("line") or comment.get("original_line")
-            if line:
-                start = comment.get("start_line")
-                where += f":{start}-{line}" if start and start != line else f":{line}"
-            lines += [f"### {where} (comment {comment.get('id')})", "", (comment.get("body") or "").strip(), ""]
+def open_threads(nodes: list[dict], head_comment_ids: set[int]) -> tuple[list[str], list[dict]]:
+    """Copilot's unresolved review threads: the ids of all of them, and the ones that did not start
+    on the head commit's review, as comments (path, line, body)."""
+    ids, earlier = [], []
+    for node in nodes:
+        first = ((node.get("comments") or {}).get("nodes") or [{}])[0]
+        author = ((first.get("author") or {}).get("login") or "")
+        if node.get("isResolved") or not author.startswith(COPILOT_CHECK):
+            continue
+        ids.append(node["id"])
+        if first.get("databaseId") not in head_comment_ids:
+            earlier.append({
+                "id": first.get("databaseId"),
+                "path": node.get("path"),
+                "line": node.get("line"),
+                "original_line": node.get("originalLine"),
+                "body": first.get("body"),
+            })
+    return ids, earlier
+
+
+def _where(comment: dict) -> str:
+    where = comment.get("path") or "?"
+    line = comment.get("line") or comment.get("original_line")
+    if line:
+        start = comment.get("start_line")
+        where += f":{start}-{line}" if start and start != line else f":{line}"
+    return where
+
+
+def _comments(comments: list[dict]) -> list[str]:
+    lines = []
+    for comment in comments:
+        lines += [f"### {_where(comment)} (comment {comment.get('id')})", "", (comment.get("body") or "").strip(), ""]
+    return lines
+
+
+def as_markdown(found: Copilot, sha: str) -> str:
+    if found.state == "reviewed":
+        review = found.review or {}
+        lines = [f"# Copilot reviewed {sha}", "", (review.get("body") or "").strip(), ""]
+        if found.comments:
+            lines += ["## Its comments on the code", ""] + _comments(found.comments)
+    else:
+        lines = [f"# Copilot did not review {sha}", "", f"{found.reason} You are the reviewer.", ""]
+    if found.earlier:
+        lines += [
+            "## Its comments on earlier commits that are still open",
+            "",
+            "Check whether each still applies to the code as it is now.",
+            "",
+        ] + _comments(found.earlier)
     return "\n".join(lines)
 
 
@@ -136,6 +198,32 @@ def gh_list(path: str) -> list[dict]:
     return [item for page in pages or [] for item in (page if isinstance(page, list) else page.get("check_runs", []))]
 
 
+THREADS_QUERY = """
+query($owner: String!, $name: String!, $pr: Int!, $after: String) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
+    reviewThreads(first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id isResolved path line originalLine
+              comments(first: 1) { nodes { databaseId body author { login } } } }
+    }
+  } }
+}"""
+
+
+def thread_nodes(repo: str, pr: int) -> list[dict]:
+    owner, name = repo.split("/", 1)
+    nodes, after = [], None
+    while True:
+        args = ["graphql", "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"pr={pr}", "-f", f"query={THREADS_QUERY}"]
+        if after:
+            args += ["-f", f"after={after}"]
+        threads = gh(*args)["data"]["repository"]["pullRequest"]["reviewThreads"]
+        nodes += threads["nodes"]
+        if not threads["pageInfo"]["hasNextPage"]:
+            return nodes
+        after = threads["pageInfo"]["endCursor"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", required=True)
@@ -151,12 +239,17 @@ def main() -> int:
     started = datetime.now(timezone.utc)
     deadline = time.monotonic() + args.wait_minutes * 60
     asked = False
+    asked_at = None
 
     def comments_of(review_id: int) -> list[dict]:
         return gh_list(f"repos/{repo}/pulls/{pr}/reviews/{review_id}/comments?per_page=100")
 
     while True:
         pull = gh(f"repos/{repo}/pulls/{pr}")
+        if pull["head"]["sha"] != sha:
+            found = Copilot("moved", f"#{pr} has moved on from {sha[:7]} to {pull['head']['sha'][:7]}.")
+            print(found.reason, file=sys.stderr)
+            break
         requested = any(is_copilot(u) or (u or {}).get("login") == "Copilot" for u in pull.get("requested_reviewers", []))
         found = judge(
             sha=sha,
@@ -166,6 +259,7 @@ def main() -> int:
             requested=requested or asked,
             now=datetime.now(timezone.utc),
             started=started,
+            asked_at=asked_at,
         )
         if found.state == "unavailable" and args.request and request_token and not asked:
             # Nothing on its way: ask once, and give it the rest of the wait.
@@ -177,7 +271,7 @@ def main() -> int:
                 )
                 print(f"Asked Copilot to review #{pr}.", file=sys.stderr)
                 asked = True
-                started = datetime.now(timezone.utc)
+                asked_at = started = datetime.now(timezone.utc)
                 continue
             except subprocess.CalledProcessError as error:
                 print(f"::warning::Could not ask Copilot for a review: {error.stderr.strip()}", file=sys.stderr)
@@ -190,14 +284,21 @@ def main() -> int:
             break
         time.sleep(30)
 
+    if found.state != "moved":
+        found.threads, found.earlier = open_threads(thread_nodes(repo, pr), {c.get("id") for c in found.comments})
+
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "copilot.json"), "w") as f:
-        json.dump({"state": found.state, "reason": found.reason, "review": found.review, "comments": found.comments}, f, indent=2)
-    if found.state == "reviewed":
+        json.dump(
+            {"state": found.state, "reason": found.reason, "review": found.review,
+             "comments": found.comments, "earlier": found.earlier, "threads": found.threads},
+            f, indent=2,
+        )
+    if found.state == "reviewed" or found.earlier:
         with open(os.path.join(args.out, "copilot-review.md"), "w") as f:
-            f.write(as_markdown(found))
+            f.write(as_markdown(found, sha))
     print(f"state={found.state}")
-    print(f"findings={len(found.comments)}")
+    print(f"findings={len(found.comments) + len(found.earlier)}")
     print(f"reason={found.reason}")
     return 0
 
