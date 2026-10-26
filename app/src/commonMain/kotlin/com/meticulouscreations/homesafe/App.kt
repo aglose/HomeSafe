@@ -16,6 +16,7 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.assistant.AssistantHost
 import com.meticulouscreations.homesafe.ui.assistant.AssistantRoot
 import com.meticulouscreations.homesafe.ui.components.LastSeenStillFetcher
 import com.meticulouscreations.homesafe.ui.components.warmUpLivePlayback
@@ -124,16 +125,17 @@ internal fun startAppServices(appGraph: AppGraph) {
  * Everything a screen needs around it: the graph's view-model factory (see [App]), the theme,
  * an opaque ground of the app's own colour under every screen, so no transition can ever
  * expose the platform window behind Compose (a light theme on Android), and the assistant over
- * all of it, which a hold on any bottom bar opens (see [AssistantRoot]).
+ * all of it, which a hold on any bottom bar opens (see [AssistantRoot]). A host whose bar is
+ * native (the iOS 26 shell) hands in the [assistant] its bar opens.
  */
 @Composable
-internal fun AppChrome(appGraph: AppGraph, content: @Composable () -> Unit) {
+internal fun AppChrome(appGraph: AppGraph, assistant: AssistantHost? = null, content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalMetroViewModelFactory provides appGraph.metroViewModelFactory,
         LocalShellApps provides shellApps,
     ) {
         FrigateTheme {
-            AssistantRoot(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+            AssistantRoot(modifier = Modifier.background(MaterialTheme.colorScheme.background), host = assistant ?: remember { AssistantHost() }) {
                 content()
             }
         }

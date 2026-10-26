@@ -127,10 +127,12 @@ import kotlin.math.sin
  * beneath keeps scrolling and the tabs keep switching while it is up, and a question is asked about
  * whatever is showing by then. While it is up the app beneath draws through a layer, so a picture
  * of it can go with a question; the assistant itself is never in that picture.
+ *
+ * [host] is made here unless a platform host hands one in to open from outside Compose (the iOS 26
+ * shell, whose tab bar is native).
  */
 @Composable
-fun AssistantRoot(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val host = remember { AssistantHost() }
+fun AssistantRoot(modifier: Modifier = Modifier, host: AssistantHost = remember { AssistantHost() }, content: @Composable () -> Unit) {
     val screen = rememberGraphicsLayer()
     DisposableEffect(host, screen) {
         host.capture = { screen.toImageBitmap() }
@@ -268,8 +270,10 @@ private fun AssistantFrame(
     val gap = with(density) { BAR_GAP.toPx() }
     val ime = WindowInsets.ime.getBottom(density).toFloat()
     val navigation = WindowInsets.navigationBars.getBottom(density).toFloat()
-    // A bar along the foot has the box above it; a rail down the side has it at the foot, clear of the system bar.
-    val fromBar = if (origin != Rect.Zero && origin.width >= origin.height && root != Rect.Zero) root.bottom - origin.top + gap else navigation + gap
+    // A bar along the foot has the box above it; a rail down the side, or a bar along the top (an
+    // iPad's tab bar), has it at the foot, clear of the system bar.
+    val alongFoot = origin != Rect.Zero && root != Rect.Zero && origin.width >= origin.height && origin.center.y > root.center.y
+    val fromBar = if (alongFoot) root.bottom - origin.top + gap else navigation + gap
     val clearance = with(density) { max(fromBar, ime + gap).toDp() }
     val cardMaxHeight = with(density) { (root.height * CARD_MAX_SHARE).toDp() }.coerceAtLeast(160.dp)
 

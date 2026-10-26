@@ -2,9 +2,11 @@ package com.meticulouscreations.homesafe
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.window.ComposeUIViewController
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.assistant.AssistantHost
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.InnerApp
 import com.meticulouscreations.homesafe.ui.screens.LocalNativeTabBar
@@ -21,6 +23,7 @@ import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationDidEnterBackgroundNotification
 import platform.UIKit.UIApplicationState
 import platform.UIKit.UIApplicationWillEnterForegroundNotification
+import platform.UIKit.UIScreen
 import platform.UIKit.UIViewController
 
 /**
@@ -52,6 +55,11 @@ import platform.UIKit.UIViewController
  * controller from [appViewController]. Swift says when that is so through [appsInSidebar] (a
  * window narrowed to a phone's width has no sidebar, and the drawer comes back); Compose asks
  * for an app's tab, when a notification or a share opens one, through [onSelectApp].
+ *
+ * Holding the native bar opens the assistant, as holding the Compose bar does elsewhere: Swift
+ * watches the bar for the hold and calls [toggleAssistant] (or [toggleAppAssistant] for an app's
+ * tab) with where the bar is, and the assistant of the tab that is up grows out of it. Each tab's
+ * view controller has an assistant of its own, since each is its own composition.
  */
 class IosShell {
     /** Set by Swift: called on the main thread when Compose wants [IosTab] up — the SwiftUI selection follows. */
@@ -89,6 +97,8 @@ class IosShell {
     )
     private val controllers = HashMap<IosTab, UIViewController>()
     private val appControllers = HashMap<IosAppTab, UIViewController>()
+    private val assistants = HashMap<IosTab, AssistantHost>()
+    private val appAssistants = HashMap<IosAppTab, AssistantHost>()
 
     init {
         IosAppVisibility.install(IosApp.graph)
@@ -114,8 +124,9 @@ class IosShell {
      * nested stack presentation, and rebuild its view models.
      */
     fun viewController(tab: IosTab): UIViewController = controllers.getOrPut(tab) {
+        val assistant = assistants.getOrPut(tab) { AssistantHost() }
         ComposeUIViewController {
-            AppChrome(IosApp.graph) {
+            AppChrome(IosApp.graph, assistant) {
                 CompositionLocalProvider(LocalNativeTabBar provides true) {
                     ShellTab(nav, tab.route)
                 }
@@ -125,13 +136,33 @@ class IosShell {
 
     /** The view controller for [app]'s tab in the sidebar, made on first ask and kept, as [viewController]'s are. */
     fun appViewController(app: IosAppTab): UIViewController = appControllers.getOrPut(app) {
+        val assistant = appAssistants.getOrPut(app) { AssistantHost() }
         ComposeUIViewController {
-            AppChrome(IosApp.graph) {
+            AppChrome(IosApp.graph, assistant) {
                 CompositionLocalProvider(LocalNativeTabBar provides true) {
                     ShellAppTab(nav, app.app)
                 }
             }
         }
+    }
+
+    /**
+     * A hold on the native tab bar while [tab] is up: opens that tab's assistant out of the bar,
+     * or closes it if it is up. The bar's frame is in the window's points, which is the tab's own
+     * Compose view's space too (it fills the window), and Compose measures in pixels.
+     */
+    fun toggleAssistant(tab: IosTab, x: Double, y: Double, width: Double, height: Double) {
+        assistants.getOrPut(tab) { AssistantHost() }.toggle(barRect(x, y, width, height))
+    }
+
+    /** [toggleAssistant] for an app's own tab in an iPad's sidebar. */
+    fun toggleAppAssistant(app: IosAppTab, x: Double, y: Double, width: Double, height: Double) {
+        appAssistants.getOrPut(app) { AssistantHost() }.toggle(barRect(x, y, width, height))
+    }
+
+    private fun barRect(x: Double, y: Double, width: Double, height: Double): Rect {
+        val scale = UIScreen.mainScreen.scale.toFloat()
+        return Rect(x.toFloat() * scale, y.toFloat() * scale, (x + width).toFloat() * scale, (y + height).toFloat() * scale)
     }
 }
 

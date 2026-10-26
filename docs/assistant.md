@@ -1,7 +1,8 @@
 # The assistant
 
-Claude, over every screen. Hold any bottom bar (the shell's pill or its side rail, or the Finance,
-Weather, Fitness or Atlas app's own bar) and a small box grows out of it, edged with flowing
+Claude, over every screen. Hold any bottom bar (the shell's pill or its side rail, iOS 26's
+Liquid Glass tab bar, or the Finance, Weather, Fitness or Atlas app's own bar) and a small box
+grows out of it, edged with flowing
 light, with Claude's answers on a card above it. Nothing new is drawn on any screen to open it:
 the long press is the whole of the way in, and a second hold closes it, as does Back (predictive:
 the box folds back toward its bar under the finger).
@@ -67,8 +68,16 @@ flow round the box's edge, a halo with outward ripples spills over the screen be
 light bursts as the box blooms out of the bar, settles to a breathing rim, and breathes faster
 while Claude works.
 
+## Opening it from a native bar
+
+The Compose bars open it with `Modifier.assistantTrigger`. iOS 26's tab bar is SwiftUI's, out of
+Compose's reach, so `AssistantBarHold` (`ContentView.swift`) adds a long press to the `UITabBar`
+under the `TabView`, found through a tab's view controller, and calls `IosShell.toggleAssistant`
+(or `toggleAppAssistant` for an app's sidebar tab) with the bar's frame. Each tab is its own
+Compose view controller, so each has its own assistant, handed in through `AppChrome`; the one
+for the tab that is up opens. On an iPad the bar is along the top, and the box then sits at the
+foot of the window instead of above the bar.
+
 ## Not yet
 
-- The iOS 26 host's main tabs sit under the native `TabView` bar, which the Compose trigger can't
-  reach, so there the assistant opens from the drawer apps' bars only.
 - The conversation lasts as long as the app process; it isn't saved.

@@ -98,11 +98,12 @@ private fun com.meticulouscreations.homesafe.ui.assistant.AssistantPanelPreview(
     - draft: STABLE (String is immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.assistant.AssistantRoot(modifier: androidx.compose.ui.Modifier, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.assistant.AssistantRoot(modifier: androidx.compose.ui.Modifier, host: com.meticulouscreations.homesafe.ui.assistant.AssistantHost, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - modifier: STABLE (marked @Stable or @Immutable)
+    - host: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 
 @Composable
@@ -121,7 +122,7 @@ private fun com.meticulouscreations.homesafe.ui.assistant.InputField(value: kotl
     - onValueChange: STABLE (function type)
     - placeholder: STABLE (String is immutable)
     - focusRequester: STABLE (marked @Stable or @Immutable)
-    - imeAction: STABLE (marked @Stable or @Immutable)
+    - imeAction: RUNTIME (requires runtime check)
     - onAction: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - secret: STABLE (primitive type)

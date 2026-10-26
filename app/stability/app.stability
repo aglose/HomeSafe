@@ -13,11 +13,12 @@ public fun com.meticulouscreations.homesafe.App(appGraph: com.meticulouscreation
     - debugAutofillCredentials: STABLE (class with no mutable properties)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulouscreations.homesafe.di.AppGraph, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulouscreations.homesafe.di.AppGraph, assistant: com.meticulouscreations.homesafe.ui.assistant.AssistantHost?, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - appGraph: UNKNOWN (interface or non-final class; concrete implementation unknown)
+    - assistant: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 
 @Composable

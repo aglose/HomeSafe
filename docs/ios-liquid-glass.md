@@ -47,6 +47,11 @@ ContentView (Swift)
   four, a tab's lifecycle stops whenever another tab is up, and that must not read as the app
   going to the background (the live players would drop every stream on the short window).
 
+- **Holding the bar** opens the assistant, as holding the Compose bar does elsewhere: SwiftUI
+  can't watch a press on its bar, so `AssistantBarHold` adds a long press to the `UITabBar`
+  under the `TabView` and hands the bar's frame to `IosShell.toggleAssistant`. Each tab's
+  `AppChrome` is given its own `AssistantHost` for that (see `docs/assistant.md`).
+
 ## What it costs
 
 - A hidden tab is stopped, not disposed, as it was under Compose navigation. The players
