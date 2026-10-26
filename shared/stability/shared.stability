@@ -363,12 +363,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.AlertRules(state: com.me
     - onLoadVolume: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.AlertsPage(): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-
-@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.AlertsSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onPushNotifications: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>, onPreset: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.AlertPreset, kotlin.Unit>, onQuietHours: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.QuietHours, kotlin.Unit>, onOnlyWhenAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onQuietFamiliar: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onLoadVolume: kotlin.Function0<kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>, onSendTest: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -383,14 +377,6 @@ internal fun com.meticulouscreations.homesafe.ui.screens.AlertsSection(state: co
     - onLoadVolume: STABLE (function type)
     - onOpenSettings: STABLE (function type)
     - onSendTest: STABLE (function type)
-
-@Composable
-public fun com.meticulouscreations.homesafe.ui.screens.AlertsSettingsScreen(onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - onBack: STABLE (function type)
-    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.AppIconOptions(icon: com.meticulouscreations.homesafe.appicon.AppIcon, onIcon: kotlin.Function1<com.meticulouscreations.homesafe.appicon.AppIcon, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -542,6 +528,15 @@ private fun com.meticulouscreations.homesafe.ui.screens.BottomNavItemView(route:
     - onClick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - horizontalPadding: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.BudgetAlertsSection(budget: com.meticulouscreations.homesafe.viewmodel.BudgetAlertsState, onChange: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches, kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - budget: STABLE (marked @Stable or @Immutable)
+    - onChange: STABLE (function type)
+    - onRetry: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraAlertZones(camera: com.meticulouscreations.homesafe.domain.model.CameraPipeline, alerts: com.meticulouscreations.homesafe.domain.model.AlertSettings, volume: com.meticulouscreations.homesafe.domain.model.AlertVolume?, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
@@ -1881,12 +1876,39 @@ internal fun com.meticulouscreations.homesafe.ui.screens.NotAPersonPrompt(state:
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.NotificationsPage(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.NotificationsSettingsScreen(onBack: kotlin.Function0<kotlin.Unit>, onOpenDoors: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onBack: STABLE (function type)
+    - onOpenDoors: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.OpenAppsButton(onClick: kotlin.Function0<kotlin.Unit>, extraColors: com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - onClick: STABLE (function type)
     - extraColors: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.OtherAppsNotifications(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenDoors: kotlin.Function0<kotlin.Unit>, onWeatherNotices: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onBudgetAlerts: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches, kotlin.Unit>, onRetryBudget: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onOpenDoors: STABLE (function type)
+    - onWeatherNotices: STABLE (function type)
+    - onBudgetAlerts: STABLE (function type)
+    - onRetryBudget: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.OutageRow(title: kotlin.String, detail: kotlin.String, ongoing: kotlin.Boolean): kotlin.Unit
@@ -2276,12 +2298,12 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsGroup(modifier:
     - content: STABLE (composable function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenAlerts: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, onFinanceDrawerItems: kotlin.Function1<kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>, kotlin.Unit>, onFigureStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, onAppIcon: kotlin.Function1<com.meticulouscreations.homesafe.appicon.AppIcon, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onOpenDoors: kotlin.Function0<kotlin.Unit>?, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenNotifications: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, onFinanceDrawerItems: kotlin.Function1<kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>, kotlin.Unit>, onFigureStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, onAppIcon: kotlin.Function1<com.meticulouscreations.homesafe.appicon.AppIcon, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onOpenDoors: kotlin.Function0<kotlin.Unit>?, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
-    - onOpenAlerts: STABLE (function type)
+    - onOpenNotifications: STABLE (function type)
     - onOpenAway: STABLE (function type)
     - onOpenClassifier: STABLE (function type)
     - onOpenFaces: STABLE (function type)
@@ -2739,6 +2761,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.UptimeRow(title: kotlin.
     - selectedIndex: STABLE (class with no mutable properties)
     - selectedWords: STABLE (class with no mutable properties)
     - onSelect: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.WeatherNotificationsSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onChange: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ZoneDetailsEditor(zoneName: kotlin.String, friendlyName: kotlin.String, isPlaceholderName: kotlin.Boolean, objects: kotlin.collections.List<kotlin.String>, trackedObjects: kotlin.collections.List<kotlin.String>, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit

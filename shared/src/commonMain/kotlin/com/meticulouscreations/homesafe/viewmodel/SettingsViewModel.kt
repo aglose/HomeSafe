@@ -41,6 +41,8 @@ import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import com.meticulouscreations.homesafe.finance.domain.BudgetAlertPreferences
+import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
@@ -48,11 +50,15 @@ import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePreferences
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.alerts_finance_error
+import homesafe.shared.generated.resources.alerts_finance_save_error
 import homesafe.shared.generated.resources.presence_error_location
 import homesafe.shared.generated.resources.presence_error_not_connected
 import homesafe.shared.generated.resources.presence_error_relay_refused
@@ -119,6 +125,10 @@ data class SettingsUiState(
     val appIconsSupported: Boolean = false,
     /** The home-screen icon in use. */
     val appIcon: AppIcon = AppIcon.DEFAULT,
+    /** Which of the weather app's notifications are wanted. They share this phone's one notification permission with the cameras'. */
+    val weatherNotices: WeatherNoticeSettings = WeatherNoticeSettings(),
+    /** The budget's alert switches, read from the relay each time the Notifications page is opened. */
+    val budgetAlerts: BudgetAlertsState = BudgetAlertsState.Loading,
 ) {
     /**
      * Every place the alert rules cover, in the order the Settings tab lists them: each enabled
@@ -142,6 +152,26 @@ data class SettingsUiState(
     /** The push switch is effectively on only when the OS also allows it. */
     val pushNotificationsActive: Boolean
         get() = alerts.pushNotificationsEnabled && notificationPermission == NotificationPermission.GRANTED
+
+    /** The weather app's switch, likewise: on, and let through by the OS. */
+    val weatherNoticesActive: Boolean
+        get() = notificationsSupported && weatherNotices.enabled && notificationPermission == NotificationPermission.GRANTED
+}
+
+/** The budget's alert switches as the Notifications page has them from the relay. */
+@Immutable
+sealed interface BudgetAlertsState {
+    /** Not read yet. */
+    data object Loading : BudgetAlertsState
+
+    /** No budget on the relay, or not this account's to see: the page leaves Finance out. */
+    data object None : BudgetAlertsState
+
+    /** The relay couldn't be asked, and nothing was read before. */
+    data class Failed(val error: UiText) : BudgetAlertsState
+
+    /** The switches; while [saving] they show what was asked for, and [error] says why the last save didn't take. */
+    data class Ready(val alerts: BudgetAlertSwitches, val saving: Boolean = false, val error: UiText? = null) : BudgetAlertsState
 }
 
 /** Transient, screen-local state the flows above don't own. */
@@ -159,6 +189,15 @@ private data class LocalState(
     val alertVolume: AlertVolume? = null,
     val alertVolumeRequested: Boolean = false,
     val appIcon: AppIcon = AppIcon.DEFAULT,
+    val budgetAlerts: BudgetAlertsState = BudgetAlertsState.Loading,
+)
+
+/** The drawer apps' preferences that Settings shows, as one value for [SettingsViewModel.uiState]'s combine. */
+private data class AppPreferences(
+    val tone: EconomyTone,
+    val drawer: List<FinanceDrawerItem>,
+    val figures: FigureStyle,
+    val weatherNotices: WeatherNoticeSettings,
 )
 
 @Inject
@@ -190,6 +229,8 @@ class SettingsViewModel(
     observeRelayPushUseCase: ObserveRelayPushUseCase,
     private val financePreferences: FinancePreferencesRepository,
     private val fitnessPreferences: FitnessPreferencesRepository,
+    private val weatherNoticePreferences: WeatherNoticePreferences,
+    private val budgetAlertPreferences: BudgetAlertPreferences,
     private val appIcons: AppIconSwitcher,
 ) : ViewModel() {
 
@@ -232,15 +273,30 @@ class SettingsViewModel(
                 alertVolume = local.alertVolume,
                 appIconsSupported = appIcons.supported,
                 appIcon = local.appIcon,
+                budgetAlerts = local.budgetAlerts,
             )
         },
         presence,
         locationAccess,
         relayPushes,
         // The drawer apps' own preferences, as one: there is room for five flows here.
-        combine(financePreferences.observeEconomyTone(), financePreferences.observeDrawerItems(), fitnessPreferences.observeFigureStyle(), ::Triple),
-    ) { state, presence, access, pushed, (tone, drawer, figures) ->
-        state.copy(presence = presence, locationAccess = access, relayPushes = pushed, economyTone = tone, financeDrawerItems = drawer, figureStyle = figures)
+        combine(
+            financePreferences.observeEconomyTone(),
+            financePreferences.observeDrawerItems(),
+            fitnessPreferences.observeFigureStyle(),
+            weatherNoticePreferences.observe(),
+            ::AppPreferences,
+        ),
+    ) { state, presence, access, pushed, apps ->
+        state.copy(
+            presence = presence,
+            locationAccess = access,
+            relayPushes = pushed,
+            economyTone = apps.tone,
+            financeDrawerItems = apps.drawer,
+            figureStyle = apps.figures,
+            weatherNotices = apps.weatherNotices,
+        )
     }
         .stateIn(
             viewModelScope,
@@ -335,6 +391,58 @@ class SettingsViewModel(
 
     fun setFigureStyle(style: FigureStyle) {
         viewModelScope.launch { fitnessPreferences.setFigureStyle(style) }
+    }
+
+    /**
+     * Changes which weather notifications are wanted. Turning them on asks the OS for permission
+     * if it hasn't been given, as the cameras' switch does; the weather app's switch stays as set
+     * either way, as it does in the weather app's own settings.
+     */
+    fun setWeatherNotices(settings: WeatherNoticeSettings) {
+        viewModelScope.launch {
+            weatherNoticePreferences.update { settings }
+            if (settings.enabled && notificationsSupported && getNotificationPermissionUseCase() != NotificationPermission.GRANTED) {
+                requestNotificationPermissionUseCase()
+                local.update { it.copy(permission = getNotificationPermissionUseCase()) }
+            }
+        }
+    }
+
+    /**
+     * Re-reads the budget's alert switches — on every visit to the Notifications page, since the
+     * other phone or the finance app may have changed them. Switches already read stay up while
+     * the relay is asked again, and stay if it can't be reached.
+     */
+    fun refreshBudgetAlerts() {
+        viewModelScope.launch {
+            val result = budgetAlertPreferences.read()
+            local.update { current ->
+                val answer: BudgetAlertsState = result.fold(
+                    onSuccess = { alerts -> alerts?.let { BudgetAlertsState.Ready(it) } ?: BudgetAlertsState.None },
+                    onFailure = { error ->
+                        current.budgetAlerts.takeIf { it is BudgetAlertsState.Ready }
+                            ?: BudgetAlertsState.Failed(error.userMessage(Res.string.alerts_finance_error))
+                    },
+                )
+                // A save under way has the newer word on what the switches are.
+                if ((current.budgetAlerts as? BudgetAlertsState.Ready)?.saving == true) current else current.copy(budgetAlerts = answer)
+            }
+        }
+    }
+
+    /** Saves the budget's alert switches on the relay; they show what was asked at once, and go back if it can't be saved. */
+    fun setBudgetAlerts(alerts: BudgetAlertSwitches) {
+        val before = local.value.budgetAlerts as? BudgetAlertsState.Ready ?: return
+        if (before.saving) return
+        local.update { it.copy(budgetAlerts = BudgetAlertsState.Ready(alerts, saving = true)) }
+        viewModelScope.launch {
+            val result = budgetAlertPreferences.save(alerts)
+            val after = result.fold(
+                onSuccess = { saved -> BudgetAlertsState.Ready(saved) },
+                onFailure = { error -> BudgetAlertsState.Ready(before.alerts, error = error.userMessage(Res.string.alerts_finance_save_error)) },
+            )
+            local.update { it.copy(budgetAlerts = after) }
+        }
     }
 
     /** Puts [icon] on the home screen; the choice shown is read back from the platform, so a refusal leaves the old one ticked. */

@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
  * The Settings tab against a real server: the Server row's summary and the Server page behind it
  * (read from `/api/stats` and `/api/config` by the real status repository), the per-camera
  * detection switches under the Cameras row writing through `PUT /api/config/set` and following
- * what the server then says, the Alerts and Away mode pages a tap below, and what the tab tells
+ * what the server then says, the Notifications and Away mode pages a tap below, and what the tab tells
  * a viewer account or a device that can't post notifications.
  *
  * Both journey hosts — the desktop JVM and an Android test context with no activity — have no
@@ -250,10 +250,10 @@ class SettingsJourneyTest {
         signIn.signInAs()
         settings.open()
 
-        settings.awaitAlertsSummary(SettingsRobot.ALERTS_SUMMARY_UNAVAILABLE)
-        settings.openAlerts()
+        settings.awaitNotificationsSummary(SettingsRobot.NOTIFICATIONS_SUMMARY_UNAVAILABLE)
+        settings.openNotifications()
         awaitText(SettingsRobot.NOTIFICATIONS_UNAVAILABLE)
-        settings.awaitSwitchInRow("Notifications", on = false, enabled = false)
+        settings.awaitSwitchInRow("Camera notifications", on = false, enabled = false)
         // The rules only open up under a working notifications switch.
         assertFalse(exists(hasText("What to hear about")), "no alert rules without notifications")
         assertFalse(exists(hasText("Quiet hours")), "no quiet hours without notifications")
@@ -279,22 +279,22 @@ class SettingsJourneyTest {
     }
 
     @Test
-    fun theAlertsAndAwayModeRowsOpenPagesOfTheirOwnAndBackReturnsToSettings() = runAppJourney {
+    fun theNotificationsAndAwayModeRowsOpenPagesOfTheirOwnAndBackReturnsToSettings() = runAppJourney {
         val settings = SettingsRobot(this)
         signIn.signInAs()
         settings.open()
         assertFalse(exists(hasText("I'm away")), "the away switch is on its own page, not this one")
 
-        settings.openAlerts()
-        awaitText("Notifications")
+        settings.openNotifications()
+        awaitText("Camera notifications")
         awaitGone(SettingsRobot.SERVER_ROW, "the Settings rows")
-        settings.backFromAlerts()
+        settings.backFromNotifications()
 
         settings.openAway()
         awaitText("I'm away")
         awaitText("Automatic")
         settings.backFromAway()
-        awaitNode(SettingsRobot.ALERTS_ROW, "the Alerts row")
+        awaitNode(SettingsRobot.NOTIFICATIONS_ROW, "the Notifications row")
     }
 
     @Test

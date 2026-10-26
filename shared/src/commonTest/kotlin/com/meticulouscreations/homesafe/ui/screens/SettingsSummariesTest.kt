@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.alerts_preset_people_vehicles
 import homesafe.shared.generated.resources.alerts_time_am
@@ -29,6 +30,8 @@ import homesafe.shared.generated.resources.settings_alerts_summary_quiet
 import homesafe.shared.generated.resources.settings_alerts_summary_relay
 import homesafe.shared.generated.resources.settings_alerts_summary_strangers
 import homesafe.shared.generated.resources.settings_alerts_summary_unsupported
+import homesafe.shared.generated.resources.settings_alerts_summary_weather
+import homesafe.shared.generated.resources.settings_alerts_summary_weather_only
 import homesafe.shared.generated.resources.settings_away_summary_automatic
 import homesafe.shared.generated.resources.settings_away_summary_away
 import homesafe.shared.generated.resources.settings_away_summary_checking
@@ -84,15 +87,20 @@ class SettingsSummariesTest {
 
     private val on = text(Res.string.settings_alerts_summary_on)
 
-    /** Notifications allowed by the OS and switched on in the app. */
-    private fun alertsOn(alerts: AlertSettings = AlertSettings(pushNotificationsEnabled = true), overview: ServerOverview? = overview(), relayPushes: Boolean = false) =
-        SettingsUiState(
-            overview = overview,
-            alerts = alerts,
-            notificationsSupported = true,
-            notificationPermission = NotificationPermission.GRANTED,
-            relayPushes = relayPushes,
-        )
+    /** Notifications allowed by the OS and the cameras' switched on in the app; the weather app's off unless asked for. */
+    private fun alertsOn(
+        alerts: AlertSettings = AlertSettings(pushNotificationsEnabled = true),
+        overview: ServerOverview? = overview(),
+        relayPushes: Boolean = false,
+        weather: Boolean = false,
+    ) = SettingsUiState(
+        overview = overview,
+        alerts = alerts,
+        notificationsSupported = true,
+        notificationPermission = NotificationPermission.GRANTED,
+        relayPushes = relayPushes,
+        weatherNotices = WeatherNoticeSettings(enabled = weather),
+    )
 
     @Test
     fun whenNothingCanArriveTheAlertsRowSaysWhy() {
@@ -140,6 +148,24 @@ class SettingsSummariesTest {
             summary(on, text(Res.string.alerts_preset_people_vehicles), quiet),
             alertsSummary(alertsOn(alerts = alerts, overview = overview(faceRecognition = false))),
         )
+    }
+
+    @Test
+    fun theWeatherAppsNotificationsFollowTheCamerasOnTheNotificationsRow() {
+        val weather = text(Res.string.settings_alerts_summary_weather)
+        assertEquals(summary(on, text(Res.string.alerts_preset_people_vehicles), weather), alertsSummary(alertsOn(weather = true)))
+        val onlyAway = AlertSettings(pushNotificationsEnabled = true, onlyWhenAway = true)
+        assertEquals(summary(text(Res.string.settings_alerts_summary_only_away), weather), alertsSummary(alertsOn(alerts = onlyAway, weather = true)))
+        // The cameras' off: the weather app's are what's left.
+        assertEquals(text(Res.string.settings_alerts_summary_weather_only), alertsSummary(alertsOn(alerts = AlertSettings.DEFAULT, weather = true)))
+    }
+
+    @Test
+    fun theWeatherAppsNotificationsNeedTheOsToo() {
+        // Wanted, but the OS hasn't been asked: nothing from either arrives.
+        assertEquals(text(Res.string.settings_alerts_summary_off), alertsSummary(alertsOn(alerts = AlertSettings.DEFAULT, weather = true).copy(notificationPermission = NotificationPermission.NOT_DETERMINED)))
+        assertEquals(text(Res.string.settings_alerts_summary_blocked), alertsSummary(alertsOn(weather = true).copy(notificationPermission = NotificationPermission.DENIED)))
+        assertEquals(text(Res.string.settings_alerts_summary_unsupported), alertsSummary(SettingsUiState(notificationsSupported = false, weatherNotices = WeatherNoticeSettings(enabled = true))))
     }
 
     @Test

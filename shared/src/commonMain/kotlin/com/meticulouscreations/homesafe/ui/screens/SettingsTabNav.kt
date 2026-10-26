@@ -54,8 +54,8 @@ import org.jetbrains.compose.resources.stringResource
 /** The Settings tab's root; the shell watches the back stack's depth to hide its own bar on nested screens. */
 data object SettingsHomeRoute
 
-/** This device's alert preferences: the notifications switch, what to hear about, and when. */
-data object AlertsRoute
+/** What every app tells this phone: the cameras' notifications and what to hear about and when, then the doors', the weather app's and the budget's. */
+data object NotificationsRoute
 
 /** Away mode: who's home, the household's phones, and automatic presence. */
 data object AwayRoute
@@ -77,12 +77,12 @@ data object DoorsRoute
 
 /**
  * The Settings tab's own nested navigation: the settings page, and the pages its rows open —
- * alerts, away mode, a classifier's labelling screen, the face library, and the server's
+ * notifications, away mode, a classifier's labelling screen, the face library, and the server's
  * diagnostics with its uptime record below them. [content] renders the settings page and
  * receives `open`, which pushes the route it is given.
  *
  * The pages with view models of their own get their own stores from [stores], cleared once they
- * are popped. Alerts, away mode and the server's page share the settings page's view model, so
+ * are popped. Notifications, away mode and the server's page share the settings page's view model, so
  * they keep the surrounding store with it.
  *
  * In a window with room for two panes ([showsTwoPanes]: a tablet, a desktop) the page a row
@@ -99,7 +99,7 @@ fun SettingsTabNav(
     val pop: () -> Unit = { backStack.removeLastOrNull() }
     val pages = entryProvider {
         entry<SettingsHomeRoute> { content { route -> backStack.add(route) } }
-        entry<AlertsRoute> { AlertsSettingsScreen(onBack = pop) }
+        entry<NotificationsRoute> { NotificationsSettingsScreen(onBack = pop, onOpenDoors = { backStack.add(DoorsRoute) }) }
         entry<AwayRoute> { AwaySettingsScreen(onBack = pop) }
         entry<ClassifierRoute> { route -> stores.Scoped(route) { ClassifierLabelingScreen(modelName = route.modelName, onBack = pop) } }
         entry<FacesRoute> { route -> stores.Scoped(route) { FaceLibraryScreen(onBack = pop) } }

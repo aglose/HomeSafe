@@ -178,11 +178,6 @@ data class Purchase(
 @Serializable
 data class BudgetLimits(val total: Double? = null, val people: Map<String, Double?> = emptyMap(), val family: Double? = null)
 
-/** Which lines being crossed the phones are told about. */
-@Immutable
-@Serializable
-data class BudgetAlertSwitches(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false)
-
 /** A merchant whose purchases always go to one bucket; [merchantKey] is the relay's name for the merchant. */
 @Immutable
 @Serializable

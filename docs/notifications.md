@@ -11,6 +11,24 @@ created, so the channels that used to sound (`detections`, `away_alerts`, which 
 alarm, `weather`, `weather_severe`, `budget`) are deleted and replaced by silent `…_v2` ones
 (`SilentChannels.kt`); the relay's APNs pushes carry no `sound`.
 
+## Settings → Notifications
+
+Every app's notifications are switched on one page, Settings → **Notifications** (it used to be
+called Alerts), one card for each app that sends any:
+
+- **Cameras**: this phone's switch, then what to hear about and when (the rules below, quiet hours,
+  "only when everyone's away", "only strangers") and the test notification.
+- **Doors**: a row to the Doors page, since each door chooses for itself (see below).
+- **Weather**: the weather app's switch and its four kinds, the same ones its own settings show
+  (`WeatherNoticePreferences`, which also starts or stops the background check).
+- **Finance**: the budget's three alerts, the same ones as Budget → Limits and cards → Alerts.
+  They are the household's, so they are read from the relay each time the page opens
+  (`BudgetAlertPreferences`), and the card is left out where there is no budget, or the account
+  may not see it.
+
+All of them share the phone's one notification permission, which the Cameras card asks for. The
+main Settings page's row sums up the cameras' choices and adds "weather" while those are on too.
+
 ## Why
 
 2026-09-26 to 29: **802 pushes in three days.** Two thirds were "… in the driveway" on the Front

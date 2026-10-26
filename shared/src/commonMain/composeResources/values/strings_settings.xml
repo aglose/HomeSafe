@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The Settings tab (alerts, away mode, recognition, cameras, the server's diagnostics) and the
+  The Settings tab (notifications, away mode, recognition, cameras, the server's diagnostics) and the
   sign-in screen. Keys: settings_* (the tab, its rows' one-line summaries and the server page),
-  alerts_* (the Alerts page), presence_* (the Away mode page and the household's devices),
+  alerts_* (the Notifications page, every app's notifications; it was called Alerts), presence_* (the Away mode page and the household's devices),
   connection_* (sign-in and connection routes).
   See AGENTS.md, "Strings and localization".
 -->
@@ -79,18 +79,22 @@
     <string name="settings_refresh">Refresh</string>
 
     <!-- The main page's rows: each carries a one-line summary of the page or section it opens. -->
-    <string name="settings_alerts_subtitle">What this phone hears about, and when</string>
+    <string name="settings_alerts_subtitle">What every app tells this phone</string>
     <string name="settings_alerts_summary_unsupported">Not available on this platform</string>
     <string name="settings_alerts_summary_blocked">Blocked in system settings</string>
     <string name="settings_alerts_summary_off">Off</string>
     <string name="settings_alerts_summary_only_away">Only when everyone's away</string>
-    <!-- The parts of the Alerts row's summary while notifications are on, joined with " · ": "On · People only · quiet 10:00 PM – 7:00 AM". -->
+    <!-- The parts of the Notifications row's summary while the cameras' notifications are on, joined with " · ": "On · People only · quiet 10:00 PM – 7:00 AM · weather". -->
     <string name="settings_alerts_summary_on">On</string>
     <string name="settings_alerts_summary_relay">from the relay</string>
     <string name="settings_alerts_summary_custom">custom rules</string>
     <!-- %1$s, %2$s: times of day, e.g. "10:00 PM" and "7:00 AM". -->
     <string name="settings_alerts_summary_quiet">quiet %1$s – %2$s</string>
     <string name="settings_alerts_summary_strangers">strangers only</string>
+    <!-- The weather app's notifications are on too; the last part of the summary above. -->
+    <string name="settings_alerts_summary_weather">weather</string>
+    <!-- The cameras' notifications are off, but the weather app's are on. -->
+    <string name="settings_alerts_summary_weather_only">Weather only</string>
     <string name="settings_away_subtitle">Who's home, by the two phones</string>
     <string name="settings_away_summary_unreachable">Can't reach the relay</string>
     <string name="settings_away_summary_checking">Checking who's home…</string>
@@ -202,16 +206,24 @@
     <!-- Between the object labels in settings_recognition_classifier_description. -->
     <string name="settings_recognition_objects_separator"> and </string>
 
-    <!-- The test notification the Alerts page sends -->
+    <!-- The test notification the Notifications page sends -->
     <string name="settings_test_notification_title">Test alert</string>
     <string name="settings_test_notification_body">Notifications from HomeSafe are working. Detections will look like this.</string>
 
     <!-- Saving a stretch of continuous recording (clip editor), when the failure says nothing itself. -->
     <string name="settings_recording_clip_save_failed">Couldn't save the clip</string>
 
-    <!-- Alerts page -->
-    <string name="alerts_title">Alerts</string>
-    <string name="alerts_notifications">Notifications</string>
+    <!-- Notifications page: a card for each app that sends any, the cameras' first. -->
+    <string name="alerts_title">Notifications</string>
+    <string name="alerts_section_cameras">Cameras</string>
+    <string name="alerts_section_weather">Weather</string>
+    <string name="alerts_section_finance">Finance</string>
+    <string name="alerts_finance_loading">Reading the budget's alerts…</string>
+    <!-- %1$s: why, e.g. "Not connected". -->
+    <string name="alerts_finance_error">Couldn't read the budget's alerts: %1$s</string>
+    <string name="alerts_finance_save_error">Couldn't save the budget's alerts: %1$s</string>
+    <!-- The cameras' switch, under the Cameras heading. -->
+    <string name="alerts_notifications">Camera notifications</string>
     <string name="alerts_notifications_unsupported">Not available on this platform. Use the Android or iOS app for alerts.</string>
     <string name="alerts_notifications_blocked">Blocked in system settings. Allow notifications for HomeSafe to turn this on.</string>
     <string name="alerts_notifications_on_relay">On — from the HomeSafe relay, even while HomeSafe is closed.</string>
