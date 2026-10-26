@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.assistant
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
@@ -33,6 +34,14 @@ interface AssistantTool {
 
     /** What the screen says while it runs ("Checking the doors"). */
     val activity: StringResource
+
+    /**
+     * For a tool that reads what the app keeps behind its lock (the finance sheet, the location
+     * history): that lock, true while it is on. The tool gives nothing out while it is on, and a
+     * conversation that used the tool is cleared the moment it comes on again, so what the tool
+     * found doesn't outlast the lock on the assistant's card or in what goes back to Claude.
+     */
+    val lock: StateFlow<Boolean>? get() = null
 
     suspend fun run(input: JsonObject): String
 }

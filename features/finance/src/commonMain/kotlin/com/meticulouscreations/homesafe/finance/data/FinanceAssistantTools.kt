@@ -22,9 +22,10 @@ import homesafe.shared.generated.resources.assistant_tool_markets
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.roundToLong
 
-// What the assistant can read from the finance app. The household's own figures are held back
-// while the finance app is locked (no server to vouch, and nobody has unlocked it), exactly as the
-// app holds them back; the markets are public and never are.
+// What the assistant can read from the finance app. The household's own figures (the sheet, the
+// budget, the watchlist and what is held in it) are held back while the finance app is locked (no
+// server to vouch, and nobody has unlocked it), exactly as the app holds them back, checked again
+// after the read in case it locked meanwhile; the market prices themselves are public and never are.
 
 @Inject
 @ContributesIntoSet(AppScope::class)
@@ -34,10 +35,12 @@ class FinanceSheetTool(private val finance: FinanceRepository, private val acces
         "and their balances, investments, total assets, the emergency fund target, and the rest of what the Finance app shows."
     override val inputSchema = noInput
     override val activity = Res.string.assistant_tool_finance
+    override val lock get() = access.locked
 
     override suspend fun run(input: JsonObject): String {
         if (access.locked.value) return LOCKED
-        return finance.personalFinance().fold({ it.toString() }, { "Couldn't read the sheet: ${it.message}" })
+        val sheet = finance.personalFinance().fold({ it.toString() }, { "Couldn't read the sheet: ${it.message}" })
+        return if (access.locked.value) LOCKED else sheet
     }
 }
 
@@ -49,29 +52,35 @@ class BudgetTool(private val budgets: BudgetRepository, private val access: Fina
         "pending, each bucket against its limit, the cards, and the month's purchases with their buckets. Defaults to this month."
     override val inputSchema = inputOf("month" to stringProperty("The month to look at, as YYYY-MM. Leave out for the current month."))
     override val activity = Res.string.assistant_tool_budget
+    override val lock get() = access.locked
 
     override suspend fun run(input: JsonObject): String {
         if (access.locked.value) return LOCKED
-        return budgets.budget(input.stringInput("month")).fold({ it.toString() }, { "Couldn't read the budget: ${it.message}" })
+        val budget = budgets.budget(input.stringInput("month")).fold({ it.toString() }, { "Couldn't read the budget: ${it.message}" })
+        return if (access.locked.value) LOCKED else budget
     }
 }
 
 @Inject
 @ContributesIntoSet(AppScope::class)
-class MarketsTool(private val finance: FinanceRepository, private val watchlist: WatchlistRepository) : AssistantTool {
+class MarketsTool(private val finance: FinanceRepository, private val watchlist: WatchlistRepository, private val access: FinanceAccess) : AssistantTool {
     override val name = "market_quotes"
     override val description = "Current market prices: price, previous close, the day's change, day and 52-week range, volume and " +
         "market time (Unix seconds). Give ticker symbols, or leave them out for the household's watchlist (with any positions held)."
     override val inputSchema = inputOf("symbols" to stringProperty("Ticker symbols separated by commas, e.g. \"AAPL,VOO\". Leave out for the watchlist."))
     override val activity = Res.string.assistant_tool_markets
+    override val lock get() = access.locked
 
     override suspend fun run(input: JsonObject): String {
-        val watched = watchlist.observe().current().orEmpty()
-        val symbols = input.stringInput("symbols")?.split(',')?.map { it.trim().uppercase() }?.filter { it.isNotEmpty() }
-            ?: watched.map { it.symbol }
+        val asked = input.stringInput("symbols")?.split(',')?.map { it.trim().uppercase() }?.filter { it.isNotEmpty() }
+        // What the household watches and holds is theirs; prices for symbols asked for by name are anyone's.
+        val watched = if (access.locked.value) emptyList() else watchlist.observe().current().orEmpty()
+        if (asked == null && access.locked.value) return LOCKED
+        val symbols = asked ?: watched.map { it.symbol }
         if (symbols.isEmpty()) return "The watchlist is empty; ask for symbols by name."
         val quotes = finance.quotes(symbols).getOrElse { return "Couldn't get quotes: ${it.message}" }
-        val positions = watched.associate { it.symbol to it.position }
+        val positions = if (access.locked.value) emptyMap() else watched.associate { it.symbol to it.position }
+        if (asked == null && access.locked.value) return LOCKED
         return listing(quotes, limit = 50) { quote -> describe(quote) + (positions[quote.symbol]?.let { ", position $it" } ?: "") }
     }
 

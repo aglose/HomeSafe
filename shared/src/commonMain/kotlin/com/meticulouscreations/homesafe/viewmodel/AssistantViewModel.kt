@@ -28,6 +28,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,9 +89,19 @@ class AssistantViewModel(
     private val history = mutableListOf<JsonObject>()
     private var asking: Job? = null
 
+    /** The locks of the tools this conversation has read from ([com.meticulouscreations.homesafe.assistant.AssistantTool.lock]). */
+    private val readBehind = mutableSetOf<StateFlow<Boolean>>()
+
     init {
         val checkedAt = store.string(PREF_MODELS_AT)?.toLongOrNull() ?: 0L
         if (clock.now().epochSeconds - checkedAt > MODELS_MAX_AGE_SECONDS) refreshModels()
+        // A lock coming back on takes away everything read from behind it: the answers on the card,
+        // and the tool results in the history (the whole conversation goes, rather than editing it).
+        agent.locks.forEach { lock ->
+            viewModelScope.launch {
+                lock.drop(1).filter { it }.collect { if (lock in readBehind) newConversation() }
+            }
+        }
     }
 
     /**
@@ -109,7 +121,12 @@ class AssistantViewModel(
                 val answer = agent.answer(key, model, history.toList(), message) { progress ->
                     when (progress) {
                         AssistantAgent.Progress.Thinking -> _uiState.update { it.copy(activity = null) }
-                        is AssistantAgent.Progress.Looking -> _uiState.update { it.copy(activity = progress.activity) }
+
+                        is AssistantAgent.Progress.Looking -> {
+                            progress.lock?.let { readBehind += it }
+                            _uiState.update { it.copy(activity = progress.activity) }
+                        }
+
                         is AssistantAgent.Progress.Writing -> updateLastTurn { it.copy(answer = progress.text) }
                     }
                 }
@@ -145,6 +162,7 @@ class AssistantViewModel(
     fun newConversation() {
         stop()
         history.clear()
+        readBehind.clear()
         _uiState.update { it.copy(turns = emptyList(), working = false, activity = null) }
     }
 

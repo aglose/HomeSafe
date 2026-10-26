@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -93,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.assistant.AssistantModelFamily
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.viewmodel.AssistantTurn
 import com.meticulouscreations.homesafe.viewmodel.AssistantUiState
@@ -149,7 +151,11 @@ fun AssistantRoot(modifier: Modifier = Modifier, host: AssistantHost = remember 
                         drawContent()
                     }
                 },
-            ) { content() }
+            ) {
+                // Back is the assistant's while it is up, however recently something beneath registered
+                // a handler of its own (a camera's quick look opened behind it).
+                BackScope(enabled = !host.isOpen) { content() }
+            }
             AssistantLayer(host)
         }
     }
@@ -176,7 +182,8 @@ private fun AssistantLayer(host: AssistantHost) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var draft by rememberSaveable { mutableStateOf("") }
-    var keyDraft by rememberSaveable { mutableStateOf("") }
+    // Only ever in memory: saved state would put the key, in the clear, in the platform's saved-instance Bundle.
+    var keyDraft by remember { mutableStateOf("") }
 
     // Back folds the box back toward its bar under the finger, and on release carries on from there.
     val back = rememberPredictiveBack(enabled = host.isOpen) { releasedAt ->
@@ -274,8 +281,13 @@ private fun AssistantFrame(
     // iPad's tab bar), has it at the foot, clear of the system bar.
     val alongFoot = origin != Rect.Zero && root != Rect.Zero && origin.width >= origin.height && origin.center.y > root.center.y
     val fromBar = if (alongFoot) root.bottom - origin.top + gap else navigation + gap
-    val clearance = with(density) { max(fromBar, ime + gap).toDp() }
-    val cardMaxHeight = with(density) { (root.height * CARD_MAX_SHARE).toDp() }.coerceAtLeast(160.dp)
+    val clearancePx = max(fromBar, ime + gap)
+    val clearance = with(density) { clearancePx.toDp() }
+    val top = WindowInsets.statusBars.getTop(density).toFloat()
+    // The card has what the box leaves, up to its share of the window: with the keyboard up on a phone
+    // on its side there is little height, and the box keeps its own.
+    val cardRoom = root.height - clearancePx - input.height.coerceAtLeast(with(density) { INPUT_HEIGHT.toPx() }) - gap - top - gap
+    val cardMaxHeight = with(density) { minOf(root.height * CARD_MAX_SHARE, cardRoom).coerceAtLeast(0f).toDp() }
 
     val inputModifier = Modifier
         // Measured before the layer below moves it, so the morph is worked out from where it rests.

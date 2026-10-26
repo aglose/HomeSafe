@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.atlas.domain.AtlasHistory
 import com.meticulouscreations.homesafe.atlas.domain.AtlasRepository
 import com.meticulouscreations.homesafe.atlas.domain.CivilDate
 import com.meticulouscreations.homesafe.atlas.domain.Place
+import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -22,23 +23,27 @@ import kotlinx.serialization.json.JsonObject
 /**
  * The atlas app's location history for the assistant: one day's visits and journeys when asked
  * about a date, and otherwise what the Atlas app works out from all of it (where they lived, the
- * places that matter, the trips, the years). Read from the copy the phone keeps.
+ * places that matter, the trips, the years). Read from the copy the phone keeps, so behind the
+ * same lock the Atlas app opens behind (`FinanceAccess`), checked again once the read is done.
  */
 @Inject
 @ContributesIntoSet(AppScope::class)
-class AtlasAssistantTool(private val atlas: AtlasRepository) : AssistantTool {
+class AtlasAssistantTool(private val atlas: AtlasRepository, private val access: FinanceAccess) : AssistantTool {
     override val name = "location_history"
     override val description = "The Atlas app's location history (from Google Timeline). With a date: that day's visits (place, " +
         "arrival and departure in Unix seconds) and journeys (mode, distance). Without: the homes lived in and when, the most " +
         "visited places, the latest trips away, each year's totals, records and routine. Days are counted from 1970-01-01."
     override val inputSchema = inputOf("date" to stringProperty("A day to look at, as YYYY-MM-DD. Leave out for the overview."))
     override val activity = Res.string.assistant_tool_atlas
+    override val lock get() = access.locked
 
     override suspend fun run(input: JsonObject): String {
+        if (access.locked.value) return LOCKED
         if (atlas.history.value == null) atlas.load()
         val history = atlas.history.value?.takeUnless { it.isEmpty } ?: return "There is no location history on this phone yet."
         val date = input.stringInput("date")
-        return if (date != null) day(history, date) else withContext(Dispatchers.Default) { overview(history) }
+        val found = if (date != null) day(history, date) else withContext(Dispatchers.Default) { overview(history) }
+        return if (access.locked.value) LOCKED else found
     }
 
     private fun day(history: AtlasHistory, date: String): String {
@@ -78,4 +83,9 @@ class AtlasAssistantTool(private val atlas: AtlasRepository) : AssistantTool {
     }
 
     private fun describe(place: Place): String = listOfNotNull(place.name, place.city ?: place.address).joinToString(", ").ifEmpty { place.key }
+
+    private companion object {
+        const val LOCKED = "The location history is locked: the home server isn't answering and nobody has unlocked the " +
+            "Atlas app on this phone. Ask them to open Atlas and unlock it, then ask again."
+    }
 }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -23,6 +24,9 @@ import org.jetbrains.compose.resources.StringResource
 class AssistantAgent(private val api: AnthropicApi, tools: Set<AssistantTool>) {
 
     private val tools: List<AssistantTool> = tools.sortedBy { it.name }
+
+    /** Every lock a tool reads behind ([AssistantTool.lock]), for whoever keeps the conversation to watch. */
+    val locks: Set<StateFlow<Boolean>> = this.tools.mapNotNull { it.lock }.toSet()
 
     /** The tool list as the API takes it; built once, in a fixed order, so the cached prompt prefix holds. */
     private val toolDefinitions: JsonArray = buildJsonArray {
@@ -141,7 +145,7 @@ class AssistantAgent(private val api: AnthropicApi, tools: Set<AssistantTool>) {
                 val id = call.string("id").orEmpty()
                 val name = call.string("name").orEmpty()
                 val tool = tools.firstOrNull { it.name == name }
-                if (tool != null) onProgress(Progress.Looking(tool.activity))
+                if (tool != null) onProgress(Progress.Looking(tool.activity, tool.lock))
                 val (result, failed) = when (tool) {
                     null -> "There is no tool called $name." to true
 
@@ -170,8 +174,8 @@ class AssistantAgent(private val api: AnthropicApi, tools: Set<AssistantTool>) {
         /** The answer so far. */
         data class Writing(val text: String) : Progress
 
-        /** Reading the app's data with a tool; [activity] says which. */
-        data class Looking(val activity: StringResource) : Progress
+        /** Reading the app's data with a tool; [activity] says which, and [lock] is what guards it, if anything does ([AssistantTool.lock]). */
+        data class Looking(val activity: StringResource, val lock: StateFlow<Boolean>? = null) : Progress
     }
 
     enum class Ending { Done, Refused, CutOff }

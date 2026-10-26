@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.assistant
 
+import com.meticulouscreations.homesafe.text.LocalizedException
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.assistant_tool_doors
 import io.ktor.client.HttpClient
@@ -20,6 +21,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class AssistantAgentTest {
@@ -59,7 +61,7 @@ class AssistantAgentTest {
         assertEquals(1, doorsTool.calls)
         assertEquals("Let me check.\n\nNo, the **front door** has been open since 6:02 PM.", answer.text)
         assertEquals(AssistantAgent.Ending.Done, answer.ending)
-        assertTrue(AssistantAgent.Progress.Looking(Res.string.assistant_tool_doors) in progress)
+        assertTrue(progress.any { it is AssistantAgent.Progress.Looking && it.activity == Res.string.assistant_tool_doors })
         // The question, the turn that called the tool, the tool's result, and the answer.
         assertEquals(listOf("user", "assistant", "user", "assistant"), answer.messages.map { it["role"]!!.jsonPrimitive.content })
         // The tool call goes back as it came, its streamed input put together, and so does the thinking with its signature.
@@ -74,6 +76,18 @@ class AssistantAgentTest {
         assertEquals(3, bodies[1]["messages"]!!.jsonArray.size)
         assertEquals(JsonPrimitive("default"), bodies[0]["fallbacks"])
         assertEquals(JsonPrimitive(true), bodies[0]["stream"])
+    }
+
+    @Test
+    fun aStreamCutOffBeforeItsEndIsAFailureNotAnAnswer() = runTest {
+        val engine = MockEngine {
+            respond(ANSWER_STREAM.substringBefore("event: message_delta"), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/event-stream"))
+        }
+        val agent = AssistantAgent(AnthropicApi(HttpClient(engine)), setOf(doorsTool))
+
+        assertFailsWith<LocalizedException> {
+            agent.answer("sk-test", AssistantModel.fallback(AssistantModelFamily.Haiku), emptyList(), userMessage("Hi", screenJpegBase64 = null)) {}
+        }
     }
 
     @Test

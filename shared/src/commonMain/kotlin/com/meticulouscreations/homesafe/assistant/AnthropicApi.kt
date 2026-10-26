@@ -148,6 +148,8 @@ class AnthropicApi(@Named(ASSISTANT_CLIENT) private val httpClient: HttpClient) 
             message.accept(event, onEvent)
             if (message.finished) break
         }
+        // A stream cut off before `message_stop` is half a turn: its blocks can't go back to the API.
+        if (!message.finished) throw LocalizedException(UiText.of(Res.string.assistant_error_network), technical = "The stream ended before message_stop")
         return message.result()
     }
 
