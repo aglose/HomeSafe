@@ -15,6 +15,15 @@ Add or adjust a `@Preview` for the state you changed; every one is drawn, nothin
 `ui-previews` skill has the rest: the fallback if the server breaks, and what to do in a sandbox
 that can't build.
 
+## Cloud sessions
+
+`.claude/hooks/session-start.sh` sets up a Claude Code cloud session: the Android SDK, a warm
+Gradle, `ssh`, and Tailscale so `ssh frigate` reaches the home server. Its summary at session start
+says which parts it managed; a part whose host the environment's network policy blocks, or whose
+secret the environment lacks, is skipped and named there (the script's header lists both). Without
+Gradle, draw previews on CI with `scripts/fetch-ui-previews.sh`. The emulator suites and iOS can't
+run in the cloud (no `/dev/kvm`, no macOS); CI runs them.
+
 ## Strings and localization
 
 **No user-visible text is written as a Kotlin string literal.** Every word a person can read or
