@@ -87,6 +87,8 @@ import homesafe.shared.generated.resources.weather_tile_moon
 import homesafe.shared.generated.resources.weather_tile_moon_lit
 import homesafe.shared.generated.resources.weather_tile_moon_next_full
 import homesafe.shared.generated.resources.weather_tile_moon_next_new
+import homesafe.shared.generated.resources.weather_tile_moon_rises
+import homesafe.shared.generated.resources.weather_tile_moon_sets
 import homesafe.shared.generated.resources.weather_tile_precipitation
 import homesafe.shared.generated.resources.weather_tile_precipitation_none_ahead
 import homesafe.shared.generated.resources.weather_tile_precipitation_today
@@ -423,7 +425,10 @@ private fun SunTime(label: String, time: String, alignment: Alignment.Horizontal
 
 // ---- The moon ----------------------------------------------------------------------------------
 
-/** Tonight's moon, drawn by a shader as the lit sphere it is, with its phase, how much is lit, and the next full or new one. */
+/**
+ * Tonight's moon, drawn by a shader as the lit sphere it is, with its phase, how much is lit, when
+ * it next rises or sets, and the next full or new one.
+ */
 @Composable
 internal fun MoonTile(report: WeatherReport, nowEpochSeconds: Long, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
@@ -436,6 +441,13 @@ internal fun MoonTile(report: WeatherReport, nowEpochSeconds: Long, modifier: Mo
     }
     val date = WeatherFormat.date(next.second, report.offsetAt(next.second)).resolve()
     val caption = stringResource(if (next.first) Res.string.weather_tile_moon_next_full else Res.string.weather_tile_moon_next_new, date)
+    // The moon's next rising or setting from now, today's or else tomorrow's: true for a rising.
+    val riseOrSet = remember(report, nowEpochSeconds) {
+        listOfNotNull(report.today(nowEpochSeconds), report.tomorrow(nowEpochSeconds))
+            .flatMap { day -> listOfNotNull(day.moonriseEpochSeconds?.let { it to true }, day.moonsetEpochSeconds?.let { it to false }) }
+            .filter { it.first > nowEpochSeconds }
+            .minByOrNull { it.first }
+    }
     WeatherCard(modifier.height(TileHeight), title = stringResource(Res.string.weather_tile_moon), icon = Icons.Filled.NightsStay) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -443,6 +455,15 @@ internal fun MoonTile(report: WeatherReport, nowEpochSeconds: Long, modifier: Mo
                 Text(stringResource(Res.string.weather_tile_moon_lit, (phase.illumination * 100).roundToInt()), style = WeatherTheme.type.label, color = colors.onSkyMuted)
             }
             MoonDisc(phase.cycle.toFloat(), Modifier.size(64.dp))
+        }
+        riseOrSet?.let { (at, rises) ->
+            val time = WeatherFormat.clock(at, report.offsetAt(at)).resolve()
+            Text(
+                stringResource(if (rises) Res.string.weather_tile_moon_rises else Res.string.weather_tile_moon_sets, time),
+                style = WeatherTheme.type.label,
+                color = colors.onSky,
+                maxLines = 1,
+            )
         }
         Text(caption, style = WeatherTheme.type.label, color = colors.onSkyMuted, maxLines = 2)
     }

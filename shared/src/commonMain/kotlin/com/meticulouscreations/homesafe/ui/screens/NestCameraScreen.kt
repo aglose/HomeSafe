@@ -50,6 +50,7 @@ import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
+import com.meticulouscreations.homesafe.ui.components.KeepScreenOn
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.components.MeasuredVideoShapes
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
@@ -157,6 +158,8 @@ fun NestCameraScreen(
         else -> liveSource ?: warmSource
     }
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
+    // Live only, and never paused: the screen stays lit for as long as there is a stream to watch.
+    if (request != null) KeepScreenOn()
     val framing by remember(streamName) { viewModel.framing(streamName) }.collectAsStateWithLifecycle(CameraFraming.UNTOUCHED)
     val turnDegrees = framing.orientation.degrees
     val pictureAspect = source?.let { MeasuredVideoShapes[it.url] }

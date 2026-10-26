@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.appicon.AppIconSwitcher
 import com.meticulouscreations.homesafe.appicon.createAppIconSwitcher
 import com.meticulouscreations.homesafe.data.AtlasDao
+import com.meticulouscreations.homesafe.data.BackgroundDoors
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.CameraListDao
@@ -139,6 +140,9 @@ interface AppGraph :
 
     /** A pushed notification's buttons ("Not a person", Undo), for Android's notification receiver (no session either). */
     override val pushedAlertActions: PushedAlertActions
+
+    /** The doors as they stand, for Android's Quick Settings tile (which asks with no Activity, and maybe no session). */
+    override val backgroundDoors: BackgroundDoors
 
     /**
      * Started once by [com.meticulouscreations.homesafe.App]. Also the entry point for what the OS

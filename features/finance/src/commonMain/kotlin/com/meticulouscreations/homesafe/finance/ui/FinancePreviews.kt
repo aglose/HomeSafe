@@ -422,6 +422,17 @@ private fun FinanceWatchlistPreview() {
     }
 }
 
+@Preview(name = "Watchlist · biggest moves first", widthDp = 412, heightDp = 900)
+@Composable
+private fun FinanceWatchlistSortedPreview() {
+    FinanceStage {
+        LazyColumn(contentPadding = previewPadding) {
+            item { ChipRow(WatchSort.entries, WatchSort.MOVE, { stringResource(it.label) }, FinanceTheme.colors.accent, {}) }
+            watchlistItems(FinanceFixtures.state, "w", WatchSort.MOVE) {}
+        }
+    }
+}
+
 @Preview(widthDp = 412, heightDp = 2200)
 @Composable
 private fun FinanceQuoteWithPositionPreview() {

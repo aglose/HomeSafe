@@ -1,0 +1,68 @@
+name: iOS tests and build
+description: >-
+  The iOS simulator unit tests and the iOS app build, on whichever Mac the job got: the
+  self-hosted one or a GitHub-hosted one (the ios and ios-hosted jobs in ci.yml both run this).
+  Expects the repository checked out.
+runs:
+  using: composite
+  steps:
+    # The Mac has its own JDK and a persistent ~/.konan; only the hosted runner needs these.
+    - uses: actions/setup-java@v6
+      if: runner.environment == 'github-hosted'
+      with:
+        distribution: temurin
+        java-version: '21'
+    - name: Cache Kotlin/Native
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@v6
+      with:
+        path: ~/.konan
+        key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+        # A Dependabot pull request changes the catalog every time; an older ~/.konan still
+        # holds most of what the new one needs.
+        restore-keys: konan-${{ runner.os }}-
+    - uses: gradle/actions/setup-gradle@v6
+      with:
+        cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+    # The Mac's disk is shared with everything else done on it, and when it fills, this job is
+    # where it shows: the two links below each write a few gigabytes, and both have failed on
+    # main with nothing but "ld: write() failed, errno=28". Under 15 GB free, what this runner
+    # can rebuild is cleared first (Xcode's derived data and the simulators' caches; ~/.konan
+    # and Gradle's caches are left, they are the slow ones to get back). Under 8 GB after that,
+    # the job stops here and says so, instead of twenty minutes later as a linker error.
+    - name: Check the Mac has room to link
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        free_gb() { df -g "$HOME" | awk 'NR == 2 { print $4 }'; }
+        echo "$(free_gb) GB free on the disk holding $HOME."
+        if [ "$(free_gb)" -lt 15 ]; then
+          echo "::warning::Only $(free_gb) GB free on the Mac; clearing this runner's Xcode derived data and simulator caches."
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData" "$HOME/Library/Developer/CoreSimulator/Caches"
+          echo "$(free_gb) GB free afterwards."
+        fi
+        if [ "$(free_gb)" -lt 8 ]; then
+          echo "::error::The Mac that runs this job has $(free_gb) GB of disk left, too little to link the iOS tests and app. Free some space on it and run this job again."
+          exit 1
+        fi
+
+    # Each module links its own iOS test binary, in the Gradle daemon's own heap. On the Mac's
+    # twelve cores they all linked at once and ran a 4 GB heap out of memory, so at most two
+    # link at a time, in a heap of 6 GB (the Mac has 24).
+    - name: iOS simulator unit tests
+      shell: bash
+      run: ./gradlew iosSimulatorArm64Test --continue --stacktrace --max-workers=2 "-Dorg.gradle.jvmargs=-Xmx6144M -Dfile.encoding=UTF-8"
+
+    - name: Build iOS app
+      shell: bash
+      run: |
+        xcodebuild build \
+          -project iosApp/iosApp.xcodeproj \
+          -scheme iosApp \
+          -destination 'generic/platform=iOS Simulator' \
+          ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGN_IDENTITY="" \
+          DEVELOPMENT_TEAM=""

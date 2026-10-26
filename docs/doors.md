@@ -15,7 +15,7 @@ sensor ──Zigbee──▶ USB stick ──▶ Zigbee2MQTT ──MQTT──▶
 | Sensors | ThirdReality Zigbee Contact Sensor (3RDS17BZ), two AAA cells each |
 | Zigbee2MQTT, Mosquitto | `server/zigbee/docker-compose.yml`, both `restart: always`, host networking. The broker listens on 127.0.0.1 only. |
 | Relay | `relay/relay.py`, "doors": keeps each door's state and 90 days of openings and closings in `relay.db`, answers `GET /doors`, and pushes |
-| App | Pills at the top of Home (each open or offline door, and a count of the closed ones) opening the Doors page, also at Settings › Doors: the floor plan with each door on it, each sensor's battery and signal, its push setting, and the last 7 days |
+| App | Pills at the top of Home (each open, offline or low-battery door, and a count of the closed ones) opening the Doors page, also at Settings › Doors: the floor plan with each door on it, each sensor's battery and signal, its push setting, and the last 7 days. On Android, a Doors tile in Quick Settings (`DoorsTileService`: lit while a door is open, read from the relay on the device secret each time the shade comes down) and a Doors shortcut on the launcher icon |
 
 ## How fast the app sees a door
 

@@ -32,21 +32,38 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
 import kotlin.math.min
 
-/** Seconds since this composable came up, ticking every frame; read it only while drawing. */
+/**
+ * Seconds this composable has been running, for a shader's `time`; read it only while drawing.
+ *
+ * It moves no more often than every [frameSeconds] (0 for every frame): a drift or a shimmer
+ * looks the same stepped thirty times a second as a hundred and twenty, and whatever reads this
+ * is drawn again, over the whole of itself, each time it moves.
+ */
 @Composable
-internal fun rememberShaderClock(running: Boolean = true): State<Float> {
+internal fun rememberShaderClock(running: Boolean = true, frameSeconds: Float = 1f / 30f): State<Float> {
     val time = remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(running) {
+    LaunchedEffect(running, frameSeconds) {
         if (!running) return@LaunchedEffect
         // An infinite animation's frames, so a UI test's idling (and anything else that waits for
         // animations to settle) knows this one never will and doesn't wait on it.
-        val start = withInfiniteAnimationFrameNanos { it } - (time.floatValue * 1e9f).toLong()
+        var last = withInfiniteAnimationFrameNanos { it }
+        var owed = 0f
         while (true) {
-            withInfiniteAnimationFrameNanos { now -> time.floatValue = (now - start) / 1e9f }
+            withInfiniteAnimationFrameNanos { now ->
+                owed += ((now - last) / 1e9f).coerceIn(0f, 0.1f)
+                last = now
+                // A little short of the step is the step: frames don't land to the microsecond.
+                if (owed >= frameSeconds - FRAME_SLACK_SECONDS) {
+                    time.floatValue += owed
+                    owed = 0f
+                }
+            }
         }
     }
     return time
 }
+
+private const val FRAME_SLACK_SECONDS = 0.002f
 
 /**
  * The drifting aurora behind a hero number ([AURORA_SHADER]), crossfading to [tint] whenever

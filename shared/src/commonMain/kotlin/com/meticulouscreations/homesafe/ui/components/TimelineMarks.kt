@@ -59,6 +59,26 @@ internal fun List<TimelineMarker>.markerNear(x: Float, reach: Float): TimelineMa
     minByOrNull { abs(it.x - x) }?.takeIf { abs(it.x - x) <= reach }
 
 /**
+ * Where the timeline's previous / next detection buttons go from [fromEpochSeconds] (the
+ * scrub, else the playhead, else now): back, the start of the last detection that began more
+ * than [PREVIOUS_DETECTION_SLACK_SECONDS] before it, so a second press while the one just reached
+ * plays steps past it rather than landing on it again; forward, the first that begins more than
+ * [NEXT_DETECTION_SLACK_SECONDS] after it. Null when there is none that way.
+ */
+internal fun detectionStep(detections: List<TimelineDetection>, fromEpochSeconds: Double, forward: Boolean): Double? =
+    if (forward) {
+        detections.filter { it.startEpochSeconds > fromEpochSeconds + NEXT_DETECTION_SLACK_SECONDS }.minOfOrNull { it.startEpochSeconds }
+    } else {
+        detections.filter { it.startEpochSeconds < fromEpochSeconds - PREVIOUS_DETECTION_SLACK_SECONDS }.maxOfOrNull { it.startEpochSeconds }
+    }
+
+/** How far past a detection's start the playhead may be and still count as on it, for [detectionStep] back. */
+private const val PREVIOUS_DETECTION_SLACK_SECONDS = 3.0
+
+/** How close ahead a detection may start and still count as the one already playing, for [detectionStep] forward. */
+private const val NEXT_DETECTION_SLACK_SECONDS = 1.0
+
+/**
  * A merged marker takes the colour of the detection someone is most likely looking for: a
  * person at the door over the dog that followed them, an animal over the cars passing by.
  */

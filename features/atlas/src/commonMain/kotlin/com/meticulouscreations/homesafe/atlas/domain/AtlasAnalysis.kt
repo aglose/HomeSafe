@@ -213,6 +213,8 @@ data class AtlasAnalysis(
     val records: Records = Records(),
     val insights: List<Insight> = emptyList(),
     val days: DayStats = DayStats.Empty,
+    /** For the map's years: what any few of them add up to, without going back through the history each time. */
+    val yearsIndex: YearsIndex = YearsIndex.Empty,
 ) {
     fun homeAt(day: Int): Era? = eras.lastOrNull { it.startDay <= day } ?: eras.firstOrNull()
 
@@ -274,6 +276,7 @@ object AtlasAnalyzer {
             records = records,
             insights = insights(history, places, years, routine, commute, roles, days, eras),
             days = days,
+            yearsIndex = YearsIndex.of(history),
         )
     }
 

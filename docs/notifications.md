@@ -117,6 +117,20 @@ updates its notification quietly. On Android it wears the door (the shield when 
 away alert) and a tap opens the Doors page (`homesafe://doors?door=<id>`, see
 [doors.md](doors.md#what-a-push-looks-like)).
 
+On Android a door that opened while someone was home has a **Doors** channel (`doors`, heads-up,
+silent like the rest) and a group of its own in the shade, so the doors can be turned down without
+the cameras; one that opened while everyone was away goes on the Away channel with the cameras'
+away alerts.
+
+| Android channel | Id | What goes on it |
+| --- | --- | --- |
+| Detections | `detections_v2` | The cameras' alerts while someone is home, and "Not a person" confirmations |
+| Away alerts | `away_alerts_v2` | Someone seen, or a door opened, while everyone is away (buzzes) |
+| Doors | `doors` | A door opening while someone is home |
+| Summaries | `summaries` | The relay's summaries (low importance) |
+| Weather, Severe weather | `weather_v2`, `weather_severe_v2` | The weather app's (see [weather.md](weather.md)) |
+| Budget | `budget_v2` | The month's card spending (see [budget.md](budget.md)) |
+
 ## Icons
 
 On Android each notification says what it is from the status bar, before the shade is opened:

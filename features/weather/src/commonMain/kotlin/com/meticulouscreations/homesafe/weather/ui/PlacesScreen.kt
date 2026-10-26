@@ -59,6 +59,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.PlaceSearch
 import com.meticulouscreations.homesafe.weather.PlaceWeather
 import com.meticulouscreations.homesafe.weather.WeatherUiState
@@ -103,6 +104,7 @@ import homesafe.shared.generated.resources.weather_place_current
 import homesafe.shared.generated.resources.weather_places_add
 import homesafe.shared.generated.resources.weather_places_added
 import homesafe.shared.generated.resources.weather_places_clear_search
+import homesafe.shared.generated.resources.weather_places_conditions_time
 import homesafe.shared.generated.resources.weather_places_edit
 import homesafe.shared.generated.resources.weather_places_locating
 import homesafe.shared.generated.resources.weather_places_location_body
@@ -406,8 +408,19 @@ private fun PlaceCard(
                     Text(name, style = type.title, color = colors.onSky, maxLines = 1)
                 }
                 val line = when {
-                    report != null -> stringResource(report.current.kind.label(report.current.isDay))
+                    report != null -> {
+                        val sky = stringResource(report.current.kind.label(report.current.isDay))
+                        // A city on another clock says what time it is there.
+                        val offset = report.offsetAt(nowEpochSeconds)
+                        if (offset != localUtcOffsetSeconds(nowEpochSeconds.toDouble())) {
+                            stringResource(Res.string.weather_places_conditions_time, sky, WeatherFormat.clock(nowEpochSeconds, offset).resolve())
+                        } else {
+                            sky
+                        }
+                    }
+
                     entry.error != null -> entry.error.resolve()
+
                     else -> entry.place.region
                 }
                 Text(line, style = type.label, color = colors.onSkyMuted, maxLines = 1)

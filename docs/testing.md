@@ -129,6 +129,19 @@ The iOS job runs on the Mac, and its disk is shared with everything else done th
 first: under 15 GB it clears the runner's Xcode derived data and simulator caches, and under 8 GB it stops with an error
 that says the disk is full, which is what `ld: write() failed, errno=28` from a link step meant.
 
+When the Mac is asleep or its runner has stopped, the iOS job goes to a GitHub-hosted macOS runner instead of waiting
+there for good (the `ios-runner` job in `ci.yml` asks first). That check reads the repository's runner list, which takes
+a repository secret `RUNNER_STATUS_TOKEN`: a fine-grained token for this repository with **Administration: Read-only**
+and nothing else. Without it the job goes to the Mac as before, with a warning on the run. The repository variable
+`IOS_RUNNER` (`hosted` or `self-hosted`) overrides the check either way.
+
+A Mac that is online can still fail to finish: busy with something else so the job never starts, or asleep halfway
+through it (the job then ends with a step still "in progress" and no log). `ios-watch` follows the job from a hosted
+runner ([`scripts/ci/watch-ios-job.sh`](../scripts/ci/watch-ios-job.sh)): when it hasn't started within 15 minutes, or
+its runner went away, `ios-hosted` runs the same steps (the `ios-tests-and-build` action in `.github/actions/`) on a
+GitHub-hosted Mac, and ci-green takes that run's result. A job that fails by itself (a test, the build) fails ci-green
+as before, and "Re-run failed jobs" runs it and its watcher again.
+
 ## Android CLI journeys
 
 `androidApp/src/journeysTest/*.journey.xml` are journeys in the format documented for

@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.domain.AtlasAnalyzer
+import com.meticulouscreations.homesafe.atlas.domain.AtlasHistory
 import com.meticulouscreations.homesafe.atlas.domain.Move
 import com.meticulouscreations.homesafe.atlas.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.atlas.domain.Visit
@@ -70,6 +72,8 @@ import com.meticulouscreations.homesafe.atlas.domain.localMinute
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.domain.WebMercator
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.atlas_day_jump_earlier
+import homesafe.shared.generated.resources.atlas_day_jump_later
 import homesafe.shared.generated.resources.atlas_day_move_detail
 import homesafe.shared.generated.resources.atlas_day_next
 import homesafe.shared.generated.resources.atlas_day_nothing
@@ -156,7 +160,10 @@ internal fun DayScreen(
                 is DayEvent.Stay -> listOf(it.visit.latitude to it.visit.longitude)
                 is DayEvent.Travel -> listOf(it.move.latitude to it.move.longitude, it.move.toLatitude to it.move.toLongitude)
             }
-        } + tracks.flatMap { track -> (0 until track.size).map { WebMercator.latitude(track.y(it)) to WebMercator.longitude(track.x(it)) } }
+        } + tracks.filter { it.size > 0 }.flatMap { track ->
+            // The box each track keeps round itself: two corners take it in as well as every point would.
+            listOf(WebMercator.latitude(track.minY) to WebMercator.longitude(track.minX), WebMercator.latitude(track.maxY) to WebMercator.longitude(track.maxX))
+        }
         MapBounds.of(points)?.let { map.show(it) }
     }
     LaunchedEffect(playing) {
@@ -176,7 +183,7 @@ internal fun DayScreen(
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).testTag("atlas_day")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AtlasRoundButton(Icons.Filled.ChevronLeft, stringResource(Res.string.atlas_day_previous), { onDay(day - 1) }, Modifier.testTag("atlas_day_previous"))
+            AtlasRoundButton(Icons.Filled.ChevronLeft, stringResource(Res.string.atlas_day_previous), { onDay(day - 1) }, Modifier.testTag("atlas_day_previous"), enabled = day > history.firstDay)
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(dateText(day, weekday = true), style = AtlasTheme.type.title, color = colors.text, maxLines = 1)
                 val index = state.analysis.days.index(day)
@@ -199,8 +206,14 @@ internal fun DayScreen(
                 style = AtlasTheme.type.body,
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 48.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 32.dp, top = 48.dp, bottom = 20.dp),
             )
+            // The nearest days either side that do have something, rather than a day at a time through a gap.
+            val (earlier, later) = remember(history, day) { nearestDaysWithData(history, day) }
+            Column(Modifier.fillMaxWidth().padding(horizontal = AtlasGutter), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (earlier != null) DayJump(stringResource(Res.string.atlas_day_jump_earlier, dateText(earlier)), { onDay(earlier) }, Modifier.testTag("atlas_day_jump_earlier"))
+                if (later != null) DayJump(stringResource(Res.string.atlas_day_jump_later, dateText(later)), { onDay(later) }, Modifier.testTag("atlas_day_jump_later"))
+            }
             return@Column
         }
 
@@ -262,6 +275,34 @@ internal fun DayScreen(
             }
         }
     }
+}
+
+/** The nearest day before [day] and the nearest after it that have a stay or a move on record, either null where there is none. */
+private fun nearestDaysWithData(history: AtlasHistory, day: Int): Pair<Int?, Int?> {
+    if (history.isEmpty) return null to null
+    fun held(on: Int) = history.visitsOn(on).isNotEmpty() || history.movesOn(on).isNotEmpty()
+    val earlier = (minOf(day - 1, history.lastDay) downTo history.firstDay).firstOrNull(::held)
+    val later = (maxOf(day + 1, history.firstDay)..history.lastDay).firstOrNull(::held)
+    return earlier to later
+}
+
+/** A way out of an empty day, to one that has something. */
+@Composable
+private fun DayJump(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = AtlasTheme.colors
+    Text(
+        label,
+        style = AtlasTheme.type.label,
+        color = colors.text,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(colors.surfaceRaised)
+            .border(1.dp, colors.hairline, CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+    )
 }
 
 @Composable

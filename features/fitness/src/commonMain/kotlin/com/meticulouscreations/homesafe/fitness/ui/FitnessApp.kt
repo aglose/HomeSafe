@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -173,6 +174,8 @@ class FitnessActions(
     val onDeleteSession: (WorkoutSession) -> Unit = {},
     val onLogSet: (String, Double, Int) -> Unit = { _, _, _ -> },
     val onDeleteSet: (Long) -> Unit = {},
+    /** Puts back the set deleted last, while it is still offered ([FitnessUiState.deletedSet]). */
+    val onUndoDeleteSet: () -> Unit = {},
     val onSkipRest: () -> Unit = {},
     val onAdjustRest: (Int) -> Unit = {},
     val onDismissFlash: () -> Unit = {},
@@ -233,6 +236,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onDeleteSession = viewModel::deleteSession,
             onLogSet = viewModel::logSet,
             onDeleteSet = viewModel::deleteSet,
+            onUndoDeleteSet = viewModel::undoDeleteSet,
             onSkipRest = viewModel::skipRest,
             onAdjustRest = viewModel::adjustRest,
             onDismissFlash = viewModel::dismissFlash,
@@ -312,6 +316,8 @@ fun FitnessAppContent(
         val pagePadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 28.dp)
         val page = pages.lastOrNull()
         val workout = state.workout
+        // A workout is read between sets with the phone put down: the screen stays on while one is open and the app is up.
+        if (active && workout != null && !LocalInspectionMode.current) KeepScreenOn()
         // What has been added to the open workout from off its shelves, kept up here above the pages: opening one of
         // those exercises' own pages and coming back must not lose it.
         var pulled by rememberSaveable(workout?.workout?.id) { mutableStateOf(emptyList<String>()) }
@@ -417,7 +423,7 @@ fun FitnessAppContent(
                             },
                             // Coming back mid-rest, the exercise being rested from is the one to carry on with.
                             initiallyOpen = state.rest?.exerciseId,
-                            heart = heart,
+                            heart = { latestHeart.value },
                             onOpenHeart = { pages += FitnessPage.Heart },
                             pulled = pulled,
                             onPulledChange = { pulled = it },

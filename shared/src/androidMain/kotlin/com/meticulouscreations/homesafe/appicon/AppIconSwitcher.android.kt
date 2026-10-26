@@ -45,6 +45,8 @@ private class AndroidAppIconSwitcher(private val context: Context) : AppIconSwit
                 PackageManager.ComponentEnabledSetting(alias(it), state, PackageManager.DONT_KILL_APP)
             },
         )
+        // A launcher shortcut belongs to one entry: they move to the one now enabled.
+        AppShortcuts.publish(context, alias(icon))
     }.isSuccess
 }
 

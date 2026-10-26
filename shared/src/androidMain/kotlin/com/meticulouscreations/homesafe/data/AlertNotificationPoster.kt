@@ -60,6 +60,13 @@ object AlertNotificationPoster {
     const val SUMMARY_CHANNEL_ID = "summaries"
 
     /**
+     * A door opening while someone is home (a door set to notify "always"), so the doors can be
+     * turned down without the cameras. Heads-up like the cameras', and as silent; a door opened
+     * while nobody is home goes on [AWAY_CHANNEL_ID] with the rest of the away alerts.
+     */
+    const val DOORS_CHANNEL_ID = "doors"
+
+    /**
      * The colour Android tints the icon, the app's name and the buttons with: the app's own warm
      * orange (the theme's primary, deepened so it also reads on a light shade), and red for someone
      * seen while nobody is home.
@@ -69,10 +76,13 @@ object AlertNotificationPoster {
 
     /**
      * The shade's groups: the cameras' alerts (away alerts and "Not a person" confirmations
-     * among them) under the camera, the relay's quiet summaries under their own list icon. Two
-     * groups because they sit in different sections of the shade, one loud and one silent.
+     * among them) under the camera, the doors that opened while someone was home under the door,
+     * the relay's quiet summaries under their own list icon. The summaries apart because they sit
+     * in a different section of the shade, one loud and one silent; the doors because they are
+     * no camera's.
      */
     private val alertGroup = NotificationGroupSummary("detections", CHANNEL_ID, R.string.notif_group_cameras)
+    private val doorsGroup = NotificationGroupSummary("doors", DOORS_CHANNEL_ID, R.string.notif_group_doors)
     private val summaryGroup = NotificationGroupSummary("summaries", SUMMARY_CHANNEL_ID, R.string.notif_group_summaries)
 
     /** What the relay joins a summary's cameras with (`digest_text` in relay.py). */
@@ -123,6 +133,12 @@ object AlertNotificationPoster {
             context.getString(R.string.notif_channel_away_description),
             NotificationManager.IMPORTANCE_HIGH,
             vibrate = true,
+        )
+        manager.createSilentChannel(
+            DOORS_CHANNEL_ID,
+            context.getString(R.string.notif_channel_doors_name),
+            context.getString(R.string.notif_channel_doors_description),
+            NotificationManager.IMPORTANCE_HIGH,
         )
         manager.createSilentChannel(
             SUMMARY_CHANNEL_ID,
@@ -223,12 +239,23 @@ object AlertNotificationPoster {
         }
     }
 
+    /** Away first: someone seen, or a door opened, while nobody is home is an away alert whatever it was. */
+    private fun channelFor(notification: AlertNotification): String = when {
+        notification.urgent -> AWAY_CHANNEL_ID
+        notification.door != null -> DOORS_CHANNEL_ID
+        else -> CHANNEL_ID
+    }
+
+    /** The doors' own group for a door that opened while someone was home; every other alert under the cameras'. */
+    private fun groupFor(notification: AlertNotification): NotificationGroupSummary =
+        if (!notification.urgent && notification.door != null) doorsGroup else alertGroup
+
     private fun buildAlert(context: Context, notification: AlertNotification, postedAt: Long, picture: Bitmap?, largeIcon: Bitmap?): Notification =
-        NotificationCompat.Builder(context, if (notification.urgent) AWAY_CHANNEL_ID else CHANNEL_ID)
+        NotificationCompat.Builder(context, channelFor(notification))
             .setSmallIcon(glyph(notification).drawableRes)
             .setColor(if (notification.urgent) AWAY_COLOR else ACCENT_COLOR)
-            .setGroup(alertGroup.group)
-            .setDeleteIntent(alertGroup.removalIntent(context, notification.id, NOTIFICATION_ID))
+            .setGroup(groupFor(notification).group)
+            .setDeleteIntent(groupFor(notification).removalIntent(context, notification.id, NOTIFICATION_ID))
             .setContentTitle(notification.title)
             .setContentText(notification.body)
             .setTicker(notification.title)
@@ -402,10 +429,10 @@ object AlertNotificationPoster {
      * updates beyond about five a second.
      */
     private fun postGroupSummary(context: Context, notification: AlertNotification) {
-        if (notification.summary) {
-            summaryGroup.post(context, NotificationGlyph.SUMMARY, ACCENT_COLOR)
-        } else {
-            alertGroup.post(context, NotificationGlyph.CAMERA, ACCENT_COLOR, channel = if (notification.urgent) AWAY_CHANNEL_ID else CHANNEL_ID)
+        when {
+            notification.summary -> summaryGroup.post(context, NotificationGlyph.SUMMARY, ACCENT_COLOR)
+            groupFor(notification) === doorsGroup -> doorsGroup.post(context, NotificationGlyph.DOOR, ACCENT_COLOR, channel = channelFor(notification))
+            else -> alertGroup.post(context, NotificationGlyph.CAMERA, ACCENT_COLOR, channel = channelFor(notification))
         }
     }
 

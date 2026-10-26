@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.di
 
+import com.meticulouscreations.homesafe.data.BackgroundDoors
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
 import com.meticulouscreations.homesafe.data.PushedAlertActions
 import com.meticulouscreations.homesafe.data.PushedAlertMedia
@@ -15,4 +16,5 @@ interface BackgroundServices {
     val pushedAlertMedia: PushedAlertMedia
     val pushedAlertActions: PushedAlertActions
     val presenceAutomation: PresenceAutomation
+    val backgroundDoors: BackgroundDoors
 }

@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -40,10 +42,13 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -65,9 +70,12 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,6 +84,7 @@ import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
+import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.ConnectUiState
@@ -95,7 +104,9 @@ import homesafe.shared.generated.resources.connection_connect
 import homesafe.shared.generated.resources.connection_forget_saved_login
 import homesafe.shared.generated.resources.connection_open_apps
 import homesafe.shared.generated.resources.connection_open_apps_hint
+import homesafe.shared.generated.resources.connection_password_hide
 import homesafe.shared.generated.resources.connection_password_placeholder
+import homesafe.shared.generated.resources.connection_password_show
 import homesafe.shared.generated.resources.connection_server_url_hint
 import homesafe.shared.generated.resources.connection_server_url_label
 import homesafe.shared.generated.resources.connection_server_url_placeholder
@@ -120,7 +131,7 @@ data class DebugAutofillCredentials(
 /**
  * Handles on the sign-in form for tests: Compose UI tests find the fields by these, and on Android
  * (where MainActivity sets `testTagsAsResourceId`) UiAutomator and Android CLI journeys see them
- * as resource ids. The URL field starts filled in, so it has no placeholder text to find it by.
+ * as resource ids. The URL field may start filled in (the last server), so its placeholder text can't find it.
  */
 const val SIGN_IN_SERVER_URL_TEST_TAG = "sign_in_server_url"
 const val SIGN_IN_USERNAME_TEST_TAG = "sign_in_username"
@@ -148,7 +159,9 @@ fun SecureConnectionScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val hasSavedBiometricCredentials by viewModel.hasSavedBiometricCredentials.collectAsStateWithLifecycle()
     var serverUrl by remember(mostRecentConnection) {
-        mutableStateOf(mostRecentConnection?.serverUrl ?: "http://frigate.local:8971")
+        // Empty on a first sign-in, with "Enter Server URL" showing: an example address in the
+        // field reads as the real one, and signing in to it only fails on a host that isn't there.
+        mutableStateOf(mostRecentConnection?.serverUrl.orEmpty())
     }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -308,6 +321,7 @@ fun SecureConnectionScreen(
                                 leadingIcon = Icons.Filled.Dns,
                                 extraColors = extraColors,
                                 enabled = !isConnecting,
+                                field = ConnectionField.SERVER_URL,
                                 modifier = Modifier.testTag(SIGN_IN_SERVER_URL_TEST_TAG),
                             )
                             Text(
@@ -326,6 +340,7 @@ fun SecureConnectionScreen(
                             leadingIcon = Icons.Filled.Person,
                             extraColors = extraColors,
                             enabled = !isConnecting,
+                            field = ConnectionField.USERNAME,
                             modifier = Modifier.testTag(SIGN_IN_USERNAME_TEST_TAG),
                         )
 
@@ -337,8 +352,10 @@ fun SecureConnectionScreen(
                             leadingIcon = Icons.Filled.Lock,
                             extraColors = extraColors,
                             enabled = !isConnecting,
+                            field = ConnectionField.PASSWORD,
                             modifier = Modifier.testTag(SIGN_IN_PASSWORD_TEST_TAG),
-                            visualTransformation = PasswordVisualTransformation(),
+                            // The keyboard's Done is the Connect button.
+                            onDone = { if (!isConnecting) viewModel.connect(serverUrl, username, password) },
                         )
 
                         if (uiState is ConnectUiState.Error) {
@@ -534,6 +551,14 @@ private fun BiometricSaveOfferDialog(
     )
 }
 
+/** Which of the sign-in form's fields: what keyboard it brings up, and what its action key does. */
+private enum class ConnectionField { SERVER_URL, USERNAME, PASSWORD }
+
+/**
+ * One of the sign-in form's fields. The server URL gets the URL keyboard and the username no
+ * autocorrect, and both go on to the next field; the password field hides what is typed behind
+ * an eye that shows it, and its Done runs [onDone].
+ */
 @Composable
 private fun ConnectionTextField(
     value: String,
@@ -542,9 +567,17 @@ private fun ConnectionTextField(
     leadingIcon: ImageVector,
     extraColors: FrigateExtraColors,
     enabled: Boolean,
+    field: ConnectionField,
     modifier: Modifier = Modifier,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
+    onDone: () -> Unit = {},
 ) {
+    val password = field == ConnectionField.PASSWORD
+    var revealed by remember { mutableStateOf(false) }
+    val keyboardOptions = when (field) {
+        ConnectionField.SERVER_URL -> KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next)
+        ConnectionField.USERNAME -> KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next)
+        ConnectionField.PASSWORD -> KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password, imeAction = ImeAction.Done)
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -558,7 +591,21 @@ private fun ConnectionTextField(
                 tint = MaterialTheme.colorScheme.tertiaryContainer,
             )
         },
-        visualTransformation = visualTransformation,
+        trailingIcon = if (password) {
+            {
+                IconButton(onClick = { revealed = !revealed }, enabled = enabled) {
+                    Icon(
+                        imageVector = if (revealed) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = stringResource(if (revealed) Res.string.connection_password_hide else Res.string.connection_password_show),
+                    )
+                }
+            }
+        } else {
+            null
+        },
+        visualTransformation = if (password && !revealed) PasswordVisualTransformation() else VisualTransformation.None,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
         singleLine = true,
         shape = RoundedCornerShape(12.dp),
         textStyle = MaterialTheme.typography.bodyMedium,
@@ -573,4 +620,42 @@ private fun ConnectionTextField(
             unfocusedTextColor = extraColors.textPrimary,
         ),
     )
+}
+
+/** The sign-in form's three fields as they first come up, the password hidden behind its eye. */
+@Preview(name = "Sign-in fields", widthDp = 412)
+@Composable
+private fun ConnectionTextFieldsPreview() {
+    FrigatePreview {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            val extraColors = LocalFrigateExtraColors.current
+            ConnectionTextField(
+                value = "http://frigate.local:8971",
+                onValueChange = {},
+                placeholder = stringResource(Res.string.connection_server_url_placeholder),
+                leadingIcon = Icons.Filled.Dns,
+                extraColors = extraColors,
+                enabled = true,
+                field = ConnectionField.SERVER_URL,
+            )
+            ConnectionTextField(
+                value = "sarah",
+                onValueChange = {},
+                placeholder = stringResource(Res.string.connection_username_placeholder),
+                leadingIcon = Icons.Filled.Person,
+                extraColors = extraColors,
+                enabled = true,
+                field = ConnectionField.USERNAME,
+            )
+            ConnectionTextField(
+                value = "correct horse",
+                onValueChange = {},
+                placeholder = stringResource(Res.string.connection_password_placeholder),
+                leadingIcon = Icons.Filled.Lock,
+                extraColors = extraColors,
+                enabled = true,
+                field = ConnectionField.PASSWORD,
+            )
+        }
+    }
 }

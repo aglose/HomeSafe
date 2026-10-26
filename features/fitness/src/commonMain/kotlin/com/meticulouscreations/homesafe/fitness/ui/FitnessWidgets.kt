@@ -320,7 +320,8 @@ internal fun LadderChart(
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
-    val measurer = rememberTextMeasurer()
+    // Enough room for every label on the chart (a weight and the reps over each bar), so none is laid out again each draw.
+    val measurer = rememberTextMeasurer(cacheSize = maxRungs * 2 + 2)
     // The target's own rung is drawn even when nothing has been done at it yet.
     val rungs = remember(ladder, targetWeight, maxRungs) {
         val withTarget = if (targetWeight != null && ladder.none { it.weight == targetWeight }) (ladder + Rung(targetWeight, 0)).sortedBy { it.weight } else ladder
@@ -329,7 +330,12 @@ internal fun LadderChart(
     val still = LocalInspectionMode.current
     val rise = remember { Animatable(if (still) 1f else 0f) }
     LaunchedEffect(rungs.size) { if (!still) rise.animateTo(1f, tween(500 + rungs.size * 70, easing = FastOutSlowInEasing)) }
-    val breath by rememberInfiniteTransition(label = "ladder").animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ladderBreath")
+    // Only a chart with a target has anything that breathes; read while drawing, so the chart isn't composed again each frame.
+    val breath = if (targetWeight != null && targetReps != null) {
+        rememberInfiniteTransition(label = "ladder").animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ladderBreath")
+    } else {
+        null
+    }
     val labelStyle = type.micro.copy(letterSpacing = TextStyle.Default.letterSpacing)
 
     Canvas(modifier.semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription }) {
@@ -366,7 +372,7 @@ internal fun LadderChart(
             }
             if (isTarget && targetReps != null) {
                 val goal = area * targetReps / top
-                val glow = 0.45f + 0.55f * breath
+                val glow = 0.45f + 0.55f * (breath?.value ?: 1f)
                 drawRoundRect(
                     colors.gold.copy(alpha = glow),
                     Offset(x, base - goal),

@@ -66,6 +66,7 @@ import com.meticulouscreations.homesafe.finance.domain.LongRunStats
 import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.finance.domain.WatchEntry
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.text.resolve
@@ -126,6 +127,9 @@ import homesafe.shared.generated.resources.watchlist_search_no_matches
 import homesafe.shared.generated.resources.watchlist_search_searching
 import homesafe.shared.generated.resources.watchlist_search_subtitle
 import homesafe.shared.generated.resources.watchlist_search_title
+import homesafe.shared.generated.resources.watchlist_sort_held
+import homesafe.shared.generated.resources.watchlist_sort_list
+import homesafe.shared.generated.resources.watchlist_sort_move
 import homesafe.shared.generated.resources.watchlist_status_added
 import homesafe.shared.generated.resources.watchlist_status_in_sheet
 import homesafe.shared.generated.resources.watchlist_status_not_added
@@ -137,6 +141,7 @@ import homesafe.shared.generated.resources.watchlist_subtitle_suggestions
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.abs
 import kotlin.time.Clock
 
 /** "+ Add", the watchlist header's button. */
@@ -171,13 +176,41 @@ internal fun watchlistSubtitle(state: FinanceUiState): StringResource {
     }
 }
 
+/** How the watchlist's rows can be ordered. */
+internal enum class WatchSort(val label: StringResource) {
+    /** As the sheet and the app list them. */
+    LIST(Res.string.watchlist_sort_list),
+
+    /** The day's biggest move first, up or down. */
+    MOVE(Res.string.watchlist_sort_move),
+
+    /** What's held, the most valuable position first; offered only when something is. */
+    HELD(Res.string.watchlist_sort_held),
+}
+
 /**
- * The watchlist's rows, with what's held summed up above them when anything is: the same on the
- * Markets and Wallet tabs.
+ * [entries] in [sort]'s order, at [quotes]. A row with nothing to go by (no quote yet, or no
+ * position for [WatchSort.HELD]) goes last; ties keep the list's own order.
  */
-internal fun LazyListScope.watchlistItems(state: FinanceUiState, keyPrefix: String, onOpenQuote: (String) -> Unit) {
+internal fun sortWatchEntries(entries: List<WatchEntry>, quotes: Map<String, Quote>, sort: WatchSort): List<WatchEntry> = when (sort) {
+    WatchSort.LIST -> entries
+
+    WatchSort.MOVE -> entries.sortedBy { entry -> quotes[entry.symbol]?.let { -abs(it.changePercent) } ?: Double.MAX_VALUE }
+
+    WatchSort.HELD -> entries.sortedBy { entry ->
+        val quote = quotes[entry.symbol]
+        val position = entry.position
+        if (quote != null && position != null) -position.value(quote.price) else Double.MAX_VALUE
+    }
+}
+
+/**
+ * The watchlist's rows in [sort]'s order, with what's held summed up above them when anything is:
+ * the same on the Markets and Wallet tabs.
+ */
+internal fun LazyListScope.watchlistItems(state: FinanceUiState, keyPrefix: String, sort: WatchSort = WatchSort.LIST, onOpenQuote: (String) -> Unit) {
     state.holdings.forEach { holdings -> item(key = "$keyPrefix-holdings-${holdings.currency}") { HoldingsCard(holdings) } }
-    items(state.watchEntries, key = { "$keyPrefix-${it.symbol}" }) { entry ->
+    items(sortWatchEntries(state.watchEntries, state.quotes, sort), key = { "$keyPrefix-${it.symbol}" }) { entry ->
         QuoteRow(
             entry.symbol,
             state.quotes[entry.symbol],
