@@ -1,7 +1,7 @@
 [versions]
 # 9.5 is still an alpha: it's what runs Compose Preview Screenshot Testing as an AGP test suite
 # (androidApp/build.gradle.kts), which replaced the deprecated standalone screenshot plugin.
-agp = "9.5.0-alpha07"
+agp = "9.5.0-rc01"
 android-compileSdk = "37"
 android-minSdk = "33"
 android-targetSdk = "37"
