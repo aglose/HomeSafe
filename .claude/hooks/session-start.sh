@@ -14,7 +14,7 @@
 #
 # Secrets the environment can hold (environment variables), for `ssh frigate`:
 #   TS_AUTHKEY        an ephemeral, tagged Tailscale auth key
-#   FRIGATE_SSH_KEY   the private key of a restricted user on the box
+#   FRIGATE_SSH_KEY   the private key of a restricted user on the box, base64 on one line
 #   FRIGATE_SSH_USER  that user (default andrew); FRIGATE_HOST its tailnet address (default 100.99.163.71)
 set -uo pipefail
 
@@ -121,7 +121,13 @@ fi
 
 if [ -n "${FRIGATE_SSH_KEY:-}" ]; then
   mkdir -p ~/.ssh && chmod 700 ~/.ssh
-  printf '%s\n' "$FRIGATE_SSH_KEY" >~/.ssh/frigate && chmod 600 ~/.ssh/frigate
+  # The key as it is, or base64 on one line (`base64 -w0 key`), since a variable is one line.
+  if [[ "$FRIGATE_SSH_KEY" == -----BEGIN* ]]; then
+    printf '%s\n' "$FRIGATE_SSH_KEY" >~/.ssh/frigate
+  else
+    printf '%s' "$FRIGATE_SSH_KEY" | base64 -d >~/.ssh/frigate
+  fi
+  chmod 600 ~/.ssh/frigate
   if ! grep -q '^Host frigate$' ~/.ssh/config 2>/dev/null; then
     cat >>~/.ssh/config <<EOF
 Host frigate
