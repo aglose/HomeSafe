@@ -124,7 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Unit tests
-        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py
+        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py scripts/ci/test_copilot_review.py
       - name: Build the relay image
         run: docker build --tag homesafe-relay relay
       - name: Import the relay against its installed packages
@@ -421,14 +421,67 @@ jobs:
             build/startup-perf/go2rtc.yaml
           retention-days: 14
 
+  # Which Mac the iOS job runs on. The self-hosted Mac comes first: it has everything built
+  # already and takes a few minutes. When it is offline, a job sent to it would sit queued for up
+  # to a day, so the job goes to a GitHub-hosted Mac instead, which is slower but always there.
+  #
+  # Only an admin token can see the runners (GITHUB_TOKEN cannot), so this reads the optional
+  # RUNNER_STATUS_TOKEN secret: a fine-grained token for this repository with Administration
+  # read-only and nothing else. Without it, every run goes to the self-hosted Mac, as before.
+  #
+  # A fork's pull request must never execute on the self-hosted Mac, so it always gets a hosted
+  # one (it needs no secrets). So does a Dependabot branch, whether the run is its pull request's
+  # or one the Dependency updates workflow started on it: it builds versions of plugins nobody has
+  # vetted yet, and those should run on a machine that is thrown away afterwards.
+  mac:
+    name: Pick the Mac
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      runs-on: ${{ steps.pick.outputs.runs-on }}
+    steps:
+      - name: Self-hosted if it is online, else GitHub-hosted
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_STATUS_TOKEN }}
+          UNTRUSTED: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || startsWith(github.head_ref, 'dependabot/') || startsWith(github.ref, 'refs/heads/dependabot/') }}
+        run: |
+          pick() {
+            echo "runs-on=$1" >> "$GITHUB_OUTPUT"
+            echo "$2" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          self_hosted='["self-hosted","macOS"]'
+          hosted='"macos-latest"'
+
+          if [ "$UNTRUSTED" = "true" ]; then
+            pick "$hosted" "A fork's or Dependabot's branch: the GitHub-hosted Mac."
+          fi
+          if [ -z "$GH_TOKEN" ]; then
+            pick "$self_hosted" "No RUNNER_STATUS_TOKEN to check the self-hosted Mac with, so it is used whether or not it is online."
+          fi
+          # An answer that can't be read is treated like an offline Mac: a hosted run is slower,
+          # but a job queued for a Mac that never comes holds the pull request up for a day.
+          if ! runners=$(gh api "repos/$GITHUB_REPOSITORY/actions/runners" --paginate \
+            --jq '.runners[] | select(any(.labels[]; .name == "self-hosted") and any(.labels[]; .name == "macOS")) | "\(.status)\tbusy=\(.busy)\t\(.name)"'); then
+            echo "::warning::Could not list the runners with RUNNER_STATUS_TOKEN (does it have Administration: read?)."
+            pick "$hosted" "Could not tell whether the self-hosted Mac is online: the GitHub-hosted Mac."
+          fi
+          echo "Self-hosted Macs:"
+          echo "${runners:-none}"
+          # Online and busy is still the self-hosted Mac: it is another run's iOS job, a few
+          # minutes, and still quicker than starting a hosted Mac from nothing.
+          if grep -q '^online' <<< "$runners"; then
+            pick "$self_hosted" "The self-hosted Mac is online."
+          fi
+          echo "::notice::The self-hosted Mac is offline, so iOS runs on a GitHub-hosted Mac."
+          pick "$hosted" "The self-hosted Mac is offline: the GitHub-hosted Mac."
+
   ios:
     name: iOS tests and build
-    # Branches in this repo run on the self-hosted Mac. A fork's pull request must never
-    # execute there, so it goes to a GitHub-hosted macOS runner instead (it needs no secrets).
-    # So does a Dependabot branch, whether the run is its pull request's or one the Dependency
-    # updates workflow started on it: it builds versions of plugins nobody has vetted yet, and
-    # those should run on a machine that is thrown away afterwards.
-    runs-on: ${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || startsWith(github.head_ref, 'dependabot/') || startsWith(github.ref, 'refs/heads/dependabot/')) && 'macos-latest' || fromJSON('["self-hosted", "macOS"]') }}
+    needs: mac
+    # See the mac job above for which Mac this is.
+    runs-on: ${{ fromJSON(needs.mac.outputs.runs-on) }}
     # The Mac takes a few minutes, with everything already built once. A hosted runner starts
     # from nothing each time: Kotlin/Native to download, and the whole of :shared to compile.
     timeout-minutes: 60
@@ -497,7 +550,7 @@ jobs:
     # The single required status check. Jobs can be added or renamed without touching
     # branch protection, as long as they are listed here.
     if: always()
-    needs: [gradle, relay, android-ui, startup-perf, ios]
+    needs: [gradle, relay, android-ui, startup-perf, mac, ios]
     runs-on: ubuntu-24.04
     steps:
       - name: Show job results

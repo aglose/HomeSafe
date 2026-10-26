@@ -1,0 +1,69 @@
+# PR autopilot
+
+Every pull request merges itself once CI is green and its code review is done. Nobody has to press
+the button. The **PR autopilot** workflow
+([`.github/workflows/pr-autopilot.yml`](../.github/workflows/pr-autopilot.yml)) runs each time CI
+finishes on a pull request's branch, and does this:
+
+1. **CI has to be green** on the pull request's newest commit. A red run is left alone: the author
+   (usually the Claude Code session that opened it, and is watching it) fixes it, and the next
+   green run brings the autopilot back.
+2. **Copilot reviews first.** The repository's ruleset asks Copilot to review every pull request,
+   and the autopilot asks again when it has a token to do it with. It waits up to 15 minutes after
+   CI for Copilot's review of that exact commit. Copilot is usually done well before CI is.
+3. **Claude reviews when Copilot can't.** Copilot's reviews come out of a monthly budget of premium
+   requests. Once that's spent, or if no review arrives, Claude (Sonnet, set by `REVIEW_MODEL` in
+   the workflow) reviews the change instead.
+   [`scripts/ci/copilot_review.py`](../scripts/ci/copilot_review.py) decides which.
+4. **Findings are fixed automatically.** If Copilot left comments, Claude checks each one against
+   the code and fixes the real ones. If Claude reviewed, it fixes what it found. The fix is pushed
+   to the branch as a commit ending in `PR-Autopilot: fix`, and CI and the review run again on it.
+   After two such fixes, a third one goes to a person instead of looping.
+5. **Then it merges** (squash, the way the repository merges) the exact commit CI passed and was
+   reviewed, or nothing. Copilot's threads are resolved first, and CI is started on main so the
+   merge is built and published to Play internal testing like any other.
+
+Prompt: [`scripts/ci/pr-review-prompt.md`](../scripts/ci/pr-review-prompt.md). The bar is real bugs
+and breaks of [`AGENTS.md`](../AGENTS.md), not taste: style, naming and "could be cleaner" don't
+hold a merge up.
+
+## What it never merges
+
+- Drafts. Mark a pull request ready for review and it is picked up on the next green CI run.
+- Pull requests labelled **`autopilot: hold`**. Add the label to keep one open. To hand it back,
+  take the label off and run the **PR autopilot** workflow with the pull request's number (or push).
+- Pull requests where a person's newest review asks for changes.
+- Forks' pull requests, and Dependabot's (the [dependency updates](dependency-updates.md) have
+  their own rules).
+
+What it can't finish by itself (the fix doesn't apply, the review gives up or wants a third round,
+the branch conflicts with main, the merge is refused) is labelled **`autopilot: needs a human`**
+and gets a comment saying why. It is tried again on the next green CI run (after a push), or when
+the workflow is run by hand with the pull request's number; the label comes off when it merges.
+
+If branch protection requires the branch to be up to date, a pull request that is behind main has
+main merged into it, and CI goes round again.
+
+## iOS: the self-hosted Mac first, then GitHub's
+
+CI's iOS job runs on the self-hosted Mac, which has everything built already and takes a few
+minutes. When that Mac is offline, the job used to sit queued for up to a day. Now a small `mac`
+job in [`ci.yml`](../.github/workflows/ci.yml) asks GitHub whether the Mac is online first, and
+sends the iOS job to a GitHub-hosted Mac (`macos-latest`) when it isn't. That's slower, since it
+starts from nothing, but it is always there. A Mac that is online but busy is still used: it is
+another run's iOS job, and it finishes sooner than a hosted Mac can start. Forks and Dependabot
+always get the hosted Mac, as before.
+
+## Setup
+
+Repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | What for | Without it |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Claude's review and fixes (already set for the dependency updates) | A pull request merges only when Copilot reviewed it and found nothing |
+| `PR_AUTOPILOT_TOKEN` (recommended) | A fine-grained token of the owner's, for this repository: **Contents**, **Pull requests**, **Actions** and **Workflows**, read and write. It asks Copilot for reviews (`GITHUB_TOKEN` can't), merges pull requests that change workflows (`GITHUB_TOKEN` may not), and its pushes and merges start CI by themselves | No re-asking Copilot; pull requests that touch `.github/workflows/` aren't merged; CI is started by hand after each push and merge |
+| `RUNNER_STATUS_TOKEN` | A fine-grained token for this repository with **Administration: read-only** and nothing else. Only an admin token can see whether the Mac is online | iOS always goes to the self-hosted Mac, online or not |
+
+Copilot's own setting: a repository ruleset for `main` with **Automatically request Copilot code
+review** and **Review new pushes** turned on. The autopilot works without it, but every review
+then falls to Claude.
