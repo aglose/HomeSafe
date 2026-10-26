@@ -1,0 +1,516 @@
+name: PR autopilot
+
+# Gets every pull request merged without anyone having to: once CI is green and its code review
+# is done, it is squash-merged. See docs/pr-autopilot.md.
+#
+# It runs each time CI finishes on a pull request's branch:
+#
+# - CI red, or cancelled: nothing. The pull request's author (usually a Claude Code session that
+#   is watching it) fixes it, and the next green run brings this back.
+# - CI green: the review. Copilot reviews every pull request (the repository's ruleset asks it to;
+#   this asks again when it has a person's token to do it with). If Copilot reviewed this exact
+#   commit and left no comments, the review is done. If it left comments, an agent checks each
+#   one and fixes the real ones. If Copilot did not review it (its monthly budget of premium
+#   requests is spent, or nothing came), the agent reviews the change itself and fixes what it
+#   finds (scripts/ci/copilot_review.py decides which).
+# - The agent changed something: its fix is pushed to the branch, and CI and the review run again
+#   on it. At most MAX_FIXES times, after which it is for a person.
+# - Nothing left to change: the pull request is merged, the exact commit CI passed or nothing.
+#
+# What is never merged by this: a draft, a fork's pull request, Dependabot's (the Dependency
+# updates workflow has its own rules for those), one labelled "autopilot: hold", and one where a
+# person has asked for changes. What it can't finish is labelled "autopilot: needs a human", with
+# a comment saying why.
+#
+# Like "Dependency updates", this is a workflow_run workflow so that it is always the copy on main,
+# with a token of its own. The agent runs as in that workflow's repair job: a read-only token, no
+# shell (it reads and edits files, and CI is what tries the result), and its change handed over as
+# a patch to a separate job with no agent in it.
+#
+# Secrets:
+# - ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN (the ones the dependency updates use): the agent.
+#   Without one, a pull request merges only when Copilot reviewed it and found nothing.
+# - BASELINE_PROFILE_TOKEN, the owner's fine-grained token the Baseline Profile workflow already
+#   uses (Contents and Pull requests: read and write). With it, Copilot can be asked for a review
+#   (GitHub does not let GITHUB_TOKEN ask), and pushes and merges set off CI by themselves. Without
+#   it, CI is started by hand after each push and merge, as the dependency updates do.
+# - PR_AUTOPILOT_TOKEN, optional: used instead when set. Give it Workflows: read and write as well,
+#   and pull requests that change a workflow merge too (neither GITHUB_TOKEN nor the Baseline
+#   Profile token may merge those; such a pull request is left for a person, saying so).
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  # To look at one pull request again by hand, e.g. after taking the hold label off it.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Number of the pull request
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One at a time per branch. A run waiting for Copilot on an older commit finds out the branch has
+# moved and stops, so the newer one is not held up for long.
+concurrency:
+  group: pr-autopilot-${{ github.event.workflow_run.head_branch || inputs.pr }}
+  cancel-in-progress: false
+
+env:
+  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+  HOLD_LABEL: 'autopilot: hold'
+  HUMAN_LABEL: 'autopilot: needs a human'
+  # After this many fixes of its own on a branch, the agent's next one goes to a person instead.
+  MAX_FIXES: 2
+  # The model that fixes what Copilot found, and reviews when Copilot can't.
+  REVIEW_MODEL: claude-sonnet-5-5
+  # How long to wait for Copilot's review once CI is green. It is usually done well before CI is.
+  COPILOT_WAIT_MINUTES: 15
+  # The trailer on the agent's commits, which is how they are counted.
+  FIX_TRAILER: 'PR-Autopilot: fix'
+
+jobs:
+  triage:
+    name: Find the pull request and its review
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch != github.event.repository.default_branch &&
+      !startsWith(github.event.workflow_run.head_branch, 'dependabot/') &&
+      (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'workflow_dispatch'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      checks: read
+    outputs:
+      # Not when the branch moved while Copilot was being waited for: that commit's CI run comes back.
+      go: ${{ steps.pr.outputs.go == 'true' && steps.copilot.outputs.state != 'moved' }}
+      pr: ${{ steps.pr.outputs.pr }}
+      sha: ${{ steps.pr.outputs.sha }}
+      branch: ${{ steps.pr.outputs.branch }}
+      fixes: ${{ steps.pr.outputs.fixes }}
+      copilot: ${{ steps.copilot.outputs.state }}
+      findings: ${{ steps.copilot.outputs.findings }}
+      copilot-reason: ${{ steps.copilot.outputs.reason }}
+    steps:
+      # main's scripts, never the pull request's.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEFAULT_BRANCH }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PR: ${{ inputs.pr }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          stop() {
+            echo "::notice::$1"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          if [ -n "$INPUT_PR" ]; then
+            pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$INPUT_PR")
+          else
+            pull=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+              -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$RUN_BRANCH" --jq '.[0] // empty')
+          fi
+          [ -n "$pull" ] || stop "No open pull request for $RUN_BRANCH."
+          field() { jq -r "$1" <<< "$pull"; }
+          number=$(field .number)
+          sha=$(field .head.sha)
+          [ "$(field .state)" = "open" ] || stop "#$number is not open."
+          [ "$(field .draft)" = "false" ] || stop "#$number is a draft."
+          [ "$(field .head.repo.full_name)" = "$GITHUB_REPOSITORY" ] || stop "#$number comes from a fork."
+          [ "$(field .base.ref)" = "$DEFAULT_BRANCH" ] || stop "#$number does not target $DEFAULT_BRANCH."
+          [ "$(field .user.login)" != "dependabot[bot]" ] || stop "#$number is Dependabot's; the Dependency updates workflow handles it."
+          if [ "$(jq --arg l "$HOLD_LABEL" 'any(.labels[]; .name == $l)' <<< "$pull")" = "true" ]; then
+            stop "#$number is labelled '$HOLD_LABEL'."
+          fi
+
+          if [ -n "$INPUT_PR" ]; then
+            # Run by hand: go by the last CI run that finished on the pull request's head.
+            RUN_CONCLUSION=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f head_sha="$sha" -f status=completed \
+              --jq '[.workflow_runs[] | select(.event == "pull_request" or .event == "workflow_dispatch")] | sort_by(.updated_at) | last | .conclusion // empty')
+            [ -n "$RUN_CONCLUSION" ] || stop "CI has not finished on #$number's head ($sha) yet."
+          elif [ "$RUN_SHA" != "$sha" ]; then
+            stop "CI ran on $RUN_SHA, but #$number has moved on to $sha."
+          fi
+          [ "$RUN_CONCLUSION" = "success" ] || stop "CI ended as '$RUN_CONCLUSION' on #$number; it merges once CI is green."
+
+          fixes=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number/commits" --paginate \
+            --jq ".[] | select(.commit.message | contains(\"$FIX_TRAILER\")) | .sha" | wc -l)
+
+          echo "#$number at $sha: CI is green; the agent has fixed it $fixes time(s) so far."
+          {
+            echo "go=true"
+            echo "pr=$number"
+            echo "sha=$sha"
+            echo "branch=$(field .head.ref)"
+            echo "fixes=$fixes"
+          } >> "$GITHUB_OUTPUT"
+          mkdir -p build/pr-autopilot
+          field '"# " + .title + "\n\n" + (.body // "")' > build/pr-autopilot/pull-request.md
+
+      - name: Wait for Copilot's review
+        id: copilot
+        if: steps.pr.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COPILOT_REQUEST_TOKEN: ${{ secrets.PR_AUTOPILOT_TOKEN || secrets.BASELINE_PROFILE_TOKEN }}
+          PR: ${{ steps.pr.outputs.pr }}
+          SHA: ${{ steps.pr.outputs.sha }}
+        run: |
+          python3 scripts/ci/copilot_review.py --repo "$GITHUB_REPOSITORY" --pr "$PR" --sha "$SHA" \
+            --out build/pr-autopilot --wait-minutes "$COPILOT_WAIT_MINUTES" --request | tee -a "$GITHUB_OUTPUT"
+
+      - name: The change, for the agent
+        if: steps.pr.outputs.go == 'true'
+        env:
+          PR: ${{ steps.pr.outputs.pr }}
+          SHA: ${{ steps.pr.outputs.sha }}
+        run: |
+          git fetch --quiet origin "refs/pull/$PR/head"
+          git diff "$(git merge-base "origin/$DEFAULT_BRANCH" "$SHA")" "$SHA" > build/pr-autopilot/changes.diff
+          wc -l build/pr-autopilot/changes.diff
+
+      - uses: actions/upload-artifact@v7
+        if: steps.pr.outputs.go == 'true'
+        with:
+          name: pr-autopilot-review
+          path: build/pr-autopilot/
+          retention-days: 14
+
+  # Copilot left comments, or could not review: the agent checks, reviews and fixes.
+  fix:
+    name: Review and fix
+    needs: triage
+    if: needs.triage.outputs.go == 'true' && (needs.triage.outputs.copilot != 'reviewed' || needs.triage.outputs.findings != '0')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      ran: ${{ steps.key.outputs.present }}
+    env:
+      SHA: ${{ needs.triage.outputs.sha }}
+    steps:
+      - name: Check for an agent key
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set, so nothing can review or fix this."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Before anything of the pull request's is on the runner, away from its directory (npm reads
+      # an .npmrc from where it runs), and with no secret in the environment.
+      - name: Install Claude Code
+        if: steps.key.outputs.present == 'true'
+        working-directory: ${{ runner.temp }}
+        run: npm install --global @anthropic-ai/claude-code
+
+      # The prompt comes from main; the code to review is the pull request's.
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+        with:
+          ref: ${{ env.DEFAULT_BRANCH }}
+          path: trusted
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+        with:
+          ref: ${{ needs.triage.outputs.sha }}
+          path: pr
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        if: steps.key.outputs.present == 'true'
+        with:
+          name: pr-autopilot-review
+          path: pr/build/pr-autopilot
+
+      # File tools only, and no GitHub token in this step. --setting-sources user: the branch's own
+      # .claude settings are not loaded, so it cannot bring hooks for the agent to run.
+      - name: Review and fix
+        if: steps.key.outputs.present == 'true'
+        working-directory: pr
+        env:
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          # An empty variable would be taken as a (wrong) credential, so only the one that is set.
+          if [ -n "$API_KEY" ]; then export ANTHROPIC_API_KEY="$API_KEY"; fi
+          if [ -n "$OAUTH_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$OAUTH_TOKEN"; fi
+          unset API_KEY OAUTH_TOKEN
+
+          # Only an answer written by this run counts. A branch could carry a result.json of its own
+          # (build/ is ignored, but a file can be added anyway), and an agent that failed partway
+          # may have left one behind; with none, finish takes it that the review did not finish.
+          rm -f build/pr-autopilot/result.json
+          status=0
+          timeout 35m claude -p "$(cat ../trusted/scripts/ci/pr-review-prompt.md)" \
+            --model "$REVIEW_MODEL" \
+            --setting-sources user \
+            --allowedTools "Read" "Edit" "Write" "Glob" "Grep" \
+            > build/pr-autopilot/agent.log 2>&1 || status=$?
+          tail -n 40 build/pr-autopilot/agent.log
+          echo "The agent exited with $status."
+          if [ "$status" -ne 0 ]; then
+            rm -f build/pr-autopilot/result.json
+            echo "::warning::The agent did not finish (exit $status), so its answer is not used."
+          fi
+
+      # Whatever the agent left in the working tree, as a patch against the pull request's head.
+      # build/ is ignored, so its notes stay out of it.
+      - name: Package the result
+        if: always() && steps.key.outputs.present == 'true'
+        working-directory: pr
+        run: |
+          out="$RUNNER_TEMP/pr-autopilot"
+          mkdir -p "$out"
+          cp build/pr-autopilot/result.json build/pr-autopilot/agent.log "$out/" 2> /dev/null || true
+          git add --all
+          git diff --cached --binary "$SHA" > "$out/fix.patch"
+          git diff --cached --stat "$SHA"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.key.outputs.present == 'true'
+        with:
+          name: pr-autopilot-fix
+          path: ${{ runner.temp }}/pr-autopilot/
+          retention-days: 14
+
+  finish:
+    name: Merge, push the fix, or ask for help
+    needs: [triage, fix]
+    # always(): the fix job is skipped when Copilot found nothing, and this still has to merge.
+    if: always() && needs.triage.outputs.go == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # No agent here, and nothing from the pull request is run: the patch is applied as data.
+    permissions:
+      contents: write # merge, and push the fix
+      pull-requests: write # comment, label, merge
+      issues: write # labels
+      actions: write # start CI
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Optional; see the top of this file.
+      OWNER_TOKEN: ${{ secrets.PR_AUTOPILOT_TOKEN || secrets.BASELINE_PROFILE_TOKEN }}
+      PR: ${{ needs.triage.outputs.pr }}
+      SHA: ${{ needs.triage.outputs.sha }}
+      BRANCH: ${{ needs.triage.outputs.branch }}
+      FIXES: ${{ needs.triage.outputs.fixes }}
+      COPILOT: ${{ needs.triage.outputs.copilot }}
+      FINDINGS: ${{ needs.triage.outputs.findings }}
+      COPILOT_REASON: ${{ needs.triage.outputs.copilot-reason }}
+      FIX_RESULT: ${{ needs.fix.result }}
+      FIXED: ${{ needs.fix.outputs.ran }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.triage.outputs.branch }}
+          fetch-depth: 0
+          token: ${{ secrets.PR_AUTOPILOT_TOKEN || secrets.BASELINE_PROFILE_TOKEN || github.token }}
+      - uses: actions/download-artifact@v8
+        if: needs.fix.outputs.ran == 'true'
+        continue-on-error: true
+        with:
+          name: pr-autopilot-fix
+          path: ${{ runner.temp }}/fix
+      # Which of Copilot's threads the review looked at.
+      - uses: actions/download-artifact@v8
+        with:
+          name: pr-autopilot-review
+          path: ${{ runner.temp }}/review
+
+      - name: Merge, push the fix, or ask for help
+        env:
+          FIX: ${{ runner.temp }}/fix
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          api() { gh api --silent "$@"; }
+          comment() { api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@"$1"; }
+          label() {
+            # 422 when the label is already there.
+            api --method POST "repos/$GITHUB_REPOSITORY/labels" -f name="$HUMAN_LABEL" -f color=D93F0B \
+              -f description="The PR autopilot could not merge this by itself" 2> /dev/null || true
+            api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=$HUMAN_LABEL"
+          }
+          unlabel() {
+            api --method DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/$(jq -rn --arg l "$HUMAN_LABEL" '$l | @uri')" 2> /dev/null || true
+          }
+          # Who reviewed, and what the agent made of it. The agent's words come from reading the
+          # pull request and Copilot's comments.
+          review_notes() {
+            echo
+            if [ "$COPILOT" = "reviewed" ]; then
+              echo "**Review:** Copilot, with $FINDINGS comment(s) on the code."
+            else
+              echo "**Review:** Claude ($REVIEW_MODEL), because Copilot did not review this commit: $COPILOT_REASON"
+            fi
+            [ -f "$FIX/result.json" ] || return 0
+            echo
+            jq -r '.summary // "" | tostring | .[0:20000]' "$FIX/result.json" 2> /dev/null || true
+            # shellcheck disable=SC2016 # jq's and GraphQL's own $variables
+            jq -r '(.findings // [])[] | "- **\(.status)** `\(.where)`: \(.what) \(.why // "")"' "$FIX/result.json" 2> /dev/null || true
+          }
+          needs_a_human() {
+            {
+              echo "<!-- pr-autopilot -->"
+              echo "$1"
+              review_notes
+              echo
+              echo "It is tried again on the next green CI run, or when the **PR autopilot** workflow is run with this pull request's number. [This run]($RUN_URL)"
+            } > "$RUNNER_TEMP/comment.md"
+            comment "$RUNNER_TEMP/comment.md"
+            label
+            exit 0
+          }
+          # A push or merge made with GITHUB_TOKEN sets off no run, so CI is started by hand. One
+          # made with the owner's token sets off a run like any other.
+          start_ci() {
+            if [ -z "$OWNER_TOKEN" ]; then
+              gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$1"
+            fi
+          }
+
+          # The pull request as it is now: the review took a while, and things may have changed.
+          pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR")
+          field() { jq -r "$1" <<< "$pull"; }
+          if [ "$(field .state)" != "open" ] || [ "$(field .head.sha)" != "$SHA" ] || [ "$(field .draft)" != "false" ] \
+            || [ "$(jq --arg l "$HOLD_LABEL" 'any(.labels[]; .name == $l)' <<< "$pull")" = "true" ]; then
+            echo "::notice::#$PR has changed since CI finished (merged, closed, pushed to, made a draft or held); leaving it to the next run."
+            exit 0
+          fi
+
+          # What to do: merge when Copilot found nothing, else whatever the agent says.
+          if [ "$COPILOT" = "reviewed" ] && [ "$FINDINGS" = "0" ]; then
+            action=clean
+          elif [ "$FIXED" != "true" ]; then
+            if [ "$FIX_RESULT" = "success" ]; then
+              needs_a_human "CI is green, but there is no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN for an agent to finish the review with, so it was not merged."
+            fi
+            needs_a_human "CI is green, but the review job failed, so it was not merged."
+          else
+            action=$(jq -r '.action // "none" | tostring' "$FIX/result.json" 2> /dev/null || echo none)
+          fi
+          echo "The review's answer: $action"
+
+          case "$action" in
+            clean) ;;
+            patch)
+              if [ "$FIXES" -ge "$MAX_FIXES" ]; then
+                needs_a_human "CI is green, but the review still wants changes after $FIXES rounds of fixes, so it is yours to finish."
+              fi
+              if [ "$(git rev-parse HEAD)" != "$SHA" ]; then
+                echo "::notice::$BRANCH moved while the review was being done; leaving it to the next CI run."
+                exit 0
+              fi
+              if [ ! -s "$FIX/fix.patch" ]; then
+                needs_a_human "CI is green, and the review said it had a fix but changed nothing."
+              fi
+              if ! git apply --index "$FIX/fix.patch"; then
+                git reset --quiet --hard "$SHA"
+                needs_a_human "CI is green, but the review's fix does not apply to the branch."
+              fi
+              # Workflows, agent settings and the Gradle wrapper are not the agent's to change: CI
+              # is about to run on this branch, and would run them. --no-renames lists a renamed
+              # file under both its old path and its new one.
+              if git diff --cached --name-only --no-renames -z "$SHA" \
+                | grep -z -E '^(\.github/|\.claude/|gradle/wrapper/|gradlew$|gradlew\.bat$)' | tr '\0' '\n'; then
+                git reset --quiet --hard "$SHA"
+                needs_a_human "CI is green, but the review's fix touches the files above, which it may not change."
+              fi
+              git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+                commit --quiet -m "Review fixes from the PR autopilot" -m "$FIX_TRAILER"
+              git push --quiet origin "HEAD:refs/heads/$BRANCH"
+              {
+                echo "<!-- pr-autopilot -->"
+                echo "CI is green, and the review found things to fix, so they are fixed in $(git rev-parse HEAD). CI and the review run again on it, and it merges when both pass."
+                review_notes
+                echo
+                echo "[This run]($RUN_URL)"
+              } > "$RUNNER_TEMP/comment.md"
+              comment "$RUNNER_TEMP/comment.md"
+              start_ci "$BRANCH"
+              exit 0
+              ;;
+            give-up)
+              needs_a_human "CI is green, but the review found something it could not fix."
+              ;;
+            *)
+              needs_a_human "CI is green, but the review did not finish, so it was not merged."
+              ;;
+          esac
+
+          # A person who asked for changes has the last word: the newest review of each person
+          # (not a bot) counts.
+          asked=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" --paginate --jq '.[]' \
+            | jq -rs '[.[] | select(.user.type != "Bot" and (.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))]
+                      | group_by(.user.login) | map(max_by(.submitted_at)) | map(select(.state == "CHANGES_REQUESTED") | .user.login) | join(", ")')
+          if [ -n "$asked" ]; then
+            needs_a_human "CI is green and the review is done, but $asked asked for changes, so it waits for them."
+          fi
+
+          # GitHub works mergeability out in the background; "unknown" means it hasn't yet.
+          for _ in 1 2 3 4 5 6; do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .mergeable_state)
+            [ "$state" != "unknown" ] && break
+            sleep 10
+          done
+          echo "Mergeable state: $state"
+          case "$state" in
+            dirty)
+              needs_a_human "CI is green and the review is done, but it conflicts with $DEFAULT_BRANCH."
+              ;;
+            behind)
+              # Branch protection wants it up to date: bring main in, and CI goes round again.
+              GH_TOKEN="${OWNER_TOKEN:-$GH_TOKEN}" gh api --silent --method PUT "repos/$GITHUB_REPOSITORY/pulls/$PR/update-branch" -f expected_head_sha="$SHA"
+              echo "::notice::#$PR was behind $DEFAULT_BRANCH; brought it up to date, and CI runs again."
+              sleep 5
+              start_ci "$BRANCH"
+              exit 0
+              ;;
+          esac
+
+          # The review has been through each of Copilot's open threads (or there were none), so
+          # those are resolved, in case branch protection wants every conversation resolved. Only
+          # the ones it was given: a thread opened since then, or anyone else's, is left alone.
+          for thread in $(jq -r '(.threads // [])[]' "$RUNNER_TEMP/review/copilot.json"); do
+            # shellcheck disable=SC2016 # GraphQL's own $id
+            gh api graphql --silent -f id="$thread" -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }' || true
+          done
+
+          # --match-head-commit: merge exactly the commit CI passed and was reviewed, or nothing.
+          if ! error=$(GH_TOKEN="${OWNER_TOKEN:-$GH_TOKEN}" gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --match-head-commit "$SHA" 2>&1); then
+            fence='```'
+            needs_a_human "$(printf 'CI is green and the review is done, but merging failed:\n\n%s\n%s\n%s' "$fence" "$error" "$fence")"
+          fi
+          {
+            echo "<!-- pr-autopilot -->"
+            echo "Merged by the PR autopilot: CI is green on $SHA and the review is done."
+            review_notes
+          } > "$RUNNER_TEMP/comment.md"
+          comment "$RUNNER_TEMP/comment.md"
+          unlabel
+          start_ci "$DEFAULT_BRANCH"

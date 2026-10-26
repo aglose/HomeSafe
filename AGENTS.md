@@ -15,6 +15,14 @@ Add or adjust a `@Preview` for the state you changed; every one is drawn, nothin
 `ui-previews` skill has the rest: the fallback if the server breaks, and what to do in a sandbox
 that can't build.
 
+## Pull requests merge themselves
+
+Once CI is green and the code review is done, the PR autopilot squash-merges a pull request
+([docs/pr-autopilot.md](docs/pr-autopilot.md)). Copilot reviews it, or Claude does when Copilot
+can't, and the review's fixes are pushed to your branch as commits ending in `PR-Autopilot: fix`.
+So pull before you push. Open a pull request as a draft, or label it `autopilot: hold`, if it
+must not merge yet.
+
 ## Strings and localization
 
 **No user-visible text is written as a Kotlin string literal.** Every word a person can read or
