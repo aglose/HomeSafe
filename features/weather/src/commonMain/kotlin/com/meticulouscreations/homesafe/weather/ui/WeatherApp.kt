@@ -99,6 +99,9 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
+import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
+import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
@@ -781,10 +784,12 @@ private fun BarButton(icon: ImageVector, label: String, onClick: () -> Unit, mod
 @Composable
 private fun WeatherNav(selected: WeatherTab, onSelect: (WeatherTab) -> Unit, vertical: Boolean) {
     val colors = WeatherTheme.colors
+    val assistant = LocalAssistant.current
+    AssistantScreenContext { "Weather app, ${selected.name.lowercase()} tab" }
     if (vertical) {
         val shape = RoundedCornerShape(26.dp)
         Column(
-            Modifier.padding(start = SIDE_NAV_MARGIN).navigationBarsPadding().width(SIDE_NAV_WIDTH).clip(shape).background(colors.cardSolid).border(1.dp, colors.cardBorder, shape).padding(6.dp),
+            Modifier.padding(start = SIDE_NAV_MARGIN).navigationBarsPadding().width(SIDE_NAV_WIDTH).assistantTrigger(assistant).clip(shape).background(colors.cardSolid).border(1.dp, colors.cardBorder, shape).padding(6.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -792,7 +797,8 @@ private fun WeatherNav(selected: WeatherTab, onSelect: (WeatherTab) -> Unit, ver
         }
     } else {
         Row(
-            Modifier.navigationBarsPadding().padding(bottom = 16.dp).widthIn(max = 380.dp).fillMaxWidth(0.86f).clip(CircleShape).background(colors.cardSolid).border(1.dp, colors.cardBorder, CircleShape).padding(6.dp),
+            // Held, as the shell's own bar is, it opens the assistant.
+            Modifier.navigationBarsPadding().padding(bottom = 16.dp).widthIn(max = 380.dp).fillMaxWidth(0.86f).assistantTrigger(assistant).clip(CircleShape).background(colors.cardSolid).border(1.dp, colors.cardBorder, CircleShape).padding(6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {

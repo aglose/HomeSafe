@@ -21,9 +21,10 @@ max_line_length = off
 # @Composable functions are PascalCase by convention, which is correct and not a naming error.
 ktlint_function_naming_ignore_when_annotated_with = Composable
 
-# CompositionLocals that cross modules (the shell in :shared and what :app provides it); the rule
-# only looks at public ones, and these became public when the feature modules were split out.
-compose_allowed_composition_locals = LocalCompactLandscape,LocalNativeTabBar,LocalShellApps,LocalTwoPanes,LocalPaneWidth,LocalOpenSettingsPage
+# CompositionLocals that cross modules (the shell in :shared and what :app provides it, and the
+# assistant every app's bottom bar opens); the rule only looks at public ones, and these became
+# public when the feature modules were split out.
+compose_allowed_composition_locals = LocalAssistant,LocalCompactLandscape,LocalNativeTabBar,LocalShellApps,LocalTwoPanes,LocalPaneWidth,LocalOpenSettingsPage
 
 # This codebase deliberately puts `=` expression bodies on the following line (see
 # ConnectionRepositoryImpl.kt). The rule wants them inline.

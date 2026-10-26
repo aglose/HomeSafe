@@ -42,6 +42,154 @@ internal fun com.meticulouscreations.homesafe.ui.BackScope(enabled: kotlin.Boole
     - content: STABLE (composable function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.AnswerCard(state: com.meticulouscreations.homesafe.viewmodel.AssistantUiState, actions: com.meticulouscreations.homesafe.ui.assistant.AssistantPanelActions, time: kotlin.Function0<kotlin.Float>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - actions: STABLE (marked @Stable or @Immutable)
+    - time: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.AssistantFrame(origin: androidx.compose.ui.geometry.Rect, morph: kotlin.Function0<kotlin.Float>, time: kotlin.Function0<kotlin.Float>, working: kotlin.Boolean, panel: @[Composable] androidx.compose.runtime.internal.ComposableFunction3<androidx.compose.ui.Modifier, androidx.compose.ui.Modifier, kotlin.Function0<kotlin.Float>, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - origin: STABLE (marked @Stable or @Immutable)
+    - morph: STABLE (function type)
+    - time: STABLE (function type)
+    - working: STABLE (primitive type)
+    - panel: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.AssistantLayer(host: com.meticulouscreations.homesafe.ui.assistant.AssistantHost): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - host: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.assistant.AssistantPanel(state: com.meticulouscreations.homesafe.viewmodel.AssistantUiState, draft: kotlin.String, onDraftChange: kotlin.Function1<kotlin.String, kotlin.Unit>, keyDraft: kotlin.String, onKeyDraftChange: kotlin.Function1<kotlin.String, kotlin.Unit>, actions: com.meticulouscreations.homesafe.ui.assistant.AssistantPanelActions, modifier: androidx.compose.ui.Modifier, inputModifier: androidx.compose.ui.Modifier, cardModifier: androidx.compose.ui.Modifier, contentAlpha: kotlin.Function0<kotlin.Float>, time: kotlin.Function0<kotlin.Float>, focusRequester: androidx.compose.ui.focus.FocusRequester, onClearDraft: kotlin.Function0<kotlin.Unit>, onClearKeyDraft: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - draft: STABLE (String is immutable)
+    - onDraftChange: STABLE (function type)
+    - keyDraft: STABLE (String is immutable)
+    - onKeyDraftChange: STABLE (function type)
+    - actions: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - inputModifier: STABLE (marked @Stable or @Immutable)
+    - cardModifier: STABLE (marked @Stable or @Immutable)
+    - contentAlpha: STABLE (function type)
+    - time: STABLE (function type)
+    - focusRequester: STABLE (marked @Stable or @Immutable)
+    - onClearDraft: STABLE (function type)
+    - onClearKeyDraft: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.AssistantPanelPreview(state: com.meticulouscreations.homesafe.viewmodel.AssistantUiState, draft: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - draft: STABLE (String is immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.assistant.AssistantRoot(modifier: androidx.compose.ui.Modifier, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - content: STABLE (composable function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext(describe: kotlin.Function0<kotlin.String>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - describe: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.InputField(value: kotlin.String, onValueChange: kotlin.Function1<kotlin.String, kotlin.Unit>, placeholder: kotlin.String, focusRequester: androidx.compose.ui.focus.FocusRequester, imeAction: androidx.compose.ui.text.input.ImeAction, onAction: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, secret: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - value: STABLE (String is immutable)
+    - onValueChange: STABLE (function type)
+    - placeholder: STABLE (String is immutable)
+    - focusRequester: STABLE (marked @Stable or @Immutable)
+    - imeAction: STABLE (marked @Stable or @Immutable)
+    - onAction: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - secret: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.InputShell(modifier: androidx.compose.ui.Modifier, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - content: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.KeyBox(keyDraft: kotlin.String, onKeyDraftChange: kotlin.Function1<kotlin.String, kotlin.Unit>, actions: com.meticulouscreations.homesafe.ui.assistant.AssistantPanelActions, contentAlpha: kotlin.Function0<kotlin.Float>, focusRequester: androidx.compose.ui.focus.FocusRequester, onClearKeyDraft: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - keyDraft: STABLE (String is immutable)
+    - onKeyDraftChange: STABLE (function type)
+    - actions: STABLE (marked @Stable or @Immutable)
+    - contentAlpha: STABLE (function type)
+    - focusRequester: STABLE (marked @Stable or @Immutable)
+    - onClearKeyDraft: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.ModelChip(state: com.meticulouscreations.homesafe.viewmodel.AssistantUiState, actions: com.meticulouscreations.homesafe.ui.assistant.AssistantPanelActions): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - actions: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.QuestionBox(state: com.meticulouscreations.homesafe.viewmodel.AssistantUiState, draft: kotlin.String, onDraftChange: kotlin.Function1<kotlin.String, kotlin.Unit>, actions: com.meticulouscreations.homesafe.ui.assistant.AssistantPanelActions, contentAlpha: kotlin.Function0<kotlin.Float>, focusRequester: androidx.compose.ui.focus.FocusRequester, onClearDraft: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - draft: STABLE (String is immutable)
+    - onDraftChange: STABLE (function type)
+    - actions: STABLE (marked @Stable or @Immutable)
+    - contentAlpha: STABLE (function type)
+    - focusRequester: STABLE (marked @Stable or @Immutable)
+    - onClearDraft: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.RoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, filled: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+    - filled: STABLE (primitive type)
+    - onClick: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.assistant.Turn(turn: com.meticulouscreations.homesafe.viewmodel.AssistantTurn, writing: kotlin.Boolean, activity: kotlin.String?, time: kotlin.Function0<kotlin.Float>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - turn: STABLE (marked @Stable or @Immutable)
+    - writing: STABLE (primitive type)
+    - activity: STABLE (String is immutable)
+    - time: STABLE (function type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox(isRefreshing: kotlin.Boolean, onRefresh: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, bandTop: androidx.compose.ui.unit.Dp, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true

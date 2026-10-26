@@ -80,6 +80,9 @@ import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.AtlasViewModel
 import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
+import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
+import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -360,12 +363,15 @@ private fun AtlasTopBar(title: String, paged: Boolean, onBack: () -> Unit, onOpe
 @Composable
 private fun AtlasNav(selected: AtlasTab, onSelect: (AtlasTab) -> Unit) {
     val colors = AtlasTheme.colors
+    AssistantScreenContext { "Atlas app, ${selected.name.lowercase()} tab" }
     Row(
         Modifier
             .navigationBarsPadding()
             .padding(bottom = 16.dp)
             .widthIn(max = 440.dp)
             .fillMaxWidth(0.94f)
+            // Held, as the shell's own bar is, it opens the assistant.
+            .assistantTrigger(LocalAssistant.current)
             .clip(CircleShape)
             .background(colors.surfaceRaised.copy(alpha = 0.96f))
             .border(1.dp, colors.hairline, CircleShape)

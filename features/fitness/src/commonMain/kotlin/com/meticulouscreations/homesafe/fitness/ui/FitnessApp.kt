@@ -100,6 +100,9 @@ import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground
 import com.meticulouscreations.homesafe.fitness.ui.shader.RecordBurst
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
+import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
+import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.components.rememberShareText
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
@@ -591,12 +594,15 @@ private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit) {
 @Composable
 private fun FitnessNav(selected: FitnessTab, onSelect: (FitnessTab) -> Unit) {
     val colors = FitnessTheme.colors
+    AssistantScreenContext { "Fitness app, ${selected.name.lowercase()} tab" }
     Row(
         Modifier
             .navigationBarsPadding()
             .padding(bottom = 16.dp)
             .widthIn(max = 420.dp)
             .fillMaxWidth(0.92f)
+            // Held, as the shell's own bar is, it opens the assistant.
+            .assistantTrigger(LocalAssistant.current)
             .clip(CircleShape)
             .background(colors.surfaceRaised.copy(alpha = 0.96f))
             .border(1.dp, colors.hairline, CircleShape)
