@@ -1817,6 +1817,14 @@ public fun com.meticulouscreations.homesafe.ui.screens.MomentsTabContent(onOpenF
     - scrollToTopRequests: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.MuteAllCard(muted: kotlin.Boolean, onMute: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - muted: STABLE (primitive type)
+    - onMute: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.NavRail(selected: com.meticulouscreations.homesafe.navigation.TopLevelRoute, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true

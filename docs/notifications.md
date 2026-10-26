@@ -14,7 +14,12 @@ alarm, `weather`, `weather_severe`, `budget`) are deleted and replaced by silent
 ## Settings → Notifications
 
 Every app's notifications are switched on one page, Settings → **Notifications** (it used to be
-called Alerts), one card for each app that sends any:
+called Alerts). At the top, **Mute all notifications** silences this phone completely
+(`NotificationMute`, kept in the platform's preferences so a push can read it with no app
+running): the phone re-registers with the relay with no token, so the relay pushes it nothing of
+any kind (cameras, doors, Away alerts, budget), the in-app camera poller and the weather check
+post nothing, and on Android `HomeSafeMessagingService` drops anything already on its way. Each
+app's own choices are kept for when it is turned off. Below it, one card for each app that sends any:
 
 - **Cameras**: this phone's switch, then what to hear about and when (the rules below, quiet hours,
   "only when everyone's away", "only strangers") and the test notification.

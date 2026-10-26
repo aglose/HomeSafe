@@ -81,6 +81,8 @@
     <!-- The main page's rows: each carries a one-line summary of the page or section it opens. -->
     <string name="settings_alerts_subtitle">What every app tells this phone</string>
     <string name="settings_alerts_summary_unsupported">Not available on this platform</string>
+    <!-- "Mute all notifications" is on. -->
+    <string name="settings_alerts_summary_muted">All muted</string>
     <string name="settings_alerts_summary_blocked">Blocked in system settings</string>
     <string name="settings_alerts_summary_off">Off</string>
     <string name="settings_alerts_summary_only_away">Only when everyone's away</string>
@@ -215,6 +217,10 @@
 
     <!-- Notifications page: a card for each app that sends any, the cameras' first. -->
     <string name="alerts_title">Notifications</string>
+    <!-- The switch above every app's card: on, nothing from any app reaches this phone. -->
+    <string name="alerts_mute_all">Mute all notifications</string>
+    <string name="alerts_mute_all_off">Each app below sends what it's set to.</string>
+    <string name="alerts_mute_all_on">Nothing reaches this phone from any app, not even Away alerts or doors opening. The choices below are kept for when you turn this off.</string>
     <string name="alerts_section_cameras">Cameras</string>
     <string name="alerts_section_weather">Weather</string>
     <string name="alerts_section_finance">Finance</string>

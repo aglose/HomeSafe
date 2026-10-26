@@ -177,13 +177,14 @@ private fun NotificationsPageWholePreview() {
     FrigatePreview { NotificationsPage() }
 }
 
-/** The cameras' notifications off, the weather app's switched off too, and the relay not answering about the budget. */
+/** Everything muted, the cameras' notifications off, the weather app's switched off too, and the relay not answering about the budget. */
 @Preview(name = "Settings · Notifications page, apps off", widthDp = 412, heightDp = 1500)
 @Composable
 private fun NotificationsPageAppsOffPreview() {
     FrigatePreview {
         NotificationsPage(
             previewSettings.copy(
+                notificationsMuted = true,
                 alerts = AlertSettings.DEFAULT,
                 weatherNotices = WeatherNoticeSettings(enabled = false),
                 budgetAlerts = BudgetAlertsState.Failed(UiText.of(Res.string.alerts_finance_error, "HTTP 502".asUiText())),
@@ -195,6 +196,7 @@ private fun NotificationsPageAppsOffPreview() {
 @Composable
 private fun NotificationsPage(state: SettingsUiState = previewSettings) {
     SettingsPage(title = stringResource(Res.string.alerts_title), subtitle = stringResource(Res.string.settings_alerts_subtitle), onBack = {}) {
+        MuteAllCard(muted = state.notificationsMuted, onMute = {})
         AlertsSection(
             state = state,
             onPushNotifications = {},

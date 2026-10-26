@@ -32,6 +32,9 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.alerts_finance_loading
+import homesafe.shared.generated.resources.alerts_mute_all
+import homesafe.shared.generated.resources.alerts_mute_all_off
+import homesafe.shared.generated.resources.alerts_mute_all_on
 import homesafe.shared.generated.resources.alerts_section_finance
 import homesafe.shared.generated.resources.alerts_section_weather
 import homesafe.shared.generated.resources.alerts_title
@@ -64,8 +67,8 @@ import homesafe.shared.generated.resources.weather_settings_notices_unsupported
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * What this phone is told about, by every app, one tap below Settings: a card for each app that
- * sends notifications. The cameras' comes first ([AlertsSection]); with every zone's rules showing
+ * What this phone is told about, by every app, one tap below Settings: one switch that mutes the
+ * lot ([MuteAllCard]), then a card for each app that sends notifications. The cameras' comes first ([AlertsSection]); with every zone's rules showing
  * it runs to a couple of screens, which is why the main page carries only the one-line
  * [alertsSummary]. Then the doors, whose switches are per door and so stay on their own page; the
  * weather app's switches; and the budget's alerts, which are the household's and are read from
@@ -91,6 +94,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit, onOpenDoors: () -> Unit, mod
         onBack = onBack,
         modifier = modifier,
     ) {
+        if (state.notificationsSupported) MuteAllCard(muted = state.notificationsMuted, onMute = viewModel::setNotificationsMuted)
         AlertsSection(
             state = state,
             onPushNotifications = viewModel::setPushNotifications,
@@ -110,6 +114,23 @@ fun NotificationsSettingsScreen(onBack: () -> Unit, onOpenDoors: () -> Unit, mod
             onAllowNotifications = viewModel::allowNotifications,
             onBudgetAlerts = viewModel::setBudgetAlerts,
             onRetryBudget = viewModel::refreshBudgetAlerts,
+        )
+    }
+}
+
+/**
+ * "Mute all notifications", over every app's card. Muted, the relay pushes this phone nothing and
+ * the app posts nothing of its own (see `NotificationMute`); the cards below keep their choices,
+ * so turning it off puts things back as they were.
+ */
+@Composable
+internal fun MuteAllCard(muted: Boolean, onMute: (Boolean) -> Unit) {
+    SettingsCard {
+        SettingsToggleRow(
+            title = stringResource(Res.string.alerts_mute_all),
+            description = stringResource(if (muted) Res.string.alerts_mute_all_on else Res.string.alerts_mute_all_off),
+            checked = muted,
+            onCheckedChange = onMute,
         )
     }
 }

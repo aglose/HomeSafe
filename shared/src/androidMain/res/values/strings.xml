@@ -20,7 +20,6 @@
     <string name="notif_channel_budget_description">The month\'s card spending close to a limit, over it, or into savings</string>
     <!-- A door sensor's push (docs/doors.md); %1$s is the door's name, e.g. "Front door". -->
     <string name="notif_door_opened_title">%1$s opened</string>
-    <string name="notif_door_opened_away_title">Away: %1$s opened</string>
     <string name="notif_door_body">Door sensor</string>
     <string name="notif_door_away_body">Door sensor · nobody home</string>
     <!-- A Nest camera Google stopped streaming for an hour, and its return; %1$s is the camera's name, e.g. "Backyard". -->

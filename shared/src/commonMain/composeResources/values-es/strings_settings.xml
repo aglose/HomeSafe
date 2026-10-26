@@ -68,6 +68,7 @@
 
     <string name="settings_alerts_subtitle">Lo que cada app le dice a este teléfono</string>
     <string name="settings_alerts_summary_unsupported">No disponible en esta plataforma</string>
+    <string name="settings_alerts_summary_muted">Todo silenciado</string>
     <string name="settings_alerts_summary_blocked">Bloqueadas en la configuración del sistema</string>
     <string name="settings_alerts_summary_off">Desactivadas</string>
     <string name="settings_alerts_summary_only_away">Solo cuando todos están fuera</string>
@@ -178,6 +179,9 @@
     <string name="settings_recording_clip_save_failed">No se pudo guardar el clip</string>
 
     <string name="alerts_title">Notificaciones</string>
+    <string name="alerts_mute_all">Silenciar todas las notificaciones</string>
+    <string name="alerts_mute_all_off">Cada app de abajo envía lo que tiene configurado.</string>
+    <string name="alerts_mute_all_on">No llega nada de ninguna app a este teléfono, ni siquiera las alertas de ausencia ni las puertas que se abren. Lo que elijas abajo se guarda para cuando lo desactives.</string>
     <string name="alerts_section_cameras">Cámaras</string>
     <string name="alerts_section_weather">Clima</string>
     <string name="alerts_section_finance">Finanzas</string>

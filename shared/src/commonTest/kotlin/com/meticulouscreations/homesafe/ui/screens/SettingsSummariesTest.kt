@@ -23,6 +23,7 @@ import homesafe.shared.generated.resources.alerts_time_pm
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.settings_alerts_summary_blocked
 import homesafe.shared.generated.resources.settings_alerts_summary_custom
+import homesafe.shared.generated.resources.settings_alerts_summary_muted
 import homesafe.shared.generated.resources.settings_alerts_summary_off
 import homesafe.shared.generated.resources.settings_alerts_summary_on
 import homesafe.shared.generated.resources.settings_alerts_summary_only_away
@@ -158,6 +159,14 @@ class SettingsSummariesTest {
         assertEquals(summary(text(Res.string.settings_alerts_summary_only_away), weather), alertsSummary(alertsOn(alerts = onlyAway, weather = true)))
         // The cameras' off: the weather app's are what's left.
         assertEquals(text(Res.string.settings_alerts_summary_weather_only), alertsSummary(alertsOn(alerts = AlertSettings.DEFAULT, weather = true)))
+    }
+
+    @Test
+    fun withEverythingMutedTheNotificationsRowSaysSoWhateverEachAppIsSetTo() {
+        assertEquals(text(Res.string.settings_alerts_summary_muted), alertsSummary(alertsOn(weather = true).copy(notificationsMuted = true)))
+        assertEquals(text(Res.string.settings_alerts_summary_muted), alertsSummary(alertsOn(alerts = AlertSettings.DEFAULT).copy(notificationsMuted = true)))
+        // Where nothing could be posted anyway, that's what the row says.
+        assertEquals(text(Res.string.settings_alerts_summary_unsupported), alertsSummary(SettingsUiState(notificationsSupported = false, notificationsMuted = true)))
     }
 
     @Test

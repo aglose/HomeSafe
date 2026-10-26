@@ -80,7 +80,4 @@
     <!-- iOS shows this under "PercySafe would like to use Face ID"; it reads on after the app's name. -->
     <string name="biometric_finance_reason">Unlock Finance while the server can't be reached</string>
     <string name="identity_check_unavailable">This device has no fingerprint or face unlock to check with</string>
-
-    <!-- In-app alerts (the relay's pushes bring their own words) -->
-    <string name="notif_away_title">Away: %1$s</string>
 </resources>

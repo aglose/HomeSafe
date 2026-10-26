@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.weather.data
 
+import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.weather.domain.Place
@@ -49,6 +50,8 @@ class WeatherAlertCheck(
     private val textLoader: TextLoader,
     private val clock: Clock,
     private val appScope: CoroutineScope,
+    /** Settings → Notifications' "Mute all notifications": while it's on, a check posts nothing. */
+    private val mute: NotificationMute,
 ) {
     private val running = Mutex()
 
@@ -107,6 +110,8 @@ class WeatherAlertCheck(
         runCatching { notifier.sweep(now) }
         val prefs = preferences.observe().first()
         if (!prefs.notices.enabled) return 0
+        // Muted: nothing is fetched or marked as said either, so unmuting picks up where it was.
+        if (mute.muted.value) return 0
         // Not allowed to notify: nothing is fetched, and nothing is marked as said, so the morning's
         // outlook is still there to send if permission comes later that morning.
         if (!notifier.isAllowed()) return 0
