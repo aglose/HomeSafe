@@ -76,6 +76,18 @@ if [ -x "$ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
 fi
 
 # --- Gradle ---------------------------------------------------------------------------------
+# Maven Central answers a cold build from the cloud's shared address with 429 Too Many Requests,
+# so Google's mirror of it goes first; what the mirror doesn't have yet falls through to Central.
+mkdir -p ~/.gradle/init.d
+cat >~/.gradle/init.d/maven-central-mirror.gradle <<'EOF'
+// Written by .claude/hooks/session-start.sh, for cloud sessions only.
+def mirror = 'https://maven-central.storage-download.googleapis.com/maven2/'
+beforeSettings { settings ->
+    settings.pluginManagement.repositories { maven { name = 'MavenCentralMirror'; url = mirror } }
+    settings.dependencyResolutionManagement.repositories { maven { name = 'MavenCentralMirror'; url = mirror } }
+}
+EOF
+
 # Provisions the daemon's JDK and resolves the plugins, so the session's first build doesn't.
 if missing=$(blocked api.foojay.io cdn.azul.com dl.google.com); then
   note "Gradle: can't build, the network policy blocks $missing. UI previews: scripts/fetch-ui-previews.sh draws them on CI."
