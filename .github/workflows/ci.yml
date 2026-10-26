@@ -396,9 +396,13 @@ jobs:
             echo "::warning::The background ffmpeg install didn't finish; installing it now."
             cat "$RUNNER_TEMP/ffmpeg-install.log" || true
             # A background apt-get still stuck on a download holds dpkg's lock, and would until
-            # its timeout: stop it, and finish whatever it had left half-unpacked.
+            # its timeout: stop it. A dpkg it had already started is left to finish (killing that
+            # is what breaks a package database), then whatever is half-unpacked is finished.
             sudo pkill -x apt-get || true
-            for _ in $(seq 1 30); do pgrep -x apt-get > /dev/null || break; sleep 1; done
+            for _ in $(seq 1 180); do
+              pgrep -x apt-get > /dev/null || pgrep -x dpkg > /dev/null || break
+              sleep 1
+            done
             sudo dpkg --configure -a
             # shellcheck disable=SC2086 # APT_OPTIONS is several options
             sudo timeout 600 apt-get $APT_OPTIONS update && sudo timeout 600 apt-get $APT_OPTIONS install -y --no-install-recommends ffmpeg
