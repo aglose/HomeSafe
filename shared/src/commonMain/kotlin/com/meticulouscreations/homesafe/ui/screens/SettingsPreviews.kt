@@ -207,7 +207,7 @@ private fun NotificationsPage(state: SettingsUiState = previewSettings) {
             onOpenSettings = {},
             onSendTest = {},
         )
-        OtherAppsNotifications(state = state, onOpenDoors = {}, onWeatherNotices = {}, onBudgetAlerts = {}, onRetryBudget = {})
+        OtherAppsNotifications(state = state, onOpenDoors = {}, onWeatherNotices = {}, onAllowNotifications = {}, onBudgetAlerts = {}, onRetryBudget = {})
     }
 }
 

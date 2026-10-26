@@ -1900,13 +1900,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.OpenAppsButton(onClick: 
     - extraColors: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.OtherAppsNotifications(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenDoors: kotlin.Function0<kotlin.Unit>, onWeatherNotices: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onBudgetAlerts: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches, kotlin.Unit>, onRetryBudget: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.OtherAppsNotifications(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenDoors: kotlin.Function0<kotlin.Unit>, onWeatherNotices: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onAllowNotifications: kotlin.Function0<kotlin.Unit>, onBudgetAlerts: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches, kotlin.Unit>, onRetryBudget: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onOpenDoors: STABLE (function type)
     - onWeatherNotices: STABLE (function type)
+    - onAllowNotifications: STABLE (function type)
     - onBudgetAlerts: STABLE (function type)
     - onRetryBudget: STABLE (function type)
 
@@ -2763,12 +2764,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.UptimeRow(title: kotlin.
     - onSelect: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.WeatherNotificationsSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.WeatherNotificationsSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onAllow: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onChange: STABLE (function type)
+    - onAllow: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ZoneDetailsEditor(zoneName: kotlin.String, friendlyName: kotlin.String, isPlaceholderName: kotlin.Boolean, objects: kotlin.collections.List<kotlin.String>, trackedObjects: kotlin.collections.List<kotlin.String>, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit

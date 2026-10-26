@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +59,7 @@ import homesafe.shared.generated.resources.weather_settings_notices_severe
 import homesafe.shared.generated.resources.weather_settings_notices_severe_body
 import homesafe.shared.generated.resources.weather_settings_notices_soon
 import homesafe.shared.generated.resources.weather_settings_notices_soon_body
+import homesafe.shared.generated.resources.weather_settings_notices_turn_on
 import homesafe.shared.generated.resources.weather_settings_notices_unsupported
 import org.jetbrains.compose.resources.stringResource
 
@@ -105,6 +107,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit, onOpenDoors: () -> Unit, mod
             state = state,
             onOpenDoors = onOpenDoors,
             onWeatherNotices = viewModel::setWeatherNotices,
+            onAllowNotifications = viewModel::allowNotifications,
             onBudgetAlerts = viewModel::setBudgetAlerts,
             onRetryBudget = viewModel::refreshBudgetAlerts,
         )
@@ -117,6 +120,7 @@ internal fun OtherAppsNotifications(
     state: SettingsUiState,
     onOpenDoors: () -> Unit,
     onWeatherNotices: (WeatherNoticeSettings) -> Unit,
+    onAllowNotifications: () -> Unit,
     onBudgetAlerts: (BudgetAlertSwitches) -> Unit,
     onRetryBudget: () -> Unit,
 ) {
@@ -130,18 +134,19 @@ internal fun OtherAppsNotifications(
                 onClick = onOpenDoors,
             )
         }
-        WeatherNotificationsSection(state, onWeatherNotices)
+        WeatherNotificationsSection(state, onWeatherNotices, onAllowNotifications)
         BudgetAlertsSection(state.budgetAlerts, onBudgetAlerts, onRetryBudget)
     }
 }
 
 /**
  * The weather app's switches, as its own settings have them: the whole thing, then each kind,
- * which are only choices while the whole thing is on. The permission is the one the cameras' card
- * above asks for and sends to the system settings for, so this card only says when it's in the way.
+ * which are only choices while the whole thing is on. The permission is the phone's one, shared
+ * with the cameras': while it's wanted here but not given (never asked, or refused) the card says
+ * so, with a button to let them through, as the weather app's own settings do.
  */
 @Composable
-private fun WeatherNotificationsSection(state: SettingsUiState, onChange: (WeatherNoticeSettings) -> Unit) {
+private fun WeatherNotificationsSection(state: SettingsUiState, onChange: (WeatherNoticeSettings) -> Unit, onAllow: () -> Unit) {
     SettingsSection(title = stringResource(Res.string.alerts_section_weather), icon = Icons.Filled.WbSunny) {
         if (!state.notificationsSupported) {
             SettingsCaption(stringResource(Res.string.weather_settings_notices_unsupported))
@@ -154,8 +159,9 @@ private fun WeatherNotificationsSection(state: SettingsUiState, onChange: (Weath
             checked = notices.enabled,
             onCheckedChange = { onChange(notices.copy(enabled = it)) },
         )
-        if (notices.enabled && state.notificationPermission == NotificationPermission.DENIED) {
+        if (notices.enabled && state.notificationPermission != NotificationPermission.GRANTED) {
             SettingsCaption(stringResource(Res.string.weather_settings_notices_blocked), error = true)
+            OutlinedButton(onClick = onAllow) { Text(stringResource(Res.string.weather_settings_notices_turn_on)) }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
         SettingsToggleRow(

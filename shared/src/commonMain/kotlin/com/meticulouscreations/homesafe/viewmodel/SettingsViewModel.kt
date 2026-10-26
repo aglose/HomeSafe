@@ -396,15 +396,25 @@ class SettingsViewModel(
     /**
      * Changes which weather notifications are wanted. Turning them on asks the OS for permission
      * if it hasn't been given, as the cameras' switch does; the weather app's switch stays as set
-     * either way, as it does in the weather app's own settings.
+     * either way, as it does in the weather app's own settings. The OS is asked first: switched
+     * on, the weather app looks at the forecast at once, and that look has to find the answer.
      */
     fun setWeatherNotices(settings: WeatherNoticeSettings) {
         viewModelScope.launch {
-            weatherNoticePreferences.update { settings }
             if (settings.enabled && notificationsSupported && getNotificationPermissionUseCase() != NotificationPermission.GRANTED) {
                 requestNotificationPermissionUseCase()
                 local.update { it.copy(permission = getNotificationPermissionUseCase()) }
             }
+            weatherNoticePreferences.update { settings }
+        }
+    }
+
+    /** Lets notifications through: the OS's prompt if it can still be asked, its settings once it has said no. */
+    fun allowNotifications() {
+        if (!notificationsSupported) return
+        viewModelScope.launch {
+            if (getNotificationPermissionUseCase() == NotificationPermission.DENIED) openNotificationSettingsUseCase() else requestNotificationPermissionUseCase()
+            local.update { it.copy(permission = getNotificationPermissionUseCase()) }
         }
     }
 
@@ -414,6 +424,7 @@ class SettingsViewModel(
      * the relay is asked again, and stay if it can't be reached.
      */
     fun refreshBudgetAlerts() {
+        val askedOf = local.value.budgetAlerts
         viewModelScope.launch {
             val result = budgetAlertPreferences.read()
             local.update { current ->
@@ -424,8 +435,8 @@ class SettingsViewModel(
                             ?: BudgetAlertsState.Failed(error.userMessage(Res.string.alerts_finance_error))
                     },
                 )
-                // A save under way has the newer word on what the switches are.
-                if ((current.budgetAlerts as? BudgetAlertsState.Ready)?.saving == true) current else current.copy(budgetAlerts = answer)
+                // A switch flipped while the relay was being read, saved or still saving, has the newer word.
+                if (current.budgetAlerts !== askedOf) current else current.copy(budgetAlerts = answer)
             }
         }
     }
