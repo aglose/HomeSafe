@@ -13,7 +13,8 @@
 #   Tailscale: controlplane.tailscale.com, login.tailscale.com, *.tailscale.com (DERP relays)
 #
 # Secrets the environment can hold (environment variables), for `ssh frigate`:
-#   TS_AUTHKEY        an ephemeral, tagged Tailscale auth key
+#   TS_AUTHKEY        a Tailscale OAuth client secret with the auth_keys scope for tag:claude-cloud
+#                     (TS_TAG to use another tag), or an ephemeral, tagged auth key
 #   FRIGATE_SSH_KEY   the private key of a restricted user on the box, base64 on one line
 #   FRIGATE_SSH_USER  that user (default andrew); FRIGATE_HOST its tailnet address (default 100.99.163.71)
 set -uo pipefail
@@ -121,7 +122,15 @@ else
     fi
     # `tailscale status` fails until the node is logged in and running.
     if ! tailscale status >/dev/null 2>&1; then
-      timeout 60 tailscale up --auth-key="$TS_AUTHKEY" --hostname="claude-cloud" --accept-dns=false >>"$LOG" 2>&1
+      # An OAuth client's secret (tskey-client-…, which doesn't expire) logs in as a tagged,
+      # ephemeral node; an auth key carries those settings itself.
+      auth_key=$TS_AUTHKEY
+      tags=()
+      if [[ "$auth_key" == tskey-client-* ]]; then
+        auth_key+="?ephemeral=true&preauthorized=true"
+        tags=(--advertise-tags="${TS_TAG:-tag:claude-cloud}")
+      fi
+      timeout 60 tailscale up --auth-key="$auth_key" "${tags[@]}" --hostname="claude-cloud" --accept-dns=false >>"$LOG" 2>&1
     fi
     if tailscale status >/dev/null 2>&1; then
       note "Tailscale: up"
