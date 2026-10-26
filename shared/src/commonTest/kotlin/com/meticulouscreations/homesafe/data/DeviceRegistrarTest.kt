@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.withPreset
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
+import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
@@ -85,6 +86,15 @@ class DeviceRegistrarTest {
         override val appVersion = "1.0 (1)"
     }
 
+    /** "Mute all notifications", in memory. */
+    private class FakeMute : NotificationMute {
+        override val muted = MutableStateFlow(false)
+
+        override fun setMuted(muted: Boolean) {
+            this.muted.value = muted
+        }
+    }
+
     private class Harness(scope: TestScope, connection: ConnectionRepository, token: String? = "fcm-1", info: DeviceInfo = FakeInfo("android", "Google Pixel", "release")) {
         val posts = mutableListOf<String>()
         val authorizations = mutableListOf<String?>()
@@ -102,7 +112,8 @@ class DeviceRegistrarTest {
         val dao = InMemorySettingsDao()
         val identity = DeviceIdentityStore(dao)
         val settings = FakeSettings()
-        val registrar = DeviceRegistrar(PushRelayApi(client), identity, FakeTokens(token), info, connection, settings, scope.backgroundScope)
+        val mute = FakeMute()
+        val registrar = DeviceRegistrar(PushRelayApi(client), identity, FakeTokens(token), info, connection, settings, scope.backgroundScope, mute)
     }
 
     /**
@@ -199,6 +210,26 @@ class DeviceRegistrarTest {
         assertFalse(h.registrar.pushRegistered.value, "so the in-app poller isn't told the relay has it covered")
 
         h.settings.settings.value = ON
+        settle()
+        assertEquals(3, h.posts.size)
+        assertTrue(""""token":"fcm-1"""" in h.posts[2], h.posts[2])
+        assertTrue(h.registrar.pushRegistered.value)
+    }
+
+    @Test
+    fun mutingEverythingTakesTheTokenOffTheRelayWhateverTheCamerasSwitchSays() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.55:8971"))
+        h.registrar.start()
+        settle()
+        assertTrue(h.registrar.pushRegistered.value)
+
+        h.mute.setMuted(true)
+        settle()
+        assertEquals(2, h.posts.size)
+        assertTrue(""""token":null""" in h.posts[1], "muted: the relay keeps this install but pushes it nothing, of any kind")
+        assertFalse(h.registrar.pushRegistered.value)
+
+        h.mute.setMuted(false)
         settle()
         assertEquals(3, h.posts.size)
         assertTrue(""""token":"fcm-1"""" in h.posts[2], h.posts[2])

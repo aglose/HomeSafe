@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.data.DeviceIdentityStore
 import com.meticulouscreations.homesafe.data.InMemorySettingsDao
 import com.meticulouscreations.homesafe.data.InMemoryWeatherDao
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
+import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.KeyedTextLoader
 import com.meticulouscreations.homesafe.text.UiText
@@ -27,6 +28,8 @@ import homesafe.shared.generated.resources.weather_time_pm
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -65,7 +68,15 @@ class WeatherAlertCheckTest {
         val scheduler = FakeWeatherCheckScheduler()
         val clock = MutableClock(now)
         val locator = WeatherLocator(fence, identity, repository, preferences)
-        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope)
+        val muted = MutableStateFlow(false)
+        private val mute = object : NotificationMute {
+            override val muted: StateFlow<Boolean> = this@Harness.muted
+
+            override fun setMuted(muted: Boolean) {
+                this@Harness.muted.value = muted
+            }
+        }
+        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope, mute)
     }
 
     private fun TestScope.harness(report: WeatherReport? = stormyReport()) = Harness(backgroundScope, now).apply {
@@ -98,6 +109,18 @@ class WeatherAlertCheckTest {
         assertEquals(keyed(UiText.of(Res.string.weather_story_rain_starting, 30)), rain.title)
         assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_body_lasting, pm("3:30"), "Portland", 30)), rain.body)
         assertFalse(rain.urgent)
+    }
+
+    @Test
+    fun withEveryNotificationMutedNothingIsPostedOrMarkedAsSaid() = runTest {
+        val h = harness()
+        h.muted.value = true
+        assertEquals(0, h.check.run())
+        assertTrue(h.notifier.posted.isEmpty())
+
+        // Unmuted, the same warning and rain are still there to tell.
+        h.muted.value = false
+        assertEquals(2, h.check.run())
     }
 
     @Test

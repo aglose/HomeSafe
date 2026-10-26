@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.meticulouscreations.homesafe.data.AlertNotificationPoster
 import com.meticulouscreations.homesafe.data.BackgroundGraph
+import com.meticulouscreations.homesafe.data.NotificationMuteStore
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
@@ -28,6 +29,8 @@ import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // Muted since the push came: its notification gets nothing more.
+        if (NotificationMuteStore.isMuted(applicationContext)) return Result.success()
         val input = inputData
         val eventId = input.getString(KEY_EVENT_ID) ?: return Result.failure()
         val start = input.getDouble(KEY_START, 0.0)
@@ -43,6 +46,8 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             subject = MomentCategory.entries.firstOrNull { it.name == input.getString(KEY_SUBJECT) } ?: MomentCategory.ALL,
         )
         BackgroundGraph.get(applicationContext).pushedAlertMedia.addTo(text, eventId, start) { stage ->
+            // The clip comes up to a minute after the picture; muted in between, it doesn't come.
+            if (NotificationMuteStore.isMuted(applicationContext)) return@addTo
             AlertNotificationPoster.show(applicationContext, stage)
             Log.i(TAG, "alert ${text.id}: ${if (stage.animation != null) "clip" else "picture"} added")
         }

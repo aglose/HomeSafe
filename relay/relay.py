@@ -944,7 +944,7 @@ def push_away_review(item: dict[str, Any], zones: dict[str, list[str]]) -> None:
     """Escalated push for one review item while nobody is home; records it in `sent` like a normal alert."""
     rid = item["id"]
     camera, what = sentence(item, zones.get(item.get("camera", ""), []))
-    title = f"Away: {what}"
+    title = what
     body = f"{camera} · nobody home"
     data = {
         "review_id": rid,
@@ -2106,7 +2106,7 @@ def poll_forever() -> None:
                     data["silent"] = "1"
                 data.update(offers(item))
                 if grouped_away:
-                    title, data["away"] = f"Away · {title}", "1"
+                    data["away"] = "1"
                 result = broadcast(title, body, data, away=grouped_away, familiar=is_recognised_person(item) and not grouped_away)
                 with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), body)), c.commit()))
                 log.info("alert %s (visit %s, %s) -> %s: %s | %s", rid, visit.id, "sound" if sound else "silent", title, body, result)
@@ -5516,7 +5516,7 @@ def door_route(notify: str, away: bool) -> str | None:
 
 def door_text(name: str, away: bool) -> tuple[str, str]:
     """A push's title and body in English, for a phone whose app doesn't word them itself from the push's data."""
-    return (f"Away: {name} opened", "Door sensor · nobody home") if away else (f"{name} opened", "Door sensor")
+    return (f"{name} opened", "Door sensor · nobody home") if away else (f"{name} opened", "Door sensor")
 
 
 def door_announce(change: dict[str, Any], now: float, away: bool, push: Callable[..., dict[str, int]] | None = None) -> str | None:

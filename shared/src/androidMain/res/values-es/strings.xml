@@ -18,7 +18,6 @@
     <string name="notif_channel_budget_name">Presupuesto</string>
     <string name="notif_channel_budget_description">El gasto del mes con tarjeta cerca de un límite, por encima de él o tocando los ahorros</string>
     <string name="notif_door_opened_title">Se abrió: %1$s</string>
-    <string name="notif_door_opened_away_title">Ausente: se abrió %1$s</string>
     <string name="notif_door_body">Sensor de puerta</string>
     <string name="notif_door_away_body">Sensor de puerta · no hay nadie en casa</string>
     <string name="notif_nest_unavailable_title">%1$s no está transmitiendo</string>

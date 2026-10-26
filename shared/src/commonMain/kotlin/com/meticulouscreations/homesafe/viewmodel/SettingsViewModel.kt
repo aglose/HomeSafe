@@ -17,6 +17,7 @@ import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.withPreset
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
+import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.domain.usecase.ClearHomeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.EstimateAlertVolumeUseCase
@@ -129,6 +130,8 @@ data class SettingsUiState(
     val weatherNotices: WeatherNoticeSettings = WeatherNoticeSettings(),
     /** The budget's alert switches, read from the relay each time the Notifications page is opened. */
     val budgetAlerts: BudgetAlertsState = BudgetAlertsState.Loading,
+    /** "Mute all notifications": nothing from any app reaches this phone while it's on, whatever each app's switches say. */
+    val notificationsMuted: Boolean = false,
 ) {
     /**
      * Every place the alert rules cover, in the order the Settings tab lists them: each enabled
@@ -198,6 +201,7 @@ private data class AppPreferences(
     val drawer: List<FinanceDrawerItem>,
     val figures: FigureStyle,
     val weatherNotices: WeatherNoticeSettings,
+    val muted: Boolean,
 )
 
 @Inject
@@ -231,6 +235,7 @@ class SettingsViewModel(
     private val fitnessPreferences: FitnessPreferencesRepository,
     private val weatherNoticePreferences: WeatherNoticePreferences,
     private val budgetAlertPreferences: BudgetAlertPreferences,
+    private val notificationMute: NotificationMute,
     private val appIcons: AppIconSwitcher,
 ) : ViewModel() {
 
@@ -285,6 +290,7 @@ class SettingsViewModel(
             financePreferences.observeDrawerItems(),
             fitnessPreferences.observeFigureStyle(),
             weatherNoticePreferences.observe(),
+            notificationMute.muted,
             ::AppPreferences,
         ),
     ) { state, presence, access, pushed, apps ->
@@ -296,6 +302,7 @@ class SettingsViewModel(
             financeDrawerItems = apps.drawer,
             figureStyle = apps.figures,
             weatherNotices = apps.weatherNotices,
+            notificationsMuted = apps.muted,
         )
     }
         .stateIn(
@@ -408,6 +415,9 @@ class SettingsViewModel(
             weatherNoticePreferences.update { settings }
         }
     }
+
+    /** Mutes, or unmutes, every notification on this phone; each app's own choices are left as they are. */
+    fun setNotificationsMuted(muted: Boolean) = notificationMute.setMuted(muted)
 
     /** Lets notifications through: the OS's prompt if it can still be asked, its settings once it has said no. */
     fun allowNotifications() {

@@ -74,6 +74,4 @@
     <string name="biometric_unavailable_platform">El inicio de sesión biométrico no está disponible en esta plataforma</string>
     <string name="biometric_finance_reason">Para desbloquear Finanzas cuando no se puede conectar con el servidor</string>
     <string name="identity_check_unavailable">Este dispositivo no tiene desbloqueo con huella digital ni con el rostro para verificar tu identidad</string>
-
-    <string name="notif_away_title">Modo ausente: %1$s</string>
 </resources>

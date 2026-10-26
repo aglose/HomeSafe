@@ -188,7 +188,8 @@ away it fetches `GET /api/review` for **both** `severity=alert` and `severity=de
 pushes every item whose `data.objects` contains `"person"` and whose `start_time` is at or after
 the moment the last person left (so flipping the switch never replays the afternoon). The push is:
 
-- title `Away: Person in the driveway` (via `sentence()`), body `Front Yard · nobody home`;
+- title `Person in the driveway` (via `sentence()`, with no "Away" in front: the Away channel and
+  the body already say it), body `Front Yard · nobody home`;
 - data `away="1"` plus the usual `review_id`, `camera`, `event_id`, `zones`, `start_time`;
 - Android `priority: high` (the app posts it on its Away channel, `away_alerts_v2`); APNs
   `interruption-level: time-sensitive`, and no `sound` (HomeSafe never makes one);
@@ -237,7 +238,7 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
 - `DetectionAlertService` (the in-app 15 s poller; paused while the relay has this phone's push
   token, since it hears the relay's escalated pushes instead) collects presence while polling; when
   `everyoneAway` and the event is `PEOPLE`, it notifies regardless of zone rules with
-  `AlertNotification.urgent = true` and title prefix `Away: `. `AlertNotifier.android.kt` posts
+  `AlertNotification.urgent = true` and the title as it would read anyway. `AlertNotifier.android.kt` posts
   urgent ones on the `away_alerts_v2` channel (IMPORTANCE_HIGH, vibration, no sound, `CATEGORY_ALARM`;
   the first `away_alerts` rang the phone's alarm and is deleted, since a channel's sound can't change);
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.

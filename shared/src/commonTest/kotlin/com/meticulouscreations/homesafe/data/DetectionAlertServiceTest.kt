@@ -408,7 +408,7 @@ class DetectionAlertServiceTest {
         eventually("the escalated person") { h.notifier.posted.map { it.id } == listOf("intruder") }
         val urgent = h.notifier.posted.single()
         assertTrue(urgent.urgent, "away mode posts on the loud channel")
-        assertEquals("notif_away_title(moments_title_in_zone(moments_label_person, driveway))", urgent.title)
+        assertEquals("moments_title_in_zone(moments_label_person, driveway)", urgent.title)
 
         h.events += Triple("dog", "dog", 1_000_003.0)   // animals stay off: away mode is about people
         h.zonesById["car"] = listOf("driveway")
@@ -462,7 +462,7 @@ class DetectionAlertServiceTest {
         h.presenceRepo.everyoneAway(true)
         h.events += Triple("intruder", "person", 1_000_003.0)
         eventually("the away alert") { h.notifier.posted.map { it.id } == listOf("intruder") }
-        assertEquals("notif_away_title(moments_title_detected(moments_label_person))", h.notifier.posted.single().title)
+        assertEquals("moments_title_detected(moments_label_person)", h.notifier.posted.single().title)
     }
 
     /** A driveway spot and the jittery path a parked car produces there. */
