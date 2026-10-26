@@ -89,6 +89,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -576,7 +577,7 @@ private fun InputField(
         keyboardActions = KeyboardActions(onSend = { onAction() }, onDone = { onAction() }),
         decorationBox = { field ->
             Box(contentAlignment = Alignment.CenterStart) {
-                if (value.isEmpty()) Text(placeholder, style = style, color = colors.onSurfaceVariant.copy(alpha = 0.75f), maxLines = 1)
+                if (value.isEmpty()) Text(placeholder, style = style, color = colors.onSurfaceVariant.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 field()
             }
         },

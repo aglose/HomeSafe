@@ -6,7 +6,7 @@
   See AGENTS.md, "Strings and localization".
 -->
 <resources>
-    <string name="assistant_input_placeholder">Pregunta sobre esta pantalla o sobre cualquier cosa de HomeSafe</string>
+    <string name="assistant_input_placeholder">Pregunta sobre esta pantalla</string>
     <string name="assistant_key_placeholder">Pega tu clave de API de Anthropic</string>
     <string name="assistant_key_hint">Claude necesita tu propia clave de API, de console.anthropic.com. Se queda en este teléfono.</string>
     <string name="assistant_key_save">Guardar la clave</string>
