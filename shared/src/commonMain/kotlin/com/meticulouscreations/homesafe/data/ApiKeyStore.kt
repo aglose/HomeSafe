@@ -3,11 +3,12 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.PlatformContext
 
 /**
- * An API key the person has pasted in, held the way the platform keeps secrets (the Android
- * Keystore, the iOS Keychain), and a few plain preferences beside it. Kept outside the database:
- * none of it is worth a migration, and a cleared app only means pasting the key again. Each part
- * of the app that takes a key has a store of its own ([ApiKeyStoreName]): the assistant's
- * Anthropic key, the maps' Google key.
+ * A few plain preferences for a part of the app (the assistant's model, the maps' provider), and
+ * a secret slot held the way the platform keeps secrets (the Android Keystore, the iOS Keychain).
+ * Kept outside the database: none of it is worth a migration. The slot is no longer where API keys
+ * live: they are in the household's key vault on the server (`HouseholdKeys`, docs/key-vault.md),
+ * and the slot is only read to move a key an older build kept there into the vault, then cleared.
+ * Each part has a store of its own ([ApiKeyStoreName]).
  */
 interface ApiKeyStore {
     fun apiKey(): String?
