@@ -8,6 +8,8 @@ import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.weather.data.IosWeatherActions
@@ -61,8 +63,8 @@ private const val THREAD_SUMMARY = "summary"
  *
  * A tap hands the detection to [MomentDeepLinks], which the shell opens full screen, and a door's
  * push (the relay's `door` key, which FCM hands over as a top-level `userInfo` key) to
- * [DoorDeepLinks], which opens the Doors page. iOS delivers
- * the tap that launches the app before `didFinishLaunching` returns, so this is installed from
+ * [DoorDeepLinks], which opens the Doors page, and a parked car's (`parking=1`, with its spot)
+ * to [ParkingDeepLinks], which shows the spot on a map. iOS delivers the tap that launches the app before `didFinishLaunching` returns, so this is installed from
  * `startIosApp` at launch, not when the notifier is first used.
  */
 object IosNotificationTaps {
@@ -114,10 +116,11 @@ private class NotificationCenterDelegate :
             WeatherDeepLinks.open(if (didReceiveNotificationResponse.actionIdentifier == IosWeatherActions.RADAR) link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null) else link)
         } else {
             val door = DoorDeepLink.from { key -> info[key] as? String }
-            if (door != null) {
-                DoorDeepLinks.open(door)
-            } else {
-                MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
+            val parking = ParkingDeepLink.from { key -> info[key] as? String }
+            when {
+                door != null -> DoorDeepLinks.open(door)
+                parking != null -> ParkingDeepLinks.open(parking)
+                else -> MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
             }
         }
         withCompletionHandler()

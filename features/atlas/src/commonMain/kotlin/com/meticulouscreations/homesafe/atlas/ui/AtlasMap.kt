@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
@@ -70,12 +72,15 @@ import com.meticulouscreations.homesafe.atlas.domain.Track
 import com.meticulouscreations.homesafe.atlas.domain.VisitRole
 import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_HEAT_SHADER
 import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_NIGHT_SHADER
+import com.meticulouscreations.homesafe.maps.BaseMap
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.domain.MapCamera
 import com.meticulouscreations.homesafe.weather.domain.PlacedTile
 import com.meticulouscreations.homesafe.weather.domain.WebMercator
 import com.meticulouscreations.homesafe.weather.ui.radar.MAP_TILE_DP
-import com.meticulouscreations.homesafe.weather.ui.radar.baseTileUrl
+import com.meticulouscreations.homesafe.weather.ui.radar.MapCreditLabel
+import com.meticulouscreations.homesafe.weather.ui.radar.followCopyright
+import com.meticulouscreations.homesafe.weather.ui.radar.mapCredit
 import com.meticulouscreations.homesafe.weather.ui.shader.MAP_NIGHT_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock
 import com.meticulouscreations.homesafe.weather.ui.shader.weatherShaderOrNull
@@ -154,6 +159,9 @@ class AtlasMapState(camera: MapCamera = MapCamera(0.25, 0.38, 3.5)) {
 
     /** What the screen last opened the map on, for one that sends it somewhere once and not again each time it comes back. */
     var openedOn: Any? = null
+
+    /** Google's copyright line for the view, while the base map is Google's (see `followCopyright`). */
+    var copyright by mutableStateOf<String?>(null)
 
     private var motion: Job? = null
 
@@ -274,7 +282,7 @@ private fun MapCamera.east(x: Double): Double {
 }
 
 /**
- * The atlas map: OpenStreetMap turned to night, with everywhere the paths go glowing on it, the
+ * The atlas map: the base map (OpenStreetMap's or Google's, as [MapTileSource.baseMap] says) turned to night, with everywhere the paths go glowing on it, the
  * brighter the more often gone ([paths], and of those only the years in [years]); the places
  * stopped at ([markers]); flights as arcs ([flights]); and, when a day or a trip is being looked
  * at, its own paths picked out ([highlight]) as far as the moment [head] says, with a point of
@@ -284,6 +292,8 @@ private fun MapCamera.east(x: Double): Double {
  * the counted squares (`AtlasDensity`), close in, where the finest squares would show as squares,
  * from the paths themselves. A shader makes light of it. So a frame of this map, however much
  * history is on it, is some tiles and some pictures put down, and the map follows the finger.
+ * A Google map wears its credit in a corner unless [showCredit] is off, for a screen that
+ * credits it in a line of its own (from [AtlasMapState.copyright]).
  */
 @Composable
 fun AtlasMap(
@@ -299,6 +309,7 @@ fun AtlasMap(
     interactive: Boolean = true,
     animated: Boolean = true,
     onTapMarker: ((MapMarker) -> Unit)? = null,
+    showCredit: Boolean = true,
 ) {
     val density = LocalDensity.current
     val tilePx = with(density) { MAP_TILE_DP.dp.toPx() }
@@ -319,6 +330,7 @@ fun AtlasMap(
         }
     }
     val arrivals by tiles.arrivals.collectAsStateWithLifecycle()
+    val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
     val clock = rememberWeatherShaderClock(running = animated, frameSeconds = ATLAS_FRAME_SECONDS)
     val scope = rememberCoroutineScope()
     // A preview or a test takes one look: the glow is drawn for it there and then.
@@ -355,7 +367,8 @@ fun AtlasMap(
     val flightsInGlow = paths != null && heat != null
     val arcs = remember { Path() }
     val route = remember { Path() }
-    val tileUrls = remember { HashMap<Long, String>() }
+    // Made again when the base map changes: its addresses are another provider's, or another session's.
+    val tileUrls = remember(baseMap) { HashMap<Long, String>() }
 
     // Somewhere the screen asked to be shown, once the map knows how big it is.
     LaunchedEffect(state, state.pending, viewport, tilePx) {
@@ -373,7 +386,8 @@ fun AtlasMap(
 
     // Ask for the tiles in view whenever the view moves on to others. A glide asks for those where
     // it will land, not for every level it passes through on the way.
-    LaunchedEffect(state, tiles, tilePx) {
+    LaunchedEffect(state, tiles, tilePx, baseMap) {
+        val map = baseMap ?: return@LaunchedEffect
         snapshotFlow {
             val camera = state.destination ?: state.camera
             val count = 1 shl camera.level
@@ -383,8 +397,12 @@ fun AtlasMap(
             val height = viewport.height.toFloat()
             if (width <= 0f || height <= 0f) return@collectLatest
             val camera = state.destination ?: state.camera
-            tiles.request(camera.tiles(width, height, tilePx, camera.level).map { baseTileUrl(it.z, it.x, it.y) }, scope, keep = true)
+            tiles.request(camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }, scope, keep = map.keep)
         }
+    }
+
+    LaunchedEffect(state, tiles, baseMap, viewport, tilePx) {
+        tiles.followCopyright(baseMap, { state.camera }, viewport, tilePx) { state.copyright = it }
     }
 
     // And for the glow's pictures of it.
@@ -464,9 +482,10 @@ fun AtlasMap(
             // Read so a tile's arrival redraws the map.
             arrivals
             val camera = state.camera
+            val map = baseMap ?: return@Canvas
             if (tileUrls.size > 2048) tileUrls.clear()
             camera.tiles(size.width, size.height, tilePx, camera.level).forEach { tile ->
-                drawTile(tiles, tileUrls, tile, ancestors = 5)
+                drawTile(tiles, map, tileUrls, tile, ancestors = 5)
             }
         }
 
@@ -598,6 +617,10 @@ fun AtlasMap(
                 }
             }
         }
+
+        if (showCredit && baseMap is BaseMap.Google) {
+            MapCreditLabel(mapCredit(baseMap, state.copyright), Modifier.align(Alignment.BottomStart).padding(6.dp))
+        }
     }
 }
 
@@ -659,16 +682,16 @@ internal fun graticuleDegrees(pixelsPerDegree: Double, wanted: Float): Double =
 /**
  * Draws the picture for [tile], or failing that the right quarter (or sixteenth…) of the nearest
  * of its [ancestors] that has arrived, so a map zooming in sharpens rather than blanks. The same
- * as the radar map's. [urls] is where the tiles' addresses are kept.
+ * as the radar map's. [urls] is where the tiles' addresses on [map] are kept.
  */
-private fun DrawScope.drawTile(tiles: MapTileSource, urls: HashMap<Long, String>, tile: PlacedTile, ancestors: Int) {
+private fun DrawScope.drawTile(tiles: MapTileSource, map: BaseMap, urls: HashMap<Long, String>, tile: PlacedTile, ancestors: Int) {
     var z = tile.z
     var x = tile.x
     var y = tile.y
     var up = 0
     while (true) {
         // The address of a tile is asked for on every frame it is drawn in: made once and kept.
-        val image = tiles.image(urls.getOrPut((z.toLong() shl 48) or (x.toLong() shl 24) or y.toLong()) { baseTileUrl(z, x, y) })
+        val image = tiles.image(urls.getOrPut((z.toLong() shl 48) or (x.toLong() shl 24) or y.toLong()) { map.url(z, x, y) })
         if (image != null) {
             val span = 1 shl up
             val srcSize = IntSize(image.width / span, image.height / span)

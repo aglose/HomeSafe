@@ -649,6 +649,14 @@ private fun com.meticulouscreations.homesafe.weather.ui.radar.MapButton(icon: an
     - onClick: STABLE (function type)
 
 @Composable
+public fun com.meticulouscreations.homesafe.weather.ui.radar.MapCreditLabel(text: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - text: STABLE (String is immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.weather.ui.radar.RadarLegend(modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -656,7 +664,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.radar.RadarLegend(modifi
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.radar.RadarMap(state: com.meticulouscreations.homesafe.weather.ui.radar.RadarMapState, timeline: com.meticulouscreations.homesafe.weather.domain.RadarTimeline?, position: kotlin.Function0<kotlin.Float>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, markerLatitude: kotlin.Double?, markerLongitude: kotlin.Double?, interactive: kotlin.Boolean, wholeLoop: kotlin.Boolean, strength: kotlin.Float, animated: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ui.radar.RadarMap(state: com.meticulouscreations.homesafe.weather.ui.radar.RadarMapState, timeline: com.meticulouscreations.homesafe.weather.domain.RadarTimeline?, position: kotlin.Function0<kotlin.Float>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, markerLatitude: kotlin.Double?, markerLongitude: kotlin.Double?, interactive: kotlin.Boolean, wholeLoop: kotlin.Boolean, strength: kotlin.Float, animated: kotlin.Boolean, showCredit: kotlin.Boolean, maxZoom: kotlin.Double): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -671,6 +679,8 @@ internal fun com.meticulouscreations.homesafe.weather.ui.radar.RadarMap(state: c
     - wholeLoop: STABLE (primitive type)
     - strength: STABLE (primitive type)
     - animated: STABLE (primitive type)
+    - showCredit: STABLE (primitive type)
+    - maxZoom: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.weather.ui.radar.RadarScreen(place: com.meticulouscreations.homesafe.weather.domain.Place?, radar: com.meticulouscreations.homesafe.weather.RadarLoad, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, utcOffsetSeconds: kotlin.Int, nowEpochSeconds: kotlin.Long, headline: com.meticulouscreations.homesafe.text.UiText?, padding: androidx.compose.foundation.layout.PaddingValues, modifier: androidx.compose.ui.Modifier, animated: kotlin.Boolean): kotlin.Unit
@@ -698,6 +708,26 @@ private fun com.meticulouscreations.homesafe.weather.ui.radar.RadarScrubber(time
     - description: STABLE (String is immutable)
     - stateDescription: STABLE (String is immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.weather.ui.radar.SpotMap(latitude: kotlin.Double, longitude: kotlin.Double, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, zoom: kotlin.Double, animated: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - latitude: STABLE (primitive type)
+    - longitude: STABLE (primitive type)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - zoom: STABLE (primitive type)
+    - animated: STABLE (primitive type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.weather.ui.radar.mapCredit(map: com.meticulouscreations.homesafe.maps.BaseMap?, copyright: kotlin.String?): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - map: STABLE (marked @Stable or @Immutable)
+    - copyright: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ui.radar.relativeTime(epochSeconds: kotlin.Long, nowEpochSeconds: kotlin.Long): kotlin.String

@@ -65,6 +65,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.weather.RadarLoad
@@ -80,7 +81,6 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_place_current
 import homesafe.shared.generated.resources.weather_radar_ago
 import homesafe.shared.generated.resources.weather_radar_ahead
-import homesafe.shared.generated.resources.weather_radar_credit_map
 import homesafe.shared.generated.resources.weather_radar_credit_rainviewer
 import homesafe.shared.generated.resources.weather_radar_credit_us
 import homesafe.shared.generated.resources.weather_radar_forecast
@@ -130,6 +130,7 @@ internal fun RadarScreen(
     animated: Boolean = true,
 ) {
     val timeline = radar.timeline
+    val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
     val map = remember(place?.id) {
         RadarMapState(MapCamera.at(place?.latitude ?: 39.5, place?.longitude ?: -98.35, if (place == null) 4.0 else RADAR_OPENING_ZOOM))
     }
@@ -181,6 +182,7 @@ internal fun RadarScreen(
             markerLatitude = place?.latitude,
             markerLongitude = place?.longitude,
             animated = animated,
+            showCredit = false,
         )
         // The top bar and the controls sit on the map itself: shade it where they are.
         Box(Modifier.fillMaxWidth().height(padding.calculateTopPadding() + 36.dp).background(Brush.verticalGradient(listOf(Color(0xE605080E), Color.Transparent))))
@@ -280,7 +282,7 @@ internal fun RadarScreen(
             Text(
                 stringResource(
                     if (timeline?.source == RadarSource.RAINVIEWER) Res.string.weather_radar_credit_rainviewer else Res.string.weather_radar_credit_us,
-                    stringResource(Res.string.weather_radar_credit_map),
+                    mapCredit(baseMap, map.copyright),
                 ),
                 style = WeatherTheme.type.micro.copy(letterSpacing = WeatherTheme.type.label.letterSpacing),
                 color = colors.onSkyFaint,

@@ -215,7 +215,7 @@ Hand-rolled, like the radar's, and sharing its tile store and projection
 
 1. **Night**, a shader (`ATLAS_NIGHT_SHADER`): dark with a graticule that moves with the map, so
    a pan with no tiles loaded still reads as moving over the Earth.
-2. **OpenStreetMap's tiles**, turned to night by the radar's `MAP_NIGHT_SHADER`.
+2. **OpenStreetMap's tiles** (or Google's, when picked in Settings: [maps.md](maps.md)), turned to night by the radar's `MAP_NIGHT_SHADER`.
 3. **The glow.** A picture of how often each spot was gone through, made off the main thread
    and kept in squares the way the base map is kept in tiles (`AtlasHeat`, `HeatRaster`). Far
    out a square is drawn from `AtlasDensity`: the world cut into squares at eleven sizes, each

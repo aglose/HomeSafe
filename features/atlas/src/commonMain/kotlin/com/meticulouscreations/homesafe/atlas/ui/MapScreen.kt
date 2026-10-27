@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.domain.CivilDate
 import com.meticulouscreations.homesafe.atlas.domain.PlaceKind
@@ -49,6 +50,7 @@ import com.meticulouscreations.homesafe.atlas.domain.TravelMode
 import com.meticulouscreations.homesafe.atlas.domain.VisitRole
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.ui.radar.MAP_TILE_DP
+import com.meticulouscreations.homesafe.weather.ui.radar.mapCredit
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.atlas_map_all_years
 import homesafe.shared.generated.resources.atlas_map_everywhere
@@ -63,7 +65,6 @@ import homesafe.shared.generated.resources.atlas_map_zoom_in
 import homesafe.shared.generated.resources.atlas_map_zoom_out
 import homesafe.shared.generated.resources.atlas_place_home
 import homesafe.shared.generated.resources.atlas_place_work
-import homesafe.shared.generated.resources.weather_radar_credit_map
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 
@@ -92,6 +93,7 @@ internal fun MapScreen(
     val history = state.history
     val scope = rememberCoroutineScope()
     val tilePx = with(LocalDensity.current) { MAP_TILE_DP.dp.toPx() }
+    val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
     val years = remember(analysis) { analysis.years.map { it.year } }
     // The years picked; none is all of them.
     var picked by rememberSaveable(stateSaver = PickedYearsSaver) { mutableStateOf(emptySet<Int>()) }
@@ -165,6 +167,7 @@ internal fun MapScreen(
             flights = flights,
             animated = active,
             onTapMarker = { onOpenPlace(it.key) },
+            showCredit = false,
         )
 
         // What the map adds up to, in the years shown.
@@ -211,7 +214,7 @@ internal fun MapScreen(
                 )
             }
             Text(
-                stringResource(Res.string.weather_radar_credit_map),
+                mapCredit(baseMap, map.copyright),
                 style = AtlasTheme.type.micro.copy(letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified),
                 color = colors.textFaint,
                 modifier = Modifier.padding(start = AtlasGutter, bottom = 6.dp),

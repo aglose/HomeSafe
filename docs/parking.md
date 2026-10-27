@@ -45,6 +45,11 @@ channel, wearing the car; on iOS it is the relay's banner.
 - `drivers` in the file names whose phones hear about each car, by the Frigate user signed in on
   the phone. Without it, or with none of their phones registered, every phone hears.
 - Holidays aren't known: on a holiday with no sweeping, the relay still says to move.
+- A tap opens a map of the spot over whatever the app is showing (`ParkingMapOverlay` in
+  `:app`), on the map picked in Settings ([maps.md](maps.md)), with the deadline, what the sign
+  says, and directions. The push carries the spot as `parking_lat`, `parking_lng` (five places,
+  about a metre) and `parking_heading`, and `GET /parking` gives each car's `lat`, `lng` and
+  `heading`. A push from before these were sent opens the app as before, with no map.
 
 ## The signs: `parking.json`
 

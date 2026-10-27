@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.domain.platform
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
 
 /** Where the OS stands on letting this app post notifications. */
 enum class NotificationPermission {
@@ -85,6 +86,8 @@ data class AlertNotification(
      * on a channel of its own. It names no detection, so [target] stays null.
      */
     val parking: Boolean = false,
+    /** Where a tap on a [parking] notification goes: the map of the spot. Null when the push said no spot (it has moved, or an older relay). */
+    val parkingMap: ParkingDeepLink? = null,
 )
 
 /**

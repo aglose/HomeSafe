@@ -31,6 +31,7 @@ import com.meticulouscreations.homesafe.fitness.FitnessViewModel
 import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.fitness.ui.FitnessApp
 import com.meticulouscreations.homesafe.fitness.ui.FitnessDrawerCard
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.weather.WeatherViewModel
 import com.meticulouscreations.homesafe.weather.ui.WeatherApp
@@ -38,7 +39,8 @@ import com.meticulouscreations.homesafe.weather.ui.WeatherDrawerCard
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 
 /**
- * The drawer, and the app opened from it (finance, weather or fitness) over everything else.
+ * The drawer, the app opened from it (finance, weather or fitness) over everything else, and
+ * over that the map a parking notification opens ([ParkingMapOverlay]).
  * Their state is only fetched while this composition is on screen — under the iOS 26 host each
  * tab has its own, and only the visible one may run it.
  *
@@ -128,6 +130,12 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
                 InnerApp.ATLAS -> AtlasApp(onClose = nav::closeApp, active = nav.appOpen)
             }
         }
+    }
+    // A parking notification's tap: the car's spot on a map, over everything, the open app too.
+    // Only the tab in front draws it, as only it listens for shared notes.
+    if (nav.selectedTab == tab) {
+        val parking by ParkingDeepLinks.pending.collectAsStateWithLifecycle()
+        ParkingMapOverlay(parking, weather.tiles, onClose = ParkingDeepLinks::consume)
     }
 }
 

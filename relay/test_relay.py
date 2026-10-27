@@ -7924,6 +7924,8 @@ class ParkingTest(_FakeFrigate):
                          self.tick(self.WED_7PM + 3600))
         data = self.pushes[-1][3]
         self.assertEqual(("1", "parking-andrews_tesla", "north", "Elm St"), (data["parking"], data["notif_id"], data["parking_side"], data["parking_street"]))
+        spot = self.where["VIN_A"]
+        self.assertEqual((f"{spot['lat']:.5f}", f"{spot['lng']:.5f}", "270"), (data["parking_lat"], data["parking_lng"], data["parking_heading"]), "where, for the phone's map")
         self.assertEqual([], self.tick(self.WED_7PM + 3700), "once")
         self.where["VIN_A"] = {"asleep": True}
         self.assertEqual([("due", "Move Andrew's Tesla by 8:00 AM", "North side of Elm St · Street sweeping", ["pixel"])],

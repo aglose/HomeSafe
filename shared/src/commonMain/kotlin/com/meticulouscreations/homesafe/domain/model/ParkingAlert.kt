@@ -27,6 +27,11 @@ data class ParkingAlert(
     val untilEpochSeconds: Long?,
     /** More of the same car's news (it has moved): replace the notification without alerting. */
     val silent: Boolean,
+    /** Where the car is parked, for the map a tap on the notification opens; null from a relay that doesn't say, and once it has moved. */
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    /** Which way the car faces, in degrees clockwise from north; null when the car didn't say. */
+    val headingDegrees: Float? = null,
 ) {
     enum class Event {
         /** It must be gone by [byEpochSeconds]. */
@@ -53,6 +58,9 @@ data class ParkingAlert(
         const val KEY_MINUTES = "parking_minutes"
         const val KEY_FROM = "parking_from"
         const val KEY_UNTIL = "parking_until"
+        const val KEY_LAT = "parking_lat"
+        const val KEY_LNG = "parking_lng"
+        const val KEY_HEADING = "parking_heading"
         const val KEY_ID = "notif_id"
 
         /** Whether a push is about parking at all. */
@@ -71,6 +79,8 @@ data class ParkingAlert(
             val by = values(KEY_BY)?.toLongOrNull()
             if (event != Event.MOVED && by == null) return null
             val limit = values(KEY_MINUTES)?.toIntOrNull()?.takeIf { it > 0 }
+            val latitude = values(KEY_LAT)?.toDoubleOrNull()?.takeIf { it in -90.0..90.0 && event != Event.MOVED }
+            val longitude = values(KEY_LNG)?.toDoubleOrNull()?.takeIf { it in -180.0..180.0 && latitude != null }
             return ParkingAlert(
                 id = values(KEY_ID)?.takeIf { it.isNotBlank() } ?: "parking-$car",
                 carName = values(KEY_CAR_NAME)?.takeIf { it.isNotBlank() } ?: car,
@@ -83,6 +93,9 @@ data class ParkingAlert(
                 fromEpochSeconds = values(KEY_FROM)?.toLongOrNull()?.takeIf { limit == null },
                 untilEpochSeconds = values(KEY_UNTIL)?.toLongOrNull()?.takeIf { limit == null },
                 silent = values("silent") == "1",
+                latitude = latitude.takeIf { longitude != null },
+                longitude = longitude,
+                headingDegrees = values(KEY_HEADING)?.toFloatOrNull(),
             )
         }
     }

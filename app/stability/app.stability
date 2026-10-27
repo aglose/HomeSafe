@@ -38,6 +38,34 @@ private fun com.meticulouscreations.homesafe.ui.screens.DrawerColumn(content: @[
     - content: STABLE (composable function type)
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.screens.ParkingMapCard(alert: com.meticulouscreations.homesafe.domain.model.ParkingAlert, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, animated: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - alert: STABLE (class with no mutable properties)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - onClose: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - animated: STABLE (primitive type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.ParkingMapOverlay(link: com.meticulouscreations.homesafe.navigation.ParkingDeepLink?, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, onClose: kotlin.Function1<com.meticulouscreations.homesafe.navigation.ParkingDeepLink, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - link: RUNTIME (requires runtime check)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - onClose: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.ParkingPreviewFrame(alert: com.meticulouscreations.homesafe.domain.model.ParkingAlert): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - alert: STABLE (class with no mutable properties)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.screens.ShellAppTab(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, app: com.meticulouscreations.homesafe.ui.screens.InnerApp): kotlin.Unit
   skippable: true
   restartable: true
@@ -52,4 +80,25 @@ public fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticu
   params:
     - nav: STABLE (marked @Stable or @Immutable)
     - tab: UNSTABLE (cross-module type without @Stable/@Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.parkingPlace(alert: com.meticulouscreations.homesafe.domain.model.ParkingAlert): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - alert: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.parkingReason(alert: com.meticulouscreations.homesafe.domain.model.ParkingAlert): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - alert: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.parkingTitle(alert: com.meticulouscreations.homesafe.domain.model.ParkingAlert): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - alert: STABLE (class with no mutable properties)
 

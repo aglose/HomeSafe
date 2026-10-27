@@ -107,7 +107,7 @@ public fun com.meticulouscreations.homesafe.atlas.ui.AtlasLockScreen(lock: com.m
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.atlas.ui.AtlasMap(state: com.meticulouscreations.homesafe.atlas.ui.AtlasMapState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, paths: com.meticulouscreations.homesafe.atlas.AtlasPaths?, years: kotlin.Int, markers: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.ui.MapMarker>, flights: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Move>, highlight: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Track>, head: kotlin.Function0<kotlin.Long>, interactive: kotlin.Boolean, animated: kotlin.Boolean, onTapMarker: kotlin.Function1<com.meticulouscreations.homesafe.atlas.ui.MapMarker, kotlin.Unit>?): kotlin.Unit
+public fun com.meticulouscreations.homesafe.atlas.ui.AtlasMap(state: com.meticulouscreations.homesafe.atlas.ui.AtlasMapState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, paths: com.meticulouscreations.homesafe.atlas.AtlasPaths?, years: kotlin.Int, markers: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.ui.MapMarker>, flights: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Move>, highlight: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Track>, head: kotlin.Function0<kotlin.Long>, interactive: kotlin.Boolean, animated: kotlin.Boolean, onTapMarker: kotlin.Function1<com.meticulouscreations.homesafe.atlas.ui.MapMarker, kotlin.Unit>?, showCredit: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -123,6 +123,7 @@ public fun com.meticulouscreations.homesafe.atlas.ui.AtlasMap(state: com.meticul
     - interactive: STABLE (primitive type)
     - animated: STABLE (primitive type)
     - onTapMarker: STABLE (function type)
+    - showCredit: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.atlas.ui.AtlasNav(selected: com.meticulouscreations.homesafe.atlas.ui.AtlasTab, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.atlas.ui.AtlasTab, kotlin.Unit>): kotlin.Unit

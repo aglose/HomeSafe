@@ -8,15 +8,17 @@ import com.meticulouscreations.homesafe.assistant.AnthropicApi
 import com.meticulouscreations.homesafe.assistant.AssistantAgent
 import com.meticulouscreations.homesafe.assistant.AssistantModel
 import com.meticulouscreations.homesafe.assistant.AssistantModelFamily
-import com.meticulouscreations.homesafe.assistant.AssistantStore
 import com.meticulouscreations.homesafe.assistant.latestModels
 import com.meticulouscreations.homesafe.assistant.userMessage
+import com.meticulouscreations.homesafe.data.ASSISTANT_KEYS
+import com.meticulouscreations.homesafe.data.ApiKeyStore
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.ui.assistant.encodeScreenJpeg
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Named
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.assistant_cut_off
@@ -70,7 +72,7 @@ data class AssistantUiState(
 class AssistantViewModel(
     private val agent: AssistantAgent,
     private val api: AnthropicApi,
-    private val store: AssistantStore,
+    @Named(ASSISTANT_KEYS) private val store: ApiKeyStore,
     private val clock: Clock,
 ) : ViewModel() {
 

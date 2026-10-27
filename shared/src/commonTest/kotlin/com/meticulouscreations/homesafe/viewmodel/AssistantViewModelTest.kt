@@ -3,8 +3,8 @@ package com.meticulouscreations.homesafe.viewmodel
 import com.meticulouscreations.homesafe.assistant.AnthropicApi
 import com.meticulouscreations.homesafe.assistant.AssistantAgent
 import com.meticulouscreations.homesafe.assistant.AssistantTool
-import com.meticulouscreations.homesafe.assistant.InMemoryAssistantStore
 import com.meticulouscreations.homesafe.assistant.noInput
+import com.meticulouscreations.homesafe.data.InMemoryApiKeyStore
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.assistant_tool_budget
 import io.ktor.client.HttpClient
@@ -146,7 +146,7 @@ class AssistantViewModelTest {
 
     @Test
     fun catchesUpWithAKeyForgottenElsewhere() = runTest {
-        val store = InMemoryAssistantStore(key = "sk-test")
+        val store = InMemoryApiKeyStore(key = "sk-test")
         val viewModel = viewModel(replies = emptyList(), store = store)
         assertTrue(viewModel.uiState.value.hasKey)
 
@@ -159,7 +159,7 @@ class AssistantViewModelTest {
 
     private fun viewModel(
         replies: List<String>,
-        store: InMemoryAssistantStore = InMemoryAssistantStore(key = "sk-test"),
+        store: InMemoryApiKeyStore = InMemoryApiKeyStore(key = "sk-test"),
         holdReply: Int = -1,
         gate: CompletableDeferred<Unit>? = null,
     ): AssistantViewModel {

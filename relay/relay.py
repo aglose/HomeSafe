@@ -10401,7 +10401,7 @@ def parking_phones(name: str, config: dict[str, Any], now: float, quiet_too: boo
 
 
 def parking_plan(car: dict[str, Any], stretches: list[dict[str, Any]], config: dict[str, Any], zone: Any, now: float) -> dict[str, Any] | None:
-    """What the phones are owed about where the car is parked, as {"match", "deadline", "stage", "key"}; None for nothing."""
+    """What the phones are owed about where the car is parked, as {"spot", "match", "deadline", "stage", "key"}; None for nothing."""
     spot = car.get("spot")
     match = parking_match(spot, stretches) if spot else None
     if match is None:
@@ -10412,7 +10412,7 @@ def parking_plan(car: dict[str, Any], stretches: list[dict[str, Any]], config: d
         return None
     # The spot is part of the key: parked again further along the same curb, it is told afresh.
     key = f"{match['street']}|{match['side']}|{int(float(spot['since']))}|{int(deadline['at'])}"
-    return {"match": match, "deadline": deadline, "stage": stage, "key": key}
+    return {"spot": spot, "match": match, "deadline": deadline, "stage": stage, "key": key}
 
 
 def parking_text(name: str, plan: dict[str, Any], now: float, zone: Any) -> tuple[str, str, dict[str, str]]:
@@ -10437,8 +10437,20 @@ def parking_text(name: str, plan: dict[str, Any], now: float, zone: Any) -> tupl
         "parking_street": match["street"], "parking_side": match["side"] or "",
         "parking_rule": "limit" if minutes else "no_parking", "parking_minutes": str(minutes) if minutes else "",
         "parking_from": str(int(deadline["from"])), "parking_until": str(int(deadline["until"])), "parking_note": str(rule.get("note") or ""),
+        # Where the car is, for the phone's map of the spot (only the household's own phones hear this).
+        **parking_where(plan.get("spot")),
     }
     return title, f"{place} · {reason}", data
+
+
+def parking_where(spot: dict[str, Any] | None) -> dict[str, str]:
+    """The push's `parking_lat`, `parking_lng` and `parking_heading` for a spot: to about a metre, and empty for what isn't known."""
+    spot = spot or {}
+
+    def number(key: str, places: int) -> str:
+        return f"{float(spot[key]):.{places}f}" if spot.get(key) is not None else ""
+
+    return {"parking_lat": number("lat", 5), "parking_lng": number("lng", 5), "parking_heading": number("heading", 0)}
 
 
 def parking_tell(name: str, car: dict[str, Any], config: dict[str, Any], stretches: list[dict[str, Any]], zone: Any, now: float,
@@ -10539,6 +10551,7 @@ def parking_status(now: float) -> dict[str, Any]:
         cars.append({
             "car": name, "name": display_name(name), "asked": car.get("asked"),
             "street": match and match["street"], "side": match and match["side"], "how": match and match["how"],
+            "lat": spot and spot.get("lat"), "lng": spot and spot.get("lng"), "heading": spot and spot.get("heading"),
             "since": spot and spot["since"], "move_by": deadline and deadline["at"],
             "rule": deadline and {k: v for k, v in deadline["rule"].items()},
         })

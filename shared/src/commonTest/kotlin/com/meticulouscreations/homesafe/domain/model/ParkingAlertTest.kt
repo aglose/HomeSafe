@@ -85,4 +85,16 @@ class ParkingAlertTest {
         assertNull(ParkingAlert.from { (sweeping - "parking_by")[it] }, "due, but by when?")
         assertFalse(ParkingAlert.isParking { (sweeping - "parking")[it] })
     }
+
+    @Test
+    fun theSpotIsReadForTheMapAndDroppedOnceTheCarHasMoved() {
+        val parked = ParkingAlert.from((sweeping + mapOf("parking_lat" to "40.12345", "parking_lng" to "-89.54321", "parking_heading" to "270"))::get)
+        assertEquals(40.12345, parked?.latitude)
+        assertEquals(-89.54321, parked?.longitude)
+        assertEquals(270f, parked?.headingDegrees)
+        assertNull(ParkingAlert.from(sweeping::get)?.latitude, "an older relay sends no spot")
+        assertNull(ParkingAlert.from((sweeping + mapOf("parking_lat" to "40.1", "parking_lng" to ""))::get)?.latitude, "half a spot is none")
+        val moved = sweeping + mapOf("parking_event" to "moved", "parking_lat" to "40.1", "parking_lng" to "-89.5")
+        assertNull(ParkingAlert.from(moved::get)?.latitude)
+    }
 }

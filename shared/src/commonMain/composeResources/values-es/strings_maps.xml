@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="maps_settings_title">Mapas</string>
+    <string name="maps_settings_caption">En qué mapa se dibujan el radar del tiempo, el Atlas y la calle de un coche aparcado.</string>
+    <string name="maps_provider_osm">OpenStreetMap</string>
+    <string name="maps_provider_osm_blurb">Gratuito, hecho por voluntarios. Se guarda en este teléfono una vez visto, así que un mapa ya abierto se dibuja de nuevo sin internet.</string>
+    <string name="maps_provider_google">Google Maps</string>
+    <string name="maps_provider_google_blurb">El mapa de Google, con sus etiquetas y colores. Necesita una clave de API de Google Maps Platform propia, que Google cobra pasadas las teselas gratuitas de cada mes.</string>
+    <string name="maps_google_key_label">Clave de API de Google Maps</string>
+    <string name="maps_google_key_save">Guardar clave</string>
+    <string name="maps_google_key_forget">Olvidar clave</string>
+    <string name="maps_google_key_saved">Hay una clave guardada en este teléfono.</string>
+    <string name="maps_google_key_help">Crea una clave en la consola de Google Cloud con la Map Tiles API activada y restríngela a esa API. Se queda en este teléfono.</string>
+    <string name="maps_google_status_no_key">Aún no hay clave: los mapas siguen en OpenStreetMap hasta que la haya.</string>
+    <string name="maps_google_status_unchecked">Se pedirá el mapa a Google la próxima vez que se abra uno.</string>
+    <string name="maps_google_status_checking">Pidiendo el mapa a Google…</string>
+    <string name="maps_google_status_working">Google Maps está dibujando los mapas.</string>
+    <string name="maps_google_status_failed">%1$s Mientras tanto, los mapas usan OpenStreetMap.</string>
+    <string name="maps_google_rejected">Google rechazó la clave (HTTP %1$d). Comprueba que tenga activada la Map Tiles API.</string>
+    <string name="maps_google_unreachable">No se pudo contactar con Google.</string>
+    <string name="maps_credit_google">Google Maps · %1$s</string>
+</resources>

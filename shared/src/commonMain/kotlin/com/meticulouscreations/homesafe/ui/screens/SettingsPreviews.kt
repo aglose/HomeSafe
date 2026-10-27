@@ -31,6 +31,9 @@ import com.meticulouscreations.homesafe.domain.model.StorageUsage
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
+import com.meticulouscreations.homesafe.maps.GoogleMapsStatus
+import com.meticulouscreations.homesafe.maps.MapProvider
+import com.meticulouscreations.homesafe.maps.MapSettings
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
@@ -40,6 +43,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.alerts_finance_error
 import homesafe.shared.generated.resources.alerts_title
+import homesafe.shared.generated.resources.maps_google_rejected
 import homesafe.shared.generated.resources.presence_title
 import homesafe.shared.generated.resources.settings_alerts_subtitle
 import homesafe.shared.generated.resources.settings_away_subtitle
@@ -155,6 +159,19 @@ private fun SettingsHomeEconomyPreview() {
 @Composable
 private fun SettingsHomeFiguresPreview() {
     SettingsHomePreviewContent(previewSettings, initialFold = SettingsFold.FIGURES)
+}
+
+@Preview(name = "Settings, maps open on Google, key needed", widthDp = 412, heightDp = 1400)
+@Composable
+private fun SettingsHomeMapsNoKeyPreview() {
+    SettingsHomePreviewContent(previewSettings.copy(maps = MapSettings(provider = MapProvider.GOOGLE)), initialFold = SettingsFold.MAPS)
+}
+
+@Preview(name = "Settings, maps open on Google, key refused", widthDp = 412, heightDp = 1400)
+@Composable
+private fun SettingsHomeMapsRefusedPreview() {
+    val refused = GoogleMapsStatus.Failed(UiText.of(Res.string.maps_google_rejected, 403))
+    SettingsHomePreviewContent(previewSettings.copy(maps = MapSettings(MapProvider.GOOGLE, hasGoogleKey = true, google = refused)), initialFold = SettingsFold.MAPS)
 }
 
 @Preview(name = "Settings, app icon open", widthDp = 412, heightDp = 915)
