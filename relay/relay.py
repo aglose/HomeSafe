@@ -9197,22 +9197,25 @@ def budget_line_guess(lines: list[str], key: str | None, category: str | None, d
     """
     The line a purchase goes in on its own, if any: one named after its shop ("Costco" takes
     "COSTCO WHSE #0123"), else one whose name says what kind of spending it is and the purchase
-    being that (see `BUDGET_LINE_GUESSES`). A shop that is its line's by name outranks a category,
-    so a Groceries line still has Costco though Plaid calls it a superstore.
+    being that (see `BUDGET_LINE_GUESSES`). Plaid's detailed category says most, so it is asked
+    first: fuel from Costco goes in Gas. Then a shop a line knows by name, so a Groceries line
+    still has Costco though Plaid calls it a superstore; then Plaid's broad category.
     """
     key = key or ""
     for line in lines:
         named = merchant_key(None, line)
         if len(named) >= 3 and (key == named or key.startswith(named + " ")):
             return line
-    for line in lines:
-        for pattern, categories, shops in BUDGET_LINE_GUESSES:
-            if pattern.search(line) and shops is not None and shops.search(key):
-                return line
-    for line in lines:
-        for pattern, categories, _ in BUDGET_LINE_GUESSES:
-            if pattern.search(line) and (category in categories or detail in categories):
-                return line
+    guesses = [(line, categories, shops) for line in lines for pattern, categories, shops in BUDGET_LINE_GUESSES if pattern.search(line)]
+    for line, categories, _ in guesses:
+        if detail and detail in categories:
+            return line
+    for line, _, shops in guesses:
+        if shops is not None and shops.search(key):
+            return line
+    for line, categories, _ in guesses:
+        if category and category in categories:
+            return line
     return None
 
 
@@ -9330,8 +9333,9 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
         return {"id": bucket_id or "unassigned", "kind": kind, "name": name, "spent": round(sum(p["amount"] for p in mine), 2), "limit": limit, "count": len(mine)}
 
     # Each card-paid line against what the sheet plans for it, and what it usually comes to: the
-    # average of the months before this one, of those in which the cards spent anything at all.
-    earlier = [m for m in (month_before(month, back) for back in range(BUDGET_HISTORY_MONTHS - 1, 0, -1)) if spent_by_month.get(m)]
+    # average of the months before this one, of those in which the cards were used at all (one
+    # whose refunds cancelled its purchases out was still a month of spending).
+    earlier = [m for m in (month_before(month, back) for back in range(BUDGET_HISTORY_MONTHS - 1, 0, -1)) if m in spent_by_month]
 
     def line(name: str | None) -> dict[str, Any]:
         mine = [p for p in purchases if p["line"] == name]

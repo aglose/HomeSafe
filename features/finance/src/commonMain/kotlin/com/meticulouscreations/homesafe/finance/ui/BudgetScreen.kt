@@ -24,12 +24,14 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -1354,7 +1356,8 @@ private fun TagSheet(
         contentColor = colors.textPrimary,
         scrimColor = Color.Black.copy(alpha = 0.6f),
     ) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp).testTag("finance_budget_tag_sheet")) {
+        // Scrolls: with several people and lines, or large text, the remember switch would otherwise fall off its bottom.
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp).testTag("finance_budget_tag_sheet")) {
             Column(Modifier.padding(horizontal = PageGutter)) {
                 Text(purchase.name, style = FinanceTheme.type.section, color = colors.textPrimary)
                 Spacer(Modifier.height(2.dp))

@@ -5160,6 +5160,11 @@ class BudgetLinesTest(_Budget):
         self.assertEqual((100.0, round((0 + 700 + 500) / 3, 2)), (self.line("Groceries")["spent"], self.line("Groceries")["usual"]))
         self.assertIsNone(self.line("Groceries", "2026-08")["usual"])
 
+    def test_a_month_whose_refunds_cancelled_its_purchases_still_counts_toward_the_usual(self):
+        self.store(_txn("aug", 700.0, date="2026-08-10"), _txn("aug-back", -700.0, date="2026-08-12", name="SHELL OIL", merchant="Shell", category="TRANSPORTATION"),
+                   _txn("sep", 500.0, date="2026-09-10"))
+        self.assertEqual(600.0, self.line("Groceries")["usual"])
+
     def test_a_line_that_is_not_paid_by_card_or_a_tag_on_one_that_was_is_refused_or_forgotten(self):
         self.store(_txn("t1", 54.2))
         with self.assertRaises(relay.HTTPException) as bad:
@@ -5188,6 +5193,10 @@ class BudgetLinesTest(_Budget):
         self.assertEqual("Gas", guess(["Gas", "Groceries"], "chevron", "TRANSPORTATION", "TRANSPORTATION_GAS"))
         self.assertEqual("Meal kits", guess(["Meal kits"], "hellofresh", "FOOD_AND_DRINK", "FOOD_AND_DRINK_OTHER_FOOD_AND_DRINK"))
         self.assertEqual("Streaming", guess(["Streaming"], "netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"))
+        # Fuel from a grocer is fuel when there is a line for it, and groceries when there isn't.
+        self.assertEqual("Gas", guess(["Gas", "Groceries"], "costco gas", "TRANSPORTATION", "TRANSPORTATION_GAS"))
+        self.assertEqual("Groceries", guess(["Groceries"], "costco gas", "TRANSPORTATION", "TRANSPORTATION_GAS"))
+        self.assertEqual("Groceries", guess(["Gas", "Groceries"], "costco", "GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_SUPERSTORES"))
         self.assertIsNone(guess(["Gasoline savings"], "chevron", "TRANSPORTATION", "TRANSPORTATION_GAS"))
         self.assertIsNone(guess([], "safeway", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES"))
         # A line named for a shop has that shop, but not one that merely starts with the same letters.
