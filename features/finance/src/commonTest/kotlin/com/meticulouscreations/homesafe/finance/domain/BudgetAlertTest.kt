@@ -27,7 +27,7 @@ class BudgetAlertTest {
 
     @Test
     fun everyLineTheRelayKnowsHasAKind() {
-        val kinds = listOf("total_80", "total_100", "savings", "person_100", "family_100", "line_100").map { alert(push + ("budget_kind" to it, "line" to "Groceries"))?.kind }
+        val kinds = listOf("total_80", "total_100", "savings", "person_100", "family_100", "line_100").map { alert(push + mapOf("budget_kind" to it, "line" to "Groceries"))?.kind }
         assertEquals(BudgetAlert.Kind.entries.toList(), kinds)
     }
 
