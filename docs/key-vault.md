@@ -24,10 +24,16 @@ sealed secrets in `relay.db`'s `state` table, under `vault`. It decides only who
 
 - `GET /vault`: the signed-in user's own sealed key pair and grant, everyone's public key and whether
   they hold the household key, and the sealed secrets.
-- `PUT /vault/me`: sets the user's key pair (a first sign-in, or a new password). A grant made for
-  an older pair stops counting.
-- `PUT /vault/grants/{user}`: gives another member the household key. Only from a member holding it.
+- `PUT /vault/me`: sets the user's key pair (a first sign-in, or a new password), in place of the
+  public key the phone saw (`replaces`, null for none). A grant made for an older pair stops counting.
+- `PUT /vault/grants/{user}`: gives another member the household key, sealed to the public key named
+  in `recipient`. Only from a member holding it.
 - `POST /vault/household`: starts a new household key. Only while nobody holds the current one.
+
+Every write that depends on a key pair says which one it saw, and the relay answers 409 when that
+has changed since. The phone then looks again: two phones signing in as one login at once end up
+sharing the first one's key pair rather than one taking the other's grant away (and, with nobody
+left holding the household key, starting over without the stored keys).
 - `PUT /vault/secrets`: sets or removes sealed secrets. Only from a member holding the household key.
 
 ## What a phone does on sign-in (`KeyVault`)
@@ -43,8 +49,12 @@ sealed secrets in `relay.db`'s `state` table, under `vault`. It decides only who
    phone's copy.
 
 While the vault can't be opened (signed out, the server out of reach, waiting to be let in), the
-assistant can't be asked and the maps stay on OpenStreetMap; both say why. It is tried again every
-three minutes, and whenever Settings or the assistant opens.
+assistant can't be asked and the maps stay on OpenStreetMap; both say why. While the app is in front
+the phone keeps looking: every minute while waiting to be let in, every ten once open (keys saved or
+forgotten on another phone arrive), three after a failure, and again whenever the app comes back to
+the foreground or Settings or the assistant opens. A recheck that can't reach the server leaves an
+open vault open. An open household is only ever used for the login and server it was opened for:
+switching either drops it straight away.
 
 ## What to know
 
