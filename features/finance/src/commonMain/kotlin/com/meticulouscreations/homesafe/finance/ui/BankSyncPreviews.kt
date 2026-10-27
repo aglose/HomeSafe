@@ -25,11 +25,11 @@ import homesafe.shared.generated.resources.fin_bank_error_relay_outdated
 import homesafe.shared.generated.resources.fin_bank_error_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_linking_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_notice_linked_named
-import kotlin.time.Clock
 
 /** Made-up institutions for the bank sync previews: a bank, a brokerage, and a lender that wants its sign-in again. */
 internal object BankSyncFixtures {
-    private val now = Clock.System.now().epochSeconds
+    /** The previews' "now" (Oct 27, 2026, 17:00 UTC, before the stock plan's next vest), fixed so every render reads the same times. */
+    val now = 1_793_120_400L
 
     private fun account(id: String, name: String, mask: String?, type: BankAccountType, subtype: String, balance: Double, apr: Double? = null, holdings: Int = 0) =
         BankAccount(id, key = name, name = name, mask = mask, type = type, subtype = subtype, balance = balance, currency = "USD", apr = apr, holdings = holdings)
@@ -163,7 +163,7 @@ internal object BankSyncFixtures {
 
 @Composable
 private fun BankSyncPreview(state: BankSyncUiState) {
-    FinanceStage { BankSyncScreen(state, previewPadding, onLink = {}, onRelink = {}, onCancelLink = {}, onSyncNow = {}, onUnlink = {}, onUndoWrite = {}, onPauseLine = { _, _ -> }, onRetry = {}) }
+    FinanceStage { BankSyncScreen(state, previewPadding, onLink = {}, onRelink = {}, onCancelLink = {}, onSyncNow = {}, onUnlink = {}, onUndoWrite = {}, onPauseLine = { _, _ -> }, onRetry = {}, now = BankSyncFixtures.now) }
 }
 
 @Preview(name = "Bank sync · linked", widthDp = 412, heightDp = 1500)
@@ -209,7 +209,7 @@ private fun FinanceBankSyncLinkingPreview() {
         BankSyncUiState(
             bank = BankSyncFixtures.unshared,
             loading = false,
-            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", Clock.System.now().epochSeconds + 1_800, opened = true),
+            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", BankSyncFixtures.now + 1_800, opened = true),
             notice = BankNotice(UiText.of(Res.string.fin_bank_notice_linked_named, "Chase".asUiText())),
         ),
     )
@@ -240,7 +240,7 @@ private fun FinanceBankSyncLinkingTailscaleOffPreview() {
         BankSyncUiState(
             bank = BankSyncFixtures.linked,
             loading = false,
-            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", Clock.System.now().epochSeconds + 1_800, opened = true),
+            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", BankSyncFixtures.now + 1_800, opened = true),
             notice = BankNotice(UiText.of(Res.string.fin_bank_linking_tailscale_off), isError = true),
         ),
     )
