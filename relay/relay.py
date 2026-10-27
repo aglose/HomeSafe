@@ -4566,6 +4566,7 @@ def startup() -> None:
     threading.Thread(target=bank_forever, name="bank-sync", daemon=True).start()
     threading.Thread(target=timeline_forever, name="timeline", daemon=True).start()
     threading.Thread(target=doors_forever, name="doors", daemon=True).start()
+    threading.Thread(target=parking_forever, name="parking", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -9489,7 +9490,12 @@ TESLA_CHECK_SECONDS = float(os.environ.get("TESLA_CHECK_SECONDS", "1800"))
 TESLA_STALE_SECONDS = 600.0
 TESLA_LINK_SECONDS = 900
 TESLA_CALLS_KEY = "tesla_calls"
-_tesla_answers: dict[str, tuple[float, str | None]] = {}
+# Each car's last answer, as (when asked, `tesla_location`'s answer): car presence reads it for
+# home or away, and parking (see "parking") for the street and the side.
+_tesla_answers: dict[str, tuple[float, dict[str, Any] | None]] = {}
+# Car presence (the poller) and parking ask from threads of their own; one asks at a time, so the
+# second finds the first's answer rather than paying for its own.
+_tesla_lock = threading.Lock()
 
 
 def tesla_on() -> bool:
@@ -9578,8 +9584,10 @@ def haversine_metres(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 def tesla_location(vin: str) -> dict[str, Any] | None:
     """
-    Where the car is, as `{"lat", "lng", "at"}`, or `{"asleep": True}`; None when it can't be asked
-    (not linked, out of calls, an error). Never wakes the car: a sleeping one answers 408.
+    Where the car is, as `{"lat", "lng", "at", "heading", "shift", "speed"}` (heading in degrees
+    clockwise from north; shift "P", "D", "R", "N" or None, parked cars often saying nothing), or
+    `{"asleep": True}`; None when it can't be asked (not linked, out of calls, an error). Never
+    wakes the car: a sleeping one answers 408.
     """
     row = with_db(lambda c: c.execute("SELECT account FROM tesla_vehicles WHERE vin=?", (vin,)).fetchone())
     if not row:
@@ -9596,7 +9604,30 @@ def tesla_location(vin: str) -> dict[str, Any] | None:
     if drive.get("latitude") is None or drive.get("longitude") is None:
         return None
     stamp = drive.get("gps_as_of") or (float(drive["timestamp"]) / 1000 if drive.get("timestamp") else time.time())
-    return {"lat": float(drive["latitude"]), "lng": float(drive["longitude"]), "at": float(stamp)}
+    heading, speed = drive.get("heading"), drive.get("speed")
+    return {
+        "lat": float(drive["latitude"]), "lng": float(drive["longitude"]), "at": float(stamp),
+        "heading": float(heading) if heading is not None else None, "shift": drive.get("shift_state"),
+        "speed": float(speed) if speed is not None else None,
+    }
+
+
+def tesla_ask(name: str, now: float) -> tuple[float, dict[str, Any] | None]:
+    """
+    Tesla's answer about one of TESLA_CARS, as (when asked, `tesla_location`'s answer), asking at
+    most once per car per TESLA_CACHE_SECONDS. A failed call is an answer of None, kept like any other.
+    """
+    with _tesla_lock:
+        cached = _tesla_answers.get(name)
+        if cached and now - cached[0] < TESLA_CACHE_SECONDS:
+            return cached
+        where = None
+        try:
+            where = tesla_location(TESLA_CARS[name])
+        except Exception as e:
+            log.warning("tesla: asking where %s is failed: %s", name, e)
+        _tesla_answers[name] = (now, where)
+        return now, where
 
 
 def tesla_verdict(name: str, now: float | None = None) -> str | None:
@@ -9611,24 +9642,17 @@ def tesla_verdict(name: str, now: float | None = None) -> str | None:
     if not (tesla_on() and vin and home):
         return None
     now = time.time() if now is None else now
-    cached = _tesla_answers.get(name)
-    if cached and now - cached[0] < TESLA_CACHE_SECONDS:
-        return cached[1]
-    verdict = None
-    try:
-        where = tesla_location(vin)
-        if where and not where.get("asleep") and now - float(where["at"]) <= TESLA_STALE_SECONDS:
-            d = haversine_metres((where["lat"], where["lng"]), (float(home["lat"]), float(home["lng"])))
-            radius = float(home.get("radius_m") or 150)
-            verdict = "home" if d <= radius + TESLA_HOME_MARGIN_METRES else "away" if d > radius + TESLA_AWAY_METRES else None
-            log.info("tesla: %s is %.0f m from home -> %s", name, d, verdict)
-        elif where and where.get("asleep"):
-            verdict = "asleep"
-            log.info("tesla: %s is asleep", name)
-    except Exception as e:
-        log.warning("tesla: asking where %s is failed: %s", name, e)
-    _tesla_answers[name] = (now, verdict)
-    return verdict
+    _, where = tesla_ask(name, now)
+    if where and not where.get("asleep") and now - float(where["at"]) <= TESLA_STALE_SECONDS:
+        d = haversine_metres((where["lat"], where["lng"]), (float(home["lat"]), float(home["lng"])))
+        radius = float(home.get("radius_m") or 150)
+        verdict = "home" if d <= radius + TESLA_HOME_MARGIN_METRES else "away" if d > radius + TESLA_AWAY_METRES else None
+        log.info("tesla: %s is %.0f m from home -> %s", name, d, verdict)
+        return verdict
+    if where and where.get("asleep"):
+        log.info("tesla: %s is asleep", name)
+        return "asleep"
+    return None
 
 
 def tesla_link_url(now: float | None = None) -> str:
@@ -9696,6 +9720,602 @@ def tesla_register() -> dict[str, Any]:
                       headers={"Authorization": f"Bearer {partner['access_token']}"}, timeout=15)
     r.raise_for_status()
     return r.json()
+
+
+# ---------------------------------------------------------------- parking
+
+# The Teslas usually sleep in the driveway, but now and then one is left at the curb, and each side
+# of each street around the house has its own hours a car mustn't be there: street sweeping one
+# morning a week or a month, two-hour parking on weekdays. Tesla (see "Tesla") puts a car to within
+# a few metres and says which way it faces, which is enough to tell the street and the side: a car
+# at a two-way curb faces the way that side's traffic goes, so its heading settles the side even
+# when the fix lands on the middle of the road. A car facing across the street has nosed into a
+# driveway, not parked at the curb. The relay reads that side's signs and tells the car's drivers
+# before it must move (docs/parking.md).
+#
+# The signs are written down on the box in PARKING_FILE, not in the repository (which is public:
+# the streets give the house away), and read again whenever the file changes:
+#
+#   {"streets": [
+#      {"street": "Elm St", "sides": {"north": [rule, ...], "south": [rule, ...]}},
+#      {"street": "Oak St", "only": {"side": "north", "of": "Elm St"}, "sides": {"home": [...], "across": [...]}}],
+#    "permits": ["B"], "drivers": {"andrews_tesla": ["andrew"]}}
+#
+# A street is looked up by name in OpenStreetMap within PARKING_RADIUS_METRES of home, or given as
+# its own `line` ([[lat, lng], ...] down its middle); `only` keeps the part of it on one side of
+# another street, and `within_m` the part within that many metres of home (the blocks whose signs
+# were read). A side is a compass word, "home" (the side of the street the house is on) and
+# "across", or "both". A rule is
+#   {"kind": "no_parking", "days": ["thu"], "weeks": [1, 3], "start": "08:00", "end": "11:00", "note": "Street sweeping"}
+#   {"kind": "limit", "minutes": 120, "days": ["mon", "tue", "wed", "thu", "fri"], "start": "08:00", "end": "18:00", "permit": "B"}
+# holding on `days` (every day when left out), on the `weeks`' of those weekdays in the month (1 to
+# 5, or -1 for the last), in `months` (1 to 12), from `start` to `end` (the whole day when left out;
+# an end before the start runs past midnight), on the household's clock (`tz`, or the phones'). A
+# `permit` the household holds (`permits`) lifts the rule. `drivers` names, by the Frigate user
+# signed in on the phone, whose phones hear about each car; every phone does otherwise.
+#
+# What a phone hears, as one notification per car that each push replaces: a deadline before noon
+# at 8 PM the evening before, any other once it is a day away, then PARKING_REMIND_SECONDS before
+# it, and once it has come with the car still there. Before telling anyone to go out to the car,
+# Tesla is asked whether it is still there (asleep, it is). A phone in its quiet hours hears the
+# latest once they're over, if the car is still there. When the car moves, the notification is
+# replaced, quietly, by one saying so.
+PARKING_FILE = os.environ.get("PARKING_FILE", "/data/parking.json")
+OVERPASS_URL = os.environ.get("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
+PARKING_KEY = "parking"
+PARKING_STREETS_KEY = "parking_streets"
+PARKING_EVERY_SECONDS = 60.0
+# Streets are looked for this far around home, and their shape kept this long (an hour after a failed look).
+PARKING_RADIUS_METRES = 600
+PARKING_STREETS_SECONDS = 7 * 86400.0
+PARKING_STREETS_RETRY_SECONDS = 3600.0
+# Curb to curb where the file doesn't say: two lanes with parking on both sides.
+PARKING_WIDTH_METRES = 12.0
+# How far past the curb a fix may land and still be a car at it, and past a stretch's end.
+PARKING_GPS_SLACK_METRES = 4.0
+PARKING_END_SLACK_METRES = 5.0
+# A fix this far off the middle of the road says the side by itself (where the heading can't).
+PARKING_SIDE_METRES = 1.5
+# The cosine of the angle between the car and the street: below it, the car faces across the street.
+PARKING_ALONG_COS = 0.7
+# A fix this close to the last is the car still where it was.
+PARKING_SAME_SPOT_METRES = 15.0
+PARKING_NOTICE_SECONDS = 86400.0
+PARKING_REMIND_SECONDS = float(os.environ.get("PARKING_REMIND_MINUTES", "30")) * 60
+PARKING_EVENING_HOUR = 20
+PARKING_MORNING_HOUR = 12
+# An answer older than this is asked again before a phone is told to go out to the car.
+PARKING_VERIFY_SECONDS = 300.0
+PARKING_LOOKAHEAD_DAYS = 40
+PARKING_LOOKBACK_DAYS = 7
+# How far each phone has been told about a deadline: due soon, the evening before, shortly before, now.
+PARKING_SOON, PARKING_EVENING, PARKING_REMIND, PARKING_NOW = 1, 2, 3, 4
+COMPASS = {"north": 0.0, "east": 90.0, "south": 180.0, "west": 270.0}
+DAY_WORDS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+STREET_ABBREVIATIONS = {
+    "st": "Street", "ave": "Avenue", "av": "Avenue", "blvd": "Boulevard", "rd": "Road", "dr": "Drive", "ln": "Lane",
+    "ct": "Court", "pl": "Place", "pkwy": "Parkway", "ter": "Terrace", "hwy": "Highway", "cir": "Circle",
+}
+_parking_file: dict[str, Any] = {"mtime": None, "config": {}}
+
+
+def parking_config() -> dict[str, Any]:
+    """PARKING_FILE as last read, read again when it changes; {} without one. A file that doesn't parse keeps the last that did."""
+    try:
+        mtime = os.path.getmtime(PARKING_FILE)
+    except OSError:
+        return {}
+    if mtime != _parking_file["mtime"]:
+        _parking_file["mtime"] = mtime
+        try:
+            with open(PARKING_FILE, encoding="utf-8") as f:
+                config = json.load(f)
+            if not isinstance(config, dict):
+                raise ValueError("not a JSON object")
+            _parking_file["config"] = config
+            log.info("parking: read %d streets from %s", len(config.get("streets") or []), PARKING_FILE)
+        except (OSError, ValueError) as e:
+            log.warning("parking: %s doesn't read, keeping what it said before: %s", PARKING_FILE, e)
+    return _parking_file["config"]
+
+
+def parking_zone(config: dict[str, Any]) -> Any:
+    """The clock the signs are read on: the file's `tz`, else the phones', else UTC."""
+    try:
+        return ZoneInfo(config["tz"]) if config.get("tz") else household_zone() or timezone.utc
+    except Exception:
+        return household_zone() or timezone.utc
+
+
+def local_metres(origin: tuple[float, float], point: tuple[float, float]) -> tuple[float, float]:
+    """`point` as metres east and north of `origin`, both (lat, lng): flat, which a few streets are."""
+    return (
+        math.radians(point[1] - origin[1]) * math.cos(math.radians(origin[0])) * 6_371_000,
+        math.radians(point[0] - origin[0]) * 6_371_000,
+    )
+
+
+def nearest_segment(point: tuple[float, float], line: list[list[float]]) -> dict[str, float] | None:
+    """
+    Where `point` stands against the nearest segment of `line`: its `offset` from it in metres
+    (positive to the left, going the way the line runs), how far `beyond` either end, and the
+    segment's compass `bearing`. None for a line with no length.
+    """
+    best = None
+    for a, b in zip(line, line[1:]):
+        ax, ay = local_metres(point, (a[0], a[1]))
+        bx, by = local_metres(point, (b[0], b[1]))
+        dx, dy = bx - ax, by - ay
+        length = math.hypot(dx, dy)
+        if length < 0.5:
+            continue
+        along = (-ax * dx - ay * dy) / length
+        offset = (dx * -ay - dy * -ax) / length
+        beyond = max(0.0, -along, along - length)
+        fit = {"offset": offset, "beyond": beyond, "distance": math.hypot(offset, beyond), "bearing": math.degrees(math.atan2(dx, dy)) % 360}
+        if best is None or fit["distance"] < best["distance"]:
+            best = fit
+    return best
+
+
+def side_of(word: str, bearing: float) -> str:
+    """Which of a street's sides, "left" or "right" going `bearing`, the compass `word` names."""
+    return "left" if math.cos(math.radians(COMPASS[word] - (bearing - 90))) > 0 else "right"
+
+
+def compass_word(bearing: float) -> str:
+    return min(COMPASS, key=lambda word: abs((bearing - COMPASS[word] + 180) % 360 - 180))
+
+
+def osm_street_name(street: str) -> str:
+    """ "Central Ave" -> "Central Avenue", as OpenStreetMap names it."""
+    words = street.replace(".", "").split()
+    if words and words[-1].lower() in STREET_ABBREVIATIONS:
+        words[-1] = STREET_ABBREVIATIONS[words[-1].lower()]
+    return " ".join(words)
+
+
+def osm_ways(name: str, lat: float, lng: float) -> list[dict[str, Any]]:
+    """Every way for cars called `name` within PARKING_RADIUS_METRES of (lat, lng), as {"line", "one_way"}."""
+    quoted = name.replace("\\", "\\\\").replace('"', '\\"')
+    query = f'[out:json][timeout:60];way["highway"]["name"="{quoted}"](around:{PARKING_RADIUS_METRES},{lat},{lng});out geom;'
+    # The public server queues a query before it runs it: from the box, 34-42 s for one street
+    # (2026-10-27). Asked once a week, in the background, so waiting costs nothing.
+    r = requests.post(OVERPASS_URL, data={"data": query}, headers={"User-Agent": "HomeSafe relay"}, timeout=90)
+    r.raise_for_status()
+    ways = []
+    for element in r.json().get("elements") or []:
+        tags = element.get("tags") or {}
+        line = [[round(float(p["lat"]), 7), round(float(p["lon"]), 7)] for p in element.get("geometry") or []]
+        if len(line) >= 2 and tags.get("highway") not in ("footway", "cycleway", "path", "steps", "pedestrian", "service"):
+            ways.append({"line": line, "one_way": tags.get("oneway") in ("yes", "1", "-1")})
+    return ways
+
+
+def street_lines(street: str, config: dict[str, Any], home: dict[str, Any] | None, now: float) -> list[tuple[list[list[float]], bool]]:
+    """
+    A street's lines as (line, one way): its `line` in the file where an entry gives one, else
+    OpenStreetMap's around home, looked up once a PARKING_STREETS_SECONDS (what was found last is
+    kept through a failed look).
+    """
+    given = [(e["line"], bool(e.get("one_way"))) for e in config.get("streets") or [] if e.get("street") == street and e.get("line")]
+    if given or not home:
+        return given
+    name = osm_street_name(street)
+    key = f"{name}@{float(home['lat']):.4f},{float(home['lng']):.4f}"
+    kept = state_get(PARKING_STREETS_KEY) or {}
+    found = kept.get(key) or {}
+    if now - float(found.get("at") or 0) < (PARKING_STREETS_SECONDS if found.get("ways") else PARKING_STREETS_RETRY_SECONDS):
+        return [(w["line"], w["one_way"]) for w in found["ways"]]
+    try:
+        found = {"at": now, "ways": osm_ways(name, float(home["lat"]), float(home["lng"]))}
+        log.info("parking: %s is %d ways in OpenStreetMap", name, len(found["ways"]))
+    except Exception as e:
+        log.warning("parking: looking %s up in OpenStreetMap failed: %s", name, e)
+        ways = found.get("ways") or []
+        found = {"at": now - (PARKING_STREETS_SECONDS - PARKING_STREETS_RETRY_SECONDS if ways else 0), "ways": ways}
+    kept[key] = found
+    state_set(PARKING_STREETS_KEY, kept)
+    return [(w["line"], w["one_way"]) for w in found["ways"]]
+
+
+def clip_line(line: list[list[float]], keep: Callable[[tuple[float, float]], bool]) -> list[list[list[float]]]:
+    """
+    The runs of `line` whose points `keep` keeps, to within PARKING_END_SLACK_METRES: the line is
+    cut into pieces that short first, so a cut needn't fall on one of its points.
+    """
+    pieces = [line[0]] if line else []
+    for a, b in zip(line, line[1:]):
+        x, y = local_metres((a[0], a[1]), (b[0], b[1]))
+        n = max(1, math.ceil(math.hypot(x, y) / PARKING_END_SLACK_METRES))
+        pieces += [[a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n] for i in range(1, n + 1)]
+    runs: list[list[list[float]]] = []
+    run: list[list[float]] = []
+    for a, b in zip(pieces, pieces[1:]):
+        if keep(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)):
+            run = run or [a]
+            run.append(b)
+        elif run:
+            runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    return runs
+
+
+def beside(word: str, others: list[list[list[float]]]) -> Callable[[tuple[float, float]], bool]:
+    """Whether a point lies on the `word` (compass) side of the nearest of `others`."""
+    def keep(point: tuple[float, float]) -> bool:
+        fits = [fit for fit in (nearest_segment(point, other) for other in others) if fit]
+        fit = min(fits, key=lambda f: f["distance"]) if fits else None
+        return bool(fit) and ("left" if fit["offset"] > 0 else "right") == side_of(word, fit["bearing"])
+    return keep
+
+
+def parking_stretches(config: dict[str, Any], home: dict[str, Any] | None, now: float) -> list[dict[str, Any]]:
+    """
+    Each street of the file as stretches of line to match a car against: {"street", "line",
+    "width", "one_way", "sides", "home_side"}, `home_side` being which of its sides ("left" or
+    "right", going the way the line runs) the house is on.
+    """
+    stretches = []
+    for entry in config.get("streets") or []:
+        street = str(entry.get("street") or "")
+        lines = [(entry["line"], bool(entry.get("one_way")))] if entry.get("line") else street_lines(street, config, home, now)
+        only = entry.get("only") or {}
+        if only.get("side") in COMPASS and only.get("of"):
+            keep = beside(only["side"], [line for line, _ in street_lines(str(only["of"]), config, home, now)])
+            lines = [(part, one_way) for line, one_way in lines for part in clip_line(line, keep)]
+        if entry.get("within_m") and home:
+            centre, reach = (float(home["lat"]), float(home["lng"])), float(entry["within_m"])
+            lines = [(part, one_way) for line, one_way in lines for part in clip_line(line, lambda p: haversine_metres(p, centre) <= reach)]
+        if not lines:
+            log.warning("parking: no line for %s", street)
+        for line, one_way in lines:
+            fit = nearest_segment((float(home["lat"]), float(home["lng"])), line) if home else None
+            stretches.append({
+                "street": street, "line": line, "width": float(entry.get("width_m") or PARKING_WIDTH_METRES),
+                "one_way": bool(entry.get("one_way", one_way)), "sides": entry.get("sides") or {},
+                "home_side": ("left" if fit["offset"] > 0 else "right") if fit else None,
+            })
+    return stretches
+
+
+def side_rules(stretch: dict[str, Any], bearing: float, side: str | None) -> list[dict[str, Any]]:
+    """The rules of a stretch's `side` ("left" or "right" going `bearing`); of every side when it's unsure (None)."""
+    rules = []
+    for word, listed in stretch["sides"].items():
+        if word in ("home", "across"):
+            hit = stretch["home_side"] is not None and (side is None or (side == stretch["home_side"]) == (word == "home"))
+        else:
+            hit = word == "both" or (word in COMPASS and (side is None or side_of(word, bearing) == side))
+        if hit:
+            rules += [rule for rule in listed or [] if isinstance(rule, dict)]
+    return rules
+
+
+def parking_match(fix: dict[str, Any], stretches: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """
+    Which street and side a parked car is on, as {"street", "side" (a compass word, or None when
+    neither the heading nor the fix can tell), "rules", "how"}; None when it is at none of the
+    file's curbs: somewhere else, or facing across the street (in a driveway).
+    """
+    point = (float(fix["lat"]), float(fix["lng"]))
+    heading = fix.get("heading")
+    best = None
+    for stretch in stretches:
+        fit = nearest_segment(point, stretch["line"])
+        if fit is None or fit["beyond"] > PARKING_END_SLACK_METRES or abs(fit["offset"]) > stretch["width"] / 2 + PARKING_GPS_SLACK_METRES:
+            continue
+        along = math.cos(math.radians(float(heading) - fit["bearing"])) if heading is not None else None
+        if along is not None and abs(along) < PARKING_ALONG_COS:
+            continue  # facing across this street: in a driveway off it, or parked along the cross street
+        if best is None or abs(fit["offset"]) < abs(best[1]["offset"]):
+            best = (stretch, fit, along)
+    if best is None:
+        return None
+    stretch, fit, along = best
+    by_position = ("left" if fit["offset"] > 0 else "right") if abs(fit["offset"]) >= PARKING_SIDE_METRES else None
+    # Traffic keeps right, and a car at the curb faces the way its side's traffic goes.
+    by_heading = ("right" if along > 0 else "left") if along is not None and not stretch["one_way"] else None
+    side = by_heading or by_position
+    if by_heading and by_position and by_heading != by_position:
+        log.info("parking: on %s the fix has the car %.1f m %s of the middle, but it faces the %s side's way; going by the heading",
+                 stretch["street"], abs(fit["offset"]), by_position, by_heading)
+    return {
+        "street": stretch["street"],
+        "side": compass_word(fit["bearing"] + (-90 if side == "left" else 90)) if side else None,
+        "rules": side_rules(stretch, fit["bearing"], side),
+        "how": "heading" if by_heading else "position" if by_position else None,
+    }
+
+
+def clock_minutes(text: Any, default: int) -> int:
+    """ "08:00" -> 480, "24:00" -> 1440; `default` when there is none."""
+    if not text:
+        return default
+    hours, _, minutes = str(text).partition(":")
+    return int(hours) * 60 + int(minutes or 0)
+
+
+def local_epoch(day: Any, minutes: int, zone: Any) -> float:
+    """`minutes` after midnight starting `day`, on `zone`'s clock (past 1440, the next day)."""
+    day = day + timedelta(days=minutes // 1440)
+    return datetime(day.year, day.month, day.day, minutes % 1440 // 60, minutes % 60, tzinfo=zone).timestamp()
+
+
+def rule_windows(rule: dict[str, Any], zone: Any, after: float, until: float):
+    """
+    A rule's windows, as (start, end) in epoch seconds, that end after `after` and start before
+    `until`, in order. Days whose windows meet are one window: a time limit that holds all day
+    doesn't start counting again at midnight.
+    """
+    days = {DAY_WORDS.index(str(d).lower()[:3]) for d in rule.get("days") or [] if str(d).lower()[:3] in DAY_WORDS}
+    weeks, months = set(rule.get("weeks") or []), set(rule.get("months") or [])
+    start, end = clock_minutes(rule.get("start"), 0), clock_minutes(rule.get("end"), 1440)
+    if end <= start:
+        end += 1440
+    # From further back than the windows asked for, so one that began days ago is found whole.
+    day = datetime.fromtimestamp(after, zone).date() - timedelta(days=PARKING_LOOKBACK_DAYS)
+    last = datetime.fromtimestamp(until, zone).date()
+    held: tuple[float, float] | None = None
+    while day <= last:
+        nth = (day.day - 1) // 7 + 1
+        final = (day + timedelta(days=7)).month != day.month
+        if (not months or day.month in months) and (not days or day.weekday() in days) and (not weeks or nth in weeks or (-1 in weeks and final)):
+            s, e = local_epoch(day, start, zone), local_epoch(day, end, zone)
+            if held and s <= held[1]:
+                held = (held[0], max(held[1], e))
+            else:
+                if held and held[1] > after and held[0] < until:
+                    yield held
+                held = (s, e)
+        day += timedelta(days=1)
+    if held and held[1] > after and held[0] < until:
+        yield held
+
+
+def rule_deadline(rule: dict[str, Any], since: float, now: float, zone: Any) -> dict[str, Any] | None:
+    """
+    When a car parked since `since` must be gone by `rule`, as {"at", "from", "until", "rule"}:
+    the next window's start for no parking (past, while one is on), and for a time limit the
+    first window the car would outstay, counted from when it parked or the window opened.
+    """
+    minutes = float(rule.get("minutes") or 0) if rule.get("kind") == "limit" else None
+    if minutes is not None and minutes <= 0:
+        return None
+    for start, end in rule_windows(rule, zone, now, now + PARKING_LOOKAHEAD_DAYS * 86400):
+        at = start if minutes is None else max(since, start) + minutes * 60
+        if at < end:
+            return {"at": at, "from": start, "until": end, "rule": rule}
+    return None
+
+
+def parking_deadline(rules: list[dict[str, Any]], since: float, now: float, zone: Any, permits: set[str]) -> dict[str, Any] | None:
+    """The soonest of the rules' deadlines, leaving out the rules a permit the household holds lifts."""
+    found = [d for d in (rule_deadline(r, since, now, zone) for r in rules if not (r.get("permit") and r["permit"] in permits)) if d]
+    return min(found, key=lambda d: d["at"]) if found else None
+
+
+def parking_stage(at: float, now: float, zone: Any) -> int:
+    """How far the phones are owed about a deadline at `at` (see PARKING_SOON), 0 for nothing yet."""
+    if now >= at:
+        return PARKING_NOW
+    if now >= at - PARKING_REMIND_SECONDS:
+        return PARKING_REMIND
+    local = datetime.fromtimestamp(at, zone)
+    if local.hour < PARKING_MORNING_HOUR:
+        eve = local.date() - timedelta(days=1)
+        return PARKING_EVENING if now >= local_epoch(eve, PARKING_EVENING_HOUR * 60, zone) else 0
+    return PARKING_SOON if at - now <= PARKING_NOTICE_SECONDS else 0
+
+
+def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None], stretches: list[dict[str, Any]]) -> None:
+    """
+    Takes in an answer from Tesla newer than the last: where the car is parked (`spot`, the fix
+    and since when), and when it was last seen anywhere else (`elsewhere`). Asleep, it is where it
+    was. A car parked between two answers is taken to have parked just after the earlier one, so a
+    time limit is never counted from later than it began.
+    """
+    asked, where = answer
+    if where is None or asked <= float(car.get("asked") or 0) or (not where.get("asleep") and asked - float(where["at"]) > TESLA_STALE_SECONDS):
+        return
+    before, car["asked"] = float(car.get("asked") or 0), asked
+    if where.get("asleep"):
+        if not car.get("spot"):
+            car["elsewhere"] = asked
+        return
+    fix = {k: where.get(k) for k in ("lat", "lng", "heading", "at")}
+    moving = where.get("shift") in ("D", "R", "N") or float(where.get("speed") or 0) > 0
+    match = None if moving else parking_match(fix, stretches)
+    spot = car.get("spot")
+    if (spot and match and (match["street"], match["side"]) == (spot.get("street"), spot.get("side"))
+            and haversine_metres((spot["lat"], spot["lng"]), (fix["lat"], fix["lng"])) <= PARKING_SAME_SPOT_METRES):
+        return
+    if spot and car.get("heard"):
+        # The phones told about the old spot hear that the car left it (see `parking_tell`).
+        car["moved"] = spot.get("street") or ""
+        car["moved_to"] = sorted(set(car.get("moved_to") or []) | set(car["heard"]))
+        car["heard"] = []
+    if match is None:
+        car["spot"], car["elsewhere"] = None, float(fix["at"])
+        return
+    # From another spot at the curb, it was there until the last answer; else it was last seen elsewhere.
+    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - TESLA_CHECK_SECONDS)
+    car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
+    log.info("parking: parked on the %s side of %s since %s (by its %s)", match["side"] or "unsure", match["street"],
+             datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="minutes"), match["how"] or "nothing")
+
+
+def parking_phones(name: str, config: dict[str, Any], now: float, quiet_too: bool = False) -> list[tuple[str, str]]:
+    """
+    The phones to tell about `name` now, as (device id, token): its `drivers`' (by the Frigate
+    user last signed in on the phone), or every phone when none of theirs is registered; those in
+    their quiet hours only when `quiet_too`. A phone that wants only Away alerts still hears:
+    that choice is about the cameras.
+    """
+    rows = with_db(lambda c: c.execute(
+        "SELECT device_id, token, user, quiet_start, quiet_end, tz, utc_offset FROM devices WHERE token IS NOT NULL"
+    ).fetchall())
+    drivers = set((config.get("drivers") or {}).get(name) or [])
+    phones = []
+    for device_id, token, _, quiet_start, quiet_end, tz, utc_offset in [r for r in rows if r[2] in drivers] or rows:
+        minute = local_minute(now, tz, utc_offset)
+        if quiet_too or minute is None or not in_quiet_hours(quiet_start, quiet_end, minute):
+            phones.append((device_id, token))
+    return phones
+
+
+def parking_plan(car: dict[str, Any], stretches: list[dict[str, Any]], config: dict[str, Any], zone: Any, now: float) -> dict[str, Any] | None:
+    """What the phones are owed about where the car is parked, as {"match", "deadline", "stage", "key"}; None for nothing."""
+    spot = car.get("spot")
+    match = parking_match(spot, stretches) if spot else None
+    if match is None:
+        return None
+    deadline = parking_deadline(match["rules"], float(spot["since"]), now, zone, set(config.get("permits") or []))
+    stage = parking_stage(deadline["at"], now, zone) if deadline else 0
+    if not stage:
+        return None
+    # The spot is part of the key: parked again further along the same curb, it is told afresh.
+    key = f"{match['street']}|{match['side']}|{int(float(spot['since']))}|{int(deadline['at'])}"
+    return {"match": match, "deadline": deadline, "stage": stage, "key": key}
+
+
+def parking_text(name: str, plan: dict[str, Any], now: float, zone: Any) -> tuple[str, str, dict[str, str]]:
+    """ "Move Andrew's Tesla by Thu 8:00 AM", "North side of Elm St · Street sweeping", and the push's data for the phone to word it."""
+    match, deadline = plan["match"], plan["deadline"]
+    rule, at, car = deadline["rule"], deadline["at"], display_name(name)
+    when = clock_text(at, zone)
+    if datetime.fromtimestamp(at, zone).date() != datetime.fromtimestamp(now, zone).date():
+        when = f"{datetime.fromtimestamp(at, zone).strftime('%a')} {when}"
+    title = f"Move {car} now" if plan["stage"] == PARKING_NOW else f"Move {car} by {when}"
+    place = f"{match['side'].capitalize()} side of {match['street']}" if match["side"] else match["street"]
+    minutes = int(float(rule.get("minutes") or 0)) if rule.get("kind") == "limit" else 0
+    if rule.get("note"):
+        reason = str(rule["note"])
+    elif minutes:
+        reason = f"{minutes // 60}-hour parking" if minutes % 60 == 0 else f"{minutes}-minute parking"
+    else:
+        reason = f"No parking {clock_text(deadline['from'], zone)}–{clock_text(deadline['until'], zone)}"
+    data = {
+        "parking": "1", "notif_id": f"parking-{name}", "parking_event": "now" if plan["stage"] == PARKING_NOW else "due",
+        "parking_car": name, "parking_car_name": car, "parking_by": str(int(at)),
+        "parking_street": match["street"], "parking_side": match["side"] or "",
+        "parking_rule": "limit" if minutes else "no_parking", "parking_minutes": str(minutes) if minutes else "",
+        "parking_from": str(int(deadline["from"])), "parking_until": str(int(deadline["until"])), "parking_note": str(rule.get("note") or ""),
+    }
+    return title, f"{place} · {reason}", data
+
+
+def parking_tell(name: str, car: dict[str, Any], config: dict[str, Any], stretches: list[dict[str, Any]], zone: Any, now: float,
+                 push: Callable[..., str]) -> list[dict[str, Any]]:
+    """Pushes what `name`'s phones are owed about where it is parked; answers the pushes, as {"car", "event", "title", "body", "to"}."""
+    pushed = []
+    plan = parking_plan(car, stretches, config, zone, now)
+    told = car.get("told") or {}
+    stages = (told.get("stages") or {}) if plan and told.get("key") == plan["key"] else {}
+    owed = [p for p in parking_phones(name, config, now) if plan and stages.get(p[0], 0) < plan["stage"]]
+    if owed and now - float(car.get("asked") or 0) > PARKING_VERIFY_SECONDS:
+        # About to tell someone the car must move: make sure it is still there.
+        parking_read(car, tesla_ask(name, now), stretches)
+        plan = parking_plan(car, stretches, config, zone, now)
+        stages = stages if plan and told.get("key") == plan["key"] else {}
+        owed = [p for p in owed if plan and stages.get(p[0], 0) < plan["stage"]]
+
+    # A phone still showing a warning about a spot the car has left hears that it moved, until
+    # the push gets through (or a warning about where it is now replaces it, below).
+    if car.get("moved_to"):
+        moved, car_name = car.get("moved") or "", display_name(name)
+        data = {"parking": "1", "notif_id": f"parking-{name}", "parking_event": "moved", "parking_car": name,
+                "parking_car_name": car_name, "parking_street": moved, "silent": "1"}
+        title, body = f"{car_name} has moved", f"No longer parked on {moved}" if moved else "No longer parked there"
+        phones = [p for p in parking_phones(name, config, now, quiet_too=True) if p[0] in car["moved_to"] and p not in owed]
+        sent = [device_id for device_id, token in phones if push(token, title, body, data) == "sent"]
+        if sent:
+            pushed.append({"car": name, "event": "moved", "title": title, "body": body, "to": sent})
+        # A phone no longer registered is let go; one that failed is tried again next time.
+        car["moved_to"] = [device_id for device_id, _ in phones if device_id not in sent]
+    if not car.get("moved_to"):
+        car.pop("moved", None)
+        car.pop("moved_to", None)
+
+    if not plan:
+        car.pop("told", None)
+        return pushed
+    title, body, data = parking_text(name, plan, now, zone)
+    sent = [device_id for device_id, token in owed if push(token, title, body, data) == "sent"]
+    for device_id in sent:
+        stages[device_id] = plan["stage"]
+    car["told"] = {"key": plan["key"], "stages": stages}
+    car["heard"] = sorted(set(car.get("heard") or []) | set(sent))
+    if car.get("moved_to"):
+        car["moved_to"] = [device_id for device_id in car["moved_to"] if device_id not in sent]
+    if owed:
+        pushed.append({"car": name, "event": data["parking_event"], "title": title, "body": body, "to": sent})
+        log.info("parking: %s | %s -> %d of %d phones", title, body, len(sent), len(owed))
+    return pushed
+
+
+def parking_tick(now: float | None = None, push: Callable[..., str] | None = None) -> list[dict[str, Any]]:
+    """
+    Once a PARKING_EVERY_SECONDS: takes in what Tesla last said about each of TESLA_CARS (car
+    presence asks every TESLA_CHECK_SECONDS; asked here only when it hasn't been), and pushes what
+    is owed. Answers the pushes. `push` stands in for `deliver` in tests.
+    """
+    now = time.time() if now is None else now
+    config = parking_config()
+    if not (tesla_on() and config.get("streets")):
+        return []
+    stretches = parking_stretches(config, state_get(HOME_KEY), now)
+    zone = parking_zone(config)
+    saved = state_get(PARKING_KEY) or {}
+    pushed = []
+    for name in TESLA_CARS:
+        car = saved.setdefault(name, {})
+        answer = _tesla_answers.get(name)
+        if answer is None or now - answer[0] > TESLA_CHECK_SECONDS + 5 * PARKING_EVERY_SECONDS:
+            answer = tesla_ask(name, now)
+        parking_read(car, answer, stretches)
+        pushed += parking_tell(name, car, config, stretches, zone, now, push or deliver)
+    state_set(PARKING_KEY, saved)
+    return pushed
+
+
+def parking_forever() -> None:
+    while True:
+        time.sleep(PARKING_EVERY_SECONDS)
+        try:
+            parking_tick()
+        except Exception:
+            log.exception("parking check failed")
+
+
+def parking_status(now: float) -> dict[str, Any]:
+    """Where each of TESLA_CARS is parked by the file's streets, and its next deadline there."""
+    config = parking_config()
+    stretches = parking_stretches(config, state_get(HOME_KEY), now) if config.get("streets") else []
+    zone = parking_zone(config)
+    saved = state_get(PARKING_KEY) or {}
+    cars = []
+    for name in TESLA_CARS:
+        car = saved.get(name) or {}
+        spot = car.get("spot")
+        match = parking_match(spot, stretches) if spot else None
+        deadline = parking_deadline(match["rules"], float(spot["since"]), now, zone, set(config.get("permits") or [])) if match else None
+        cars.append({
+            "car": name, "name": display_name(name), "asked": car.get("asked"),
+            "street": match and match["street"], "side": match and match["side"], "how": match and match["how"],
+            "since": spot and spot["since"], "move_by": deadline and deadline["at"],
+            "rule": deadline and {k: v for k, v in deadline["rule"].items()},
+        })
+    return {"streets": [{"street": s["street"], "points": len(s["line"]), "home_side": s["home_side"]} for s in stretches], "cars": cars}
+
+
+@app.get("/parking")
+def get_parking(request: Request) -> dict[str, Any]:
+    """Where each Tesla is parked and when it must move (see "parking")."""
+    require_frigate_session(request)
+    return parking_status(time.time())
 
 
 # ---------------------------------------------------------------- timeline
@@ -11595,7 +12215,7 @@ def post_timeline_sync(request: Request, response: Response) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # `python relay.py tesla-register` / `tesla-link` / `timeline-import FILE` / `timeline-pull` /
+    # `python relay.py tesla-register` / `tesla-link` / `parking-check` / `timeline-import FILE` / `timeline-pull` /
     # `timeline-refine` / `timeline-reread`, run in the relay's container.
     import sys
 
@@ -11625,5 +12245,16 @@ if __name__ == "__main__":
         print(json.dumps(tesla_register(), indent=2))
     elif command == "tesla-link":
         print(f"Open within {TESLA_LINK_SECONDS // 60} minutes, signed in as the Tesla account that owns the car:\n\n{tesla_link_url()}")
+    elif command == "parking-check":
+        # The streets PARKING_FILE names as the relay found them, and where each car is by them now
+        # (asking Tesla, a call per car). Pushes nothing.
+        now = time.time()
+        stretches = parking_stretches(parking_config(), state_get(HOME_KEY), now)
+        report = parking_status(now)
+        for name in TESLA_CARS:
+            asked, where = tesla_ask(name, now)
+            match = parking_match(where, stretches) if where and not where.get("asleep") else None
+            report.setdefault("now", {})[name] = {"tesla": where, "match": match}
+        print(json.dumps(report, indent=2, default=str))
     else:
-        sys.exit("usage: python relay.py tesla-register | tesla-link | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")
+        sys.exit("usage: python relay.py tesla-register | tesla-link | parking-check | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")

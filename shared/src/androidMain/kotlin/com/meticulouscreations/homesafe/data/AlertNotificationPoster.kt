@@ -67,6 +67,13 @@ object AlertNotificationPoster {
     const val DOORS_CHANNEL_ID = "doors"
 
     /**
+     * A household car parked on the street that must move before the signs say it can't stay
+     * (docs/parking.md), so these can be turned up or down apart from the cameras. Heads-up, and
+     * as silent as the rest.
+     */
+    const val PARKING_CHANNEL_ID = "parking"
+
+    /**
      * The colour Android tints the icon, the app's name and the buttons with: the app's own warm
      * orange (the theme's primary, deepened so it also reads on a light shade), and red for someone
      * seen while nobody is home.
@@ -77,12 +84,13 @@ object AlertNotificationPoster {
     /**
      * The shade's groups: the cameras' alerts (away alerts and "Not a person" confirmations
      * among them) under the camera, the doors that opened while someone was home under the door,
-     * the relay's quiet summaries under their own list icon. The summaries apart because they sit
-     * in a different section of the shade, one loud and one silent; the doors because they are
-     * no camera's.
+     * the relay's quiet summaries under their own list icon, the cars to move under the car. The
+     * summaries apart because they sit in a different section of the shade, one loud and one
+     * silent; the doors and the parking because they are no camera's.
      */
     private val alertGroup = NotificationGroupSummary("detections", CHANNEL_ID, R.string.notif_group_cameras)
     private val doorsGroup = NotificationGroupSummary("doors", DOORS_CHANNEL_ID, R.string.notif_group_doors)
+    private val parkingGroup = NotificationGroupSummary("parking", PARKING_CHANNEL_ID, R.string.notif_group_parking)
     private val summaryGroup = NotificationGroupSummary("summaries", SUMMARY_CHANNEL_ID, R.string.notif_group_summaries)
 
     /** What the relay joins a summary's cameras with (`digest_text` in relay.py). */
@@ -138,6 +146,12 @@ object AlertNotificationPoster {
             DOORS_CHANNEL_ID,
             context.getString(R.string.notif_channel_doors_name),
             context.getString(R.string.notif_channel_doors_description),
+            NotificationManager.IMPORTANCE_HIGH,
+        )
+        manager.createSilentChannel(
+            PARKING_CHANNEL_ID,
+            context.getString(R.string.notif_channel_parking_name),
+            context.getString(R.string.notif_channel_parking_description),
             NotificationManager.IMPORTANCE_HIGH,
         )
         manager.createSilentChannel(
@@ -231,6 +245,8 @@ object AlertNotificationPoster {
 
         notification.door != null -> NotificationGlyph.DOOR
 
+        notification.parking -> NotificationGlyph.CAR
+
         else -> when (notification.subject) {
             MomentCategory.PEOPLE -> NotificationGlyph.PERSON
             MomentCategory.VEHICLES -> NotificationGlyph.CAR
@@ -243,12 +259,16 @@ object AlertNotificationPoster {
     private fun channelFor(notification: AlertNotification): String = when {
         notification.urgent -> AWAY_CHANNEL_ID
         notification.door != null -> DOORS_CHANNEL_ID
+        notification.parking -> PARKING_CHANNEL_ID
         else -> CHANNEL_ID
     }
 
-    /** The doors' own group for a door that opened while someone was home; every other alert under the cameras'. */
-    private fun groupFor(notification: AlertNotification): NotificationGroupSummary =
-        if (!notification.urgent && notification.door != null) doorsGroup else alertGroup
+    /** The doors' own group for a door that opened while someone was home, the parking's for a car to move; every other alert under the cameras'. */
+    private fun groupFor(notification: AlertNotification): NotificationGroupSummary = when {
+        !notification.urgent && notification.door != null -> doorsGroup
+        notification.parking -> parkingGroup
+        else -> alertGroup
+    }
 
     private fun buildAlert(context: Context, notification: AlertNotification, postedAt: Long, picture: Bitmap?, largeIcon: Bitmap?): Notification =
         NotificationCompat.Builder(context, channelFor(notification))
@@ -432,6 +452,7 @@ object AlertNotificationPoster {
         when {
             notification.summary -> summaryGroup.post(context, NotificationGlyph.SUMMARY, ACCENT_COLOR)
             groupFor(notification) === doorsGroup -> doorsGroup.post(context, NotificationGlyph.DOOR, ACCENT_COLOR, channel = channelFor(notification))
+            groupFor(notification) === parkingGroup -> parkingGroup.post(context, NotificationGlyph.CAR, ACCENT_COLOR, channel = channelFor(notification))
             else -> alertGroup.post(context, NotificationGlyph.CAMERA, ACCENT_COLOR, channel = channelFor(notification))
         }
     }
