@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 /** Which lines being crossed the phones are told about. */
 @Immutable
 @Serializable
-data class BudgetAlertSwitches(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false)
+data class BudgetAlertSwitches(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false, val lines: Boolean = false)
 
 /**
  * The budget's alert switches, for Settings → Notifications; the finance app's budget settings

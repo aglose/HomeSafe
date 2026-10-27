@@ -11,11 +11,15 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetCard
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfig
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
+import com.meticulouscreations.homesafe.finance.domain.BudgetLine
 import com.meticulouscreations.homesafe.finance.domain.BudgetPastMonth
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
 import com.meticulouscreations.homesafe.finance.domain.BudgetSlice
 import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
+import com.meticulouscreations.homesafe.finance.domain.LinePick
+import com.meticulouscreations.homesafe.finance.domain.LineRule
+import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.Purchase
 import com.meticulouscreations.homesafe.network.PushRelayApi
@@ -86,6 +90,22 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
         httpClient.delete(PushRelayApi.relayUrl(serverUrl, "/finance/budget/rules")) { parameter("merchant", merchantKey) }.answer()
     }
 
+    suspend fun tagLine(serverUrl: String, purchaseId: String, line: LinePick, remember: Boolean): Result<Budget> = suspendRunCatching {
+        httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/budget/transactions/$purchaseId/line")) {
+            contentType(ContentType.Application.Json)
+            setBody(
+                buildJsonObject {
+                    put("line", line.wire)
+                    put("remember", remember)
+                },
+            )
+        }.answer()
+    }
+
+    suspend fun forgetLineRule(serverUrl: String, merchantKey: String): Result<Budget> = suspendRunCatching {
+        httpClient.delete(PushRelayApi.relayUrl(serverUrl, "/finance/budget/line-rules")) { parameter("merchant", merchantKey) }.answer()
+    }
+
     suspend fun syncNow(serverUrl: String): Result<Budget> = suspendRunCatching {
         httpClient.post(PushRelayApi.relayUrl(serverUrl, "/finance/budget/sync")) {
             timeout { requestTimeoutMillis = 40_000 }
@@ -110,7 +130,7 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
             return when (field("error")) {
                 "not_found" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_purchase_gone), technical)
 
-                "bad_bucket", "bad_budget", "bad_month" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_refused), technical)
+                "bad_bucket", "bad_line", "bad_budget", "bad_month" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_refused), technical)
 
                 else -> BankSyncRelayApi.problemFrom(status, body).let { problem ->
                     if (problem.problem == BankProblem.RELAY_OUTDATED) BankSyncException(BankProblem.RELAY_OUTDATED, UiText.of(Res.string.fin_budget_error_relay_outdated), "HTTP 404") else problem
@@ -145,6 +165,7 @@ internal fun BudgetConfigPatch.toJson(): JsonObject = buildJsonObject {
                 put("total", alerts.total)
                 put("savings", alerts.savings)
                 put("buckets", alerts.buckets)
+                put("lines", alerts.lines)
             },
         )
     }
@@ -154,6 +175,7 @@ internal fun BudgetConfigPatch.toJson(): JsonObject = buildJsonObject {
             buildJsonObject {
                 put("take_home", sheet.takeHome)
                 put("bills_off_card", sheet.billsOffCard)
+                put("lines", buildJsonObject { sheet.lines.forEach { (line, monthly) -> put(line, monthly) } })
             },
         )
     }
@@ -178,6 +200,8 @@ internal data class RelayBudget(
     val spent: Double = 0.0,
     val pending: Double = 0.0,
     val buckets: List<RelayBudgetBucket> = emptyList(),
+    val lines: List<RelayBudgetLine> = emptyList(),
+    @SerialName("outside_lines") val outsideLines: RelayBudgetLine = RelayBudgetLine(),
     val daily: List<RelayBudgetDay> = emptyList(),
     val categories: List<RelayBudgetCategory> = emptyList(),
     val merchants: List<RelayBudgetMerchant> = emptyList(),
@@ -214,15 +238,18 @@ internal data class RelayBudget(
             people = config.people,
             limits = BudgetLimits(total = config.limits.total, people = config.limits.people, family = config.limits.family),
             cardPaidLines = config.cardPaidLines,
-            alerts = BudgetAlertSwitches(total = config.alerts.total, savings = config.alerts.savings, buckets = config.alerts.buckets),
+            alerts = BudgetAlertSwitches(total = config.alerts.total, savings = config.alerts.savings, buckets = config.alerts.buckets, lines = config.alerts.lines),
             rules = config.rules.map { MerchantRule(it.merchant, BucketId.ofWire(it.bucket)) },
-            sheet = BudgetSheetFigures(takeHome = config.sheet.takeHome, billsOffCard = config.sheet.billsOffCard),
+            lineRules = config.lineRules.map { LineRule(it.merchant, it.line?.takeIf { line -> line.isNotEmpty() }) },
+            sheet = BudgetSheetFigures(takeHome = config.sheet.takeHome, billsOffCard = config.sheet.billsOffCard, lines = config.sheet.lines),
         ),
         savingsLine = savingsLine,
         spent = spent,
         pending = pending,
         // The relay's "unassigned" is no bucket's wire name, so it reads as what it is.
         buckets = buckets.map { BudgetBucket(BucketId.ofWire(it.id), it.spent, it.limit, it.count) },
+        lines = lines.mapNotNull { line -> line.name?.let { BudgetLine(it, line.planned, line.spent, line.count, line.usual) } },
+        outsideLines = BudgetSlice("", outsideLines.spent, outsideLines.count),
         daily = daily.map { it.spent },
         categories = categories.map { BudgetSlice(it.id, it.spent, it.count) },
         merchants = merchants.map { BudgetSlice(it.name, it.spent, it.count) },
@@ -244,6 +271,14 @@ internal data class RelayBudget(
                     else -> BucketSource.NONE
                 },
                 remembered = txn.remembered,
+                line = txn.line?.takeIf { it.isNotEmpty() },
+                lineSource = when (txn.lineSource) {
+                    "manual" -> LineSource.MANUAL
+                    "rule" -> LineSource.RULE
+                    "auto" -> LineSource.AUTO
+                    else -> LineSource.NONE
+                },
+                lineRemembered = txn.lineRemembered,
             )
         },
         history = history.map { BudgetPastMonth(it.month, it.spent, it.days) },
@@ -274,6 +309,7 @@ internal data class RelayBudgetConfig(
     @SerialName("card_paid_lines") val cardPaidLines: List<String> = emptyList(),
     val alerts: RelayBudgetAlerts = RelayBudgetAlerts(),
     val rules: List<RelayBudgetRule> = emptyList(),
+    @SerialName("line_rules") val lineRules: List<RelayLineRule> = emptyList(),
     val sheet: RelayBudgetSheet = RelayBudgetSheet(),
 )
 
@@ -281,13 +317,24 @@ internal data class RelayBudgetConfig(
 internal data class RelayBudgetLimits(val total: Double? = null, val people: Map<String, Double?> = emptyMap(), val family: Double? = null)
 
 @Serializable
-internal data class RelayBudgetAlerts(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false)
+internal data class RelayBudgetAlerts(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false, val lines: Boolean = false)
 
 @Serializable
 internal data class RelayBudgetRule(val merchant: String = "", val bucket: String? = null)
 
 @Serializable
-internal data class RelayBudgetSheet(@SerialName("take_home") val takeHome: Double? = null, @SerialName("bills_off_card") val billsOffCard: Double? = null)
+internal data class RelayLineRule(val merchant: String = "", val line: String? = null)
+
+@Serializable
+internal data class RelayBudgetSheet(
+    @SerialName("take_home") val takeHome: Double? = null,
+    @SerialName("bills_off_card") val billsOffCard: Double? = null,
+    val lines: Map<String, Double> = emptyMap(),
+)
+
+/** A card-paid line; the one with no name is the purchases in none of them. */
+@Serializable
+internal data class RelayBudgetLine(val name: String? = null, val planned: Double? = null, val spent: Double = 0.0, val count: Int = 0, val usual: Double? = null)
 
 @Serializable
 internal data class RelayBudgetBucket(val id: String = "", val spent: Double = 0.0, val limit: Double? = null, val count: Int = 0)
@@ -313,6 +360,9 @@ internal data class RelayPurchase(
     val bucket: String? = null,
     val source: String = "none",
     val remembered: Boolean = false,
+    val line: String? = null,
+    @SerialName("line_source") val lineSource: String = "none",
+    @SerialName("line_remembered") val lineRemembered: Boolean = false,
 )
 
 @Serializable

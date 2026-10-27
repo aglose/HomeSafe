@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
 import com.meticulouscreations.homesafe.finance.domain.BudgetRepository
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
+import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.ui.BudgetFixtures
 import com.meticulouscreations.homesafe.finance.ui.FinanceFixtures
 import com.meticulouscreations.homesafe.text.UiText
@@ -55,6 +56,7 @@ class BudgetViewModelTest {
         val saved = mutableListOf<BudgetConfigPatch>()
         val tagged = mutableListOf<Triple<String, BucketId, Boolean>>()
         val forgotten = mutableListOf<String>()
+        val linesTagged = mutableListOf<Triple<String, LinePick, Boolean>>()
         var syncs = 0
 
         override suspend fun budget(month: String?): Result<Budget> {
@@ -73,6 +75,16 @@ class BudgetViewModelTest {
         }
 
         override suspend fun forgetRule(merchantKey: String): Result<Budget> {
+            forgotten += merchantKey
+            return changed
+        }
+
+        override suspend fun tagLine(purchaseId: String, line: LinePick, remember: Boolean): Result<Budget> {
+            linesTagged += Triple(purchaseId, line, remember)
+            return changed
+        }
+
+        override suspend fun forgetLineRule(merchantKey: String): Result<Budget> {
             forgotten += merchantKey
             return changed
         }
@@ -304,6 +316,36 @@ class BudgetViewModelTest {
         vm.onSheet(finance.copy(people = finance.people + " Robin "))
         runCurrent()
         assertEquals(listOf(BudgetConfigPatch(people = finance.people + "Robin")), repo.saved)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun aLineWhosePlanChangedOnTheSheetIsReportedThoughTheTotalsDidNot() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val finance = FinanceFixtures.finance
+        val figures = BudgetSheetFigures.of(finance, october.config.cardPaidLines)
+        val vm = shown(repo, october.copy(config = october.config.copy(sheet = figures.copy(lines = figures.lines.mapValues { (_, monthly) -> monthly + 50 }))))
+        vm.onSheet(finance)
+        runCurrent()
+        assertEquals(listOf(BudgetConfigPatch(sheet = figures)), repo.saved)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun puttingAPurchaseInALineIsSentAndAnsweredWithTheMonth() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = shown(repo)
+        val moved = october.copy(spent = october.spent + 1)
+        repo.changed = Result.success(moved)
+        vm.tagLine("p-1-0", LinePick.Line("Groceries"), remember = true)
+        assertEquals(setOf("p-1-0"), vm.uiState.value.tagging)
+        runCurrent()
+        assertEquals(listOf(Triple("p-1-0", LinePick.Line("Groceries") as LinePick, true)), repo.linesTagged)
+        assertEquals(emptySet(), vm.uiState.value.tagging)
+        assertEquals(moved, vm.uiState.value.budget)
+        vm.forgetLineRule("warehouse club")
+        runCurrent()
+        assertEquals(listOf("warehouse club"), repo.forgotten)
         vm.setActive(false)
     }
 

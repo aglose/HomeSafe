@@ -43,6 +43,8 @@ import homesafe.shared.generated.resources.doors_settings_summary
 import homesafe.shared.generated.resources.doors_title
 import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets
 import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets_note
+import homesafe.shared.generated.resources.fin_budget_settings_alert_lines
+import homesafe.shared.generated.resources.fin_budget_settings_alert_lines_note
 import homesafe.shared.generated.resources.fin_budget_settings_alert_savings
 import homesafe.shared.generated.resources.fin_budget_settings_alert_savings_note
 import homesafe.shared.generated.resources.fin_budget_settings_alert_total
@@ -219,7 +221,7 @@ private fun WeatherNotificationsSection(state: SettingsUiState, onChange: (Weath
 }
 
 /**
- * The budget's three alerts, as Finance's budget settings have them. They are the household's,
+ * The budget's four alerts, as Finance's budget settings have them. They are the household's,
  * so the card says what that means for this phone; with no budget on the relay, or none this
  * account may see, there is no card.
  */
@@ -263,6 +265,13 @@ private fun BudgetAlertsSection(budget: BudgetAlertsState, onChange: (BudgetAler
                     checked = alerts.buckets,
                     enabled = !budget.saving,
                     onCheckedChange = { onChange(alerts.copy(buckets = it)) },
+                )
+                SettingsToggleRow(
+                    title = stringResource(Res.string.fin_budget_settings_alert_lines),
+                    description = stringResource(Res.string.fin_budget_settings_alert_lines_note),
+                    checked = alerts.lines,
+                    enabled = !budget.saving,
+                    onCheckedChange = { onChange(alerts.copy(lines = it)) },
                 )
                 budget.error?.let { SettingsCaption(it.resolve(), error = true) }
                 SettingsCaption(stringResource(Res.string.fin_budget_settings_alerts_note))

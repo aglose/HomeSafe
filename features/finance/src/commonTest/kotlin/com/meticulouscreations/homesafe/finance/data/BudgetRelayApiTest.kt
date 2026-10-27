@@ -7,9 +7,14 @@ import com.meticulouscreations.homesafe.finance.domain.BucketSource
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
+import com.meticulouscreations.homesafe.finance.domain.BudgetLine
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
+import com.meticulouscreations.homesafe.finance.domain.BudgetSlice
 import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
+import com.meticulouscreations.homesafe.finance.domain.LinePick
+import com.meticulouscreations.homesafe.finance.domain.LineRule
+import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
@@ -64,7 +69,7 @@ class BudgetRelayApiTest {
                   {"key":"Northwind Platinum 2207","institution_id":"item-2","institution":"Northwind","name":"Platinum","mask":"","role":null,
                    "balance":null,"limit":null,"error":null,"needs_relink":false,"transactions":false}],
          "config":{"people":["Alex","Sam"],"limits":{"total":4500.0,"people":{"Alex":1200.0,"Sam":null},"family":2100.0},
-                   "roles":{"Summit Bank Voyager 4410":"split"},"card_paid_lines":["Groceries"],"alerts":{"total":true,"savings":false,"buckets":true},
+                   "roles":{"Summit Bank Voyager 4410":"split"},"card_paid_lines":["Groceries"],"alerts":{"total":true,"savings":false,"buckets":true,"lines":true},
                    "sheet":{"take_home":14170.0,"bills_off_card":9000.0,"at":1791370000.0},"rules":[{"merchant":"warehouse club","bucket":"person:Sam"}]},
          "savings_line":5170.0,"spent":310.55,"pending":54.2,
          "buckets":[{"id":"person:Alex","kind":"person","name":"Alex","spent":40.1,"limit":1200.0,"count":1},
@@ -110,7 +115,7 @@ class BudgetRelayApiTest {
         assertTrue(platinum.holders.isEmpty())
 
         assertEquals(BudgetLimits(total = 4_500.0, people = mapOf("Alex" to 1_200.0, "Sam" to null), family = 2_100.0), budget.config.limits)
-        assertEquals(BudgetAlertSwitches(total = true, savings = false, buckets = true), budget.config.alerts)
+        assertEquals(BudgetAlertSwitches(total = true, savings = false, buckets = true, lines = true), budget.config.alerts)
         assertEquals(listOf(MerchantRule("warehouse club", BucketId.Person("Sam"))), budget.config.rules)
         assertEquals(BudgetSheetFigures(14_170.0, 9_000.0), budget.config.sheet)
         assertEquals(5_170.0, budget.savingsLine)
@@ -124,6 +129,62 @@ class BudgetRelayApiTest {
         assertNull(refund.category)
         assertEquals(listOf(refund), budget.unassigned)
         assertEquals("2026-09", budget.history.single().month)
+    }
+
+    @Test
+    fun aMonthReadsItsBudgetLinesAndWhichEachPurchaseIsIn() = runTest {
+        val withLines = month
+            .replace(""""sheet":{"take_home":14170.0,"bills_off_card":9000.0,"at":1791370000.0}""", """"sheet":{"take_home":14170.0,"bills_off_card":9000.0,"lines":{"Groceries":600.0},"at":1791370000.0},"line_rules":[{"merchant":"warehouse club","line":"Groceries"},{"merchant":"big box","line":null}]""")
+            .replace(""""daily":""", """"lines":[{"name":"Groceries","planned":600.0,"spent":54.2,"count":1,"usual":710.5}],"outside_lines":{"name":null,"planned":null,"spent":-12.0,"count":1,"usual":null},"daily":""")
+            .replace(""""kind":"spend","remembered":true}""", """"kind":"spend","remembered":true,"line":"Groceries","line_source":"rule","line_remembered":true}""")
+            .replace(""""kind":"refund","remembered":false}""", """"kind":"refund","remembered":false,"line":null,"line_source":"manual","line_remembered":false}""")
+        val budget = api(MockEngine { respond(withLines, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow()
+        assertEquals(listOf(BudgetLine("Groceries", 600.0, 54.2, 1, usual = 710.5)), budget.lines)
+        assertEquals(BudgetSlice("", -12.0, 1), budget.outsideLines)
+        assertEquals(mapOf("Groceries" to 600.0), budget.config.sheet.lines)
+        assertEquals(listOf(LineRule("warehouse club", "Groceries"), LineRule("big box", null)), budget.config.lineRules)
+        val (inLine, keptOut) = budget.purchases
+        assertEquals(Triple("Groceries", LineSource.RULE, true), Triple(inLine.line, inLine.lineSource, inLine.lineRemembered))
+        assertEquals(Triple(null, LineSource.MANUAL, false), Triple(keptOut.line, keptOut.lineSource, keptOut.lineRemembered))
+    }
+
+    @Test
+    fun aMonthFromARelayBeforeTheLinesHasNone() = runTest {
+        val budget = api(MockEngine { respond(month, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow()
+        assertTrue(budget.lines.isEmpty())
+        assertEquals(0, budget.outsideLines.count)
+        assertEquals(LineSource.NONE, budget.purchases.first().lineSource)
+    }
+
+    @Test
+    fun puttingAPurchaseInALineSaysWhichNoneOrBackToItself() = runTest {
+        val calls = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            calls += "${request.method.value} ${request.url.encodedPath} ${request.body.toByteArray().decodeToString()}${request.url.parameters["merchant"].orEmpty()}"
+            respond(month, HttpStatusCode.OK, jsonHeaders)
+        }
+        val api = api(engine)
+        api.tagLine("http://frigate.local", "t1", LinePick.Line("Groceries"), remember = true).getOrThrow()
+        api.tagLine("http://frigate.local", "t1", LinePick.None, remember = false).getOrThrow()
+        api.tagLine("http://frigate.local", "t1", LinePick.Automatic, remember = false).getOrThrow()
+        api.forgetLineRule("http://frigate.local", "costco").getOrThrow()
+        assertEquals(
+            listOf(
+                """PUT /finance/budget/transactions/t1/line {"line":"Groceries","remember":true}""",
+                """PUT /finance/budget/transactions/t1/line {"line":"","remember":false}""",
+                """PUT /finance/budget/transactions/t1/line {"line":null,"remember":false}""",
+                "DELETE /finance/budget/line-rules costco",
+            ),
+            calls,
+        )
+        val refused = BudgetRelayApi.problemFrom(HttpStatusCode.BadRequest, """{"detail":{"error":"bad_line","message":"A purchase goes in one of the lines paid by card"}}""")
+        assertEquals(UiText.of(Res.string.fin_budget_error_refused), refused.text)
+    }
+
+    @Test
+    fun theSheetsLinesGoWithItsFigures() {
+        val sheet = BudgetConfigPatch(sheet = BudgetSheetFigures(14_170.0, 9_000.0, lines = mapOf("Groceries" to 600.0))).toJson().getValue("sheet").jsonObject
+        assertEquals("600.0", sheet.getValue("lines").jsonObject.getValue("Groceries").jsonPrimitive.content)
     }
 
     @Test
@@ -171,6 +232,8 @@ class BudgetRelayApiTest {
         assertEquals("Sam", holders.getValue("holders").jsonObject.getValue("Card A").jsonObject.getValue("7726").jsonPrimitive.content)
         assertEquals(JsonNull, holders.getValue("holders").jsonObject.getValue("Card A").jsonObject.getValue("4410"))
         assertEquals("true", body.getValue("alerts").jsonObject.getValue("total").jsonPrimitive.content)
+        // The budget lines' switch goes with the others, off unless it was switched on.
+        assertEquals("false", body.getValue("alerts").jsonObject.getValue("lines").jsonPrimitive.content)
     }
 
     @Test

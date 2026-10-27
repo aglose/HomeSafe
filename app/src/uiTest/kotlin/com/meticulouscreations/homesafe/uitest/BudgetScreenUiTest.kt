@@ -26,6 +26,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
+import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.ui.BudgetFixtures
 import com.meticulouscreations.homesafe.finance.ui.BudgetScreen
 import com.meticulouscreations.homesafe.finance.ui.BudgetSettingsScreen
@@ -45,6 +46,7 @@ class BudgetScreenUiTest {
 
     private class Calls {
         val tagged = mutableListOf<Triple<String, BucketId, Boolean>>()
+        val linesTagged = mutableListOf<Triple<String, LinePick, Boolean>>()
         val roles = mutableListOf<Pair<String, CardRole>>()
         val holders = mutableListOf<Triple<String, String, String?>>()
         var linkedAccounts = 0
@@ -65,6 +67,7 @@ class BudgetScreenUiTest {
                                 listState = rememberLazyListState(),
                                 contentPadding = PaddingValues(),
                                 onTag = { id, bucket, remember -> calls.tagged += Triple(id, bucket, remember) },
+                                onTagLine = { id, line, remember -> calls.linesTagged += Triple(id, line, remember) },
                                 onSetRole = { card, role -> calls.roles += card to role },
                                 onSetHolder = { card, mark, person -> calls.holders += Triple(card, mark, person) },
                                 onShowMonth = {},
@@ -96,7 +99,7 @@ class BudgetScreenUiTest {
     }
 
     @Test
-    fun thePurchasesSheetRemembersTheShopWhenAskedTo() = onBudget(BudgetFixtures.state(BudgetFixtures.onPace), height = 4_200.dp) { calls ->
+    fun thePurchasesSheetRemembersTheShopWhenAskedTo() = onBudget(BudgetFixtures.state(BudgetFixtures.onPace), height = 4_800.dp) { calls ->
         val purchase = BudgetFixtures.onPace.purchases.first()
         onNodeWithTag("finance_budget_purchase_${purchase.id}").performSemanticsAction(SemanticsActions.OnClick)
         // The sheet sliding up.
@@ -105,6 +108,20 @@ class BudgetScreenUiTest {
         mainClock.advanceTimeByFrame()
         onNodeWithTag("finance_budget_tag_person:Alex").performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(Triple(purchase.id, BucketId.Person("Alex") as BucketId, true)), calls.tagged)
+    }
+
+    @Test
+    fun thePurchasesSheetPutsItInABudgetLine() = onBudget(BudgetFixtures.state(BudgetFixtures.onPace), height = 4_800.dp) { calls ->
+        val purchase = BudgetFixtures.onPace.purchases.first()
+        onNodeWithTag("finance_budget_purchase_${purchase.id}").performSemanticsAction(SemanticsActions.OnClick)
+        mainClock.advanceTimeBy(600)
+        onNodeWithTag("finance_budget_tag_line_${BudgetFixtures.GROCERIES}").performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(listOf(Triple(purchase.id, LinePick.Line(BudgetFixtures.GROCERIES) as LinePick, false)), calls.linesTagged)
+    }
+
+    @Test
+    fun aMonthWithNoLinesPaidByCardOffersToChooseThem() = onBudget(BudgetFixtures.state(BudgetFixtures.noLines), height = 2_000.dp) {
+        onNodeWithTag("finance_budget_lines_setup").assertExists()
     }
 
     @Test
@@ -123,7 +140,7 @@ class BudgetScreenUiTest {
                 FinanceStage {
                     Box(Modifier.fillMaxSize()) {
                         Box(Modifier.requiredSize(412.dp, 3_000.dp)) {
-                            BudgetSettingsScreen(BudgetFixtures.state(BudgetFixtures.onPace), finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {})
+                            BudgetSettingsScreen(BudgetFixtures.state(BudgetFixtures.onPace), finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {}, onForgetLineRule = {})
                         }
                     }
                 }
@@ -144,7 +161,7 @@ class BudgetScreenUiTest {
                 FinanceStage {
                     Box(Modifier.fillMaxSize()) {
                         Box(Modifier.requiredSize(412.dp, 3_000.dp)) {
-                            BudgetSettingsScreen(BudgetFixtures.state(budget), FinanceFixtures.finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {})
+                            BudgetSettingsScreen(BudgetFixtures.state(budget), FinanceFixtures.finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {}, onForgetLineRule = {})
                         }
                     }
                 }
@@ -153,6 +170,24 @@ class BudgetScreenUiTest {
             onNodeWithTag("finance_budget_alert_savings").assertIsOff().performSemanticsAction(SemanticsActions.OnClick)
         }
         assertEquals(listOf(BudgetConfigPatch(alerts = BudgetAlertSwitches(total = true, savings = true))), saved)
+    }
+
+    @Test
+    fun theBudgetLinesAlertStartsOffAndSwitchingItOnSavesIt() {
+        val saved = mutableListOf<BudgetConfigPatch>()
+        runComposeUiTest {
+            setContent {
+                FinanceStage {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.requiredSize(412.dp, 3_000.dp)) {
+                            BudgetSettingsScreen(BudgetFixtures.state(BudgetFixtures.onPace), FinanceFixtures.finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {}, onForgetLineRule = {})
+                        }
+                    }
+                }
+            }
+            onNodeWithTag("finance_budget_alert_lines").assertIsOff().performSemanticsAction(SemanticsActions.OnClick)
+        }
+        assertEquals(listOf(BudgetConfigPatch(alerts = BudgetAlertSwitches(lines = true))), saved)
     }
 
     @Test

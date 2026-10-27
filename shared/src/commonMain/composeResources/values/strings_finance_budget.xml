@@ -194,12 +194,14 @@
     <string name="fin_budget_settings_alert_savings_note">When the cards pass what take-home leaves after the bills</string>
     <string name="fin_budget_settings_alert_buckets">Each person and the family card</string>
     <string name="fin_budget_settings_alert_buckets_note">When one passes its own limit</string>
+    <string name="fin_budget_settings_alert_lines">Each budget line</string>
+    <string name="fin_budget_settings_alert_lines_note">When one of the sheet's lines paid by card, like Groceries, goes over what the sheet plans for it</string>
     <string name="fin_budget_settings_alerts_note">These are the household's: they go to every Android phone signed in as someone who can see Finance, once a month for each line, and wait out a phone's quiet hours. To silence them on one phone, turn off its “Budget” notifications in the phone's settings. iPhones don't get them yet.</string>
     <string name="fin_budget_settings_cards_title">Cards</string>
     <string name="fin_budget_settings_cards_subtitle">What each card is to the budget</string>
     <string name="fin_budget_settings_cards_none">No credit card is linked yet.</string>
     <string name="fin_budget_settings_lines_title">Paid by card</string>
-    <string name="fin_budget_settings_lines_subtitle">Tick the budget sheet's lines that go on a card. The rest are the bills that leave the bank, which take-home has to cover first.</string>
+    <string name="fin_budget_settings_lines_subtitle">Tick the budget sheet's lines that go on a card: each becomes a budget line that the month's purchases are sorted into. The rest are the bills that leave the bank, which take-home has to cover first.</string>
     <string name="fin_budget_settings_lines_none">The budget sheet's expense lines haven't been read.</string>
     <string name="fin_budget_settings_lines_sum">Bills not on a card: %1$s of the sheet's %2$s a month.</string>
     <string name="fin_budget_settings_rules_title">Remembered shops</string>
@@ -211,4 +213,28 @@
 
     <string name="fin_budget_teaser_title">This month on the cards</string>
     <string name="fin_budget_teaser_of_limit">%1$s of %2$s</string>
+
+    <string name="fin_budget_lines_title">Budget lines</string>
+    <string name="fin_budget_lines_subtitle">The sheet's lines paid by card, each against its plan. Tap one to see its purchases</string>
+    <string name="fin_budget_lines_of_planned">%1$s of %2$s</string>
+    <string name="fin_budget_lines_heading">Heading for %1$s</string>
+    <string name="fin_budget_lines_usual">Usually %1$s a month</string>
+    <string name="fin_budget_lines_usual_more">Usually %1$s a month, more than the %2$s planned</string>
+    <string name="fin_budget_lines_usual_less">Usually %1$s a month, less than the %2$s planned</string>
+    <string name="fin_budget_lines_outside">In no budget line</string>
+    <string name="fin_budget_lines_outside_note">Tap to see them, then a purchase to put it in a line</string>
+    <string name="fin_budget_lines_setup_title">Sort purchases into budget lines</string>
+    <string name="fin_budget_lines_setup_body">Tick the budget sheet's lines that go on a card, like Groceries, and the month's purchases fill them on their own (supermarkets and warehouse clubs into Groceries), each line against what the sheet plans for it.</string>
+    <string name="fin_budget_lines_setup_action">Choose lines</string>
+    <string name="fin_budget_tag_line_title">Budget line</string>
+    <string name="fin_budget_tag_line_none">None</string>
+    <string name="fin_budget_tag_line_auto">Let it sort itself</string>
+    <string name="fin_budget_line_source_manual">Put in this line by hand.</string>
+    <string name="fin_budget_line_source_manual_none">Kept out of the budget lines by hand.</string>
+    <string name="fin_budget_line_source_rule">In this line because this shop is remembered.</string>
+    <string name="fin_budget_line_source_rule_none">Kept out of the budget lines because this shop is remembered.</string>
+    <string name="fin_budget_line_source_auto">Put in this line on its own, by what kind of shop it is.</string>
+    <string name="fin_budget_line_source_none">In none of the budget lines.</string>
+    <string name="fin_budget_settings_rules_line">Budget line: %1$s</string>
+    <string name="fin_budget_settings_rules_no_line">Never in a budget line</string>
 </resources>

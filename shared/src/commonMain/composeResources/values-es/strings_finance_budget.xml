@@ -187,12 +187,14 @@
     <string name="fin_budget_settings_alert_savings_note">Cuando las tarjetas superan lo que deja el sueldo neto después de las facturas</string>
     <string name="fin_budget_settings_alert_buckets">Cada persona y la tarjeta familiar</string>
     <string name="fin_budget_settings_alert_buckets_note">Cuando uno supera su propio límite</string>
+    <string name="fin_budget_settings_alert_lines">Cada línea del presupuesto</string>
+    <string name="fin_budget_settings_alert_lines_note">Cuando una de las líneas de la hoja que se pagan con tarjeta, como Comestibles, supera lo que la hoja prevé para ella</string>
     <string name="fin_budget_settings_alerts_note">Son del hogar: llegan a cada teléfono Android con sesión iniciada por alguien que puede ver Finanzas, una vez al mes por cada línea, y esperan a que terminen las horas de silencio del teléfono. Para silenciarlas en un teléfono, desactiva sus notificaciones de “Presupuesto” en los ajustes del teléfono. Los iPhone todavía no las reciben.</string>
     <string name="fin_budget_settings_cards_title">Tarjetas</string>
     <string name="fin_budget_settings_cards_subtitle">Qué es cada tarjeta para el presupuesto</string>
     <string name="fin_budget_settings_cards_none">Aún no hay ninguna tarjeta de crédito vinculada.</string>
     <string name="fin_budget_settings_lines_title">Pagado con tarjeta</string>
-    <string name="fin_budget_settings_lines_subtitle">Marca las líneas de la hoja del presupuesto que van a una tarjeta. El resto son las facturas que salen del banco, que el sueldo neto tiene que cubrir primero.</string>
+    <string name="fin_budget_settings_lines_subtitle">Marca las líneas de la hoja del presupuesto que van a una tarjeta: cada una pasa a ser una línea del presupuesto en la que se reparten las compras del mes. El resto son las facturas que salen del banco, que el sueldo neto tiene que cubrir primero.</string>
     <string name="fin_budget_settings_lines_none">Aún no se han leído las líneas de gastos de la hoja del presupuesto.</string>
     <string name="fin_budget_settings_lines_sum">Facturas que no van a tarjeta: %1$s de los %2$s al mes de la hoja.</string>
     <string name="fin_budget_settings_rules_title">Comercios recordados</string>
@@ -204,4 +206,28 @@
 
     <string name="fin_budget_teaser_title">Este mes en las tarjetas</string>
     <string name="fin_budget_teaser_of_limit">%1$s de %2$s</string>
+
+    <string name="fin_budget_lines_title">Líneas del presupuesto</string>
+    <string name="fin_budget_lines_subtitle">Las líneas de la hoja que se pagan con tarjeta, cada una frente a lo previsto. Toca una para ver sus compras</string>
+    <string name="fin_budget_lines_of_planned">%1$s de %2$s</string>
+    <string name="fin_budget_lines_heading">Va camino de %1$s</string>
+    <string name="fin_budget_lines_usual">Suele ser %1$s al mes</string>
+    <string name="fin_budget_lines_usual_more">Suele ser %1$s al mes, más de los %2$s previstos</string>
+    <string name="fin_budget_lines_usual_less">Suele ser %1$s al mes, menos de los %2$s previstos</string>
+    <string name="fin_budget_lines_outside">En ninguna línea</string>
+    <string name="fin_budget_lines_outside_note">Toca para verlas, y luego una compra para ponerla en una línea</string>
+    <string name="fin_budget_lines_setup_title">Reparte las compras en líneas del presupuesto</string>
+    <string name="fin_budget_lines_setup_body">Marca las líneas de la hoja del presupuesto que van a una tarjeta, como Comestibles, y las compras del mes las llenan solas (los supermercados y los clubes de compras van a Comestibles), cada línea frente a lo que la hoja prevé para ella.</string>
+    <string name="fin_budget_lines_setup_action">Elegir líneas</string>
+    <string name="fin_budget_tag_line_title">Línea del presupuesto</string>
+    <string name="fin_budget_tag_line_none">Ninguna</string>
+    <string name="fin_budget_tag_line_auto">Que se reparta sola</string>
+    <string name="fin_budget_line_source_manual">Puesta en esta línea a mano.</string>
+    <string name="fin_budget_line_source_manual_none">Dejada fuera de las líneas a mano.</string>
+    <string name="fin_budget_line_source_rule">En esta línea porque este comercio se recuerda.</string>
+    <string name="fin_budget_line_source_rule_none">Fuera de las líneas porque este comercio se recuerda.</string>
+    <string name="fin_budget_line_source_auto">Puesta en esta línea sola, por el tipo de comercio.</string>
+    <string name="fin_budget_line_source_none">En ninguna de las líneas del presupuesto.</string>
+    <string name="fin_budget_settings_rules_line">Línea: %1$s</string>
+    <string name="fin_budget_settings_rules_no_line">Nunca en una línea del presupuesto</string>
 </resources>

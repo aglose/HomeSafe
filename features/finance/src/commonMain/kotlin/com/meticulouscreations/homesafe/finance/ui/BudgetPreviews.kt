@@ -12,11 +12,14 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetBucket
 import com.meticulouscreations.homesafe.finance.domain.BudgetCard
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfig
 import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
+import com.meticulouscreations.homesafe.finance.domain.BudgetLine
 import com.meticulouscreations.homesafe.finance.domain.BudgetPastMonth
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
 import com.meticulouscreations.homesafe.finance.domain.BudgetSlice
 import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
+import com.meticulouscreations.homesafe.finance.domain.LineRule
+import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.Purchase
 import com.meticulouscreations.homesafe.text.UiText
@@ -51,15 +54,29 @@ object BudgetFixtures {
         BudgetCard(FAMILY, "item-2", "Northwind", "Platinum", "2207", CardRole.Family, balance = 2_410.0, needsRelink = false, readsPurchases = true),
     )
 
-    private data class Shop(val name: String, val category: String, val card: String, val bucket: BucketId, val source: BucketSource, val amount: Double)
+    private data class Shop(
+        val name: String,
+        val category: String,
+        val card: String,
+        val bucket: BucketId,
+        val source: BucketSource,
+        val amount: Double,
+        val line: String? = null,
+        val lineSource: LineSource = LineSource.NONE,
+    )
+
+    const val GROCERIES = "Groceries"
+
+    /** The budget sheet's lines paid by card, and what it plans for each a month. */
+    val planned = mapOf(GROCERIES to 600.0, "Meal kits" to 240.0, "Streaming" to 45.0)
 
     private val alex = BucketId.Person("Alex")
     private val sam = BucketId.Person("Sam")
     private val shops = listOf(
-        Shop("Harvest Market", "FOOD_AND_DRINK", FAMILY, BucketId.Family, BucketSource.ACCOUNT, 182.40),
+        Shop("Harvest Market", "FOOD_AND_DRINK", FAMILY, BucketId.Family, BucketSource.ACCOUNT, 182.40, GROCERIES, LineSource.AUTO),
         Shop("Corner Coffee", "FOOD_AND_DRINK", TRAVEL, alex, BucketSource.RULE, 6.75),
         Shop("Blue Line Transit", "TRANSPORTATION", TRAVEL, sam, BucketSource.MANUAL, 48.00),
-        Shop("Warehouse Club", "GENERAL_MERCHANDISE", FAMILY, BucketId.Family, BucketSource.ACCOUNT, 311.18),
+        Shop("Warehouse Club", "GENERAL_MERCHANDISE", FAMILY, BucketId.Family, BucketSource.ACCOUNT, 311.18, GROCERIES, LineSource.RULE),
         Shop("Trailhead Outfitters", "GENERAL_MERCHANDISE", TRAVEL, BucketId.Unassigned, BucketSource.NONE, 129.99),
         Shop("Luna Pizzeria", "FOOD_AND_DRINK", TRAVEL, BucketId.Unassigned, BucketSource.NONE, 54.20),
         Shop("City Power", "RENT_AND_UTILITIES", FAMILY, BucketId.Family, BucketSource.ACCOUNT, 141.02),
@@ -90,6 +107,9 @@ object BudgetFixtures {
                     bucket = shop.bucket,
                     source = shop.source,
                     remembered = shop.source == BucketSource.RULE,
+                    line = shop.line,
+                    lineSource = shop.lineSource,
+                    lineRemembered = shop.lineSource == LineSource.RULE,
                 )
             }
         }.sortedByDescending { it.date }
@@ -111,14 +131,20 @@ object BudgetFixtures {
             config = BudgetConfig(
                 people = people,
                 limits = limits,
-                cardPaidLines = listOf("Groceries", "Meal kits", "Streaming"),
+                cardPaidLines = planned.keys.toList(),
                 rules = listOf(MerchantRule("corner coffee", alex), MerchantRule("hilltop hardware", alex)),
-                sheet = BudgetSheetFigures(takeHome = 14_170.0, billsOffCard = 9_817.0),
+                lineRules = listOf(LineRule("warehouse club", GROCERIES)),
+                sheet = BudgetSheetFigures(takeHome = 14_170.0, billsOffCard = 9_817.0, lines = planned),
             ),
             savingsLine = 4_353.0,
             spent = purchases.sumOf { it.amount },
             pending = purchases.filter { it.pending }.sumOf { it.amount },
             buckets = listOf(bucket(alex, limits.people["Alex"]), bucket(sam, limits.people["Sam"]), bucket(BucketId.Family, limits.family), bucket(BucketId.Unassigned, null)),
+            // Groceries usually come to more than the sheet plans for them.
+            lines = planned.map { (line, amount) ->
+                purchases.filter { it.line == line }.let { BudgetLine(line, amount, it.sumOf { p -> p.amount }, it.size, usual = if (line == GROCERIES) 720.0 else null) }
+            },
+            outsideLines = purchases.filter { it.line == null }.let { BudgetSlice("", it.sumOf { p -> p.amount }, it.size) },
             daily = (1..day).map { d -> purchases.filter { it.date.endsWith("-${d.toString().padStart(2, '0')}") }.sumOf { it.amount } },
             categories = purchases.groupBy { it.category.orEmpty() }.map { (name, list) -> BudgetSlice(name, list.sumOf { it.amount }, list.size) }.sortedByDescending { it.spent },
             merchants = purchases.groupBy { it.name }.map { (name, list) -> BudgetSlice(name, list.sumOf { it.amount }, list.size) }.sortedByDescending { it.spent }.take(8),
@@ -150,13 +176,16 @@ object BudgetFixtures {
 
     val noCards = month(day = 3, cards = emptyList()).copy(purchases = emptyList(), spent = 0.0)
 
+    /** No line of the sheet ticked as paid by card yet, so nothing is sorted into lines. */
+    val noLines = onPace.let { it.copy(config = it.config.copy(cardPaidLines = emptyList(), lineRules = emptyList()), lines = emptyList(), purchases = it.purchases.map { p -> p.copy(line = null, lineSource = LineSource.NONE) }) }
+
     fun state(budget: Budget) = BudgetUiState(budget = budget, loading = false, readAtEpochSeconds = now)
 }
 
 @Composable
 private fun BudgetPreview(state: BudgetUiState) {
     FinanceStage {
-        BudgetScreen(state, rememberLazyListState(), previewPadding, onTag = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
+        BudgetScreen(state, rememberLazyListState(), previewPadding, onTag = { _, _, _ -> }, onTagLine = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
     }
 }
 
@@ -203,10 +232,16 @@ private fun FinanceBudgetProblemPreview() {
     BudgetPreview(BudgetUiState(loading = false, problem = BankProblem.RELAY_OUTDATED, problemText = UiText.of(Res.string.fin_budget_error_relay_outdated)))
 }
 
+@Preview(name = "Budget · no budget lines yet", widthDp = 412, heightDp = 1500)
+@Composable
+private fun FinanceBudgetNoLinesPreview() {
+    BudgetPreview(BudgetFixtures.state(BudgetFixtures.noLines))
+}
+
 @Preview(name = "Budget · settings", widthDp = 412, heightDp = 2000)
 @Composable
 private fun FinanceBudgetSettingsPreview() {
-    FinanceStage { BudgetSettingsScreen(BudgetFixtures.state(BudgetFixtures.onPace), FinanceFixtures.finance, previewPadding, onSave = {}, onForgetRule = {}) }
+    FinanceStage { BudgetSettingsScreen(BudgetFixtures.state(BudgetFixtures.onPace), FinanceFixtures.finance, previewPadding, onSave = {}, onForgetRule = {}, onForgetLineRule = {}) }
 }
 
 @Preview(name = "Budget · the Wallet's line", widthDp = 412, heightDp = 160)

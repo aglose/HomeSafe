@@ -143,7 +143,10 @@ class BudgetPaceTest {
             accounts = emptyList(), investmentsTotal = null, totalAssets = null, emergencyTarget = null, debts = emptyList(), home = null, vesting = emptyList(),
             watchlist = emptyList(), history = emptyList(), taxYears = emptyList(), mortgagePlan = null, oldHouse = null,
         )
-        assertEquals(BudgetSheetFigures(takeHome = 10_000.0, billsOffCard = 5_000.0), BudgetSheetFigures.of(finance, listOf("Groceries")))
+        assertEquals(BudgetSheetFigures(takeHome = 10_000.0, billsOffCard = 5_000.0, lines = mapOf("Groceries" to 900.0)), BudgetSheetFigures.of(finance, listOf("Groceries")))
+        // Two lines of one name are ticked together, so they plan together.
+        val twice = finance.copy(expenses = finance.expenses + ExpenseLine("Groceries", 100.0))
+        assertEquals(mapOf("Groceries" to 1_000.0), BudgetSheetFigures.of(twice, listOf("Groceries")).lines)
         assertEquals(BudgetSheetFigures(takeHome = 9_500.0, billsOffCard = null), BudgetSheetFigures.of(finance.copy(monthlyIncome = 9_500.0, expenses = emptyList()), emptyList()))
     }
 

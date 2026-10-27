@@ -18,6 +18,10 @@ In the app: **Finance → Budget**. Its settings are behind **Limits and cards**
   a name to tap.
 - **Pace.** Spending day by day, against an even month (dashed) and where this pace ends it, with
   the limit and the savings line drawn across.
+- **Budget lines.** Each of the sheet's lines that is paid by card (Groceries, $600) against what
+  the sheet plans for it: where this pace takes it when that is past the plan, and what it usually
+  comes to when that is far enough from the plan that the plan wants changing. Under them, what
+  the purchases in none of the lines come to. Tap one to list its purchases.
 - **Who spent what.** Each person and the family card against their own limits.
 - **Where take-home goes.** Take-home, minus the bills that aren't paid by card, minus the cards
   so far: what is left, or how much is coming out of savings.
@@ -70,6 +74,31 @@ Tap a name under a purchase to tag it. Tap the purchase itself for the sheet, wh
 shops are listed in the settings and can be forgotten there. A tag stays with a pending purchase
 when it settles.
 
+### Which budget line a purchase is in
+
+Each line of the budget sheet ticked under **Paid by card** is a budget line, planned at the
+sheet's monthly amount for it. Every purchase is put in one of them, or in none, on its own:
+
+1. **By hand.** Tap the purchase, then a line under **Budget line**, or **None** to keep it out of
+   them all (a TV from Costco isn't groceries). **Let it sort itself** takes the choice back.
+2. **A remembered shop.** With **Always for …** switched on as you pick, every purchase from that
+   shop, past and future, goes the same way. These are listed under **Remembered shops** with the
+   person ones, and can be forgotten there.
+3. **On its own.** A line named after a shop has that shop's purchases ("Amazon" has "AMAZON
+   MKTPL*2K1"). Otherwise a line whose name says what kind of spending it is takes the purchases
+   that are that kind: Groceries takes what Plaid calls groceries (Safeway, Trader Joe's) and the
+   big grocers and warehouse clubs by name (Costco, which Plaid calls a superstore); Dining out takes
+   restaurants and fast food; Gas, Streaming, Meal kits, Pets and a few more likewise
+   (`BUDGET_LINE_GUESSES` in `relay/relay.py`).
+
+Whose a purchase is and which line it is in are separate: putting a Costco run in Groceries leaves
+it Sam's. A line no longer ticked as paid by card stops being a line, and the purchases put in it
+by hand or by rule fall where they would on their own.
+
+**What the line usually comes to** is the average of the months before this one in which the cards
+spent anything, once there are two of them. When it differs from the plan by more than a tenth
+(and at least $25), the line says so: "Usually $710 a month, more than the $600 planned".
+
 The people are the budget sheet's (the names beside "Flow In"), and follow it: add or rename
 someone there and the budget has them the next time the app reads the sheet. A limit and a card
 role are kept by name, so a renamed person starts without either.
@@ -81,20 +110,21 @@ role are kept by name, so a renamed person starts without either.
 - **The savings line** is the sheet's monthly take-home minus the sheet's expense lines that
   leave the bank directly. Tick the lines that are paid by card under **Paid by card**; the rest
   are the bills. Card spending past the line is coming out of savings. The relay can't read the
-  sheet's blocks itself (only the app parses the sheet), so the app reports the two numbers to the
-  relay whenever they change.
+  sheet's blocks itself (only the app parses the sheet), so the app reports the two numbers, and
+  what each card-paid line plans for, to the relay whenever they change.
 - **The projection** carries the month's daily rate so far to the last day. Early in the month it
   is steadied by last month's rate. It is a straight line: one large charge still bends it.
 
 ## Alerts
 
-Under **Limits and cards → Alerts** are three switches, all off to begin with:
+Under **Limits and cards → Alerts** (and in Settings → Notifications) are four switches, all off to begin with:
 
 | Switch | A notification when |
 |---|---|
 | **The month's limit** | Spending reaches four fifths of it, and again when it is passed |
 | **Into savings** | The cards pass what take-home leaves after the bills |
 | **Each person and the family card** | One passes its own limit |
+| **Each budget line** | One of the sheet's card-paid lines goes over what the sheet plans for it ("Groceries is over what the budget plans") |
 
 - The switches are the household's, kept by the relay. Each phone hears about each line **once a
   month**. A month already over a limit when a switch goes on says so once, not once for each
@@ -119,17 +149,18 @@ Under **Limits and cards → Alerts** are three switches, all off to begin with:
    sign in on their own page, which Plaid's dashboard has to have enabled for your account
    (Developers → API → OAuth institutions).
 3. On the Budget tab, say what each card is.
-4. Under **Limits and cards**, set the limits and tick the sheet lines that are paid by card.
+4. Under **Limits and cards**, set the limits and tick the sheet lines that are paid by card: each
+   becomes a budget line.
 5. Anyone who should see the budget must be a Frigate admin or listed in `FINANCE_USERS`
    (`finance.env` on the box).
 
 ## How it's built
 
 - `relay/relay.py`, "budget": `plaid_transactions_pull` / `plaid_transactions_store` (the hourly
-  read), `budget_bucket` (whose a purchase is), `budget_month` (the page's answer),
-  `budget_check` (the alerts), and the `/finance/budget…` routes. Tests: `BudgetSyncTest`,
-  `BudgetMonthTest`, `BudgetAlertsTest`, `BudgetRoutesTest`, `DeviceOwnerTest` in
-  `relay/test_relay.py`.
+  read), `budget_bucket` (whose a purchase is), `budget_line` / `budget_line_guess` (which line
+  it is in), `budget_month` (the page's answer), `budget_check` (the alerts), and the
+  `/finance/budget…` routes. Tests: `BudgetSyncTest`, `BudgetMonthTest`, `BudgetLinesTest`,
+  `BudgetAlertsTest`, `BudgetRoutesTest`, `DeviceOwnerTest` in `relay/test_relay.py`.
 - Alerts on Android: `HomeSafeMessagingService` hands a `budget=1` push to
   `BudgetNotificationPoster` (`BudgetAlert` reads the push's data); the tap is
   `homesafe://finance?tab=budget` (`FinanceDeepLink`), which `ShellNavigation` opens.
