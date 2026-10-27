@@ -94,6 +94,9 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
+import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
+import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
@@ -169,6 +172,12 @@ fun FinanceApp(
     // Once the app has gone from the screen, not as it starts to close: the lock must not flash up
     // through the overlay as it drains away.
     DisposableEffect(lockViewModel) { onDispose { lockViewModel.lock() } }
+    // A question asked over the app goes with a picture of it, so the assistant takes it back when the app locks.
+    val assistant = LocalAssistant.current
+    DisposableEffect(assistant, lockViewModel) {
+        val release = assistant?.showsBehind(lockViewModel.locked)
+        onDispose { release?.invoke() }
+    }
     if (lock.locked) {
         val fontFamily = albertSansFontFamily()
         val palette = remember { FinancePalette() }
@@ -205,6 +214,8 @@ private fun FinanceAppContent(
     LaunchedEffect(Unit) { budgetViewModel.refresh() }
     var tab by rememberSaveable { mutableStateOf(FinanceTab.WALLET) }
     val details = remember { mutableStateListOf<FinanceDetail>() }
+    // Here rather than in the bars, which go while a page is open.
+    AssistantScreenContext { "Finance app, ${tab.name.lowercase()} tab" + (details.lastOrNull()?.let { ", $it page open" } ?: "") }
     val listStates = FinanceTab.entries.associateWith { rememberLazyListState() }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -558,6 +569,8 @@ private fun FinanceBottomNav(selected: FinanceTab, onSelect: (FinanceTab) -> Uni
             .padding(bottom = 16.dp)
             .widthIn(max = 420.dp)
             .fillMaxWidth(0.92f)
+            // Held, as the shell's own bar is, it opens the assistant.
+            .assistantTrigger(LocalAssistant.current)
             .clip(CircleShape)
             .background(colors.surfaceRaised.copy(alpha = 0.94f))
             .border(1.dp, colors.hairline, CircleShape)
@@ -580,6 +593,7 @@ private fun FinanceSideNav(selected: FinanceTab, onSelect: (FinanceTab) -> Unit)
             .padding(start = FINANCE_SIDE_NAV_MARGIN)
             .navigationBarsPadding()
             .width(FINANCE_SIDE_NAV_WIDTH)
+            .assistantTrigger(LocalAssistant.current)
             .clip(shape)
             .background(colors.surfaceRaised.copy(alpha = 0.94f))
             .border(1.dp, colors.hairline, shape)

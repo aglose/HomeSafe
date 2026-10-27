@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The assistant: the box that grows out of a bottom bar when it is held, Claude's answers above it,
+  the model picker, and what it says while it looks things up. Keys start with assistant_.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="assistant_input_placeholder">Ask about this screen</string>
+    <string name="assistant_key_placeholder">Paste your Anthropic API key</string>
+    <string name="assistant_key_hint">Claude needs your own API key, from console.anthropic.com. It stays on this phone.</string>
+    <string name="assistant_key_save">Save the key</string>
+    <string name="assistant_send">Send</string>
+    <string name="assistant_stop">Stop</string>
+    <string name="assistant_close">Close the assistant</string>
+    <string name="assistant_new_chat">New conversation</string>
+    <string name="assistant_forget_key">Forget the API key</string>
+    <string name="assistant_include_screen">Show Claude this screen</string>
+    <string name="assistant_choose_model">Choose a model</string>
+
+    <!-- The families in the model picker; the version beside each comes from Anthropic. -->
+    <string name="assistant_model_haiku">Haiku</string>
+    <string name="assistant_model_sonnet">Sonnet</string>
+    <string name="assistant_model_opus">Opus</string>
+    <string name="assistant_model_fable">Fable</string>
+    <string name="assistant_model_haiku_hint">Fastest</string>
+    <string name="assistant_model_sonnet_hint">Quick and capable</string>
+    <string name="assistant_model_opus_hint">Smart for most things</string>
+    <string name="assistant_model_fable_hint">Most capable, slowest</string>
+
+    <string name="assistant_thinking">Thinking…</string>
+    <string name="assistant_refused">Claude can't help with that one.</string>
+    <string name="assistant_cut_off">The answer ran too long and was cut off.</string>
+
+    <string name="assistant_error_key">Anthropic didn't accept that API key. Check it, or forget it and paste another.</string>
+    <string name="assistant_error_busy">Claude is busy right now. Try again in a moment.</string>
+    <string name="assistant_error_network">Couldn't reach Claude. Check the connection and try again.</string>
+    <string name="assistant_error_generic">Something went wrong talking to Claude.</string>
+
+    <!-- What the assistant says it is doing while it reads the app's data for an answer. -->
+    <string name="assistant_tool_cameras">Checking your cameras</string>
+    <string name="assistant_tool_moments">Looking through recent moments</string>
+    <string name="assistant_tool_doors">Checking the doors</string>
+    <string name="assistant_tool_presence">Seeing who's home</string>
+    <string name="assistant_tool_server">Checking the server</string>
+    <string name="assistant_tool_finance">Reading your finances</string>
+    <string name="assistant_tool_budget">Checking your budget</string>
+    <string name="assistant_tool_markets">Looking up market prices</string>
+    <string name="assistant_tool_weather">Checking the forecast</string>
+    <string name="assistant_tool_fitness">Looking at your training log</string>
+    <string name="assistant_tool_atlas">Looking through your places</string>
+</resources>

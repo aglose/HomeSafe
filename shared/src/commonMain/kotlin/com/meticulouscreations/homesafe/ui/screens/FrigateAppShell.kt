@@ -102,6 +102,9 @@ import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.navigation.rememberBackStackViewModelStores
 import com.meticulouscreations.homesafe.ui.BackScope
+import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
+import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
+import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.showsTwoPanes
@@ -346,6 +349,22 @@ class ShellNavigation(
         onTabSelected(tab)
     }
 
+    /**
+     * Where the shell is, for the assistant ([AssistantScreenContext]): the tab, the page drilled
+     * into on it (its route, which names the camera or moment), and what is over it.
+     */
+    fun assistantContext(tab: TopLevelRoute = selectedTab): String = buildString {
+        append("Tab: ").append(tab)
+        val page = when (tab) {
+            TopLevelRoute.Home -> homeBackStack.lastOrNull()
+            TopLevelRoute.Settings -> settingsBackStack.lastOrNull()
+            TopLevelRoute.Moments -> null
+        }
+        if (page != null) append(", page: ").append(page)
+        if (drawerOpen) append(", with the drawer of apps open over it")
+        if (appOpen) append(", under the ").append(app.name.lowercase()).append(" app, which is open over it")
+    }
+
     fun popToRoot(tab: TopLevelRoute) {
         val stack = when (tab) {
             TopLevelRoute.Home -> homeBackStack
@@ -488,6 +507,7 @@ fun FrigateAppShell() {
     LaunchedEffect(nav) { nav.openDoorsFromNotifications() }
     LaunchedEffect(nav) { nav.openWeatherFromNotifications() }
     LaunchedEffect(nav) { nav.openFinanceFromNotifications() }
+    AssistantScreenContext { nav.assistantContext() }
     val compactLandscape = isCompactLandscape()
     val twoPanes = showsTwoPanes()
     SideEffect {
@@ -561,6 +581,7 @@ fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
         nav.compactLandscape = compactLandscape
         nav.twoPanes = twoPanes
     }
+    AssistantScreenContext { nav.assistantContext(tab) }
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(tab),
@@ -1178,6 +1199,8 @@ private fun BottomNavBar(
         modifier = modifier
             .widthIn(max = 400.dp)
             .fillMaxWidth(0.9f)
+            // Held, the pill opens the assistant out of itself.
+            .assistantTrigger(LocalAssistant.current)
             .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
             .padding(8.dp),
@@ -1209,6 +1232,7 @@ private fun NavRail(
     Column(
         modifier = modifier
             .width(NAV_RAIL_WIDTH)
+            .assistantTrigger(LocalAssistant.current)
             .background(LocalFrigateExtraColors.current.glassFill, shape)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
             .padding(8.dp)

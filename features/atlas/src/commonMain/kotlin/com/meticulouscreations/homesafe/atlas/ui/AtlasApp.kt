@@ -80,6 +80,9 @@ import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.AtlasViewModel
 import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
+import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
+import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -151,6 +154,12 @@ fun AtlasApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean
     // Once the app has gone from the screen, not as it starts to close: the lock must not flash up
     // through the overlay as it drains away.
     DisposableEffect(lockViewModel) { onDispose { lockViewModel.lock() } }
+    // A question asked over the app goes with a picture of it, so the assistant takes it back when the app locks.
+    val assistant = LocalAssistant.current
+    DisposableEffect(assistant, lockViewModel) {
+        val release = assistant?.showsBehind(lockViewModel.locked)
+        onDispose { release?.invoke() }
+    }
     val fontFamily = albertSansFontFamily()
     val palette = remember { AtlasPalette() }
     val type = remember(fontFamily) { AtlasTypography(fontFamily) }
@@ -190,6 +199,8 @@ fun AtlasAppContent(
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<AtlasPage>().apply { initialPage?.let(::add) } }
+    // Here rather than in the bars, which go while a page is open.
+    AssistantScreenContext { "Atlas app, ${tab.name.lowercase()} tab" + (pages.lastOrNull()?.let { ", $it page open" } ?: "") }
     // Held here, above the tabs: the map is left for another tab and found again where it was.
     val map = remember { AtlasMapState() }
     val haptics = LocalHapticFeedback.current
@@ -390,6 +401,8 @@ private fun AtlasNav(selected: AtlasTab, onSelect: (AtlasTab) -> Unit) {
             .padding(bottom = 16.dp)
             .widthIn(max = 440.dp)
             .fillMaxWidth(0.94f)
+            // Held, as the shell's own bar is, it opens the assistant.
+            .assistantTrigger(LocalAssistant.current)
             .clip(CircleShape)
             .background(colors.surfaceRaised.copy(alpha = 0.96f))
             .border(1.dp, colors.hairline, CircleShape)

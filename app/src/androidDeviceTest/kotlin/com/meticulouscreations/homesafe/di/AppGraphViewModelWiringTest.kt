@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.fitness.FitnessViewModel
 import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.integration.testPlatformContext
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
+import com.meticulouscreations.homesafe.viewmodel.AssistantViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraFramingViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
@@ -54,6 +55,7 @@ class AppGraphViewModelWiringTest {
                 SettingsViewModel::class,
                 SecureConnectionViewModel::class,
                 AppShellViewModel::class,
+                AssistantViewModel::class,
                 FaceLibraryViewModel::class,
                 MomentCarTagViewModel::class,
                 LandedPersonViewModel::class,

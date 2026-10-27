@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.domain.model.mergeVehicleVisits
 import com.meticulouscreations.homesafe.domain.model.stationaryObjects
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
+import com.meticulouscreations.homesafe.domain.repository.RecentMoments
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateEvent
 import com.meticulouscreations.homesafe.network.frigateEventClipDownloadUrl
@@ -252,6 +253,21 @@ class MomentsRepositoryImpl(
             }
         }
     }.combine(namedByHand) { moments, named -> moments.withNames(named) }
+
+    override suspend fun readRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): RecentMoments? {
+        val server = currentServer() ?: return null
+        val cutoff = clock.now().toEpochMilliseconds() / 1000.0 - lookbackSeconds
+        loadZones(server.url, force = false)
+        val fetched = fetchRecentPages(server.url, cameraName, limit, cutoff)
+        val placed = if (fetched != null) {
+            cache(server.identity, cameraName, fetched.first, from = fetched.second, to = null)
+            fetched.first
+        } else {
+            cachedPage(server.identity, before = null, camera = cameraName, limit = RECENT_MAX_PAGES * PAGE_SIZE)
+        }
+        val recent = placed.mergeVehicleVisits().filterIndexed { index, moment -> index < limit || moment.startEpochSeconds >= cutoff }
+        return RecentMoments(recent.withNames(namedByHand.value), fresh = fetched != null)
+    }
 
     /**
      * The pages behind [observeRecentMoments]: [cameraName]'s detections from now, placed by the
