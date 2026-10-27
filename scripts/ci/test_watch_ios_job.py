@@ -20,7 +20,15 @@ SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "watch-ios-job
 NAME = "iOS tests and build"
 
 # Serves $FIX/1.json, 2.json, … one per call, then keeps repeating the last; "FAIL" fails the call.
+# The runner list is $FIX/runners.json, filtered with the call's --jq; without that file, the call
+# fails as it does with no RUNNERS_TOKEN.
 FAKE_GH = """#!/usr/bin/env bash
+if [[ "$*" == *actions/runners* ]]; then
+    [ -f "$FIX/runners.json" ] || exit 1
+    while [ "$1" != --jq ]; do shift; done
+    jq "$2" "$FIX/runners.json"
+    exit
+fi
 n=$(cat "$FIX/count" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FIX/count"
 f="$FIX/$n.json"; [ -f "$f" ] || f=$(ls "$FIX"/*.json | sort -V | tail -1)
 [ "$(cat "$f")" = FAIL ] && exit 1
@@ -31,6 +39,10 @@ cat "$f"
 def stamp(minutes_ago=0):
     moment = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes_ago)
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def runner(status, labels=("self-hosted", "macOS", "ARM64")):
+    return {"name": "homesafe-mac", "status": status, "labels": [{"name": label} for label in labels]}
 
 
 def job(status, conclusion=None, runner="homesafe-mac", steps=(), minutes_ago=0, attempt=1):
@@ -46,7 +58,7 @@ def job(status, conclusion=None, runner="homesafe-mac", steps=(), minutes_ago=0,
 
 
 class WatchIosJobTest(unittest.TestCase):
-    def watch(self, *answers, on_mac=True):
+    def watch(self, *answers, on_mac=True, runners=None, queue_limit_minutes=240):
         """Runs the script against these successive API answers; returns (exit code, result)."""
         with tempfile.TemporaryDirectory() as tmp:
             bin_dir = os.path.join(tmp, "bin")
@@ -58,6 +70,9 @@ class WatchIosJobTest(unittest.TestCase):
             for i, answer in enumerate(answers, start=1):
                 with open(os.path.join(tmp, f"{i}.json"), "w") as f:
                     f.write(answer if isinstance(answer, str) else json.dumps({"jobs": answer}))
+            if runners is not None:
+                with open(os.path.join(tmp, "runners.json"), "w") as f:
+                    json.dump({"total_count": len(runners), "runners": runners}, f)
             output = os.path.join(tmp, "output")
             open(output, "w").close()
             env = dict(
@@ -73,6 +88,8 @@ class WatchIosJobTest(unittest.TestCase):
                 POLL_S="0",
                 START_TIMEOUT_S="900",
                 APPEAR_TIMEOUT_S="0",
+                QUEUE_LIMIT_S=str(queue_limit_minutes * 60),
+                RUNNERS_TOKEN="token" if runners is not None else "",
             )
             done = subprocess.run(["bash", SCRIPT], env=env, capture_output=True, text=True, timeout=60)
             with open(output) as f:
@@ -108,6 +125,38 @@ class WatchIosJobTest(unittest.TestCase):
 
     def test_a_job_queued_past_the_timeout_falls_back(self):
         self.assertEqual(self.watch([job("queued", runner=None, minutes_ago=20)]), (0, "result=fallback"))
+
+    def test_a_job_queued_behind_others_on_an_online_mac_is_waited_for(self):
+        self.assertEqual(
+            self.watch(
+                [job("queued", runner=None, minutes_ago=60)],
+                [job("in_progress", minutes_ago=61)],
+                [job("completed", "success", steps=["completed"], minutes_ago=62)],
+                runners=[runner("online")],
+            ),
+            (0, "result=passed"),
+        )
+
+    def test_a_job_queued_past_the_timeout_with_the_mac_offline_falls_back(self):
+        self.assertEqual(
+            self.watch([job("queued", runner=None, minutes_ago=20)], runners=[runner("offline")]),
+            (0, "result=fallback"),
+        )
+
+    def test_an_online_runner_that_isnt_the_mac_doesnt_count(self):
+        self.assertEqual(
+            self.watch(
+                [job("queued", runner=None, minutes_ago=20)],
+                runners=[runner("online", labels=("self-hosted", "Linux"))],
+            ),
+            (0, "result=fallback"),
+        )
+
+    def test_a_job_queued_past_the_limit_falls_back_even_with_the_mac_online(self):
+        self.assertEqual(
+            self.watch([job("queued", runner=None, minutes_ago=300)], runners=[runner("online")]),
+            (0, "result=fallback"),
+        )
 
     def test_a_job_only_just_queued_is_waited_for(self):
         self.assertEqual(

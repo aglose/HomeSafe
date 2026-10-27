@@ -508,8 +508,8 @@ jobs:
   #   with "Administration: Read-only" and nothing else. With no token, or the list unreadable,
   #   the job goes to the Mac as it always did, with a warning on the run.
   #
-  # The Mac can also be online here and still not finish: busy past the point of starting the job,
-  # or asleep halfway through it. ios-watch covers that (below).
+  # The Mac can also be online here and still not finish: asleep before it gets to the job, or
+  # halfway through it. ios-watch covers that (below).
   #
   # A rerun of only the failed jobs keeps this job's answer; "Re-run all jobs" asks again.
   ios-runner:
@@ -591,17 +591,19 @@ jobs:
   # Watches the ios job from a hosted runner and says how it went (scripts/ci/watch-ios-job.sh):
   # passed; failed by itself (a test, the build), which fails this job too so that "Re-run failed
   # jobs" runs the pair again; or never finished on the Mac, because it sat queued for 15 minutes
-  # or its runner went away partway through (the job then ends with a step still in progress and
-  # no log). In that last case ios-hosted runs the same work on a GitHub-hosted Mac. The job left
-  # queued on the Mac stays queued until the Mac takes it or GitHub drops it after a day; ci-green
-  # doesn't wait for it.
+  # with the Mac offline (or four hours with it online), or its runner went away partway through
+  # (the job then ends with a step still in progress and no log). In that last case ios-hosted
+  # runs the same work on a GitHub-hosted Mac. A job queued behind other runs' iOS jobs on an
+  # online Mac is waited for, since the Mac takes one at a time; whether it is online comes from
+  # RUNNER_STATUS_TOKEN, as in ios-runner. The job left queued on the Mac stays queued until the
+  # Mac takes it or GitHub drops it after a day; ci-green doesn't wait for it.
   ios-watch:
     name: Watch the iOS job
     needs: ios-runner
     runs-on: ubuntu-24.04
-    # 15 minutes for the Mac to start, the ios job's 60, and the few GitHub takes to notice a
-    # runner that went silent.
-    timeout-minutes: 100
+    # Up to four hours for an online Mac to start (the script's QUEUE_LIMIT_S), the ios job's 60,
+    # and the few GitHub takes to notice a runner that went silent.
+    timeout-minutes: 330
     permissions:
       actions: read
       contents: read
@@ -616,6 +618,7 @@ jobs:
         id: watch
         env:
           GH_TOKEN: ${{ github.token }}
+          RUNNERS_TOKEN: ${{ secrets.RUNNER_STATUS_TOKEN }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           JOB_NAME: iOS tests and build
