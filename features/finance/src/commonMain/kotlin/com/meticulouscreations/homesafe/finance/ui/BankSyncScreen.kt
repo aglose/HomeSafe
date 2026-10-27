@@ -237,13 +237,14 @@ internal fun BankSyncScreen(
     onUndoWrite: (Long) -> Unit,
     onPauseLine: (String, Boolean) -> Unit,
     onRetry: () -> Unit,
+    // The clock the page's "3 h ago" and "next around 6:30 PM" are read against; previews fix it.
+    now: Long = Clock.System.now().epochSeconds,
 ) {
     val bank = state.bank
     // Picking what to link, and the institution whose unlinking and the write whose undoing is being confirmed (by id).
     var choosing by rememberSaveable { mutableStateOf(false) }
     var confirmingUnlink by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmingUndo by rememberSaveable { mutableStateOf<Long?>(null) }
-    val now = Clock.System.now().epochSeconds
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.testTag("finance_bank_sync")) {
         when {
             bank == null && state.loading -> item(key = "loading") { LoadingCard() }
