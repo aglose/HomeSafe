@@ -23,6 +23,9 @@ asks Tesla at exactly those moments:
 
 "Near" is within the home radius (Settings → Home) plus 50 m; "away" is more than 250 m past it.
 
+The same answers say which street and which side a car parked at the curb is on, and the relay
+tells its drivers before the signs there say it must move: see [parking.md](parking.md).
+
 ## Cost
 
 Personal accounts get a $10 monthly credit, and a location request costs $0.002 (500 per $1). The

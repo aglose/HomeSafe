@@ -79,6 +79,12 @@ data class AlertNotification(
      * of a detection ([target] stays null). Null for everything from a camera.
      */
     val door: DoorDeepLink? = null,
+    /**
+     * A household car parked on the street must move (the relay's `parking=1` push,
+     * docs/parking.md) rather than a camera seeing something: Android wears the car and posts it
+     * on a channel of its own. It names no detection, so [target] stays null.
+     */
+    val parking: Boolean = false,
 )
 
 /**

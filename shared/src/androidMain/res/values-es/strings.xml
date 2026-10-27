@@ -17,6 +17,27 @@
     <string name="notif_channel_weather_severe_description">Avisos oficiales para donde estás</string>
     <string name="notif_channel_budget_name">Presupuesto</string>
     <string name="notif_channel_budget_description">El gasto del mes con tarjeta cerca de un límite, por encima de él o tocando los ahorros</string>
+    <string name="notif_channel_parking_name">Estacionamiento</string>
+    <string name="notif_channel_parking_description">Un auto estacionado en la calle que tiene que moverse antes de que las señales lo prohíban</string>
+    <string name="notif_parking_due_title">Mueve %1$s antes de %2$s</string>
+    <string name="notif_parking_now_title">Mueve %1$s ahora</string>
+    <string name="notif_parking_moved_title">%1$s ya se movió</string>
+    <string name="notif_parking_moved_body">Ya no está estacionado en %1$s</string>
+    <string name="notif_parking_moved_body_no_street">Ya no está estacionado ahí</string>
+    <string name="notif_parking_place_north">Lado norte de %1$s</string>
+    <string name="notif_parking_place_east">Lado este de %1$s</string>
+    <string name="notif_parking_place_south">Lado sur de %1$s</string>
+    <string name="notif_parking_place_west">Lado oeste de %1$s</string>
+    <string name="notif_parking_body">%1$s · %2$s</string>
+    <string name="notif_parking_no_parking">Prohibido estacionar %1$s–%2$s</string>
+    <plurals name="notif_parking_limit_hours">
+        <item quantity="one">Estacionamiento de %1$d hora</item>
+        <item quantity="other">Estacionamiento de %1$d horas</item>
+    </plurals>
+    <plurals name="notif_parking_limit_minutes">
+        <item quantity="one">Estacionamiento de %1$d minuto</item>
+        <item quantity="other">Estacionamiento de %1$d minutos</item>
+    </plurals>
     <string name="notif_door_opened_title">Se abrió: %1$s</string>
     <string name="notif_door_body">Sensor de puerta</string>
     <string name="notif_door_away_body">Sensor de puerta · no hay nadie en casa</string>
@@ -28,6 +49,7 @@
     <string name="notif_nest_unconfirmed_body_no_time">Sin video de Google. Revisa la cámara en la app Google Home.</string>
     <string name="notif_nest_streaming_body">Google está enviando su video de nuevo.</string>
     <string name="notif_group_cameras">Cámaras</string>
+    <string name="notif_group_parking">Estacionamiento</string>
     <string name="notif_group_summaries">Resúmenes de cámaras</string>
     <string name="notif_group_weather">Clima</string>
     <string name="notif_group_budget">Presupuesto</string>

@@ -20,6 +20,31 @@
     <string name="notif_channel_weather_severe_description">Government warnings for where you are</string>
     <string name="notif_channel_budget_name">Budget</string>
     <string name="notif_channel_budget_description">The month\'s card spending close to a limit, over it, or into savings</string>
+    <string name="notif_channel_parking_name">Parking</string>
+    <string name="notif_channel_parking_description">A car parked on the street that has to move before the signs say it can\'t stay</string>
+    <!-- A household car to move (docs/parking.md); %1$s is the car's name, e.g. "Andrew's Tesla", and %2$s a time, e.g. "8:00 AM" or "Thu 8:00 AM". -->
+    <string name="notif_parking_due_title">Move %1$s by %2$s</string>
+    <string name="notif_parking_now_title">Move %1$s now</string>
+    <string name="notif_parking_moved_title">%1$s has moved</string>
+    <!-- %1$s is the street, e.g. "Central Ave". -->
+    <string name="notif_parking_moved_body">No longer parked on %1$s</string>
+    <string name="notif_parking_moved_body_no_street">No longer parked there</string>
+    <string name="notif_parking_place_north">North side of %1$s</string>
+    <string name="notif_parking_place_east">East side of %1$s</string>
+    <string name="notif_parking_place_south">South side of %1$s</string>
+    <string name="notif_parking_place_west">West side of %1$s</string>
+    <!-- %1$s is where the car is, e.g. "North side of Central Ave"; %2$s what the sign says, e.g. "Street sweeping" or "No parking 8:00 AM–11:00 AM". -->
+    <string name="notif_parking_body">%1$s · %2$s</string>
+    <!-- %1$s and %2$s are clock times, e.g. "8:00 AM" and "11:00 AM". -->
+    <string name="notif_parking_no_parking">No parking %1$s–%2$s</string>
+    <plurals name="notif_parking_limit_hours">
+        <item quantity="one">%1$d-hour parking</item>
+        <item quantity="other">%1$d-hour parking</item>
+    </plurals>
+    <plurals name="notif_parking_limit_minutes">
+        <item quantity="one">%1$d-minute parking</item>
+        <item quantity="other">%1$d-minute parking</item>
+    </plurals>
     <!-- A door sensor's push (docs/doors.md); %1$s is the door's name, e.g. "Front door". -->
     <string name="notif_door_opened_title">%1$s opened</string>
     <string name="notif_door_body">Door sensor</string>
@@ -39,6 +64,7 @@
     <string name="notif_group_summaries">Camera summaries</string>
     <string name="notif_group_weather">Weather</string>
     <string name="notif_group_budget">Budget</string>
+    <string name="notif_group_parking">Parking</string>
     <string name="notif_budget_close_title">Close to the month\'s budget</string>
     <string name="notif_budget_over_title">Over the month\'s budget</string>
     <string name="notif_budget_savings_title">Dipping into savings</string>

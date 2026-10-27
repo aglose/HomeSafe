@@ -111,6 +111,14 @@ someone who may see the finances, and on Android they have a **Budget** channel 
 (`budget=1` in the push's data, `notif_id=budget-<month>-<line>`). Quiet hours hold them back;
 "only when everyone's away" and "only strangers" don't apply to them.
 
+## Not the cameras: parking
+
+When a household Tesla is parked at a curb whose signs say it must move (street sweeping, a time
+limit), the relay's "parking" section tells its drivers: the evening before a morning deadline,
+half an hour before, and again if it is still there when the time comes (see
+[parking.md](parking.md)). The push is `parking=1`, `notif_id=parking-<car>`, worded on the phone;
+quiet hours hold it back until they end, "only when everyone's away" and "only strangers" don't.
+
 ## Not the cameras: door sensors
 
 A door opening is pushed by the relay's "doors" section, not by this policy (see
@@ -135,6 +143,7 @@ away alerts.
 | Summaries | `summaries` | The relay's summaries (low importance) |
 | Weather, Severe weather | `weather_v2`, `weather_severe_v2` | The weather app's (see [weather.md](weather.md)) |
 | Budget | `budget_v2` | The month's card spending (see [budget.md](budget.md)) |
+| Parking | `parking` | A household car parked on the street that has to move (see [parking.md](parking.md)) |
 
 ## Icons
 
@@ -143,7 +152,7 @@ On Android each notification says what it is from the status bar, before the sha
 | Notification | Icon | Accent |
 | --- | --- | --- |
 | A person, where the notification knows that is what was seen | A figure | The app's orange |
-| A car (an unnamed one, or a household car arriving or leaving) | A car | The app's orange |
+| A car (an unnamed one, a household car arriving or leaving, or one to move off the street) | A car | The app's orange |
 | An animal (in-app alerts) | A paw | The app's orange |
 | Anything else from a camera | The camera | The app's orange |
 | A door that opened | A door, swung open | The app's orange |

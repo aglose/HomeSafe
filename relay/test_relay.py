@@ -7579,3 +7579,207 @@ class NestOutageTest(unittest.TestCase):
         done.set()
         watchdog.join(timeout=5)
         self.assertEqual(["Outdoor Doorbell is streaming again"], self.pushes)
+
+
+def _metres(origin, east, north):
+    """The point `east` and `north` metres from `origin` (lat, lng)."""
+    import math
+
+    return origin[0] + north / 111_195.0, origin[1] + east / (111_195.0 * math.cos(math.radians(origin[0])))
+
+
+class ParkingTest(_FakeFrigate):
+    """
+    Which street and side a Tesla is parked on, and telling its drivers before it must move. Made-up
+    streets: Elm St runs east-west, Oak St north-south across it, and the house is north of Elm
+    and west of Oak.
+    """
+
+    ZONE = "America/Los_Angeles"
+    CROSSING = (37.7700, -122.2580)
+    ELM = [list(_metres(CROSSING, -200, 0)), list(_metres(CROSSING, 200, 0))]
+    OAK = [list(_metres(CROSSING, 0, -150)), list(_metres(CROSSING, 0, 150))]
+    HOME = dict(zip(("lat", "lng"), _metres(CROSSING, -40, 25)), radius_m=150)
+    SWEEPING = {"kind": "no_parking", "days": ["thu"], "weeks": [1, 3], "start": "08:00", "end": "11:00", "note": "Street sweeping"}
+    # Wednesday 2026-11-04, 7 PM, the evening before the month's first Thursday.
+    WED_7PM = 1_793_847_600.0
+
+    def setUp(self):
+        super().setUp()
+        self._parking = {n: getattr(relay, n) for n in (
+            "TESLA_CLIENT_ID", "TESLA_CLIENT_SECRET", "TESLA_PUBLIC_URL", "TESLA_CARS", "PARKING_FILE", "tesla_location")}
+        relay.TESLA_CLIENT_ID, relay.TESLA_CLIENT_SECRET, relay.TESLA_PUBLIC_URL = "client", "secret", "https://box.example.ts.net"
+        relay.TESLA_CARS = {"andrews_tesla": "VIN_A", "sarahs_car": "VIN_S"}
+        relay.PARKING_FILE = os.path.join(self._dir.name, "parking.json")
+        relay._parking_file.update(mtime=None, config={})
+        relay._tesla_answers.clear()
+        relay.state_set(relay.HOME_KEY, self.HOME)
+        self.where = {}  # vin -> tesla_location's answer
+        self.asked = []
+        relay.tesla_location = lambda vin: (self.asked.append(vin), self.where.get(vin))[1]
+        self.pushes = []  # (token, title, body, data)
+        self.config({
+            "tz": self.ZONE,
+            "streets": [
+                {"street": "Elm St", "line": self.ELM, "sides": {"north": [self.SWEEPING], "south": [
+                    {"kind": "no_parking", "days": ["fri"], "weeks": [2, 4], "start": "10:00", "end": "13:00", "note": "Street sweeping"}]}},
+                {"street": "Oak St", "line": self.OAK, "only": {"side": "north", "of": "Elm St"}, "sides": {
+                    "home": [{"kind": "no_parking", "days": ["fri"], "start": "10:00", "end": "13:00"}],
+                    "across": [{"kind": "no_parking", "days": ["thu"], "start": "08:00", "end": "11:00"}]}},
+            ],
+        })
+        self.phone("pixel", "t-pixel", user="andrew")
+
+    def tearDown(self):
+        for name, value in self._parking.items():
+            setattr(relay, name, value)
+        relay._tesla_answers.clear()
+        relay._parking_file.update(mtime=None, config={})
+        super().tearDown()
+
+    def config(self, config):
+        with open(relay.PARKING_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f)
+        relay._parking_file["mtime"] = None
+
+    def phone(self, device_id, token, user=None, quiet=(None, None)):
+        relay.with_db(lambda c: (c.execute(
+            "INSERT INTO devices (device_id, token, platform, name, user, quiet_start, quiet_end, tz) VALUES (?,?,?,?,?,?,?,?)",
+            (device_id, token, "android", device_id, user, quiet[0], quiet[1], self.ZONE)), c.commit()))
+
+    def fix(self, east, north, heading, at, **more):
+        lat, lng = _metres(self.CROSSING, east, north)
+        return {"lat": lat, "lng": lng, "heading": heading, "at": at, "shift": None, "speed": None, **more}
+
+    def match(self, east, north, heading):
+        stretches = relay.parking_stretches(relay.parking_config(), self.HOME, self.WED_7PM)
+        found = relay.parking_match(self.fix(east, north, heading, 0), stretches)
+        return found and (found["street"], found["side"], [r.get("days") for r in found["rules"]])
+
+    def push(self, token, title, body, data, away=False):
+        self.pushes.append((token, title, body, data))
+        return "sent"
+
+    def tick(self, at):
+        relay._tesla_answers.clear()  # every tick a fresh answer, as if car presence had just asked
+        return [(p["event"], p["title"], p["body"], p["to"]) for p in relay.parking_tick(at, push=self.push)]
+
+    def test_the_side_is_the_one_whose_traffic_the_car_faces(self):
+        self.assertEqual(("Elm St", "north", [["thu"]]), self.match(60, 5, 270), "facing west keeps right on the north side")
+        self.assertEqual(("Elm St", "south", [["fri"]]), self.match(60, -5, 90))
+        self.assertEqual(("Elm St", "north", [["thu"]]), self.match(60, -2, 265), "a fix a little south, but facing the north side's way")
+
+    def test_without_a_heading_the_fix_decides_and_on_the_middle_every_side_counts(self):
+        self.assertEqual(("Elm St", "south", [["fri"]]), self.match(60, -5, None))
+        self.assertEqual(("Elm St", None, [["thu"], ["fri"]]), self.match(60, 0.5, None))
+
+    def test_facing_across_the_street_or_off_it_is_not_parked_at_the_curb(self):
+        self.assertIsNone(self.match(-60, 9, 180), "nosed into a driveway")
+        self.assertIsNone(self.match(-60, 40, 270), "well off the street")
+        self.assertIsNone(self.match(500, 0, 90), "past the end of the stretch")
+
+    def test_oak_counts_only_north_of_elm_and_its_sides_are_the_houses_and_across(self):
+        self.assertEqual(("Oak St", "west", [["fri"]]), self.match(-4, 60, 180), "the house's side: west")
+        self.assertEqual(("Oak St", "east", [["thu"]]), self.match(4, 60, 0))
+        self.assertIsNone(self.match(-4, -60, 180), "south of Elm, Oak has no signs")
+
+    def test_within_keeps_only_the_blocks_near_home(self):
+        config = relay.parking_config()
+        config["streets"][0]["within_m"] = 100
+        self.config(config)
+        self.assertEqual(("Elm St", "north", [["thu"]]), self.match(-60, 5, 270))
+        self.assertIsNone(self.match(150, 5, 270), "the next block east: its signs weren't read")
+
+    def test_a_one_way_street_goes_by_the_fix(self):
+        config = relay.parking_config()
+        config["streets"][0]["one_way"] = True
+        self.config(config)
+        self.assertEqual(("Elm St", "south", [["fri"]]), self.match(60, -5, 270))
+
+    def test_first_and_third_thursday_mornings(self):
+        zone = relay.ZoneInfo(self.ZONE)
+        found = relay.rule_deadline(self.SWEEPING, self.WED_7PM, self.WED_7PM, zone)
+        self.assertEqual(self.WED_7PM + 13 * 3600, found["at"], "Thursday 8 AM")
+        self.assertEqual(self.WED_7PM + 16 * 3600, found["until"])
+        after = relay.rule_deadline(self.SWEEPING, self.WED_7PM, found["until"], zone)
+        self.assertEqual(found["at"] + 14 * 86400, after["at"], "then the third Thursday, not the second")
+        last = {"kind": "no_parking", "days": ["thu"], "weeks": [-1], "start": "08:00", "end": "11:00"}
+        self.assertEqual(found["at"] + 21 * 86400, relay.rule_deadline(last, self.WED_7PM, self.WED_7PM, zone)["at"], "the 26th, the last")
+
+    def test_a_time_limit_counts_from_parking_or_the_window_opening(self):
+        zone = relay.ZoneInfo(self.ZONE)
+        two_hours = {"kind": "limit", "minutes": 120, "days": ["mon", "tue", "wed", "thu", "fri"], "start": "08:00", "end": "18:00"}
+        thursday_7am = self.WED_7PM + 12 * 3600
+        self.assertEqual(thursday_7am + 3 * 3600, relay.rule_deadline(two_hours, thursday_7am, thursday_7am, zone)["at"], "10 AM")
+        thursday_9am = thursday_7am + 2 * 3600
+        self.assertEqual(thursday_9am + 2 * 3600, relay.rule_deadline(two_hours, thursday_9am, thursday_9am, zone)["at"])
+        thursday_5pm = thursday_7am + 10 * 3600
+        self.assertEqual(thursday_7am + 27 * 3600, relay.rule_deadline(two_hours, thursday_5pm, thursday_5pm, zone)["at"], "the window closes first: Friday 10 AM")
+        permit = dict(two_hours, permit="B")
+        self.assertIsNone(relay.parking_deadline([permit], thursday_9am, thursday_9am, zone, {"B"}))
+
+    def test_told_the_evening_before_shortly_before_and_then_that_it_moved(self):
+        self.where["VIN_A"] = self.fix(60, 5, 270, self.WED_7PM - 600)
+        self.assertEqual([], self.tick(self.WED_7PM), "an 8 AM sweeping waits for the evening")
+        self.assertEqual([("due", "Move Andrew's Tesla by Thu 8:00 AM", "North side of Elm St · Street sweeping", ["pixel"])],
+                         self.tick(self.WED_7PM + 3600))
+        data = self.pushes[-1][3]
+        self.assertEqual(("1", "parking-andrews_tesla", "north", "Elm St"), (data["parking"], data["notif_id"], data["parking_side"], data["parking_street"]))
+        self.assertEqual([], self.tick(self.WED_7PM + 3700), "once")
+        self.where["VIN_A"] = {"asleep": True}
+        self.assertEqual([("due", "Move Andrew's Tesla by 8:00 AM", "North side of Elm St · Street sweeping", ["pixel"])],
+                         self.tick(self.WED_7PM + 12.5 * 3600), "asleep, it is still there: half an hour before")
+        self.assertEqual([("now", "Move Andrew's Tesla now", "North side of Elm St · Street sweeping", ["pixel"])],
+                         self.tick(self.WED_7PM + 13 * 3600))
+        self.where["VIN_A"] = self.fix(-500, 300, 10, self.WED_7PM + 13.1 * 3600, shift="D", speed=25.0)
+        self.assertEqual([("moved", "Andrew's Tesla has moved", "No longer parked on Elm St", ["pixel"])], self.tick(self.WED_7PM + 13.1 * 3600))
+        self.assertEqual("1", self.pushes[-1][3]["silent"])
+        self.assertEqual([], self.tick(self.WED_7PM + 14 * 3600))
+
+    def test_a_car_gone_before_the_reminder_is_not_reminded_about(self):
+        self.where["VIN_A"] = self.fix(60, 5, 270, self.WED_7PM + 3600)
+        self.tick(self.WED_7PM + 3600)
+        relay._tesla_answers["andrews_tesla"] = (self.WED_7PM + 3600, self.where["VIN_A"])  # nobody has asked since the evening
+        self.where["VIN_A"] = self.fix(-60, 30, 180, self.WED_7PM + 12.5 * 3600 - 60)  # back in the driveway
+        self.assertEqual(["moved"], [p["event"] for p in relay.parking_tick(self.WED_7PM + 12.5 * 3600, push=self.push)])
+        self.assertEqual(2, self.asked.count("VIN_A"), "asked again before sending anyone out")
+
+    def test_a_phone_in_its_quiet_hours_hears_once_they_are_over(self):
+        relay.with_db(lambda c: (c.execute("UPDATE devices SET quiet_start=?, quiet_end=?", (19 * 60, 7 * 60)), c.commit()))
+        self.where["VIN_A"] = self.fix(60, 5, 270, self.WED_7PM + 3600)
+        self.assertEqual([], self.tick(self.WED_7PM + 3600))
+        self.assertEqual([("due", "Move Andrew's Tesla by 8:00 AM", "North side of Elm St · Street sweeping", ["pixel"])], self.tick(self.WED_7PM + 12 * 3600 + 60))
+
+    def test_only_the_cars_drivers_hear_when_their_phones_are_registered(self):
+        self.phone("iphone", "t-iphone", user="sarah")
+        config = relay.parking_config()
+        config["drivers"] = {"andrews_tesla": ["andrew"], "sarahs_car": ["sarah"]}
+        self.config(config)
+        self.where = {"VIN_A": self.fix(60, 5, 270, self.WED_7PM + 3600), "VIN_S": self.fix(4, 60, 0, self.WED_7PM + 3600)}
+        told = {title: to for _, title, _, to in self.tick(self.WED_7PM + 3600)}
+        self.assertEqual({"Move Andrew's Tesla by Thu 8:00 AM": ["pixel"], "Move Sarah's Car by Thu 8:00 AM": ["iphone"]}, told)
+
+    def test_a_car_in_the_driveway_or_away_says_nothing(self):
+        self.where = {"VIN_A": self.fix(-60, 30, 180, self.WED_7PM + 12.5 * 3600), "VIN_S": self.fix(-5000, 0, 90, self.WED_7PM + 12.5 * 3600)}
+        self.assertEqual([], self.tick(self.WED_7PM + 12.5 * 3600))
+
+    def test_parked_between_two_answers_counts_from_the_earlier(self):
+        car = {}
+        stretches = relay.parking_stretches(relay.parking_config(), self.HOME, self.WED_7PM)
+        relay.parking_read(car, (self.WED_7PM, self.fix(-60, 30, 180, self.WED_7PM)), stretches)
+        relay.parking_read(car, (self.WED_7PM + 1200, self.fix(60, 5, 270, self.WED_7PM + 1200)), stretches)
+        self.assertEqual((self.WED_7PM, "Elm St", "north"), (car["spot"]["since"], car["spot"]["street"], car["spot"]["side"]))
+
+    def test_streets_by_name_are_looked_up_in_openstreetmap_once(self):
+        self.config({"streets": [{"street": "Elm St", "sides": {"north": [self.SWEEPING]}}]})
+        asked = []
+        geometry = [{"lat": lat, "lon": lng} for lat, lng in self.ELM]
+        relay.requests.post = lambda url, data=None, headers=None, timeout=None: (asked.append(data["data"]), _Response(200, {"elements": [
+            {"type": "way", "tags": {"highway": "residential", "name": "Elm Street"}, "geometry": geometry},
+            {"type": "way", "tags": {"highway": "footway", "name": "Elm Street"}, "geometry": geometry},
+        ]}))[1]
+        stretches = relay.parking_stretches(relay.parking_config(), self.HOME, self.WED_7PM)
+        relay.parking_stretches(relay.parking_config(), self.HOME, self.WED_7PM + 60)
+        self.assertEqual(1, len(asked))
+        self.assertIn('"name"="Elm Street"', asked[0])
+        self.assertEqual([("Elm St", "left")], [(s["street"], s["home_side"]) for s in stretches])
