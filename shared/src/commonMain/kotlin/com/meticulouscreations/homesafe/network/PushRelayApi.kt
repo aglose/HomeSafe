@@ -98,7 +98,9 @@ class PushRelayApi(private val httpClient: HttpClient) {
             DeviceCredentials(
                 deviceId = it.deviceId,
                 secret = it.secret ?: throw FrigateResponseException(UiText.of(Res.string.error_relay_no_secret), technical = "Relay issued no secret"),
-                push = it.push ?: true,
+                // A relay too old to say pushes to an FCM token, as it always has, but not to an
+                // iPhone's APNs one: an iPhone keeps its in-app alerts until a relay says it can.
+                push = it.push ?: (registration.platform != "ios"),
             )
         }
     }
@@ -470,7 +472,7 @@ data class DeviceRegistration(
 /**
  * What the relay knows this install as, and the secret that proves it; and whether it can push
  * to the token it was given ([push]): an iPhone's only once the relay has APNs set up. A relay
- * too old to say is taken at its word that it can, as it always could with an FCM token.
+ * too old to say can push to Android's FCM token, as it always could, and not to an iPhone's.
  */
 data class DeviceCredentials(val deviceId: String, val secret: String, val push: Boolean = true)
 

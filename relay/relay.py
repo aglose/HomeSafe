@@ -639,13 +639,19 @@ def apns_send(token: str, title: str, body: str, data: dict[str, str], away: boo
     if not apns_on():
         return False, "apns not set up (APNS_KEY_ID, APNS_KEY_FILE)"
     headers, aps = apns_parts(title, body, data, away)
-    headers = {**headers, "authorization": f"bearer {apns_jwt()}", "apns-topic": APNS_TOPIC, "apns-push-type": "alert"}
     payload = {**{k: v for k, v in data.items() if k != "aps"}, "aps": aps}
     envs = state_get(APNS_ENV_KEY) or {}
     first = envs.get(token[:16], "production")
     status, reason = 0, ""
     for env in (first, "sandbox" if first == "production" else "production"):
-        status, reason = apns_post(f"{APNS_HOSTS[env]}/3/device/{token}", headers, payload)
+        # A key that won't load, or Apple out of reach, is this phone's push failing, not the
+        # rest of the broadcast's: the phones after it in `broadcast` are still pushed to.
+        try:
+            headers["authorization"] = f"bearer {apns_jwt()}"
+            headers.update({"apns-topic": APNS_TOPIC, "apns-push-type": "alert"})
+            status, reason = apns_post(f"{APNS_HOSTS[env]}/3/device/{token}", headers, payload)
+        except Exception as e:
+            return False, f"apns: {type(e).__name__}: {e}"[:300]
         if status == 200:
             if envs.get(token[:16]) != env:
                 envs[token[:16]] = env

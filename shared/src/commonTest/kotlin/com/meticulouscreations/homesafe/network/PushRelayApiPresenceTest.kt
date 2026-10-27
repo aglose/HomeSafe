@@ -76,7 +76,9 @@ class PushRelayApiPresenceTest {
         val (apns, _) = api("""{"ok":true,"device_id":"dev-ios","secret":"s3cret","push":true}""")
         assertEquals(true, apns.registerDevice("http://frigate:8971", registration).getOrThrow().push)
         val (older, _) = api("""{"ok":true,"device_id":"dev-ios","secret":"s3cret"}""")
-        assertEquals(true, older.registerDevice("http://frigate:8971", registration).getOrThrow().push, "a relay too old to say")
+        assertEquals(false, older.registerDevice("http://frigate:8971", registration).getOrThrow().push, "a relay too old to say can't push to an iPhone")
+        val android = DeviceRegistration(deviceId = "dev-1", token = "fcm-tok", platform = "android", name = "Pixel 10", build = "release")
+        assertEquals(true, older.registerDevice("http://frigate:8971", android).getOrThrow().push, "but it can to Android, as always")
     }
 
     @Test

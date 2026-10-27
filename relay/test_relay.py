@@ -8115,3 +8115,30 @@ class ApnsTest(unittest.TestCase):
         self.assertEqual("jwt-1000", relay.apns_jwt(1000.0))
         self.assertEqual("jwt-1000", relay.apns_jwt(1000.0 + 44 * 60))
         self.assertEqual("jwt-3700", relay.apns_jwt(3700.0))
+
+    def test_apple_out_of_reach_fails_this_phone_and_the_broadcast_goes_on(self):
+        relay.with_db(lambda c: (c.executemany("INSERT INTO devices (device_id, token, platform, name) VALUES (?,?,?,?)",
+                                               [("ios1", self.TOKEN, "ios", "iPhone"), ("and1", "fcm-token-1", "android", "Pixel")]), c.commit()))
+
+        def unreachable(url, headers, payload):
+            raise TimeoutError("read timed out")
+
+        relay.apns_post = unreachable
+        fcm = []
+        send_push = relay.send_push
+        relay.send_push = lambda token, *a, **k: send_push(token, *a, **k) if relay.apns_token(token) else (fcm.append(token), (True, ""))[1]
+        try:
+            result = relay.broadcast("Front Door", "Person", {}, away=True)
+        finally:
+            relay.send_push = send_push
+        self.assertEqual((1, 1), (result["sent"], result["failed"]), "the Pixel after the iPhone was still pushed to")
+        self.assertEqual(["fcm-token-1"], fcm)
+
+    def test_a_key_that_wont_load_fails_the_push_not_the_relay(self):
+        def broken(now):
+            raise ValueError("Could not deserialize key data")
+
+        relay.apns_sign = broken
+        ok, err = relay.apns_send(self.TOKEN, "t", "b", {})
+        self.assertFalse(ok)
+        self.assertIn("Could not deserialize key data", err)
