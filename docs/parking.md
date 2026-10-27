@@ -73,6 +73,11 @@ the streets give the house away. The relay reads it again whenever it changes, w
 - **`street`** is looked up by name in OpenStreetMap within 600 m of home (Settings → Home), once
   a week; "Ave", "St" and the like are spelt out for the lookup. A street OpenStreetMap gets wrong
   can be drawn instead, as `"line": [[lat, lng], [lat, lng], ...]` down its middle.
+- OpenStreetMap's public server is slow and often overloaded: on 2026-10-27 it took 34–42 s a
+  street from the box, then answered 502 for minutes. What it found is kept through failed
+  lookups, but a street that has never been found has no line until it answers (the log says
+  `parking: no line for …`, and the relay asks again each hour). The household's own file has
+  each street's `line` written in, copied once from what OpenStreetMap had, so it never asks.
 - **`only`** keeps the part of the street on one side of another: "Oak St north of Elm St". A
   street with no signs on one stretch simply has no entry for it.
 - **`within_m`** keeps the part of the street within that many metres of the house: the blocks
