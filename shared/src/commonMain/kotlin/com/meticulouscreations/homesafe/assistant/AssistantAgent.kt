@@ -25,9 +25,6 @@ class AssistantAgent(private val api: AnthropicApi, tools: Set<AssistantTool>) {
 
     private val tools: List<AssistantTool> = tools.sortedBy { it.name }
 
-    /** Every lock a tool reads behind ([AssistantTool.lock]), for whoever keeps the conversation to watch. */
-    val locks: Set<StateFlow<Boolean>> = this.tools.mapNotNull { it.lock }.toSet()
-
     /** The tool list as the API takes it; built once, in a fixed order, so the cached prompt prefix holds. */
     private val toolDefinitions: JsonArray = buildJsonArray {
         this@AssistantAgent.tools.forEach { tool ->

@@ -114,6 +114,37 @@ class AssistantViewModelTest {
     }
 
     @Test
+    fun aQuestionAskedOverALockedAwayScreenGoesWhenItsLockComesBackOn() = runTest {
+        val screenLock = MutableStateFlow(false)
+        val viewModel = viewModel(replies = listOf(answer("That's your checking account."), answer("Hello.")))
+
+        // No tool reads anything; the picture of the unlocked screen is all that went.
+        viewModel.ask("What's this?", screen = "Finance app, wallet tab", picture = null, screenLocks = listOf(screenLock))
+        settle(viewModel)
+        assertEquals(1, viewModel.uiState.value.turns.size)
+
+        screenLock.value = true
+        assertTrue(viewModel.uiState.value.turns.isEmpty())
+
+        viewModel.ask("Hi", screen = "Home", picture = null)
+        settle(viewModel)
+        assertEquals(1, sent.last()["messages"]!!.jsonArray.size)
+    }
+
+    @Test
+    fun aScreenAlreadyLockedHadNothingToHoldBack() = runTest {
+        val screenLock = MutableStateFlow(true)
+        val viewModel = viewModel(replies = listOf(answer("It's locked.")))
+
+        viewModel.ask("What's this?", screen = "Finance app, locked", picture = null, screenLocks = listOf(screenLock))
+        settle(viewModel)
+        screenLock.value = false
+        screenLock.value = true
+
+        assertEquals("It's locked.", viewModel.uiState.value.turns.single().answer)
+    }
+
+    @Test
     fun catchesUpWithAKeyForgottenElsewhere() = runTest {
         val store = InMemoryAssistantStore(key = "sk-test")
         val viewModel = viewModel(replies = emptyList(), store = store)

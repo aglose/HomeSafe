@@ -154,6 +154,12 @@ fun AtlasApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean
     // Once the app has gone from the screen, not as it starts to close: the lock must not flash up
     // through the overlay as it drains away.
     DisposableEffect(lockViewModel) { onDispose { lockViewModel.lock() } }
+    // A question asked over the app goes with a picture of it, so the assistant takes it back when the app locks.
+    val assistant = LocalAssistant.current
+    DisposableEffect(assistant, lockViewModel) {
+        val release = assistant?.showsBehind(lockViewModel.locked)
+        onDispose { release?.invoke() }
+    }
     val fontFamily = albertSansFontFamily()
     val palette = remember { AtlasPalette() }
     val type = remember(fontFamily) { AtlasTypography(fontFamily) }

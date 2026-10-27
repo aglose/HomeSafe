@@ -215,7 +215,7 @@ private fun AssistantLayer(host: AssistantHost) {
             onSend = { question ->
                 scope.launch {
                     val picture = if (viewModel.uiState.value.includeScreen) runCatching { host.capture?.invoke() }.getOrNull() else null
-                    viewModel.ask(question, host.describeScreen(), picture)
+                    viewModel.ask(question, host.describeScreen(), picture, host.screenLocks())
                 }
             },
             onStop = viewModel::stop,

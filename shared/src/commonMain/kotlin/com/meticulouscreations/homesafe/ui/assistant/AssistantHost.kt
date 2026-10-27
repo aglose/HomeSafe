@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The assistant as the screens see it: whether it is up, the bar it grew out of, and what each
@@ -33,6 +34,7 @@ class AssistantHost {
         private set
 
     private val screens = mutableStateListOf<ScreenContext>()
+    private val locks = mutableStateListOf<StateFlow<Boolean>>()
 
     /** A picture of whatever is under the assistant, once it is up; set by [AssistantRoot]. */
     internal var capture: (suspend () -> ImageBitmap?)? = null
@@ -54,6 +56,19 @@ class AssistantHost {
 
     /** What the screens up now say about themselves, outermost first, one line each. */
     fun describeScreen(): String = screens.mapNotNull { runCatching { it.describe() }.getOrNull()?.takeIf(String::isNotBlank) }.joinToString("\n")
+
+    /** The locks the screens up now are shown from behind (see [showsBehind]). */
+    fun screenLocks(): List<StateFlow<Boolean>> = locks.toList()
+
+    /**
+     * Says the screen up now shows what [lock] holds back, for as long as it is up: a question asked
+     * over it (a picture of it, at the least, goes with the question) is then taken back when the lock
+     * comes back on, as one that read from behind it is. Returns what to call once it has gone.
+     */
+    fun showsBehind(lock: StateFlow<Boolean>): () -> Unit {
+        locks += lock
+        return { locks -= lock }
+    }
 
     internal fun add(context: ScreenContext) {
         screens += context

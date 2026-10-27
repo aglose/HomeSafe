@@ -30,13 +30,28 @@ question is asked about whatever is showing by then.
   | `who_is_home` | shared | Away mode's phones, home or away |
   | `server_status` | shared | Frigate's version, load, storage, detector, pipelines |
   | `finance_sheet`, `budget` | finance | the sheet and the month's budget; held back while the finance app is locked |
-  | `market_quotes` | finance | prices for symbols, or the watchlist |
+  | `market_quotes` | finance | prices for symbols, or the watchlist (held back while the finance app is locked) |
   | `weather` | weather | the saved places' forecasts, or a place by name |
   | `training_log` | fitness | workouts and sets, body weight, phase |
-  | `location_history` | atlas | one day's visits, or the Atlas overview |
+  | `location_history` | atlas | one day's visits, or the Atlas overview; held back while Atlas is locked |
 
   Tools only read. A tool's output is written for Claude (English, often `toString()` of the
   domain model) and isn't copy; what the screen says while it runs (`activity`) is.
+
+## Locks
+
+Finance and Atlas open behind a lock while there is no server to vouch for the phone
+(`FinanceAccess`). The assistant keeps to it:
+
+- A tool reading from behind a lock declares it (`AssistantTool.lock`) and, while it is on, answers
+  that it is locked instead of reading (checked again once the read is done). The market prices
+  themselves are public, so `market_quotes` still gives them for symbols asked for by name.
+- A screen showing what a lock holds back says so for as long as it is up
+  (`AssistantHost.showsBehind`); Finance and Atlas do.
+- A question that read through a tool behind a lock, or was asked over such a screen while the
+  lock was open, is taken back when that lock comes back on: the view model clears the whole
+  conversation, the answers on the card and the history that goes to the API (a picture of the
+  screen included), rather than editing it.
 
 ## Models
 

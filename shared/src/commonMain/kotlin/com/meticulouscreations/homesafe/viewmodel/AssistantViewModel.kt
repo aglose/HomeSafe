@@ -28,8 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -86,25 +85,17 @@ class AssistantViewModel(
     // question goes; what it does then is checked against this, so it can't touch the newer turn.
     private var generation = 0
 
-    /** The locks of the tools this conversation has read from ([com.meticulouscreations.homesafe.assistant.AssistantTool.lock]). */
-    private val readBehind = mutableSetOf<StateFlow<Boolean>>()
+    /**
+     * The locks this conversation has been behind, each watched until it comes back on: those of the
+     * tools it read from ([com.meticulouscreations.homesafe.assistant.AssistantTool.lock]), and of the
+     * screens it was asked over ([com.meticulouscreations.homesafe.ui.assistant.AssistantHost.showsBehind]).
+     */
+    private val watching = mutableMapOf<StateFlow<Boolean>, Job>()
 
     init {
         val checkedAt = store.string(PREF_MODELS_AT)?.toLongOrNull() ?: 0L
         if (clock.now().epochSeconds - checkedAt > MODELS_MAX_AGE_SECONDS) refreshModels()
-        // A lock coming back on takes away everything read from behind it: the answers on the card,
-        // and the tool results in the history (the whole conversation goes, rather than editing it).
-        agent.locks.forEach { lock ->
-            viewModelScope.launch {
-                lock.drop(1).filter { it }.collect { if (lock in readBehind) newConversation() }
-            }
-        }
     }
-
-    /**
-     * Asks [question] about the screen [screen] describes ([com.meticulouscreations.homesafe.ui.assistant.AssistantHost.describeScreen]),
-     * with [picture] of it when the person lets Claude see the screen.
-     */
 
     /**
      * Picks up what was changed in the store since: on iOS each tab has an assistant of its own, so
@@ -114,7 +105,12 @@ class AssistantViewModel(
         _uiState.update(::stored)
     }
 
-    fun ask(question: String, screen: String, picture: ImageBitmap?) {
+    /**
+     * Asks [question] about the screen [screen] describes ([com.meticulouscreations.homesafe.ui.assistant.AssistantHost.describeScreen]),
+     * with [picture] of it when the person lets Claude see the screen. [screenLocks] are the locks
+     * that screen is shown from behind.
+     */
+    fun ask(question: String, screen: String, picture: ImageBitmap?, screenLocks: List<StateFlow<Boolean>> = emptyList()) {
         val text = question.trim()
         val key = store.apiKey()
         if (key == null) _uiState.update { it.copy(hasKey = false) }
@@ -123,6 +119,7 @@ class AssistantViewModel(
         val asked = ++generation
         fun current() = generation == asked
         _uiState.update { it.copy(turns = it.turns + AssistantTurn(text), working = true, activity = null) }
+        screenLocks.forEach(::behind)
         asking = viewModelScope.launch {
             try {
                 val jpeg = picture?.takeIf { _uiState.value.includeScreen }?.let { withContext(Dispatchers.Default) { encodeScreenJpeg(it) } }
@@ -133,7 +130,7 @@ class AssistantViewModel(
                         AssistantAgent.Progress.Thinking -> _uiState.update { it.copy(activity = null) }
 
                         is AssistantAgent.Progress.Looking -> {
-                            progress.lock?.let { readBehind += it }
+                            progress.lock?.let(::behind)
                             _uiState.update { it.copy(activity = progress.activity) }
                         }
 
@@ -174,7 +171,8 @@ class AssistantViewModel(
         stop()
         generation++
         history.clear()
-        readBehind.clear()
+        watching.values.forEach { it.cancel() }
+        watching.clear()
         _uiState.update { it.copy(turns = emptyList(), working = false, activity = null) }
     }
 
@@ -221,6 +219,19 @@ class AssistantViewModel(
         models = cachedModels() ?: state.models,
         includeScreen = store.string(PREF_INCLUDE_SCREEN) != "false",
     )
+
+    /**
+     * Takes the whole conversation back once [lock], open now, comes back on: the answers on the card
+     * and what went to the API (all of it, rather than editing the history). A lock already on held
+     * nothing back from this conversation, so there is nothing to watch for.
+     */
+    private fun behind(lock: StateFlow<Boolean>) {
+        if (lock.value || lock in watching) return
+        watching[lock] = viewModelScope.launch {
+            lock.first { it }
+            newConversation()
+        }
+    }
 
     private fun cachedModels(): List<AssistantModel>? {
         val saved = store.string(PREF_MODELS)?.lines()?.mapNotNull { line ->
