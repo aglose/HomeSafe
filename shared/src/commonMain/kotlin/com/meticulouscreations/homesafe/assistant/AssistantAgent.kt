@@ -41,8 +41,9 @@ class AssistantAgent(private val api: AnthropicApi, tools: Set<AssistantTool>) {
         }
     }
 
-    // Set once Anthropic has turned the refusal fallback down for this key, so it isn't asked again.
-    private var fallbacksRejected = false
+    // The (model, key) pairs Anthropic has turned the refusal fallback down for, so they aren't asked again.
+    // Another model, or another key, is asked afresh.
+    private val fallbacksRejected = mutableSetOf<Pair<String, String>>()
 
     /**
      * Asks [model] the [question] (a `user` message) after [history]. [onProgress] hears the answer
@@ -92,7 +93,12 @@ class AssistantAgent(private val api: AnthropicApi, tools: Set<AssistantTool>) {
 
                 "refusal" -> return Answer(added, text.toString().trim(), Ending.Refused)
 
-                "max_tokens", "model_context_window_exceeded" -> return Answer(added, text.toString().trim(), Ending.CutOff)
+                // A tool call cut off on its way out has no result to go with it, and the API turns down a
+                // history holding one: the exchange is left out, as a refused one is, and its text stays on the card.
+                "max_tokens", "model_context_window_exceeded" -> {
+                    val unanswered = content.any { it.string("type") == "tool_use" }
+                    return Answer(if (unanswered) emptyList() else added, text.toString().trim(), Ending.CutOff)
+                }
 
                 else -> return Answer(added, text.toString().trim(), Ending.Done)
             }
@@ -106,13 +112,13 @@ class AssistantAgent(private val api: AnthropicApi, tools: Set<AssistantTool>) {
         messages: List<JsonObject>,
         onEvent: (AnthropicApi.StreamEvent) -> Unit,
     ): AnthropicApi.StreamedMessage {
-        val fallback = model.family.refusalFallback && !fallbacksRejected
+        val fallback = model.family.refusalFallback && (model.id to apiKey) !in fallbacksRejected
         return try {
             api.streamMessage(apiKey, request(model, messages, fallback), if (fallback) listOf(FALLBACK_BETA) else emptyList(), onEvent)
         } catch (e: AnthropicException) {
             // A model too new (or a key too limited) for the fallback says so in a 400: ask again without it.
             if (!fallback || e.status != 400 || e.message?.contains("fallback", ignoreCase = true) != true) throw e
-            fallbacksRejected = true
+            fallbacksRejected += model.id to apiKey
             api.streamMessage(apiKey, request(model, messages, fallback = false), emptyList(), onEvent)
         }
     }

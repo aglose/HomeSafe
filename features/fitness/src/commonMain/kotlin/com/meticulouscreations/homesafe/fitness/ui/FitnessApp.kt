@@ -286,6 +286,8 @@ fun FitnessAppContent(
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<FitnessPage>().apply { initialPage?.let(::add) } }
+    // Here rather than in the bars, which go while a page is open.
+    AssistantScreenContext { "Fitness app, ${tab.name.lowercase()} tab" + (pages.lastOrNull()?.let { ", $it page open" } ?: "") }
     val haptics = LocalHapticFeedback.current
     // Read through this where the page around it shouldn't redraw every time the heart beats.
     val latestHeart = rememberUpdatedState(heart)
@@ -594,7 +596,6 @@ private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit) {
 @Composable
 private fun FitnessNav(selected: FitnessTab, onSelect: (FitnessTab) -> Unit) {
     val colors = FitnessTheme.colors
-    AssistantScreenContext { "Fitness app, ${selected.name.lowercase()} tab" }
     Row(
         Modifier
             .navigationBarsPadding()

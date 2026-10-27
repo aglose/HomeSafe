@@ -16,8 +16,12 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.assistant_tool_atlas
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -28,7 +32,11 @@ import kotlinx.serialization.json.JsonObject
  */
 @Inject
 @ContributesIntoSet(AppScope::class)
-class AtlasAssistantTool(private val atlas: AtlasRepository, private val access: FinanceAccess) : AssistantTool {
+class AtlasAssistantTool(
+    private val atlas: AtlasRepository,
+    private val access: FinanceAccess,
+    private val appScope: CoroutineScope,
+) : AssistantTool {
     override val name = "location_history"
     override val description = "The Atlas app's location history (from Google Timeline). With a date: that day's visits (place, " +
         "arrival and departure in Unix seconds) and journeys (mode, distance). Without: the homes lived in and when, the most " +
@@ -40,7 +48,16 @@ class AtlasAssistantTool(private val atlas: AtlasRepository, private val access:
     override suspend fun run(input: JsonObject): String {
         if (access.locked.value) return LOCKED
         if (atlas.history.value == null) atlas.load()
-        val history = atlas.history.value?.takeUnless { it.isEmpty } ?: return "There is no location history on this phone yet."
+        if (atlas.history.value == null) {
+            // What the phone keeps is shown once the relay has vouched for this sign-in, which a fresh
+            // launch hasn't asked yet: ask, and go on as soon as the history is out. The sync itself
+            // runs on in the app's scope, as the Atlas app's own would, rather than being cut short.
+            appScope.launch { atlas.refresh() }
+            withTimeoutOrNull(20_000) { atlas.history.first { it != null } }
+        }
+        if (access.locked.value) return LOCKED
+        val history = atlas.history.value ?: return UNAVAILABLE
+        if (history.isEmpty) return "There is no location history on this phone yet."
         val date = input.stringInput("date")
         val found = if (date != null) day(history, date) else withContext(Dispatchers.Default) { overview(history) }
         return if (access.locked.value) LOCKED else found
@@ -87,5 +104,7 @@ class AtlasAssistantTool(private val atlas: AtlasRepository, private val access:
     private companion object {
         const val LOCKED = "The location history is locked: the home server isn't answering and nobody has unlocked the " +
             "Atlas app on this phone. Ask them to open Atlas and unlock it, then ask again."
+        const val UNAVAILABLE = "The location history isn't available right now: the home server hasn't confirmed this " +
+            "sign-in yet. Opening the Atlas app checks again."
     }
 }

@@ -75,19 +75,16 @@ class AssistantViewModel(
     private val clock: Clock,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(
-        AssistantUiState(
-            hasKey = store.apiKey() != null,
-            family = store.string(PREF_FAMILY)?.let { name -> AssistantModelFamily.entries.firstOrNull { it.name == name } } ?: AssistantModelFamily.Default,
-            models = cachedModels() ?: AssistantModelFamily.entries.map(AssistantModel::fallback),
-            includeScreen = store.string(PREF_INCLUDE_SCREEN) != "false",
-        ),
-    )
+    private val _uiState = MutableStateFlow(stored(AssistantUiState()))
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
 
     /** Everything said so far, exactly as it went to the API: only ever added to (see [AssistantAgent]). */
     private val history = mutableListOf<JsonObject>()
     private var asking: Job? = null
+
+    // Counts questions and fresh starts. A stopped answer can still be winding down when the next
+    // question goes; what it does then is checked against this, so it can't touch the newer turn.
+    private var generation = 0
 
     /** The locks of the tools this conversation has read from ([com.meticulouscreations.homesafe.assistant.AssistantTool.lock]). */
     private val readBehind = mutableSetOf<StateFlow<Boolean>>()
@@ -108,17 +105,30 @@ class AssistantViewModel(
      * Asks [question] about the screen [screen] describes ([com.meticulouscreations.homesafe.ui.assistant.AssistantHost.describeScreen]),
      * with [picture] of it when the person lets Claude see the screen.
      */
+
+    /**
+     * Picks up what was changed in the store since: on iOS each tab has an assistant of its own, so
+     * the key may have been saved or forgotten, or the model changed, in another. Called as it opens.
+     */
+    fun catchUp() {
+        _uiState.update(::stored)
+    }
+
     fun ask(question: String, screen: String, picture: ImageBitmap?) {
         val text = question.trim()
         val key = store.apiKey()
+        if (key == null) _uiState.update { it.copy(hasKey = false) }
         if (text.isEmpty() || key == null || _uiState.value.working) return
         val model = _uiState.value.model
+        val asked = ++generation
+        fun current() = generation == asked
         _uiState.update { it.copy(turns = it.turns + AssistantTurn(text), working = true, activity = null) }
         asking = viewModelScope.launch {
             try {
                 val jpeg = picture?.takeIf { _uiState.value.includeScreen }?.let { withContext(Dispatchers.Default) { encodeScreenJpeg(it) } }
                 val message = userMessage(screenBlock(screen) + "\n\n" + text, jpeg?.let { Base64.encode(it) })
                 val answer = agent.answer(key, model, history.toList(), message) { progress ->
+                    if (!current()) return@answer
                     when (progress) {
                         AssistantAgent.Progress.Thinking -> _uiState.update { it.copy(activity = null) }
 
@@ -130,6 +140,7 @@ class AssistantViewModel(
                         is AssistantAgent.Progress.Writing -> updateLastTurn { it.copy(answer = progress.text) }
                     }
                 }
+                if (!current()) return@launch
                 when (answer.ending) {
                     // A declined exchange isn't kept: the conversation carries on as if it hadn't been asked.
                     AssistantAgent.Ending.Refused -> updateLastTurn { it.copy(answer = "", note = UiText.of(Res.string.assistant_refused)) }
@@ -147,9 +158,9 @@ class AssistantViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                updateLastTurn { it.copy(note = (e as? LocalizedException)?.text ?: UiText.of(Res.string.assistant_error_generic)) }
+                if (current()) updateLastTurn { it.copy(note = (e as? LocalizedException)?.text ?: UiText.of(Res.string.assistant_error_generic)) }
             } finally {
-                _uiState.update { it.copy(working = false, activity = null) }
+                if (current()) _uiState.update { it.copy(working = false, activity = null) }
             }
         }
     }
@@ -161,6 +172,7 @@ class AssistantViewModel(
 
     fun newConversation() {
         stop()
+        generation++
         history.clear()
         readBehind.clear()
         _uiState.update { it.copy(turns = emptyList(), working = false, activity = null) }
@@ -201,6 +213,14 @@ class AssistantViewModel(
             _uiState.update { it.copy(models = models) }
         }
     }
+
+    /** [state] with what the store holds: whether there is a key, and the settings. */
+    private fun stored(state: AssistantUiState): AssistantUiState = state.copy(
+        hasKey = store.apiKey() != null,
+        family = store.string(PREF_FAMILY)?.let { name -> AssistantModelFamily.entries.firstOrNull { it.name == name } } ?: AssistantModelFamily.Default,
+        models = cachedModels() ?: state.models,
+        includeScreen = store.string(PREF_INCLUDE_SCREEN) != "false",
+    )
 
     private fun cachedModels(): List<AssistantModel>? {
         val saved = store.string(PREF_MODELS)?.lines()?.mapNotNull { line ->

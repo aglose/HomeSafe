@@ -208,6 +208,8 @@ private fun FinanceAppContent(
     LaunchedEffect(Unit) { budgetViewModel.refresh() }
     var tab by rememberSaveable { mutableStateOf(FinanceTab.WALLET) }
     val details = remember { mutableStateListOf<FinanceDetail>() }
+    // Here rather than in the bars, which go while a page is open.
+    AssistantScreenContext { "Finance app, ${tab.name.lowercase()} tab" + (details.lastOrNull()?.let { ", $it page open" } ?: "") }
     val listStates = FinanceTab.entries.associateWith { rememberLazyListState() }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -555,7 +557,6 @@ private fun FinanceTopBar(
 @Composable
 private fun FinanceBottomNav(selected: FinanceTab, onSelect: (FinanceTab) -> Unit) {
     val colors = FinanceTheme.colors
-    AssistantScreenContext { "Finance app, ${selected.name.lowercase()} tab" }
     Row(
         Modifier
             .navigationBarsPadding()
@@ -581,7 +582,6 @@ private fun FinanceBottomNav(selected: FinanceTab, onSelect: (FinanceTab) -> Uni
 private fun FinanceSideNav(selected: FinanceTab, onSelect: (FinanceTab) -> Unit) {
     val colors = FinanceTheme.colors
     val shape = RoundedCornerShape(26.dp)
-    AssistantScreenContext { "Finance app, ${selected.name.lowercase()} tab" }
     Column(
         Modifier
             .padding(start = FINANCE_SIDE_NAV_MARGIN)

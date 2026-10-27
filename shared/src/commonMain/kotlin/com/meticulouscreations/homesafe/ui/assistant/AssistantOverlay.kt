@@ -175,6 +175,7 @@ private fun AssistantLayer(host: AssistantHost) {
     if (!present) return
 
     val viewModel: AssistantViewModel = metroViewModel()
+    LaunchedEffect(viewModel) { viewModel.catchUp() }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var draft by rememberSaveable { mutableStateOf("") }

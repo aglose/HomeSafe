@@ -91,6 +91,22 @@ class AssistantAgentTest {
     }
 
     @Test
+    fun aToolCallCutOffOnItsWayOutIsLeftOutOfTheHistory() = runTest {
+        val engine = MockEngine {
+            respond(TOOL_CALL_STREAM.replace("\"stop_reason\":\"tool_use\"", "\"stop_reason\":\"max_tokens\""), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/event-stream"))
+        }
+        val agent = AssistantAgent(AnthropicApi(HttpClient(engine)), setOf(doorsTool))
+
+        val answer = agent.answer("sk-test", AssistantModel.fallback(AssistantModelFamily.Opus), emptyList(), userMessage("Hi", screenJpegBase64 = null)) {}
+
+        assertEquals(AssistantAgent.Ending.CutOff, answer.ending)
+        assertEquals("Let me check.", answer.text)
+        // A tool call with no result would have the next question turned down.
+        assertTrue(answer.messages.isEmpty())
+        assertEquals(0, doorsTool.calls)
+    }
+
+    @Test
     fun keepsOnlyTheTextFromBeforeAMidAnswerFallback() {
         val blocks = listOf(
             block("thinking"),

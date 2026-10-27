@@ -237,6 +237,8 @@ fun WeatherAppContent(
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<WeatherPage>().apply { initialPage?.let(::add) } }
+    // Here rather than in the bars, which go while a page is open.
+    AssistantScreenContext { "Weather app, ${tab.name.lowercase()} tab" + (pages.lastOrNull()?.let { ", $it page open" } ?: "") }
 
     // What a notification's tap asked for ([link]). The tab is turned to at once; its place and
     // its warning wait in [wanted] for the forecast that holds them, which on a cold start is
@@ -785,7 +787,6 @@ private fun BarButton(icon: ImageVector, label: String, onClick: () -> Unit, mod
 private fun WeatherNav(selected: WeatherTab, onSelect: (WeatherTab) -> Unit, vertical: Boolean) {
     val colors = WeatherTheme.colors
     val assistant = LocalAssistant.current
-    AssistantScreenContext { "Weather app, ${selected.name.lowercase()} tab" }
     if (vertical) {
         val shape = RoundedCornerShape(26.dp)
         Column(

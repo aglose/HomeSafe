@@ -193,6 +193,8 @@ fun AtlasAppContent(
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<AtlasPage>().apply { initialPage?.let(::add) } }
+    // Here rather than in the bars, which go while a page is open.
+    AssistantScreenContext { "Atlas app, ${tab.name.lowercase()} tab" + (pages.lastOrNull()?.let { ", $it page open" } ?: "") }
     // Held here, above the tabs: the map is left for another tab and found again where it was.
     val map = remember { AtlasMapState() }
     val haptics = LocalHapticFeedback.current
@@ -363,7 +365,6 @@ private fun AtlasTopBar(title: String, paged: Boolean, onBack: () -> Unit, onOpe
 @Composable
 private fun AtlasNav(selected: AtlasTab, onSelect: (AtlasTab) -> Unit) {
     val colors = AtlasTheme.colors
-    AssistantScreenContext { "Atlas app, ${selected.name.lowercase()} tab" }
     Row(
         Modifier
             .navigationBarsPadding()

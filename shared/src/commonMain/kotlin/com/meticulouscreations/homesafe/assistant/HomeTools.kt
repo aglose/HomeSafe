@@ -21,6 +21,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 
 // What the assistant can read from the house itself: the cameras, what they saw, the doors, who
@@ -63,11 +64,13 @@ class MomentsTool(private val moments: MomentsRepository, private val cameras: C
         val names = input.stringInput("camera")?.let(::listOf)
             ?: cameras.observeCameras().current()?.map { it.name }
             ?: return NOT_CONNECTED
+        // Asked of the server now; a camera it didn't answer for falls back to what the phone kept, and says so.
         val found = coroutineScope {
-            names.map { name -> async { moments.observeRecentMoments(name, limit, lookbackSeconds = WEEK_SECONDS).current(timeoutMillis = 15_000) } }.awaitAll()
-        }
-        if (found.all { it == null }) return NOT_CONNECTED
-        return listing(found.filterNotNull().flatten().sortedByDescending { it.startEpochSeconds }, limit, ::describe)
+            names.map { name -> async { withTimeoutOrNull(15_000) { moments.readRecentMoments(name, limit, lookbackSeconds = WEEK_SECONDS) } } }.awaitAll()
+        }.filterNotNull()
+        if (found.isEmpty()) return NOT_CONNECTED
+        val list = listing(found.flatMap { it.moments }.sortedByDescending { it.startEpochSeconds }, limit, ::describe)
+        return if (found.size == names.size && found.all { it.fresh }) list else STALE + list
     }
 
     private fun describe(moment: MomentEvent): String = buildString {
