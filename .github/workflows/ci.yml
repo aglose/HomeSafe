@@ -124,14 +124,55 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Unit tests
-        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py scripts/ci/test_watch_ios_job.py scripts/ci/test_copilot_review.py
+        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py scripts/ci/test_watch_ios_job.py scripts/ci/test_already_tested.py scripts/ci/test_copilot_review.py
       - name: Build the relay image
         run: docker build --tag homesafe-relay relay
       - name: Import the relay against its installed packages
         run: docker run --rm --env FCM_PROJECT=ci homesafe-relay python -c "import relay; print(len(relay.app.routes), 'routes')"
 
+  # On main: whether this exact code already passed ci-green on its pull request
+  # (scripts/ci/already-tested.sh). It has when main didn't move between that CI run and the
+  # merge, and then the emulators and iOS aren't run a second time on it: android-ui and the iOS
+  # jobs are skipped, and startup-perf only keeps this commit's benchmark APK for the pull
+  # requests based on it. The quick jobs (gradle, relay) run either way, and keep the Gradle cache
+  # that every other branch reads up to date. Anything else (a pull request, a push no pull
+  # request made, a main that moved, an API that didn't answer) runs everything.
+  #
+  # It runs on every event, deciding in its step, rather than being skipped off main: a job that
+  # needs a skipped job is skipped with it, and so is everything after that.
+  already-tested:
+    name: Already passed on its pull request?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      skip: ${{ steps.decide.outputs.skip }}
+      pr: ${{ steps.decide.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v7
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        with:
+          sparse-checkout: scripts/ci/already-tested.sh
+          sparse-checkout-cone-mode: false
+      - name: Compare this tree with the one its pull request passed on
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ON_MAIN: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+        run: |
+          if [ "$ON_MAIN" = "true" ]; then
+            scripts/ci/already-tested.sh
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   android-ui:
     name: Android UI tests (emulator, ${{ matrix.name }})
+    needs: already-tested
+    if: needs.already-tested.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Two emulators, because one ran the suites for twelve minutes after five of setup. The
@@ -247,10 +288,12 @@ jobs:
   # read the base from: on main it is the commit before, on a branch where it left main.
   startup-perf:
     name: Cold launch vs base (emulator)
+    needs: already-tested
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       API_LEVEL: 34
+      ALREADY_TESTED: ${{ needs.already-tested.outputs.skip }}
       EVENT_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: actions/checkout@v7
@@ -276,15 +319,24 @@ jobs:
             fi
           fi
           echo "BASE_SHA=$BASE_SHA" >> "$GITHUB_ENV"
+          # compare: whether to launch both on the emulator. Not on a main whose pull request
+          # already did (see already-tested); this commit's APK is still built and kept below.
           if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
+            if [ "$ALREADY_TESTED" = "true" ]; then
+              echo "::notice::Its pull request already compared this tree's cold launch; this only keeps its benchmark APK."
+              echo "compare=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "compare=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "::notice::No base commit to compare against ($BASE_SHA); nothing to gate."
             echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "compare=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Enable KVM
-        if: steps.base.outputs.present == 'true'
+        if: steps.base.outputs.compare == 'true'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -293,7 +345,7 @@ jobs:
 
       # The same snapshot as the android-ui job.
       - name: AVD snapshot cache
-        if: steps.base.outputs.present == 'true'
+        if: steps.base.outputs.compare == 'true'
         id: avd-cache
         uses: actions/cache@v6
         with:
@@ -302,7 +354,7 @@ jobs:
             ~/.android/adb*
           key: avd-api${{ env.API_LEVEL }}-google_apis-x86_64
       - name: Create AVD and snapshot
-        if: steps.base.outputs.present == 'true' && steps.avd-cache.outputs.cache-hit != 'true'
+        if: steps.base.outputs.compare == 'true' && steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -322,7 +374,7 @@ jobs:
       # install gives up after ten minutes, and only what ffmpeg needs is fetched (its
       # recommends are the VA and VDPAU drivers, which the test patterns don't use).
       - name: Install ffmpeg in the background
-        if: steps.base.outputs.present == 'true'
+        if: steps.base.outputs.compare == 'true'
         env:
           APT_OPTIONS: -o Acquire::http::Timeout=30 -o Acquire::Retries=3
         run: |
@@ -335,7 +387,7 @@ jobs:
       # login): a pull request that changes this file builds its base itself, as does any run
       # whose base main never finished building.
       - name: The base's benchmark APK, if main's run kept it
-        if: steps.base.outputs.present == 'true'
+        if: steps.base.outputs.compare == 'true'
         uses: actions/cache/restore@v6
         with:
           path: build/startup-perf/kept
@@ -355,7 +407,7 @@ jobs:
           cp androidApp/build/outputs/apk/benchmarkRelease/androidApp-benchmarkRelease.apk build/startup-perf/head.apk
 
       - name: Build the base branch
-        if: steps.base.outputs.present == 'true'
+        if: steps.base.outputs.compare == 'true'
         run: |
           if [ -f build/startup-perf/kept/benchmark.apk ]; then
             echo "Using the APK main's run built from $BASE_SHA."
@@ -383,7 +435,7 @@ jobs:
           key: benchmark-apk-${{ github.sha }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
       - name: Start the fake Frigate and go2rtc test patterns
-        if: steps.base.outputs.present == 'true'
+        if: steps.base.outputs.compare == 'true'
         env:
           APT_OPTIONS: -o Acquire::http::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=60
         run: |
@@ -417,7 +469,7 @@ jobs:
           scripts/ci/go2rtc-testsrc.sh build/startup-perf
 
       - name: Compare cold launches
-        if: steps.base.outputs.present == 'true'
+        if: steps.base.outputs.compare == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -430,7 +482,7 @@ jobs:
           script: scripts/ci/startup-perf.sh build/startup-perf/base.apk build/startup-perf/head.apk 4
 
       - uses: actions/upload-artifact@v7
-        if: always() && steps.base.outputs.present == 'true'
+        if: always() && steps.base.outputs.compare == 'true'
         with:
           name: startup-perf
           path: |
@@ -462,6 +514,9 @@ jobs:
   # A rerun of only the failed jobs keeps this job's answer; "Re-run all jobs" asks again.
   ios-runner:
     name: Pick the iOS runner
+    # Skipped, and ios, ios-watch and ios-hosted with it, on a main its pull request already tested.
+    needs: already-tested
+    if: needs.already-tested.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -583,21 +638,36 @@ jobs:
     # branch protection, as long as they are listed here.
     if: always()
     # Not the ios job itself: ios-watch stands for it, and ios-hosted when the Mac couldn't finish.
-    needs: [gradle, relay, android-ui, startup-perf, ios-runner, ios-watch, ios-hosted]
+    needs: [already-tested, gradle, relay, android-ui, startup-perf, ios-runner, ios-watch, ios-hosted]
     runs-on: ubuntu-24.04
+    # statuses: write is for recording the tree a pull request passed on (the last step).
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - name: Show job results
         run: echo '${{ toJSON(needs) }}'
       # Every job succeeded, except ios-hosted, which runs only when ios-watch says the Mac didn't
-      # finish, and then has to have succeeded.
+      # finish, and then has to have succeeded. On a main its pull request already tested,
+      # android-ui and the iOS jobs were skipped instead (see already-tested), and that is a pass.
       - name: Fail unless every job succeeded
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
-          failed=$(jq -r 'to_entries | map(select(.key != "ios-hosted" and .value.result != "success") | "\(.key): \(.value.result)") | join(", ")' <<< "$NEEDS")
+          if [ "$(jq -r '.["already-tested"].outputs.skip' <<< "$NEEDS")" = "true" ]; then
+            not_run='["android-ui", "ios-runner", "ios-watch", "ios-hosted"]'
+          else
+            not_run='["ios-hosted"]'
+          fi
+          failed=$(jq -r --argjson not_run "$not_run" 'to_entries | map(select((.key | IN($not_run[]) | not) and .value.result != "success") | "\(.key): \(.value.result)") | join(", ")' <<< "$NEEDS")
           if [ -n "$failed" ]; then
             echo "::error::Not every job succeeded: $failed"
             exit 1
+          fi
+          if [ "$not_run" != '["ios-hosted"]' ]; then
+            pr=$(jq -r '.["already-tested"].outputs.pr' <<< "$NEEDS")
+            echo "::notice::The emulator and iOS jobs passed on #$pr with this exact tree, so they didn't run again here."
+            exit 0
           fi
           ios=$(jq -r '.["ios-watch"].outputs.result' <<< "$NEEDS")
           hosted=$(jq -r '.["ios-hosted"].result' <<< "$NEEDS")
@@ -609,6 +679,23 @@ jobs:
             echo "::error::ios-watch said \"$ios\" about the iOS job."
             exit 1
           fi
+      # What already-tested reads on main: the tree this green run tested (the pull request merged
+      # with main as main is now), as a status on the pull request's head. Squash-merged onto
+      # this same main, the head makes this same tree, and its run on main skips the emulators
+      # and iOS. A run that can't post it (a fork's, a Dependabot branch's, read-only tokens both)
+      # just leaves main to test everything.
+      - name: Record the tree that passed
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$GITHUB_SHA" --jq .tree.sha) ||
+             ! gh api --silent --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+                 -f state=success -f context="ci-green tree" -f description="tree $tree" \
+                 -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; then
+            echo "::warning::Couldn't record the tree this run passed on; main's run after the merge tests everything again."
+          fi
 
   publish-internal:
     name: Publish to Play internal testing
@@ -616,10 +703,18 @@ jobs:
     # the same gate as a merge, minus the iOS jobs. Nothing in the bundle is built or tested
     # there, so a slow or asleep Mac doesn't hold the build off testers' phones, and a red iOS run
     # leaves ci-green red without stopping Play. A red Android job leaves this skipped.
+    # android-ui may instead have been skipped, when its pull request already ran it on this exact
+    # tree (see already-tested). The results are spelled out because a job that needs a skipped
+    # one is otherwise skipped too; !cancelled() keeps a cancelled run from publishing.
     # workflow_dispatch: a merge made by the Dependency updates workflow sets off no push run, so
     # it starts one on main instead, and that build ships like any other merge.
-    needs: [gradle, relay, android-ui, startup-perf]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    needs: [already-tested, gradle, relay, android-ui, startup-perf]
+    if: >-
+      !cancelled()
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+      && needs.already-tested.result == 'success' && needs.gradle.result == 'success'
+      && needs.relay.result == 'success' && needs.startup-perf.result == 'success'
+      && (needs.android-ui.result == 'success' || (needs.android-ui.result == 'skipped' && needs.already-tested.outputs.skip == 'true'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Holds the release secrets, so they exist on no other job in this workflow. Add required
