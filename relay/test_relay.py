@@ -7783,3 +7783,46 @@ class ParkingTest(_FakeFrigate):
         self.assertEqual(1, len(asked))
         self.assertIn('"name"="Elm Street"', asked[0])
         self.assertEqual([("Elm St", "left")], [(s["street"], s["home_side"]) for s in stretches])
+
+    def test_an_all_day_limit_keeps_counting_past_midnight(self):
+        zone = relay.ZoneInfo(self.ZONE)
+        all_day = {"kind": "limit", "minutes": 120}
+        eleven_pm = self.WED_7PM + 4 * 3600
+        self.assertEqual(eleven_pm + 2 * 3600, relay.rule_deadline(all_day, eleven_pm, eleven_pm, zone)["at"], "1 AM, not 2 AM")
+        self.assertEqual(eleven_pm + 2 * 3600, relay.rule_deadline(all_day, eleven_pm, eleven_pm + 3 * 3600, zone)["at"], "and still 1 AM, asked after midnight")
+
+    def test_across_to_the_other_curb_is_a_new_spot_even_close_by(self):
+        car = {}
+        stretches = relay.parking_stretches(relay.parking_config(), self.HOME, self.WED_7PM)
+        relay.parking_read(car, (self.WED_7PM, self.fix(60, 5, 270, self.WED_7PM)), stretches)
+        relay.parking_read(car, (self.WED_7PM + 1800, self.fix(62, -5, 90, self.WED_7PM + 1800)), stretches)
+        self.assertEqual(("south", self.WED_7PM), (car["spot"]["side"], car["spot"]["since"]), "parked there after the last answer")
+
+    def test_parked_again_further_along_the_curb_is_warned_afresh(self):
+        self.where["VIN_A"] = self.fix(60, 5, 270, self.WED_7PM + 3600)
+        self.assertEqual(["due"], [e for e, *_ in self.tick(self.WED_7PM + 3600)])
+        self.where["VIN_A"] = self.fix(-60, 5, 270, self.WED_7PM + 3700)
+        self.assertEqual(["due"], [e for e, *_ in self.tick(self.WED_7PM + 3700)], "still on the north curb: told again, not 'moved'")
+        self.assertEqual("Move Andrew's Tesla by Thu 8:00 AM", self.pushes[-1][1])
+
+    def test_a_moved_push_that_failed_is_tried_again(self):
+        self.where["VIN_A"] = self.fix(60, 5, 270, self.WED_7PM + 3600)
+        self.tick(self.WED_7PM + 3600)
+        self.where["VIN_A"] = self.fix(-500, 300, 10, self.WED_7PM + 3700, shift="D", speed=25.0)
+        failing = lambda token, title, body, data, away=False: "failed"
+        self.assertEqual([], relay.parking_tick(self.WED_7PM + 3700, push=failing))
+        self.assertEqual([("moved", "Andrew's Tesla has moved", "No longer parked on Elm St", ["pixel"])], self.tick(self.WED_7PM + 3800))
+        self.assertEqual([], self.tick(self.WED_7PM + 3900), "once it got through")
+
+    def test_even_a_day_ahead_tesla_is_asked_first(self):
+        afternoon = {"kind": "no_parking", "days": ["fri"], "start": "14:00", "end": "16:00"}
+        config = relay.parking_config()
+        config["streets"][0]["sides"]["north"] = [afternoon]
+        self.config(config)
+        self.where["VIN_A"] = self.fix(60, 5, 270, self.WED_7PM)
+        relay._tesla_answers["andrews_tesla"] = (self.WED_7PM, self.where["VIN_A"])
+        self.assertEqual([], relay.parking_tick(self.WED_7PM, push=self.push), "found at the curb; Friday 2 PM is more than a day off")
+        self.where["VIN_A"] = self.fix(-60, 30, 180, self.WED_7PM + 20 * 3600)  # since gone home
+        relay._tesla_answers["andrews_tesla"] = (self.WED_7PM + 20 * 3600 - 900, relay._tesla_answers["andrews_tesla"][1])
+        self.assertEqual([], relay.parking_tick(self.WED_7PM + 20 * 3600, push=self.push), "a day ahead now, but asked first, and it had gone")
+        self.assertEqual([], self.pushes)

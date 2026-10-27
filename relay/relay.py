@@ -9787,6 +9787,7 @@ PARKING_MORNING_HOUR = 12
 # An answer older than this is asked again before a phone is told to go out to the car.
 PARKING_VERIFY_SECONDS = 300.0
 PARKING_LOOKAHEAD_DAYS = 40
+PARKING_LOOKBACK_DAYS = 7
 # How far each phone has been told about a deadline: due soon, the evening before, shortly before, now.
 PARKING_SOON, PARKING_EVENING, PARKING_REMIND, PARKING_NOW = 1, 2, 3, 4
 COMPASS = {"north": 0.0, "east": 90.0, "south": 180.0, "west": 270.0}
@@ -10042,22 +10043,34 @@ def local_epoch(day: Any, minutes: int, zone: Any) -> float:
 
 
 def rule_windows(rule: dict[str, Any], zone: Any, after: float, until: float):
-    """A rule's windows, as (start, end) in epoch seconds, that end after `after` and start before `until`, in order."""
+    """
+    A rule's windows, as (start, end) in epoch seconds, that end after `after` and start before
+    `until`, in order. Days whose windows meet are one window: a time limit that holds all day
+    doesn't start counting again at midnight.
+    """
     days = {DAY_WORDS.index(str(d).lower()[:3]) for d in rule.get("days") or [] if str(d).lower()[:3] in DAY_WORDS}
     weeks, months = set(rule.get("weeks") or []), set(rule.get("months") or [])
     start, end = clock_minutes(rule.get("start"), 0), clock_minutes(rule.get("end"), 1440)
     if end <= start:
         end += 1440
-    day = datetime.fromtimestamp(after, zone).date() - timedelta(days=1)
+    # From further back than the windows asked for, so one that began days ago is found whole.
+    day = datetime.fromtimestamp(after, zone).date() - timedelta(days=PARKING_LOOKBACK_DAYS)
     last = datetime.fromtimestamp(until, zone).date()
+    held: tuple[float, float] | None = None
     while day <= last:
         nth = (day.day - 1) // 7 + 1
         final = (day + timedelta(days=7)).month != day.month
         if (not months or day.month in months) and (not days or day.weekday() in days) and (not weeks or nth in weeks or (-1 in weeks and final)):
             s, e = local_epoch(day, start, zone), local_epoch(day, end, zone)
-            if e > after and s < until:
-                yield s, e
+            if held and s <= held[1]:
+                held = (held[0], max(held[1], e))
+            else:
+                if held and held[1] > after and held[0] < until:
+                    yield held
+                held = (s, e)
         day += timedelta(days=1)
+    if held and held[1] > after and held[0] < until:
+        yield held
 
 
 def rule_deadline(rule: dict[str, Any], since: float, now: float, zone: Any) -> dict[str, Any] | None:
@@ -10105,7 +10118,7 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
     asked, where = answer
     if where is None or asked <= float(car.get("asked") or 0) or (not where.get("asleep") and asked - float(where["at"]) > TESLA_STALE_SECONDS):
         return
-    car["asked"] = asked
+    before, car["asked"] = float(car.get("asked") or 0), asked
     if where.get("asleep"):
         if not car.get("spot"):
             car["elsewhere"] = asked
@@ -10114,14 +10127,19 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
     moving = where.get("shift") in ("D", "R", "N") or float(where.get("speed") or 0) > 0
     match = None if moving else parking_match(fix, stretches)
     spot = car.get("spot")
-    if spot and match and haversine_metres((spot["lat"], spot["lng"]), (fix["lat"], fix["lng"])) <= PARKING_SAME_SPOT_METRES:
+    if (spot and match and (match["street"], match["side"]) == (spot.get("street"), spot.get("side"))
+            and haversine_metres((spot["lat"], spot["lng"]), (fix["lat"], fix["lng"])) <= PARKING_SAME_SPOT_METRES):
         return
     if spot and car.get("heard"):
+        # The phones told about the old spot hear that the car left it (see `parking_tell`).
         car["moved"] = spot.get("street") or ""
+        car["moved_to"] = sorted(set(car.get("moved_to") or []) | set(car["heard"]))
+        car["heard"] = []
     if match is None:
         car["spot"], car["elsewhere"] = None, float(fix["at"])
         return
-    since = max(float(car.get("elsewhere") or 0), float(fix["at"]) - TESLA_CHECK_SECONDS)
+    # From another spot at the curb, it was there until the last answer; else it was last seen elsewhere.
+    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - TESLA_CHECK_SECONDS)
     car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
     log.info("parking: parked on the %s side of %s since %s (by its %s)", match["side"] or "unsure", match["street"],
              datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="minutes"), match["how"] or "nothing")
@@ -10156,7 +10174,9 @@ def parking_plan(car: dict[str, Any], stretches: list[dict[str, Any]], config: d
     stage = parking_stage(deadline["at"], now, zone) if deadline else 0
     if not stage:
         return None
-    return {"match": match, "deadline": deadline, "stage": stage, "key": f"{match['street']}|{match['side']}|{int(deadline['at'])}"}
+    # The spot is part of the key: parked again further along the same curb, it is told afresh.
+    key = f"{match['street']}|{match['side']}|{int(float(spot['since']))}|{int(deadline['at'])}"
+    return {"match": match, "deadline": deadline, "stage": stage, "key": key}
 
 
 def parking_text(name: str, plan: dict[str, Any], now: float, zone: Any) -> tuple[str, str, dict[str, str]]:
@@ -10193,23 +10213,29 @@ def parking_tell(name: str, car: dict[str, Any], config: dict[str, Any], stretch
     told = car.get("told") or {}
     stages = (told.get("stages") or {}) if plan and told.get("key") == plan["key"] else {}
     owed = [p for p in parking_phones(name, config, now) if plan and stages.get(p[0], 0) < plan["stage"]]
-    if owed and plan["stage"] >= PARKING_EVENING and now - float(car.get("asked") or 0) > PARKING_VERIFY_SECONDS:
-        # About to send someone out to the car: make sure it is still there.
+    if owed and now - float(car.get("asked") or 0) > PARKING_VERIFY_SECONDS:
+        # About to tell someone the car must move: make sure it is still there.
         parking_read(car, tesla_ask(name, now), stretches)
         plan = parking_plan(car, stretches, config, zone, now)
         stages = stages if plan and told.get("key") == plan["key"] else {}
         owed = [p for p in owed if plan and stages.get(p[0], 0) < plan["stage"]]
 
-    moved = car.pop("moved", None)
-    if moved is not None and car.get("heard"):
-        car_name = display_name(name)
+    # A phone still showing a warning about a spot the car has left hears that it moved, until
+    # the push gets through (or a warning about where it is now replaces it, below).
+    if car.get("moved_to"):
+        moved, car_name = car.get("moved") or "", display_name(name)
         data = {"parking": "1", "notif_id": f"parking-{name}", "parking_event": "moved", "parking_car": name,
                 "parking_car_name": car_name, "parking_street": moved, "silent": "1"}
         title, body = f"{car_name} has moved", f"No longer parked on {moved}" if moved else "No longer parked there"
-        phones = [p for p in parking_phones(name, config, now, quiet_too=True) if p[0] in car["heard"]]
+        phones = [p for p in parking_phones(name, config, now, quiet_too=True) if p[0] in car["moved_to"] and p not in owed]
         sent = [device_id for device_id, token in phones if push(token, title, body, data) == "sent"]
-        pushed.append({"car": name, "event": "moved", "title": title, "body": body, "to": sent})
-        car["heard"] = []
+        if sent:
+            pushed.append({"car": name, "event": "moved", "title": title, "body": body, "to": sent})
+        # A phone no longer registered is let go; one that failed is tried again next time.
+        car["moved_to"] = [device_id for device_id, _ in phones if device_id not in sent]
+    if not car.get("moved_to"):
+        car.pop("moved", None)
+        car.pop("moved_to", None)
 
     if not plan:
         car.pop("told", None)
@@ -10220,6 +10246,8 @@ def parking_tell(name: str, car: dict[str, Any], config: dict[str, Any], stretch
         stages[device_id] = plan["stage"]
     car["told"] = {"key": plan["key"], "stages": stages}
     car["heard"] = sorted(set(car.get("heard") or []) | set(sent))
+    if car.get("moved_to"):
+        car["moved_to"] = [device_id for device_id in car["moved_to"] if device_id not in sent]
     if owed:
         pushed.append({"car": name, "event": data["parking_event"], "title": title, "body": body, "to": sent})
         log.info("parking: %s | %s -> %d of %d phones", title, body, len(sent), len(owed))
