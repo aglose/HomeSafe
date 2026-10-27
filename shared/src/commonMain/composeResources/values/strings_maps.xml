@@ -13,8 +13,7 @@
     <string name="maps_google_key_label">Google Maps API key</string>
     <string name="maps_google_key_save">Save key</string>
     <string name="maps_google_key_forget">Forget key</string>
-    <string name="maps_google_key_saved">A key is saved on this phone.</string>
-    <string name="maps_google_key_help">Make a key in the Google Cloud console with the Map Tiles API enabled, and restrict it to that API. It stays on this phone.</string>
+    <string name="maps_google_key_help">Make a key in the Google Cloud console with the Map Tiles API enabled, and restrict it to that API. It is kept on the server, sealed with each person's login, and shared with the household.</string>
     <string name="maps_google_status_no_key">No key yet: the maps stay on OpenStreetMap until there is one.</string>
     <string name="maps_google_status_unchecked">Google will be asked for its map when one is next opened.</string>
     <string name="maps_google_status_checking">Asking Google for its map…</string>

@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.maps.GoogleMapTiles
 import com.meticulouscreations.homesafe.text.KeyedTextLoader
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.vault.InMemoryHouseholdKeys
 import com.meticulouscreations.homesafe.weather.WeatherData.at
 import com.meticulouscreations.homesafe.weather.data.FakeAlertNotifier
 import com.meticulouscreations.homesafe.weather.data.FakeGeofence
@@ -96,7 +97,7 @@ class WeatherViewModelTest {
         val clock = MutableClock(now)
         val locator = WeatherLocator(fence, identity, repository, preferences)
         val alertCheck = WeatherAlertCheck(repository, locator, places, preferences, WeatherNoticeLedgerImpl(dao), notifier, scheduler, KeyedTextLoader, clock, scope.backgroundScope, NotificationMute.Never)
-        val tiles = MapTileStore(FakeWeb().client, dao, clock, BaseMaps(InMemoryApiKeyStore(), GoogleMapTiles(FakeWeb().client), clock))
+        val tiles = MapTileStore(FakeWeb().client, dao, clock, BaseMaps(InMemoryApiKeyStore(), InMemoryHouseholdKeys(), GoogleMapTiles(FakeWeb().client), clock))
 
         private val made = mutableListOf<WeatherViewModel>()
 

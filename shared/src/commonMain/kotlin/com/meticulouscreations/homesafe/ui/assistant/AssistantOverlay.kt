@@ -423,6 +423,8 @@ private fun AnswerCard(state: AssistantUiState, actions: AssistantPanelActions, 
             ) {
                 if (!state.hasKey) {
                     Text(stringResource(Res.string.assistant_key_hint), style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
+                    // Why it can't be saved yet: signed out, or waiting to be let in to the household's keys.
+                    state.keyNote?.let { Text(it.resolve(), style = MaterialTheme.typography.bodySmall, color = colors.error) }
                 }
                 state.turns.forEachIndexed { index, turn ->
                     Turn(turn, writing = state.working && index == state.turns.lastIndex, activity = state.activity?.let { stringResource(it) }, time = time)

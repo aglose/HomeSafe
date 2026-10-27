@@ -9,8 +9,7 @@
     <string name="maps_google_key_label">Clave de API de Google Maps</string>
     <string name="maps_google_key_save">Guardar clave</string>
     <string name="maps_google_key_forget">Olvidar clave</string>
-    <string name="maps_google_key_saved">Hay una clave guardada en este teléfono.</string>
-    <string name="maps_google_key_help">Crea una clave en la consola de Google Cloud con la Map Tiles API activada y restríngela a esa API. Se queda en este teléfono.</string>
+    <string name="maps_google_key_help">Crea una clave en la consola de Google Cloud con la Map Tiles API activada y restríngela a esa API. Se guarda en el servidor, sellada con el inicio de sesión de cada persona, y la comparte el hogar.</string>
     <string name="maps_google_status_no_key">Aún no hay clave: los mapas siguen en OpenStreetMap hasta que la haya.</string>
     <string name="maps_google_status_unchecked">Se pedirá el mapa a Google la próxima vez que se abra uno.</string>
     <string name="maps_google_status_checking">Pidiendo el mapa a Google…</string>

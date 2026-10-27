@@ -18,6 +18,7 @@ import com.meticulouscreations.homesafe.network.swapUrlScheme
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.ui.components.LiveStartupMilestones
+import com.meticulouscreations.homesafe.vault.SignedInLogin
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -103,6 +104,7 @@ class ConnectionRepositoryImpl(
     private val localNetworkAccess: LocalNetworkAccess,
     private val appScope: CoroutineScope,
     private val clock: Clock,
+    private val signedInLogin: SignedInLogin,
 ) : ConnectionRepository {
 
     private val _activeConnection = MutableStateFlow<ActiveConnection?>(null)
@@ -462,6 +464,8 @@ class ConnectionRepositoryImpl(
             ),
         )
         sessionCredentials = credentials
+        // The household's keys are sealed with this login; the vault opens them with it (docs/key-vault.md).
+        signedInLogin.signedIn(credentials.username, credentials.password)
         _serverUnreachable.value = false
         _activeConnection.value = connection
         return Result.success(Unit)
@@ -480,6 +484,8 @@ class ConnectionRepositoryImpl(
         if (_activeConnection.value != null) return true
         if (cameraDao.observeByServer(credentials.serverUrl).first().isEmpty()) return false
         sessionCredentials = credentials
+        // The household's keys are sealed with this login; the vault opens them with it (docs/key-vault.md).
+        signedInLogin.signedIn(credentials.username, credentials.password)
         _serverUnreachable.value = true
         _activeConnection.value = ActiveConnection(
             serverUrl = credentials.serverUrl,

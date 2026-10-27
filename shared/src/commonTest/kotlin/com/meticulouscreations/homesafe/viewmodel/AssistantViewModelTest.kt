@@ -5,6 +5,10 @@ import com.meticulouscreations.homesafe.assistant.AssistantAgent
 import com.meticulouscreations.homesafe.assistant.AssistantTool
 import com.meticulouscreations.homesafe.assistant.noInput
 import com.meticulouscreations.homesafe.data.InMemoryApiKeyStore
+import com.meticulouscreations.homesafe.vault.HouseholdKeys
+import com.meticulouscreations.homesafe.vault.InMemoryHouseholdKeys
+import com.meticulouscreations.homesafe.vault.VaultState
+import com.meticulouscreations.homesafe.vault.note
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.assistant_tool_budget
 import io.ktor.client.HttpClient
@@ -36,6 +40,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -146,20 +151,47 @@ class AssistantViewModelTest {
 
     @Test
     fun catchesUpWithAKeyForgottenElsewhere() = runTest {
-        val store = InMemoryApiKeyStore(key = "sk-test")
-        val viewModel = viewModel(replies = emptyList(), store = store)
+        val keys = InMemoryHouseholdKeys(HouseholdKeys.ANTHROPIC to "sk-test")
+        val viewModel = viewModel(replies = emptyList(), keys = keys)
         assertTrue(viewModel.uiState.value.hasKey)
 
-        // Another tab's assistant forgets it.
-        store.saveApiKey(null)
+        // Another phone, or another tab's assistant, forgets it.
+        keys.save(HouseholdKeys.ANTHROPIC, null)
         viewModel.catchUp()
 
         assertFalse(viewModel.uiState.value.hasKey)
     }
 
+    @Test
+    fun aKeyGoesToTheHouseholdsVaultAndNeverToThePhone() = runTest {
+        val store = InMemoryApiKeyStore()
+        val keys = InMemoryHouseholdKeys()
+        val viewModel = viewModel(replies = emptyList(), store = store, keys = keys)
+        assertFalse(viewModel.uiState.value.hasKey)
+
+        viewModel.saveKey("  sk-new ")
+        withContext(Dispatchers.Default) { withTimeout(5_000) { viewModel.uiState.first { it.hasKey } } }
+
+        assertEquals("sk-new", keys.current(HouseholdKeys.ANTHROPIC))
+        assertNull(store.apiKey())
+    }
+
+    @Test
+    fun aClosedVaultSaysWhyAndKeepsNothing() = runTest {
+        val keys = InMemoryHouseholdKeys().apply { set(VaultState.SignedOut) }
+        val viewModel = viewModel(replies = emptyList(), keys = keys)
+
+        viewModel.saveKey("sk-new")
+        val state = withContext(Dispatchers.Default) { withTimeout(5_000) { viewModel.uiState.first { it.keyNote != null } } }
+
+        assertFalse(state.hasKey)
+        assertEquals(VaultState.SignedOut.note(), state.keyNote)
+    }
+
     private fun viewModel(
         replies: List<String>,
-        store: InMemoryApiKeyStore = InMemoryApiKeyStore(key = "sk-test"),
+        store: InMemoryApiKeyStore = InMemoryApiKeyStore(),
+        keys: InMemoryHouseholdKeys = InMemoryHouseholdKeys(HouseholdKeys.ANTHROPIC to "sk-test"),
         holdReply: Int = -1,
         gate: CompletableDeferred<Unit>? = null,
     ): AssistantViewModel {
@@ -176,7 +208,7 @@ class AssistantViewModelTest {
             respond(reply, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/event-stream"))
         }
         val api = AnthropicApi(HttpClient(engine))
-        return AssistantViewModel(AssistantAgent(api, setOf(budgetTool)), api, store, clock)
+        return AssistantViewModel(AssistantAgent(api, setOf(budgetTool)), api, store, keys, clock)
     }
 
     /** Waits, in real time (the HTTP engine runs on threads of its own), for the answer under way to finish. */

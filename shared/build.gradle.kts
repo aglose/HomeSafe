@@ -76,6 +76,10 @@ kotlin {
             implementation(libs.kotlinx.datetime)
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor3)
+            // The household key vault's PBKDF2, ECDH, HKDF and AES-GCM: the JDK's on Android,
+            // CryptoKit's (and CommonCrypto's for PBKDF2) on iOS. See docs/key-vault.md.
+            implementation(libs.cryptography.core)
+            implementation(libs.cryptography.provider.optimal)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

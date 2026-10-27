@@ -6,6 +6,9 @@ import com.meticulouscreations.homesafe.data.ApiKeyStore
 import com.meticulouscreations.homesafe.data.MAPS_KEYS
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
+import com.meticulouscreations.homesafe.vault.HouseholdKeys
+import com.meticulouscreations.homesafe.vault.note
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -25,7 +28,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
@@ -46,18 +48,25 @@ sealed interface GoogleMapsStatus {
     data class Failed(val reason: UiText) : GoogleMapsStatus
 }
 
-/** The maps' part of Settings: the provider picked, whether there is a Google key to use it with, and how that is going. */
+/**
+ * The maps' part of Settings: the provider picked, whether the household has a Google key to use
+ * it with, and how that is going. [keysNote] says why the household's keys can't be read or saved
+ * just now (signed out, waiting to be let in); [saveError] why the last save didn't take.
+ */
 @Immutable
 data class MapSettings(
     val provider: MapProvider = MapProvider.DEFAULT,
     val hasGoogleKey: Boolean = false,
     val google: GoogleMapsStatus = GoogleMapsStatus.Unchecked,
+    val keysNote: UiText? = null,
+    val saveError: UiText? = null,
 )
 
 /**
- * Which map the app's maps are drawn on. The person picks a provider in Settings, and for Google
- * pastes in a Google Maps Platform key of their own (the Map Tiles API enabled on it), kept with
- * the platform's secrets. [current] turns that into tiles to fetch: Google's under a session it
+ * Which map the app's maps are drawn on. The person picks a provider in Settings (kept on the
+ * phone: it is no secret), and for Google pastes in a Google Maps Platform key (the Map Tiles API
+ * enabled on it), which goes to the household's key vault on the server, never to the phone's
+ * storage ([HouseholdKeys]). [current] turns that into tiles to fetch: Google's under a session it
  * renews before it runs out, or OpenStreetMap's when OpenStreetMap is picked, when there is no
  * key, or while Google refuses, so a map is never left blank by a bad key.
  */
@@ -66,20 +75,30 @@ data class MapSettings(
 @SingleIn(AppScope::class)
 class BaseMaps(
     @Named(MAPS_KEYS) private val store: ApiKeyStore,
+    private val keys: HouseholdKeys,
     private val google: GoogleMapTiles,
     private val clock: Clock,
 ) {
     private class Choice(val provider: MapProvider, val key: String?)
 
-    private val choice = MutableStateFlow(Choice(MapProvider.fromName(store.string(PREF_PROVIDER)), store.apiKey()))
+    private val provider = MutableStateFlow(MapProvider.fromName(store.string(PREF_PROVIDER)))
+    private val choice: Flow<Choice> = combine(provider, keys.observe(HouseholdKeys.GOOGLE_MAPS), ::Choice)
     private val status = MutableStateFlow<GoogleMapsStatus>(GoogleMapsStatus.Unchecked)
+    private val saveError = MutableStateFlow<UiText?>(null)
     private val sessionLock = Mutex()
     private var session: Pair<String, GoogleMapSession>? = null
 
     // Lives as long as the app: [current] is shared by every map on screen and outlasts each.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    val settings: Flow<MapSettings> = combine(choice, status) { choice, status -> MapSettings(choice.provider, choice.key != null, status) }
+    val settings: Flow<MapSettings> = combine(choice, status, keys.state, saveError) { choice, status, vault, saveError ->
+        MapSettings(choice.provider, choice.key != null, status, vault.note(), saveError)
+    }
+
+    init {
+        // A key an early build kept on the phone: the vault has it now, or will once it's typed in again.
+        store.saveApiKey(null)
+    }
 
     /** The map to draw now; null only while a Google session is on its way. */
     val current: StateFlow<BaseMap?> = choice
@@ -103,26 +122,29 @@ class BaseMaps(
                 delay((session.expiresAtEpochSeconds - clock.now().epochSeconds - RENEW_AHEAD_SECONDS).coerceAtLeast(60L).seconds)
             }
         }
-        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), initial(choice.value))
+        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), initial(provider.value, keys.current(HouseholdKeys.GOOGLE_MAPS)))
 
     fun setProvider(provider: MapProvider) {
         store.saveString(PREF_PROVIDER, provider.name)
-        choice.update { Choice(provider, it.key) }
+        this.provider.value = provider
     }
 
-    /** Keeps [key] (blank forgets it) and drops the session made with the last one. */
-    fun setGoogleKey(key: String?) {
+    /** Seals [key] (blank forgets it) into the household's vault, and drops the session made with the last one. */
+    suspend fun setGoogleKey(key: String?): Result<Unit> {
         val kept = key?.trim()?.takeIf { it.isNotEmpty() }
-        store.saveApiKey(kept)
-        session = null
-        status.value = GoogleMapsStatus.Unchecked
-        choice.update { Choice(it.provider, kept) }
+        return keys.save(HouseholdKeys.GOOGLE_MAPS, kept)
+            .onSuccess {
+                session = null
+                status.value = GoogleMapsStatus.Unchecked
+                saveError.value = null
+            }
+            .onFailure { saveError.value = it.userMessage() }
     }
 
     /** Asks Google for a session now if Google is picked, so Settings can say whether the key works before a map is opened. */
     suspend fun check() {
-        val choice = choice.value
-        if (choice.provider == MapProvider.GOOGLE && choice.key != null) session(choice.key)
+        val key = keys.current(HouseholdKeys.GOOGLE_MAPS)
+        if (provider.value == MapProvider.GOOGLE && key != null) session(key)
     }
 
     /** The copyright [map] must show over the given view (see [GoogleMapTiles.copyright]); null when Google can't say just now. */
@@ -163,6 +185,6 @@ class BaseMaps(
         val RETRY = 5.minutes
 
         /** OpenStreetMap at once when that is what will be drawn; null for Google, whose tiles need a session first. */
-        fun initial(choice: Choice): BaseMap? = if (choice.provider == MapProvider.GOOGLE && choice.key != null) null else BaseMap.OpenStreetMap
+        fun initial(provider: MapProvider, key: String?): BaseMap? = if (provider == MapProvider.GOOGLE && key != null) null else BaseMap.OpenStreetMap
     }
 }

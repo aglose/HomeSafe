@@ -10565,6 +10565,171 @@ def get_parking(request: Request) -> dict[str, Any]:
     return parking_status(time.time())
 
 
+# ---------------------------------------------------------------- vault
+#
+# The household's API keys (Anthropic's for the assistant, Google's for the maps), kept here so no
+# phone has to, and readable only by the phones (docs/key-vault.md). Everything below is ciphertext
+# the phones made; the relay never sees a key, a password, or anything that opens one.
+#
+# - Each Frigate user who has signed in on a phone is a *member*, with a P-256 key pair: `public`
+#   as it is, `private` sealed with a key the phone derives from that user's Frigate password.
+# - One *household key* opens the secrets. Each member gets their own copy, a *grant*, sealed to
+#   their public key. A phone that holds the household key grants it to any member still without
+#   one, so a new member is let in the next time someone already in opens the app.
+# - A member whose password changes seals a new key pair, which loses their grant until someone
+#   grants them again. When nobody holds the household key at all, a phone starts a new one, and
+#   the secrets sealed under the old one are dropped: someone types them in again.
+
+VAULT_KEY = "vault"
+VAULT_LOCK = threading.Lock()
+VAULT_SECRET_NAME = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+VAULT_BLOB_MAX = 8192
+
+
+class VaultMember(BaseModel):
+    public: str
+    private: str
+
+
+class VaultGrant(BaseModel):
+    household: str
+    ephemeral: str
+    box: str
+
+
+class VaultSecrets(BaseModel):
+    household: str
+    secrets: dict[str, str | None]
+
+
+def vault_state() -> dict[str, Any]:
+    return state_get(VAULT_KEY) or {"household": None, "members": {}, "secrets": {}}
+
+
+def vault_granted(state: dict[str, Any], member: dict[str, Any] | None) -> bool:
+    """Whether `member` holds the current household key: a grant made for the key pair they have now."""
+    grant = (member or {}).get("grant")
+    return bool(grant and state.get("household") and grant.get("household") == state["household"] and grant.get("for") == member.get("public"))
+
+
+def vault_view(state: dict[str, Any], user: str) -> dict[str, Any]:
+    """What a phone signed in as `user` is shown: everyone's public key and whether they are in, its own sealed keys, and the sealed secrets."""
+    members = state.get("members") or {}
+    me = members.get(user)
+    mine = None
+    if me:
+        grant = me.get("grant") if vault_granted(state, me) else None
+        mine = {"public": me["public"], "private": me["private"], "grant": grant and {"ephemeral": grant["ephemeral"], "box": grant["box"]}}
+    return {
+        "user": user, "household": state.get("household"), "me": mine,
+        "members": [{"user": name, "public": m["public"], "granted": vault_granted(state, m)} for name, m in sorted(members.items())],
+        "secrets": (state.get("secrets") or {}) if state.get("household") else {},
+    }
+
+
+def vault_blob(*values: str) -> None:
+    for value in values:
+        if not value or len(value) > VAULT_BLOB_MAX:
+            raise HTTPException(status_code=400, detail="Sealed value missing or too long")
+
+
+def vault_change(user: str, change: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
+    with VAULT_LOCK:
+        state = vault_state()
+        change(state)
+        state_set(VAULT_KEY, state)
+        return vault_view(state, user)
+
+
+def vault_require_granted(state: dict[str, Any], user: str, household: str) -> None:
+    if household != state.get("household") or not vault_granted(state, (state.get("members") or {}).get(user)):
+        raise HTTPException(status_code=409, detail="This login doesn't hold the household key")
+
+
+@app.get("/vault")
+def get_vault(request: Request) -> dict[str, Any]:
+    """The vault as the signed-in user's phones see it."""
+    user = require_frigate_session(request)
+    with VAULT_LOCK:
+        return vault_view(vault_state(), user)
+
+
+@app.put("/vault/me")
+def put_vault_member(body: VaultMember, request: Request) -> dict[str, Any]:
+    """Sets the signed-in user's key pair (a first sign-in, or a new password). Any grant made for an older pair no longer counts."""
+    user = require_frigate_session(request)
+    vault_blob(body.public, body.private)
+
+    def change(state: dict[str, Any]) -> None:
+        state.setdefault("members", {})[user] = {"public": body.public, "private": body.private, "grant": None}
+
+    log.info("vault: %s set a key pair", user)
+    return vault_change(user, change)
+
+
+@app.put("/vault/grants/{member}")
+def put_vault_grant(member: str, body: VaultGrant, request: Request) -> dict[str, Any]:
+    """Gives `member` the household key, sealed to their public key, from a phone that holds it."""
+    user = require_frigate_session(request)
+    vault_blob(body.ephemeral, body.box)
+
+    def change(state: dict[str, Any]) -> None:
+        vault_require_granted(state, user, body.household)
+        target = (state.get("members") or {}).get(member)
+        if not target:
+            raise HTTPException(status_code=404, detail="No such member")
+        target["grant"] = {"household": body.household, "ephemeral": body.ephemeral, "box": body.box, "for": target["public"]}
+
+    view = vault_change(user, change)
+    log.info("vault: %s let %s in", user, member)
+    return view
+
+
+@app.post("/vault/household")
+def start_vault_household(body: VaultGrant, request: Request) -> dict[str, Any]:
+    """Starts a new household key, granted to the signed-in user. Only while nobody holds the current one: the old secrets go with it."""
+    user = require_frigate_session(request)
+    vault_blob(body.household, body.ephemeral, body.box)
+
+    def change(state: dict[str, Any]) -> None:
+        members = state.get("members") or {}
+        if user not in members:
+            raise HTTPException(status_code=409, detail="Set a key pair first")
+        if any(vault_granted(state, m) for m in members.values()):
+            raise HTTPException(status_code=409, detail="Someone holds the household key: ask them to open the app")
+        state["household"] = body.household
+        state["secrets"] = {}
+        members[user]["grant"] = {"household": body.household, "ephemeral": body.ephemeral, "box": body.box, "for": members[user]["public"]}
+
+    view = vault_change(user, change)
+    log.info("vault: %s started a new household key", user)
+    return view
+
+
+@app.put("/vault/secrets")
+def put_vault_secrets(body: VaultSecrets, request: Request) -> dict[str, Any]:
+    """Sets or (with null) removes sealed secrets, from a phone that holds the household key."""
+    user = require_frigate_session(request)
+    for name, box in body.secrets.items():
+        if not VAULT_SECRET_NAME.match(name):
+            raise HTTPException(status_code=400, detail="Bad secret name")
+        if box is not None:
+            vault_blob(box)
+
+    def change(state: dict[str, Any]) -> None:
+        vault_require_granted(state, user, body.household)
+        secrets = state.setdefault("secrets", {})
+        for name, box in body.secrets.items():
+            if box is None:
+                secrets.pop(name, None)
+            else:
+                secrets[name] = box
+
+    view = vault_change(user, change)
+    log.info("vault: %s set %s", user, ", ".join(sorted(body.secrets)))
+    return view
+
+
 # ---------------------------------------------------------------- timeline
 #
 # Where one person has been since they first carried a phone, from Google Maps Timeline. Google

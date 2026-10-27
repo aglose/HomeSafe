@@ -54,6 +54,7 @@ import com.meticulouscreations.homesafe.maps.MapProvider
 import com.meticulouscreations.homesafe.maps.MapSettings
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
+import com.meticulouscreations.homesafe.vault.HouseholdKeys
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePreferences
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import dev.zacsweers.metro.AppScope
@@ -243,6 +244,7 @@ class SettingsViewModel(
     private val notificationMute: NotificationMute,
     private val appIcons: AppIconSwitcher,
     private val baseMaps: BaseMaps,
+    private val householdKeys: HouseholdKeys,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
@@ -326,6 +328,8 @@ class SettingsViewModel(
     init {
         refreshNotificationPermission()
         refreshClassifiers()
+        // Someone may have saved a key, or let this login in, since the vault last looked.
+        householdKeys.refresh()
         // So the Maps row can say whether Google's key works without a map being opened first.
         viewModelScope.launch { baseMaps.check() }
     }
@@ -414,10 +418,9 @@ class SettingsViewModel(
         viewModelScope.launch { baseMaps.check() }
     }
 
-    /** Keeps the Google Maps key ([key] blank or null forgets it) and asks Google about it at once. */
+    /** Seals the Google Maps key into the household's vault ([key] blank or null forgets it) and asks Google about it at once. */
     fun setGoogleMapsKey(key: String?) {
-        baseMaps.setGoogleKey(key)
-        viewModelScope.launch { baseMaps.check() }
+        viewModelScope.launch { if (baseMaps.setGoogleKey(key).isSuccess) baseMaps.check() }
     }
 
     /**

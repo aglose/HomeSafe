@@ -36,19 +36,20 @@ import homesafe.shared.generated.resources.maps_google_key_forget
 import homesafe.shared.generated.resources.maps_google_key_help
 import homesafe.shared.generated.resources.maps_google_key_label
 import homesafe.shared.generated.resources.maps_google_key_save
-import homesafe.shared.generated.resources.maps_google_key_saved
 import homesafe.shared.generated.resources.maps_google_status_checking
 import homesafe.shared.generated.resources.maps_google_status_failed
 import homesafe.shared.generated.resources.maps_google_status_no_key
 import homesafe.shared.generated.resources.maps_google_status_unchecked
 import homesafe.shared.generated.resources.maps_google_status_working
 import homesafe.shared.generated.resources.maps_settings_caption
+import homesafe.shared.generated.resources.vault_key_saved
 import org.jetbrains.compose.resources.stringResource
 
 /**
  * Whose map the app's maps are drawn on: OpenStreetMap, or Google's with a key of the person's
- * own. Picking Google opens out the key: pasted in and saved (it goes to the platform's secret
- * store, never shown again), or forgotten, with a line saying whether Google took it. On the
+ * own. Picking Google opens out the key: pasted in and saved (sealed into the household's vault
+ * on the server, never shown again), or forgotten, with a line saying whether Google took it.
+ * While the vault can't be opened (signed out, not let in yet) it says why instead. On the
  * Settings page these are what the "Maps" row opens out to, the row itself naming the one in use.
  */
 @Composable
@@ -86,48 +87,56 @@ internal fun MapProviderOptions(
 
 @Composable
 private fun GoogleKeyRows(settings: MapSettings, onGoogleKey: (String?) -> Unit) {
-    if (settings.hasGoogleKey) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(Res.string.maps_google_key_saved),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
+    // One column, so the options above space these as they space each other.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val keysNote = settings.keysNote
+        if (keysNote != null) {
+            SettingsCaption(keysNote.resolve())
+        } else if (settings.hasGoogleKey) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(Res.string.vault_key_saved),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onGoogleKey(null) }, modifier = Modifier.testTag("settings_maps_forget_key")) {
+                    Text(stringResource(Res.string.maps_google_key_forget))
+                }
+            }
+        } else {
+            // Only ever in memory: saved state would put the key, in the clear, in the platform's saved-instance Bundle.
+            var typed by remember { mutableStateOf("") }
+            val save = { if (typed.isNotBlank()) onGoogleKey(typed).also { typed = "" } }
+            OutlinedTextField(
+                value = typed,
+                onValueChange = { typed = it },
+                label = { Text(stringResource(Res.string.maps_google_key_label)) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done, autoCorrectEnabled = false),
+                keyboardActions = KeyboardActions(onDone = { save() }),
+                modifier = Modifier.fillMaxWidth().testTag("settings_maps_key"),
             )
-            TextButton(onClick = { onGoogleKey(null) }, modifier = Modifier.testTag("settings_maps_forget_key")) {
-                Text(stringResource(Res.string.maps_google_key_forget))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                SettingsCaption(stringResource(Res.string.maps_google_key_help), modifier = Modifier.weight(1f))
+                TextButton(onClick = { save() }, enabled = typed.isNotBlank(), modifier = Modifier.testTag("settings_maps_save_key")) {
+                    Text(stringResource(Res.string.maps_google_key_save))
+                }
             }
         }
-    } else {
-        // Only ever in memory: saved state would put the key, in the clear, in the platform's saved-instance Bundle.
-        var typed by remember { mutableStateOf("") }
-        val save = { if (typed.isNotBlank()) onGoogleKey(typed).also { typed = "" } }
-        OutlinedTextField(
-            value = typed,
-            onValueChange = { typed = it },
-            label = { Text(stringResource(Res.string.maps_google_key_label)) },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done, autoCorrectEnabled = false),
-            keyboardActions = KeyboardActions(onDone = { save() }),
-            modifier = Modifier.fillMaxWidth().testTag("settings_maps_key"),
+        settings.saveError?.let { SettingsCaption(it.resolve(), error = true) }
+        if (keysNote != null) return@Column
+        val status = settings.google
+        SettingsCaption(
+            when {
+                !settings.hasGoogleKey -> stringResource(Res.string.maps_google_status_no_key)
+                status is GoogleMapsStatus.Failed -> stringResource(Res.string.maps_google_status_failed, status.reason.resolve())
+                status == GoogleMapsStatus.Checking -> stringResource(Res.string.maps_google_status_checking)
+                status == GoogleMapsStatus.Working -> stringResource(Res.string.maps_google_status_working)
+                else -> stringResource(Res.string.maps_google_status_unchecked)
+            },
+            error = settings.hasGoogleKey && status is GoogleMapsStatus.Failed,
         )
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            SettingsCaption(stringResource(Res.string.maps_google_key_help), modifier = Modifier.weight(1f))
-            TextButton(onClick = { save() }, enabled = typed.isNotBlank(), modifier = Modifier.testTag("settings_maps_save_key")) {
-                Text(stringResource(Res.string.maps_google_key_save))
-            }
-        }
     }
-    val status = settings.google
-    SettingsCaption(
-        when {
-            !settings.hasGoogleKey -> stringResource(Res.string.maps_google_status_no_key)
-            status is GoogleMapsStatus.Failed -> stringResource(Res.string.maps_google_status_failed, status.reason.resolve())
-            status == GoogleMapsStatus.Checking -> stringResource(Res.string.maps_google_status_checking)
-            status == GoogleMapsStatus.Working -> stringResource(Res.string.maps_google_status_working)
-            else -> stringResource(Res.string.maps_google_status_unchecked)
-        },
-        error = settings.hasGoogleKey && status is GoogleMapsStatus.Failed,
-    )
 }

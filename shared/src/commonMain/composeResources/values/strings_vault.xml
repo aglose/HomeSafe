@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The household key vault: where the assistant's and the maps' API keys are kept, on the server,
+  sealed with each person's Frigate login (docs/key-vault.md). See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="vault_signed_out">Sign in to the server to use the household's keys: they're kept there, sealed with your login.</string>
+    <string name="vault_opening">Opening the household's keys…</string>
+    <string name="vault_unsupported">The server's relay is too old to keep keys. Update it to use one.</string>
+    <string name="vault_waiting">Someone already using the household's keys has to open the app once to let your login in.</string>
+    <string name="vault_failed">Couldn't open the household's keys: %1$s</string>
+    <string name="vault_not_open">The household's keys aren't open.</string>
+    <string name="vault_key_saved">A key is saved for the household, sealed with each person's login.</string>
+</resources>

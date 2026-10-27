@@ -37,6 +37,8 @@ import com.meticulouscreations.homesafe.maps.MapSettings
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.vault.VaultState
+import com.meticulouscreations.homesafe.vault.note
 import com.meticulouscreations.homesafe.viewmodel.BudgetAlertsState
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
@@ -172,6 +174,12 @@ private fun SettingsHomeMapsNoKeyPreview() {
 private fun SettingsHomeMapsRefusedPreview() {
     val refused = GoogleMapsStatus.Failed(UiText.of(Res.string.maps_google_rejected, 403))
     SettingsHomePreviewContent(previewSettings.copy(maps = MapSettings(MapProvider.GOOGLE, hasGoogleKey = true, google = refused)), initialFold = SettingsFold.MAPS)
+}
+
+@Preview(name = "Settings, maps open on Google, waiting to be let in", widthDp = 412, heightDp = 1400)
+@Composable
+private fun SettingsHomeMapsWaitingPreview() {
+    SettingsHomePreviewContent(previewSettings.copy(maps = MapSettings(MapProvider.GOOGLE, keysNote = VaultState.Waiting.note())), initialFold = SettingsFold.MAPS)
 }
 
 @Preview(name = "Settings, app icon open", widthDp = 412, heightDp = 915)

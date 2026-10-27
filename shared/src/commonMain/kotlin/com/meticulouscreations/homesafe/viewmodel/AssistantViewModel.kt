@@ -14,7 +14,10 @@ import com.meticulouscreations.homesafe.data.ASSISTANT_KEYS
 import com.meticulouscreations.homesafe.data.ApiKeyStore
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import com.meticulouscreations.homesafe.ui.assistant.encodeScreenJpeg
+import com.meticulouscreations.homesafe.vault.HouseholdKeys
+import com.meticulouscreations.homesafe.vault.note
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -48,6 +51,8 @@ data class AssistantTurn(val question: String, val answer: String = "", val note
 @Immutable
 data class AssistantUiState(
     val hasKey: Boolean = false,
+    /** Why the household's key can't be read or saved just now (signed out, not let in yet), or why saving it failed. */
+    val keyNote: UiText? = null,
     val family: AssistantModelFamily = AssistantModelFamily.Default,
     /** The newest model of each family, in the picker's order. */
     val models: List<AssistantModel> = AssistantModelFamily.entries.map(AssistantModel::fallback),
@@ -73,6 +78,7 @@ class AssistantViewModel(
     private val agent: AssistantAgent,
     private val api: AnthropicApi,
     @Named(ASSISTANT_KEYS) private val store: ApiKeyStore,
+    private val keys: HouseholdKeys,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -97,6 +103,14 @@ class AssistantViewModel(
     init {
         val checkedAt = store.string(PREF_MODELS_AT)?.toLongOrNull() ?: 0L
         if (clock.now().epochSeconds - checkedAt > MODELS_MAX_AGE_SECONDS) refreshModels()
+        // The key lives in the household's vault: it comes when the vault opens on sign-in, and goes if someone forgets it.
+        viewModelScope.launch {
+            keys.state.collect { vault ->
+                val hadKey = _uiState.value.hasKey
+                _uiState.update { it.copy(hasKey = keys.current(HouseholdKeys.ANTHROPIC) != null, keyNote = vault.note()) }
+                if (!hadKey && _uiState.value.hasKey) refreshModels()
+            }
+        }
     }
 
     /**
@@ -104,6 +118,7 @@ class AssistantViewModel(
      * the key may have been saved or forgotten, or the model changed, in another. Called as it opens.
      */
     fun catchUp() {
+        keys.refresh()
         _uiState.update(::stored)
     }
 
@@ -114,7 +129,7 @@ class AssistantViewModel(
      */
     fun ask(question: String, screen: String, picture: ImageBitmap?, screenLocks: List<StateFlow<Boolean>> = emptyList()) {
         val text = question.trim()
-        val key = store.apiKey()
+        val key = keys.current(HouseholdKeys.ANTHROPIC)
         if (key == null) _uiState.update { it.copy(hasKey = false) }
         if (text.isEmpty() || key == null || _uiState.value.working) return
         val model = _uiState.value.model
@@ -188,21 +203,28 @@ class AssistantViewModel(
         _uiState.update { it.copy(includeScreen = include) }
     }
 
+    /** Seals [key] into the household's vault on the server, for every phone in the household. */
     fun saveKey(key: String) {
         val trimmed = key.trim().takeIf { it.isNotEmpty() } ?: return
-        store.saveApiKey(trimmed)
-        _uiState.update { it.copy(hasKey = true) }
-        refreshModels()
+        viewModelScope.launch {
+            keys.save(HouseholdKeys.ANTHROPIC, trimmed)
+                .onSuccess { _uiState.update { it.copy(hasKey = true, keyNote = null) } }
+                .onFailure { failure -> _uiState.update { it.copy(keyNote = failure.userMessage()) } }
+        }
     }
 
+    /** Forgets the household's key: for every phone, not only this one. */
     fun forgetKey() {
         newConversation()
-        store.saveApiKey(null)
-        _uiState.update { it.copy(hasKey = false) }
+        viewModelScope.launch {
+            keys.save(HouseholdKeys.ANTHROPIC, null)
+                .onSuccess { _uiState.update { it.copy(hasKey = false) } }
+                .onFailure { failure -> _uiState.update { it.copy(keyNote = failure.userMessage()) } }
+        }
     }
 
     private fun refreshModels() {
-        val key = store.apiKey() ?: return
+        val key = keys.current(HouseholdKeys.ANTHROPIC) ?: return
         viewModelScope.launch {
             // Not being able to look is no loss: the families keep the models they had.
             val listed = runCatching { api.listModels(key) }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return@launch
@@ -216,7 +238,7 @@ class AssistantViewModel(
 
     /** [state] with what the store holds: whether there is a key, and the settings. */
     private fun stored(state: AssistantUiState): AssistantUiState = state.copy(
-        hasKey = store.apiKey() != null,
+        hasKey = keys.current(HouseholdKeys.ANTHROPIC) != null,
         family = store.string(PREF_FAMILY)?.let { name -> AssistantModelFamily.entries.firstOrNull { it.name == name } } ?: AssistantModelFamily.Default,
         models = cachedModels() ?: state.models,
         includeScreen = store.string(PREF_INCLUDE_SCREEN) != "false",

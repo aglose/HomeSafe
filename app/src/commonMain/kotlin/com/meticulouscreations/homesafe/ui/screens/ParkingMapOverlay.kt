@@ -202,13 +202,17 @@ private fun parkingReason(alert: ParkingAlert): String? {
     val until = alert.untilEpochSeconds
     return when {
         alert.note != null -> alert.note
+
         limit != null && limit % 60 == 0 -> pluralStringResource(Res.plurals.parking_map_limit_hours, limit / 60, limit / 60)
+
         limit != null -> pluralStringResource(Res.plurals.parking_map_limit_minutes, limit, limit)
+
         from != null && until != null -> stringResource(
             Res.string.parking_map_no_parking,
             WeatherFormat.clock(from, utcOffset(from)).resolve(),
             WeatherFormat.clock(until, utcOffset(until)).resolve(),
         )
+
         else -> null
     }
 }
