@@ -6,7 +6,8 @@ name: Android CLI journeys
 # Not part of ci-green: an agent evaluates each step from what is on screen, which costs model
 # tokens and is not deterministic, so this runs on demand and weekly rather than on every push.
 # The deterministic suites (Compose UI tests, integration journeys, MainActivity E2E) are in ci.yml.
-# Needs the ANTHROPIC_API_KEY repository secret; without it the job says so and stops.
+# Needs the CLAUDE_CODE_OAUTH_TOKEN repository secret (Claude Code on a Claude subscription, from
+# `claude setup-token`; no API key is used); without it the job says so and stops.
 
 on:
   workflow_dispatch:
@@ -28,15 +29,15 @@ jobs:
     env:
       API_LEVEL: 34
     steps:
-      - name: Check for an agent API key
+      - name: Check for an agent token
         id: key
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
+          if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::ANTHROPIC_API_KEY is not set; skipping the Android CLI journeys."
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set; skipping the Android CLI journeys."
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -92,7 +93,7 @@ jobs:
         if: steps.key.outputs.present == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         with:
           api-level: ${{ env.API_LEVEL }}
           target: google_apis

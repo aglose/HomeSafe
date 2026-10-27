@@ -159,15 +159,15 @@ cleared app, and the script fails unless every action of every journey gets a âœ
 To run them locally:
 
 1. Install the [Android CLI](https://developer.android.com/tools/agents/android-cli), then run `android init`.
-2. Install Claude Code and set `ANTHROPIC_API_KEY`.
+2. Install Claude Code and sign in (`claude`).
 3. Start the fake Frigate with `--advertise 10.0.2.2` as above.
 4. Install the debug APK on an emulator.
 5. Run `scripts/run-android-cli-journeys.sh` to run them all, or pass journey files to run a subset.
 
 Results go to `build/journeys/`.
 
-On CI, the **Android CLI journeys** workflow runs them on demand and weekly. It needs the `ANTHROPIC_API_KEY` secret
-and is not part of `ci-green`: an agent judging screenshots costs tokens and isn't deterministic. The deterministic
+On CI, the **Android CLI journeys** workflow runs them on demand and weekly. It needs the `CLAUDE_CODE_OAUTH_TOKEN` secret
+(Claude Code on a Claude subscription, from `claude setup-token`) and is not part of `ci-green`: an agent judging screenshots costs tokens and isn't deterministic. The deterministic
 layers above are what gate a merge.
 
 The sign-in fields, the Connect button and the bottom nav carry test tags, and `MainActivity` exposes test tags as

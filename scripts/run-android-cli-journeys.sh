@@ -8,7 +8,7 @@
 # fails unless every action of every journey passed.
 #
 # Needs: adb and a booted device, the Android CLI (`android`) with its skill installed
-# (`android init`), Claude Code (`claude`) with ANTHROPIC_API_KEY, the debug APK installed, and the
+# (`android init`), Claude Code (`claude`) signed in (or CLAUDE_CODE_OAUTH_TOKEN set, as on CI), the debug APK installed, and the
 # fake Frigate reachable from the device at http://10.0.2.2:8971 — see docs/testing.md.
 set -uo pipefail
 

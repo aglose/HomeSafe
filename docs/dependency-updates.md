@@ -88,13 +88,11 @@ rules it is judged by. Its tests are `scripts/ci/test_dependency_gate.py`, which
 ## The agent key
 
 Merging updates that pass needs no setup at all. Reading the release notes and repairing a red
-pull request need Claude Code, with one repository secret (Settings → Secrets and variables →
-Actions):
+pull request need Claude Code, run on a Claude subscription with the `CLAUDE_CODE_OAUTH_TOKEN`
+repository secret (Settings → Secrets and variables → Actions), made with `claude setup-token`. No
+API key is used.
 
-- `ANTHROPIC_API_KEY`, the same secret the Android CLI journeys use, or
-- `CLAUDE_CODE_OAUTH_TOKEN`, from `claude setup-token`, to use a Claude subscription instead.
-
-Without either, a green update still merges, a red one is retried once and then left for you.
+Without it, a green update still merges, a red one is retried once and then left for you.
 
 The agent is kept away from anything it could do harm with:
 
