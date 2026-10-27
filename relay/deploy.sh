@@ -20,11 +20,13 @@
 # doesn't come back healthy, it restores the backup and rebuilds that.
 #
 # The box is $HOMESAFE_BOX (default andrew@100.99.163.71, its Tailscale address; the wired LAN
-# address is andrew@192.168.68.65).
+# address is andrew@192.168.68.65), and the relay's folder on it $HOMESAFE_RELAY_DIR (default
+# surveillance/relay, from andrew's home; a cloud session signs in as `claude`, in andrew's group,
+# and passes /home/andrew/surveillance/relay).
 set -euo pipefail
 
 BOX=${HOMESAFE_BOX:-andrew@100.99.163.71}
-DIR=surveillance/relay
+DIR=${HOMESAFE_RELAY_DIR:-surveillance/relay}
 FILES=(relay.py floorplan_editor.html requirements.txt Dockerfile docker-compose.yml)
 CHECK=0
 for arg in "$@"; do
