@@ -64,6 +64,13 @@ interface MomentsRepository {
     fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double = 0.0): Flow<List<MomentEvent>>
 
     /**
+     * [observeRecentMoments] read once, asking the server now rather than opening on the cache:
+     * [RecentMoments.fresh] when the server answered, what the device kept when it didn't, and null
+     * when nobody is signed in.
+     */
+    suspend fun readRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double = 0.0): RecentMoments?
+
+    /**
      * [cameraName]'s moments that started inside [afterEpochSeconds]..[beforeEpochSeconds],
      * placed and folded the way [observeMoments] does it, oldest first. Asks the server for
      * exactly that interval (paged within it, up to a bound) rather than reading down from now,
@@ -112,3 +119,6 @@ interface MomentsRepository {
     /** A downloadable MP4 URL for a detection's clip (see [com.meticulouscreations.homesafe.network.frigateEventClipDownloadUrl]), authenticated for the current session. */
     suspend fun getClipDownloadUrl(eventId: String): RecordingStream
 }
+
+/** One read of a camera's recent moments, and whether the server gave them ([fresh]) or the device's copy did. */
+data class RecentMoments(val moments: List<MomentEvent>, val fresh: Boolean)

@@ -60,6 +60,9 @@ class FinanceLockViewModel(private val access: FinanceAccess) : ViewModel() {
             FinanceLockUiState(access.locked.value, !access.online.value, access.canUnlock, access.unlockMethod),
         )
 
+    /** Whether the app is locked, as the assistant watches it: a question asked over the app is taken back when it locks. */
+    val locked: StateFlow<Boolean> get() = access.locked
+
     /** Shows the fingerprint or face prompt. One at a time: a second ask while it is up is the same ask. */
     fun unlock() {
         if (check.value.checking || !access.locked.value || !access.canUnlock) return

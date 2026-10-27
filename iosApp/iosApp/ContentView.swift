@@ -112,6 +112,7 @@ enum ShellSelection: Hashable {
 }
 
 @available(iOS 26.0, *)
+@MainActor
 @Observable
 final class ShellCoordinator {
     var selection: ShellSelection = .home
@@ -119,6 +120,8 @@ final class ShellCoordinator {
     /// want the whole display (the clip editor, car tagging).
     var tabBarHidden = false
     let shell = IosShell()
+    /// The hold on the bar that opens the assistant; set at the end of `init`, once `self` exists.
+    @ObservationIgnored private(set) var assistantHold: AssistantBarHold? = nil
 
     init() {
         shell.onSelectTab = { [weak self] tab in
@@ -130,6 +133,63 @@ final class ShellCoordinator {
         shell.onTabBarVisibilityChange = { [weak self] visible in
             self?.tabBarHidden = !visible.boolValue
         }
+        assistantHold = AssistantBarHold { [weak self] frame in
+            self?.toggleAssistant(from: frame)
+        }
+    }
+
+    /// The bar was held: the assistant of the tab that is up opens out of it (or closes).
+    private func toggleAssistant(from frame: CGRect) {
+        let (x, y, width, height) = (Double(frame.minX), Double(frame.minY), Double(frame.width), Double(frame.height))
+        switch selection {
+        case .home: shell.toggleAssistant(tab: IosTab.home, x: x, y: y, width: width, height: height)
+        case .moments: shell.toggleAssistant(tab: IosTab.moments, x: x, y: y, width: width, height: height)
+        case .settings: shell.toggleAssistant(tab: IosTab.settings, x: x, y: y, width: width, height: height)
+        case .weather: shell.toggleAppAssistant(app: IosAppTab.weather, x: x, y: y, width: width, height: height)
+        case .atlas: shell.toggleAppAssistant(app: IosAppTab.atlas, x: x, y: y, width: width, height: height)
+        case .fitness: shell.toggleAppAssistant(app: IosAppTab.fitness, x: x, y: y, width: width, height: height)
+        case .finance: shell.toggleAppAssistant(app: IosAppTab.finance, x: x, y: y, width: width, height: height)
+        }
+    }
+}
+
+/// Holding the glass bar opens the assistant, as holding the Compose bar does everywhere else
+/// (`assistantTrigger` in the shared module). SwiftUI has no way to watch a press on the bar
+/// itself, so this reaches the `UITabBar` under the `TabView` through a tab's view controller
+/// and adds a long press to it, once. Once the hold is recognised the touch is the bar's: the
+/// tab under the finger isn't selected when it lifts. A press that moves first (the bar's own
+/// drag between tabs) never becomes a hold.
+@available(iOS 26.0, *)
+@MainActor
+final class AssistantBarHold: NSObject, UIGestureRecognizerDelegate {
+    private weak var tabBar: UITabBar?
+    private let onHold: (CGRect) -> Void
+
+    init(onHold: @escaping (CGRect) -> Void) {
+        self.onHold = onHold
+    }
+
+    /// Finds the bar above `controller` and watches it; does nothing once it is watched, or while
+    /// the controller isn't under the tab bar controller yet.
+    func attach(from controller: UIViewController) {
+        guard tabBar == nil, let bar = controller.tabBarController?.tabBar else { return }
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(held(_:)))
+        hold.delegate = self
+        bar.addGestureRecognizer(hold)
+        tabBar = bar
+    }
+
+    @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
+        guard recognizer.state == .began, let bar = tabBar else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        // In the window's points, which is where each tab's Compose view lays out too.
+        onHold(bar.convert(bar.bounds, to: nil))
+    }
+
+    /// Alongside the bar's own recognisers, so the system's press feedback on a tab doesn't keep
+    /// the hold from being seen.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
     }
 }
 
@@ -154,16 +214,16 @@ struct ShellTabView: View {
     var body: some View {
         TabView(selection: $coordinator.selection) {
             Tab("Home", systemImage: "house.fill", value: ShellSelection.home) {
-                ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.home))
+                ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.home), onPlaced: watchBar)
                     .ignoresSafeArea()
                     .toolbar(coordinator.tabBarHidden ? .hidden : .visible, for: .tabBar)
             }
             Tab("Moments", systemImage: "film.stack.fill", value: ShellSelection.moments) {
-                ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.moments))
+                ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.moments), onPlaced: watchBar)
                     .ignoresSafeArea()
             }
             Tab("Settings", systemImage: "gearshape.fill", value: ShellSelection.settings) {
-                ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.settings))
+                ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.settings), onPlaced: watchBar)
                     .ignoresSafeArea()
             }
             TabSection("Apps") {
@@ -192,9 +252,14 @@ struct ShellTabView: View {
         }
     }
 
+    /// Has the assistant watch the bar above a tab's controller for a hold (see `AssistantBarHold`).
+    private func watchBar(_ controller: UIViewController) {
+        coordinator.assistantHold?.attach(from: controller)
+    }
+
     private func appTab(_ title: LocalizedStringKey, systemImage: String, value: ShellSelection, app: IosAppTab) -> some TabContent<ShellSelection> {
         Tab(title, systemImage: systemImage, value: value) {
-            ComposeTabView(controller: coordinator.shell.appViewController(app: app))
+            ComposeTabView(controller: coordinator.shell.appViewController(app: app), onPlaced: watchBar)
                 .ignoresSafeArea()
         }
         .tabPlacement(.sidebarOnly)
@@ -206,13 +271,27 @@ struct ShellTabView: View {
 /// is what lets the content scroll under the glass bar; UIKit still reports the bar (and the
 /// status bar) to Compose as the view's safe-area insets, which is what the shared module's
 /// `bottomNavClearance` keys off under a native tab bar.
+///
+/// `onPlaced` hears the controller once it is in place under the tab bar controller (the next
+/// turn of the main queue after SwiftUI hands it over), which is when the bar can be reached.
 @available(iOS 26.0, *)
 struct ComposeTabView: UIViewControllerRepresentable {
     let controller: UIViewController
+    var onPlaced: ((UIViewController) -> Void)? = nil
 
-    func makeUIViewController(context: Context) -> UIViewController { controller }
+    func makeUIViewController(context: Context) -> UIViewController {
+        placed(controller)
+        return controller
+    }
 
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        placed(uiViewController)
+    }
+
+    private func placed(_ controller: UIViewController) {
+        guard let onPlaced else { return }
+        DispatchQueue.main.async { onPlaced(controller) }
+    }
 }
 
 /// The sign-in screen for the iOS 26 shell. `onConnected` fires on the main thread once the

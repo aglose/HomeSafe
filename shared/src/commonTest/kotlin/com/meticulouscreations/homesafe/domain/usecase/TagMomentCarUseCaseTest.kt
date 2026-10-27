@@ -114,6 +114,7 @@ internal class FakeNamingMoments : MomentsRepository {
     override fun showBefore(epochSeconds: Double?) = fail("unused")
     override fun showCamera(cameraName: String?) = fail("unused")
     override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
+    override suspend fun readRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double) = fail("unused")
     override fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
     override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
     override suspend fun refresh() = fail("unused")

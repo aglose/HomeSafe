@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spanish translation of values/strings_assistant.xml.
+  The assistant: the box that grows out of a bottom bar when it is held, Claude's answers above it,
+  the model picker, and what it says while it looks things up. Keys start with assistant_.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="assistant_input_placeholder">Pregunta sobre esta pantalla</string>
+    <string name="assistant_key_placeholder">Pega tu clave de API de Anthropic</string>
+    <string name="assistant_key_hint">Claude necesita tu propia clave de API, de console.anthropic.com. Se queda en este teléfono.</string>
+    <string name="assistant_key_save">Guardar la clave</string>
+    <string name="assistant_send">Enviar</string>
+    <string name="assistant_stop">Detener</string>
+    <string name="assistant_close">Cerrar el asistente</string>
+    <string name="assistant_new_chat">Nueva conversación</string>
+    <string name="assistant_forget_key">Olvidar la clave de API</string>
+    <string name="assistant_include_screen">Mostrar esta pantalla a Claude</string>
+    <string name="assistant_choose_model">Elegir un modelo</string>
+
+    <!-- Las familias del selector de modelo; la versión junto a cada una viene de Anthropic. -->
+    <string name="assistant_model_haiku">Haiku</string>
+    <string name="assistant_model_sonnet">Sonnet</string>
+    <string name="assistant_model_opus">Opus</string>
+    <string name="assistant_model_fable">Fable</string>
+    <string name="assistant_model_haiku_hint">El más rápido</string>
+    <string name="assistant_model_sonnet_hint">Rápido y capaz</string>
+    <string name="assistant_model_opus_hint">Listo para casi todo</string>
+    <string name="assistant_model_fable_hint">El más capaz, el más lento</string>
+
+    <string name="assistant_thinking">Pensando…</string>
+    <string name="assistant_refused">Claude no puede ayudar con eso.</string>
+    <string name="assistant_cut_off">La respuesta era demasiado larga y se cortó.</string>
+
+    <string name="assistant_error_key">Anthropic no aceptó esa clave de API. Revísala, u olvídala y pega otra.</string>
+    <string name="assistant_error_busy">Claude está ocupado ahora mismo. Inténtalo de nuevo en un momento.</string>
+    <string name="assistant_error_network">No se pudo contactar con Claude. Revisa la conexión e inténtalo de nuevo.</string>
+    <string name="assistant_error_generic">Algo salió mal al hablar con Claude.</string>
+
+    <!-- Lo que el asistente dice que está haciendo mientras lee los datos de la app para responder. -->
+    <string name="assistant_tool_cameras">Revisando tus cámaras</string>
+    <string name="assistant_tool_moments">Repasando los momentos recientes</string>
+    <string name="assistant_tool_doors">Revisando las puertas</string>
+    <string name="assistant_tool_presence">Viendo quién está en casa</string>
+    <string name="assistant_tool_server">Revisando el servidor</string>
+    <string name="assistant_tool_finance">Leyendo tus finanzas</string>
+    <string name="assistant_tool_budget">Revisando tu presupuesto</string>
+    <string name="assistant_tool_markets">Consultando precios del mercado</string>
+    <string name="assistant_tool_weather">Consultando el pronóstico</string>
+    <string name="assistant_tool_fitness">Mirando tu registro de entrenamiento</string>
+    <string name="assistant_tool_atlas">Repasando tus lugares</string>
+</resources>

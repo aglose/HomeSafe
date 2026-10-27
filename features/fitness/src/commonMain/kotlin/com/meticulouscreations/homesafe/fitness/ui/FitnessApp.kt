@@ -101,6 +101,9 @@ import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground
 import com.meticulouscreations.homesafe.fitness.ui.shader.RecordBurst
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
+import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
+import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.components.rememberShareText
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
@@ -287,6 +290,8 @@ fun FitnessAppContent(
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<FitnessPage>().apply { initialPage?.let(::add) } }
+    // Here rather than in the bars, which go while a page is open.
+    AssistantScreenContext { "Fitness app, ${tab.name.lowercase()} tab" + (pages.lastOrNull()?.let { ", $it page open" } ?: "") }
     val haptics = LocalHapticFeedback.current
     // Read through this where the page around it shouldn't redraw every time the heart beats.
     val latestHeart = rememberUpdatedState(heart)
@@ -603,6 +608,8 @@ private fun FitnessNav(selected: FitnessTab, onSelect: (FitnessTab) -> Unit) {
             .padding(bottom = 16.dp)
             .widthIn(max = 420.dp)
             .fillMaxWidth(0.92f)
+            // Held, as the shell's own bar is, it opens the assistant.
+            .assistantTrigger(LocalAssistant.current)
             .clip(CircleShape)
             .background(colors.surfaceRaised.copy(alpha = 0.96f))
             .border(1.dp, colors.hairline, CircleShape)
