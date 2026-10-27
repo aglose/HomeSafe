@@ -10,6 +10,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.settings_alerts_summary_blocked
 import homesafe.shared.generated.resources.settings_alerts_summary_custom
+import homesafe.shared.generated.resources.settings_alerts_summary_muted
 import homesafe.shared.generated.resources.settings_alerts_summary_off
 import homesafe.shared.generated.resources.settings_alerts_summary_on
 import homesafe.shared.generated.resources.settings_alerts_summary_only_away
@@ -40,7 +41,7 @@ import homesafe.shared.generated.resources.settings_cameras_summary_some
  */
 
 /**
- * The Notifications row: why nothing can arrive ("Blocked in system settings"), or "Off", or while
+ * The Notifications row: why nothing can arrive ("Blocked in system settings", "All muted"), or "Off", or while
  * the cameras' notifications are on what they amount to — "On · People only · quiet 10:00 PM –
  * 7:00 AM" — and "weather" after them while the weather app's are on too ("Weather only" with the
  * cameras' off). The camera parts follow what the page shows: with only Away alerts left the
@@ -54,6 +55,8 @@ internal fun alertsSummary(state: SettingsUiState): UiText {
     val weather = UiText.of(Res.string.settings_alerts_summary_weather).takeIf { state.weatherNoticesActive }
     return when {
         !state.notificationsSupported -> UiText.of(Res.string.settings_alerts_summary_unsupported)
+
+        state.notificationsMuted -> UiText.of(Res.string.settings_alerts_summary_muted)
 
         state.notificationPermission == NotificationPermission.DENIED -> UiText.of(Res.string.settings_alerts_summary_blocked)
 

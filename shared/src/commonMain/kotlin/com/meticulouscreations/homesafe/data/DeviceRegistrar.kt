@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
+import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.RelayPushStatus
@@ -22,7 +23,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
@@ -32,10 +32,10 @@ import kotlin.time.ExperimentalTime
 /**
  * Keeps the relay told who this install is and where to push. Re-registers whenever a server
  * becomes active (every sign-in, every LAN ↔ Tailscale flip), whenever a preference the relay
- * filters pushes by changes (the Notifications switch, "only strangers", quiet hours, "only when
- * everyone's away"), and whenever the push token rotates. With the Notifications switch off it
- * registers with no token at all, which is how the relay knows not to push here (it skips a row
- * with none); the install keeps its identity, its presence and its vote. Each registration hands back this
+ * filters pushes by changes (the cameras' notifications switch, "Mute all notifications", "only
+ * strangers", quiet hours, "only when everyone's away"), and whenever the push token rotates. With
+ * the cameras' switch off, or every notification muted, it registers with no token at all, which
+ * is how the relay knows not to push here (it skips a row with none, for every kind of push); the install keeps its identity, its presence and its vote. Each registration hands back this
  * install's relay secret, which [DeviceIdentityStore] keeps for the background paths.
  *
  * Shared by every platform: what differs per platform is only what [DeviceInfo] says and whether
@@ -52,6 +52,7 @@ class DeviceRegistrar(
     private val connectionRepository: ConnectionRepository,
     private val settingsRepository: SettingsRepository,
     private val appScope: CoroutineScope,
+    private val mute: NotificationMute,
 ) : RelayPushStatus {
     private var job: Job? = null
 
@@ -74,7 +75,7 @@ class DeviceRegistrar(
         job = appScope.launch {
             combine(
                 connectionRepository.currentServerUrl.filterNotNull(),
-                settingsRepository.observeSettings().map { it.relayPreferences() }.distinctUntilChanged(),
+                combine(settingsRepository.observeSettings(), mute.muted) { settings, muted -> settings.relayPreferences(muted) }.distinctUntilChanged(),
                 rotatedToken,
             ) { url, preferences, token -> Triple(url, preferences, token) }
                 .collect { (url, preferences, token) -> register(url, preferences, token) }
@@ -91,7 +92,7 @@ class DeviceRegistrar(
         val url = connectionRepository.currentServerUrl.value
             ?: connectionRepository.mostRecentConnection.first()?.serverUrl
             ?: return Result.failure(IllegalStateException("No server to register with"))
-        return register(url, settingsRepository.observeSettings().first().relayPreferences(), token)
+        return register(url, settingsRepository.observeSettings().first().relayPreferences(mute.muted.value), token)
     }
 
     @OptIn(ExperimentalTime::class)
@@ -119,12 +120,12 @@ class DeviceRegistrar(
 
     /**
      * The alert preferences the relay applies to this phone's pushes — whether it gets any (the
-     * Notifications switch), "only strangers", quiet hours (null while off) and "only when
+     * cameras' switch, unless every notification is muted), "only strangers", quiet hours (null while off) and "only when
      * everyone's away" — so a change to any of them re-registers, and a change to anything else
      * (a zone rule) doesn't.
      */
     private data class RelayPreferences(val push: Boolean, val quietFamiliar: Boolean, val quietHours: QuietHours?, val onlyWhenAway: Boolean)
 
-    private fun AlertSettings.relayPreferences() =
-        RelayPreferences(pushNotificationsEnabled, quietFamiliarPeople, quietHours.takeIf { it.enabled && it.startMinute != it.endMinute }, onlyWhenAway)
+    private fun AlertSettings.relayPreferences(muted: Boolean) =
+        RelayPreferences(pushNotificationsEnabled && !muted, quietFamiliarPeople, quietHours.takeIf { it.enabled && it.startMinute != it.endMinute }, onlyWhenAway)
 }

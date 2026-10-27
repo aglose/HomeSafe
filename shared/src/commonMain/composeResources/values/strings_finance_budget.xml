@@ -107,6 +107,8 @@
     <string name="fin_budget_pace_stat_allowance">Left per day</string>
     <string name="fin_budget_pace_stat_limit_day">Limit hit</string>
     <string name="fin_budget_pace_stat_not_this_month">Not this month</string>
+    <!-- What the months before this one came to on average, beside this month's figures. -->
+    <string name="fin_budget_pace_stat_usual">Usual month</string>
 
     <string name="fin_budget_who_title">Who spent what</string>
     <string name="fin_budget_who_subtitle">Tap one to see only its purchases</string>
@@ -139,6 +141,8 @@
     <string name="fin_budget_category_loans">Loan payments</string>
     <string name="fin_budget_category_other">Everything else</string>
     <string name="fin_budget_category_rest">The rest</string>
+    <!-- What tapping a category beside the spending donut does, for accessibility: %1$s is the category ("Food and drink"). -->
+    <string name="fin_budget_category_filter_click">Show %1$s purchases</string>
 
     <string name="fin_budget_where_title">Where it went</string>
     <plurals name="fin_budget_merchant_times">
@@ -157,6 +161,10 @@
     <string name="fin_budget_purchases_none">Nothing has been bought on these cards this month.</string>
     <string name="fin_budget_purchases_none_here">Nothing here this month.</string>
     <string name="fin_budget_filter_all">All</string>
+    <!-- The search box above the month's purchases: its hint, what it is for accessibility, and its clear button. -->
+    <string name="fin_budget_search_hint">Search purchases</string>
+    <string name="fin_budget_search_description">Search this month's purchases</string>
+    <string name="fin_budget_search_clear">Clear search</string>
     <string name="fin_budget_purchase_pending">pending</string>
     <string name="fin_budget_purchase_refund">+%1$s back</string>
 

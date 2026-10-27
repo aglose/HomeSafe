@@ -124,7 +124,18 @@ class PresenceAutomationImplTest {
         val dao = InMemorySettingsDao()
         val identity = DeviceIdentityStore(dao)
         val clock = TestTimeSource()
-        val automation = PresenceAutomationImpl(presence, deviceInfo, connection, fence, identity, scope.backgroundScope, dwellSeconds = 600, timeSource = clock)
+        val foreground = MutableStateFlow(true)
+        val automation = PresenceAutomationImpl(
+            presence,
+            deviceInfo,
+            connection,
+            fence,
+            identity,
+            scope.backgroundScope,
+            dwellSeconds = 600,
+            timeSource = clock,
+            inForeground = foreground,
+        )
         val cached = cachedHome
     }
 
@@ -337,6 +348,26 @@ class PresenceAutomationImplTest {
         h.presence.me(away = true, home = home)
         settle()
         assertEquals(2, h.presence.calls.size)
+    }
+
+    @Test
+    fun inTheBackgroundNothingKeepsThePresencePollAliveOrTakesAFix() = runTest {
+        val h = Harness(this, cachedHome = home).started()
+        settle()
+        assertTrue(h.presence.presence.subscriptionCount.value > 0, "on screen: the relay is watched")
+
+        h.foreground.value = false
+        settle()
+        assertEquals(0, h.presence.presence.subscriptionCount.value, "in a pocket: nothing keeps the minute poll going")
+        h.fence.here = north(5_000.0)
+        h.presence.me(away = false, home = home)
+        settle()
+        assertTrue(h.presence.calls.isEmpty(), "no fix in the background — the fence covers it")
+        assertEquals(listOf<HomeLocation?>(home), h.fence.watched, "and the fence armed from the cache stays up")
+
+        h.foreground.value = true
+        settle()
+        assertEquals(listOf(Triple(true, PresenceSource.LOCATION, 600)), h.presence.calls, "back on screen, the snapshot it missed is checked at once")
     }
 
     @Test

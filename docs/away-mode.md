@@ -126,8 +126,9 @@ Two signals, one per direction, chosen for how they fail:
   the Pixel's first day as the tracked phone). Two things now say which side it's on without a
   crossing: Android's fence reports its starting side whenever it's registered
   (`INITIAL_TRIGGER_ENTER | INITIAL_TRIGGER_EXIT`: every new process, reboot and update), and
-  while the app runs `PresenceAutomationImpl` takes a fix with each fresh presence, at most every
-  5 minutes (`LOCATION_CHECK_EVERY`), needing only "while in use". More than 100 m past the circle
+  while the app is on screen `PresenceAutomationImpl` takes a fix with each fresh presence, at
+  most every 5 minutes (`LOCATION_CHECK_EVERY`), needing only "while in use". In the background
+  it takes none (the fence covers that); back on screen, the latest snapshot is checked at once. More than 100 m past the circle
   (`LOCATION_MARGIN_METERS`) arms away with the dwell; inside it brings an away phone home.
   Source `"location"`. A manual "I'm away" at home is undone the next time the app looks.
 
@@ -167,7 +168,8 @@ the relay, so the second phone only has to allow location "Always". Each phone a
   Always); `Info.plist` carries both usage strings. No background mode is needed for region
   monitoring.
 - **Common** — `PresenceAutomationImpl` runs three collectors while the app runs on a tracked
-  phone: LAN → home (asks the relay first, reports only if away or pending); the fence follows
+  phone, and reads the relay's presence only while the app is on screen (`AppVisibility`), so it
+  never keeps the minute poll or the fixes going from a pocket: LAN → home (asks the relay first, reports only if away or pending); the fence follows
   *access ALWAYS ∧ home*, starting from the cached home and then following the relay — "the relay
   hasn't answered yet" is never read as "no home", or a background launch would tear the fence
   down; and the home cache follows the relay. `DeviceRegistrar` (common, replaces most of the
@@ -186,7 +188,8 @@ away it fetches `GET /api/review` for **both** `severity=alert` and `severity=de
 pushes every item whose `data.objects` contains `"person"` and whose `start_time` is at or after
 the moment the last person left (so flipping the switch never replays the afternoon). The push is:
 
-- title `Away: Person in the driveway` (via `sentence()`), body `Front Yard · nobody home`;
+- title `Person in the driveway` (via `sentence()`, with no "Away" in front: the Away channel and
+  the body already say it), body `Front Yard · nobody home`;
 - data `away="1"` plus the usual `review_id`, `camera`, `event_id`, `zones`, `start_time`;
 - Android `priority: high` (the app posts it on its Away channel, `away_alerts_v2`); APNs
   `interruption-level: time-sensitive`, and no `sound` (HomeSafe never makes one);
@@ -220,7 +223,7 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
 - `domain/repository/PresenceRepository` / `data/PresenceRepositoryImpl` — `presence: StateFlow`,
   `refresh()`, `setThisDeviceAway(away, source, dwellSeconds)`, `setHome()`. Polls the relay every
   60 s **only while collected** (`subscriptionCount`), restarts on server change, clears on
-  sign-out. Writes name the device by id and bear its secret; with no live connection (a
+  sign-out. `PresenceAutomationImpl` collects it only while the app is on screen. Writes name the device by id and bear its secret; with no live connection (a
   background wake) the last signed-in server is tried, Tailscale address first, then LAN.
   `setThisDeviceAway` adopts the `PUT` response, so the switch shows what the relay recorded.
 - Use cases: `ObserveHouseholdPresenceUseCase`, `RefreshHouseholdPresenceUseCase`, `SetAwayUseCase`,
@@ -235,7 +238,7 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
 - `DetectionAlertService` (the in-app 15 s poller; paused while the relay has this phone's push
   token, since it hears the relay's escalated pushes instead) collects presence while polling; when
   `everyoneAway` and the event is `PEOPLE`, it notifies regardless of zone rules with
-  `AlertNotification.urgent = true` and title prefix `Away: `. `AlertNotifier.android.kt` posts
+  `AlertNotification.urgent = true` and the title as it would read anyway. `AlertNotifier.android.kt` posts
   urgent ones on the `away_alerts_v2` channel (IMPORTANCE_HIGH, vibration, no sound, `CATEGORY_ALARM`;
   the first `away_alerts` rang the phone's alarm and is deleted, since a channel's sound can't change);
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.

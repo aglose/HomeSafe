@@ -52,7 +52,7 @@
     <string name="doors_detail_battery">Battery %1$d%</string>
     <string name="doors_detail_battery_low">Battery low</string>
     <string name="doors_detail_weak_signal">Weak signal</string>
-    <string name="doors_detail_offline">Not heard from in a day</string>
+    <string name="doors_detail_offline">Not heard from in 30 minutes</string>
 
     <!-- Each door's alert setting. -->
     <string name="doors_notify_title">Notify me</string>

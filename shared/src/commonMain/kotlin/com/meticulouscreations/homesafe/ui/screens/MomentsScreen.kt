@@ -92,6 +92,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.VisitKind
@@ -103,6 +104,7 @@ import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.components.eventThumbnailRequest
 import com.meticulouscreations.homesafe.ui.fitVideo
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.ui.windowHeight
@@ -121,6 +123,8 @@ import homesafe.shared.generated.resources.moments_category_all
 import homesafe.shared.generated.resources.moments_category_animals
 import homesafe.shared.generated.resources.moments_category_people
 import homesafe.shared.generated.resources.moments_category_vehicles
+import homesafe.shared.generated.resources.moments_clip_pause
+import homesafe.shared.generated.resources.moments_clip_resume
 import homesafe.shared.generated.resources.moments_close_clip
 import homesafe.shared.generated.resources.moments_download_clip
 import homesafe.shared.generated.resources.moments_download_failed
@@ -284,6 +288,8 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
         onUndoNotAPerson = viewModel::undoNotAPerson,
         onDismissNotAPerson = viewModel::dismissNotAPerson,
         scrollToTopRequests = scrollToTopRequests,
+        onClipEnd = viewModel::onClipEnded,
+        onClipPauseToggle = viewModel::toggleClipPaused,
     )
 }
 
@@ -316,6 +322,8 @@ internal fun MomentsFeed(
     onUndoNotAPerson: () -> Unit = {},
     onDismissNotAPerson: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
+    onClipEnd: () -> Unit = {},
+    onClipPauseToggle: () -> Unit = {},
 ) {
     var pickingDay by remember { mutableStateOf(false) }
     // Keyed by MomentItem.key, which holds while a visit grows newer clips.
@@ -450,6 +458,8 @@ internal fun MomentsFeed(
                                     onPlay = onCardClick,
                                     onClipBuffering = onClipBuffering,
                                     onClipError = onClipError,
+                                    onClipEnd = onClipEnd,
+                                    onClipPauseToggle = onClipPauseToggle,
                                     onFullScreenClick = { playing?.let(onFullScreenClick) },
                                     onTagCar = onTagCar,
                                 )
@@ -468,6 +478,8 @@ internal fun MomentsFeed(
                                     onToggleClips = onToggleClips,
                                     onClipBuffering = onClipBuffering,
                                     onClipError = onClipError,
+                                    onClipEnd = onClipEnd,
+                                    onClipPauseToggle = onClipPauseToggle,
                                     onDownloadClick = { onDownloadClick(item.event) },
                                     onFullScreenClick = { playing?.let(onFullScreenClick) },
                                     onTagCar = onTagCar,
@@ -956,6 +968,8 @@ private fun MomentCard(
     onToggleClips: () -> Unit,
     onClipBuffering: (Boolean) -> Unit,
     onClipError: () -> Unit,
+    onClipEnd: () -> Unit,
+    onClipPauseToggle: () -> Unit,
     onDownloadClick: () -> Unit,
     onFullScreenClick: () -> Unit,
     onTagCar: (MomentEvent) -> Unit,
@@ -993,7 +1007,7 @@ private fun MomentCard(
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center,
             ) {
-                MomentThumbnail(url = item.thumbnailUrl)
+                MomentThumbnail(url = item.thumbnailUrl, eventId = event.id, inProgress = event.isInProgress)
                 if (event.hasClip) {
                     // The play icon has the frame to itself. The download used to sit in the
                     // top-right corner here, close enough on a thumbnail this narrow to read as
@@ -1114,7 +1128,14 @@ private fun MomentCard(
 
         // The clip opens beneath the card rather than navigating away, so the feed stays in place.
         AnimatedVisibility(visible = player.playingEventId != null) {
-            InlineClipPlayer(player = player, onClipBuffering = onClipBuffering, onClipError = onClipError, onFullScreenClick = onFullScreenClick)
+            InlineClipPlayer(
+                player = player,
+                onClipBuffering = onClipBuffering,
+                onClipError = onClipError,
+                onClipEnd = onClipEnd,
+                onTogglePause = onClipPauseToggle,
+                onFullScreenClick = onFullScreenClick,
+            )
         }
     }
 }
@@ -1133,6 +1154,8 @@ private fun RoutineRow(
     onPlay: (MomentEvent) -> Unit,
     onClipBuffering: (Boolean) -> Unit,
     onClipError: () -> Unit,
+    onClipEnd: () -> Unit,
+    onClipPauseToggle: () -> Unit,
     onFullScreenClick: () -> Unit,
     onTagCar: (MomentEvent) -> Unit,
 ) {
@@ -1189,7 +1212,14 @@ private fun RoutineRow(
             MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay, onTagCar = onTagCar)
         }
         AnimatedVisibility(visible = player.playingEventId != null) {
-            InlineClipPlayer(player = player, onClipBuffering = onClipBuffering, onClipError = onClipError, onFullScreenClick = onFullScreenClick)
+            InlineClipPlayer(
+                player = player,
+                onClipBuffering = onClipBuffering,
+                onClipError = onClipError,
+                onClipEnd = onClipEnd,
+                onTogglePause = onClipPauseToggle,
+                onFullScreenClick = onFullScreenClick,
+            )
         }
     }
 }
@@ -1324,14 +1354,30 @@ private fun MomentClipList(
  * card it belongs to is still in sight above it.
  */
 @Composable
-private fun InlineClipPlayer(player: ClipPlayerState, onClipBuffering: (Boolean) -> Unit, onClipError: () -> Unit, onFullScreenClick: () -> Unit) {
+private fun InlineClipPlayer(
+    player: ClipPlayerState,
+    onClipBuffering: (Boolean) -> Unit,
+    onClipError: () -> Unit,
+    onClipEnd: () -> Unit,
+    onTogglePause: () -> Unit,
+    onFullScreenClick: () -> Unit,
+) {
+    // Paused by a tap on the picture, or come to rest at the clip's end.
+    val paused = player.request?.playWhenReady == false
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .wrapContentWidth()
             .heightIn(max = windowHeight() * INLINE_PLAYER_MAX_HEIGHT_FRACTION)
-            .fitVideo(),
+            .fitVideo()
+            // A tap on the picture pauses it and plays it on, as on any video; the full-screen
+            // button over it keeps its own tap.
+            .clickable(
+                enabled = player.request != null && player.error == null,
+                onClickLabel = stringResource(if (paused) Res.string.moments_clip_resume else Res.string.moments_clip_pause),
+                onClick = onTogglePause,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         // Error is checked before the player: an error that lands after the request was set
@@ -1348,11 +1394,22 @@ private fun InlineClipPlayer(player: ClipPlayerState, onClipBuffering: (Boolean)
                     playerKey = "event:${player.playingEventId}",
                     onPositionChanged = {},
                     onBufferingChanged = onClipBuffering,
-                    onPlaybackEnded = {},
+                    // A visit plays on into its next clip; anything else stops on its last frame.
+                    onPlaybackEnded = onClipEnd,
                     onPlaybackError = onClipError,
                 )
                 // Drawn after the player so it sits on top of the poster, which stays until the first frame.
-                if (player.buffering) CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                if (player.buffering) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                } else if (paused) {
+                    // The same play badge as the card's thumbnail: the picture is waiting for a tap.
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(48.dp).background(LocalFrigateExtraColors.current.glassFill, CircleShape).padding(8.dp),
+                    )
+                }
             }
 
             else -> {
@@ -1463,7 +1520,7 @@ private fun DownloadButton(
  * matchParentSize is measured against the frame after the frame is sized, so it cannot.
  */
 @Composable
-private fun BoxScope.MomentThumbnail(url: String?) {
+private fun BoxScope.MomentThumbnail(url: String?, eventId: String, inProgress: Boolean) {
     if (url == null) {
         Icon(
             imageVector = Icons.Filled.Videocam,
@@ -1473,8 +1530,11 @@ private fun BoxScope.MomentThumbnail(url: String?) {
         )
         return
     }
+    // Cached by the detection, not the route-bearing URL, and fetched afresh once it has ended (see eventThumbnailRequest).
+    val platformContext = LocalPlatformContext.current
+    val request = remember(platformContext, url, eventId, inProgress) { eventThumbnailRequest(platformContext, url, eventId, inProgress) }
     AsyncImage(
-        model = url,
+        model = request,
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier.matchParentSize(),

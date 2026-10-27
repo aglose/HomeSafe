@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -37,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,13 +53,19 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.ExerciseBoard
+import com.meticulouscreations.homesafe.fitness.domain.Equipment
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
+import com.meticulouscreations.homesafe.fitness.domain.Plates
+import com.meticulouscreations.homesafe.fitness.domain.Progression
 import com.meticulouscreations.homesafe.fitness.domain.Record
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_list_separator
 import homesafe.shared.generated.resources.fitness_logger_added
 import homesafe.shared.generated.resources.fitness_logger_aim
 import homesafe.shared.generated.resources.fitness_logger_at_weight_best
@@ -73,10 +81,15 @@ import homesafe.shared.generated.resources.fitness_logger_log_another
 import homesafe.shared.generated.resources.fitness_logger_more_reps
 import homesafe.shared.generated.resources.fitness_logger_more_weight
 import homesafe.shared.generated.resources.fitness_logger_pin
+import homesafe.shared.generated.resources.fitness_logger_plates_bar
+import homesafe.shared.generated.resources.fitness_logger_plates_side
 import homesafe.shared.generated.resources.fitness_logger_reps
 import homesafe.shared.generated.resources.fitness_logger_rung
 import homesafe.shared.generated.resources.fitness_logger_set_record
 import homesafe.shared.generated.resources.fitness_logger_step
+import homesafe.shared.generated.resources.fitness_logger_undo_delete
+import homesafe.shared.generated.resources.fitness_logger_warmup
+import homesafe.shared.generated.resources.fitness_logger_warmup_use
 import homesafe.shared.generated.resources.fitness_logger_weight
 import homesafe.shared.generated.resources.fitness_logger_weight_each
 import org.jetbrains.compose.resources.stringResource
@@ -91,7 +104,10 @@ import org.jetbrains.compose.resources.stringResource
  *   a tap loads that rung with one more rep than its best;
  * - the buttons step the weight by the exercise's usual jump and hold to run, and a tap on
  *   either number brings up a keypad for anything else;
- * - after a set is logged the numbers stay, so a second set is one tap again.
+ * - after a set is logged the numbers stay, so a second set is one tap again;
+ * - before the first set, the warm-ups up to the target are chips too ([Progression.warmups]),
+ *   and on a barbell the plates a side are written under the weight ([Plates]);
+ * - a set deleted by mistake ([deleted], when it is this exercise's) is a tap from coming back.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -104,6 +120,8 @@ internal fun SetLogger(
     onLog: (weight: Double, reps: Int) -> Unit,
     onDeleteSet: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    deleted: LoggedSet? = null,
+    onUndoDelete: () -> Unit = {},
 ) {
     val palette = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -199,6 +217,24 @@ internal fun SetLogger(
             )
         }
 
+        // On a barbell (always pounds), what to slide on each end for the weight showing.
+        val plates = remember(exercise.equipment, kind, weight) {
+            if (exercise.equipment != Equipment.BARBELL || kind != LoadKind.WEIGHT) {
+                null
+            } else {
+                Plates.perSide(weight)?.let { side ->
+                    if (side.isEmpty()) {
+                        UiText.of(Res.string.fitness_logger_plates_bar)
+                    } else {
+                        UiText.of(Res.string.fitness_logger_plates_side, UiText.Joined(side.map { FitnessFormat.number(it).asUiText() }, UiText.of(Res.string.common_list_separator)))
+                    }
+                }
+            }
+        }
+        if (plates != null) {
+            Text(plates.resolve(), style = type.label, color = palette.textMuted, modifier = Modifier.padding(start = 4.dp, top = 8.dp).testTag("fitness_logger_plates"))
+        }
+
         AnimatedVisibility(editing != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             NumberPad(
                 allowDecimal = editing == FIELD_WEIGHT,
@@ -215,6 +251,44 @@ internal fun SetLogger(
                 onDone = { editing = null },
                 modifier = Modifier.padding(top = 12.dp),
             )
+        }
+
+        // Before the first set of the day, the way up to the target: a tap loads one, which is logged like any other set or not at all.
+        val warmups = remember(exercise, target?.weight, todaysSets.isEmpty()) {
+            if (target != null && todaysSets.isEmpty()) Progression.warmups(exercise, target.weight) else emptyList()
+        }
+        if (warmups.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("fitness_logger_warmups"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(Res.string.fitness_logger_warmup).uppercase(), style = type.micro, color = palette.textFaint, modifier = Modifier.padding(start = 4.dp))
+                warmups.forEach { warmup ->
+                    val selected = warmup.weight == weight && warmup.reps == reps
+                    val line = FitnessFormat.set(kind, warmup.weight, warmup.reps).resolve()
+                    val described = stringResource(Res.string.fitness_logger_warmup_use, line)
+                    Box(
+                        Modifier
+                            .height(34.dp)
+                            .clip(CircleShape)
+                            .background(if (selected) colors.first.copy(alpha = 0.24f) else palette.surfaceRaised)
+                            .border(1.dp, if (selected) colors.first else palette.hairline, CircleShape)
+                            .clickable(role = Role.Button, onClickLabel = described) {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                editing = null
+                                weight = warmup.weight
+                                reps = warmup.reps
+                            }
+                            .semantics { contentDescription = described }
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(line, style = type.label, color = if (selected) palette.text else palette.textMuted, maxLines = 1)
+                    }
+                }
+            }
         }
 
         if (board.ladder.isNotEmpty()) {
@@ -291,6 +365,18 @@ internal fun SetLogger(
                     }
                 }
             }
+        }
+
+        val undo = deleted?.takeIf { it.exerciseId == exercise.id }
+        if (undo != null) {
+            Spacer(Modifier.height(12.dp))
+            GhostButton(
+                stringResource(Res.string.fitness_logger_undo_delete, FitnessFormat.set(kind, undo.weight, undo.reps).resolve()),
+                onUndoDelete,
+                Modifier.fillMaxWidth().testTag("fitness_logger_undo"),
+                icon = Icons.AutoMirrored.Filled.Undo,
+                tint = palette.textMuted,
+            )
         }
     }
 }

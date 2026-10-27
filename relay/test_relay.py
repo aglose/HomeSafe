@@ -470,7 +470,7 @@ class PushMessageTest(unittest.TestCase):
         self.assertNotIn("sound", aps, "HomeSafe never makes a sound")
 
     def test_away_is_marked_for_both(self):
-        message = relay.push_message("tok", "Away: Person", "Front Yard · nobody home", {**self.DATA, "away": "1"}, away=True)["message"]
+        message = relay.push_message("tok", "Person", "Front Yard · nobody home", {**self.DATA, "away": "1"}, away=True)["message"]
         self.assertEqual("1", message["data"]["away"], "the app picks the loud channel from this")
         self.assertEqual("time-sensitive", message["apns"]["payload"]["aps"]["interruption-level"])
         self.assertNotIn("sound", message["apns"]["payload"]["aps"], "not even while nobody is home")
@@ -6394,7 +6394,7 @@ class DoorsTest(_ScratchDb):
         self.receive("zigbee2mqtt/Front door", {"contact": False}, self.T + 500)
         title, body, data, away = self.pushes[0]
         self.assertTrue(away)
-        self.assertEqual("Away: Front door opened", title)
+        self.assertEqual("Front door opened", title)
         self.assertEqual({"door": FRONT, "door_name": "Front door", "door_event": "opened", "away": "1", "notif_id": f"door-{FRONT}"},
                          {k: data[k] for k in ("door", "door_name", "door_event", "away", "notif_id")})
         self.assertNotIn("silent", data)

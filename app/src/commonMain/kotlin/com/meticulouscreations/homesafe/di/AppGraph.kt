@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.appicon.AppIconSwitcher
 import com.meticulouscreations.homesafe.appicon.createAppIconSwitcher
 import com.meticulouscreations.homesafe.data.AtlasDao
+import com.meticulouscreations.homesafe.data.BackgroundDoors
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.CameraListDao
@@ -32,6 +33,7 @@ import com.meticulouscreations.homesafe.data.createFitnessDao
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
 import com.meticulouscreations.homesafe.data.createIdentityCheck
 import com.meticulouscreations.homesafe.data.createMomentsDao
+import com.meticulouscreations.homesafe.data.createNotificationMute
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.data.createWeatherDao
@@ -40,6 +42,7 @@ import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.GeofenceMonitor
 import com.meticulouscreations.homesafe.domain.platform.IdentityCheck
+import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceAutomation
@@ -139,6 +142,9 @@ interface AppGraph :
 
     /** A pushed notification's buttons ("Not a person", Undo), for Android's notification receiver (no session either). */
     override val pushedAlertActions: PushedAlertActions
+
+    /** The doors as they stand, for Android's Quick Settings tile (which asks with no Activity, and maybe no session). */
+    override val backgroundDoors: BackgroundDoors
 
     /**
      * Started once by [com.meticulouscreations.homesafe.App]. Also the entry point for what the OS
@@ -263,6 +269,11 @@ interface AppGraph :
     fun providePushTokenProvider(platformContext: PlatformContext): PushTokenProvider =
         createPushTokenProvider(platformContext)
 
+    /** Settings → Notifications' "Mute all notifications", kept on the device. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideNotificationMute(platformContext: PlatformContext): NotificationMute = createNotificationMute(platformContext)
+
     @SingleIn(AppScope::class)
     @Provides
     fun provideLivePlayerPrefetch(platformContext: PlatformContext): LivePlayerPrefetch = createLivePlayerPrefetch(platformContext)
@@ -313,6 +324,7 @@ interface AppGraph :
         presenceRepository: PresenceRepository,
         alertNotifier: AlertNotifier,
         deviceRegistrar: DeviceRegistrar,
+        notificationMute: NotificationMute,
         appScope: CoroutineScope,
         clock: Clock,
         textLoader: TextLoader,
@@ -323,6 +335,7 @@ interface AppGraph :
         presenceRepository = presenceRepository,
         notifier = alertNotifier,
         pushRegistered = deviceRegistrar.pushRegistered,
+        muted = notificationMute.muted,
         scope = appScope,
         clock = { clock.now().toEpochMilliseconds() / 1000.0 },
         pollIntervalMs = DETECTION_POLL_INTERVAL_MS,

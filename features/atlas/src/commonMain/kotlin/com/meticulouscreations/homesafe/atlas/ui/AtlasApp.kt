@@ -120,8 +120,8 @@ sealed interface AtlasPage {
 
     data class PlaceDetail(val placeKey: String) : AtlasPage
 
-    /** A trip, by its place in the list (newest first). */
-    data class TripDetail(val index: Int) : AtlasPage
+    /** A trip, by when it began (epoch seconds): the same trip whatever a refresh adds before or after it. */
+    data class TripDetail(val start: Long) : AtlasPage
 
     /** Where the history comes from, and how that is going. */
     data object Sync : AtlasPage
@@ -246,8 +246,14 @@ fun AtlasAppContent(
                     // A back swipe scrubs the pop it would make, so it slides the way a pop does.
                     rememberPredictiveBackTransition(target, previous, back, label = "atlasPage").AnimatedContent(
                         transitionSpec = { atlasTransition(initialState, targetState, forward = depth[1] > 0 && !back.inProgress) },
-                        // Stepping from one day to the next is the same page with another day on it, not a new page sliding in.
-                        contentKey = { if (it is AtlasPage.Day) AtlasPage.Day::class else it },
+                        // Stepping from one day (or trip) to the next is the same page with another on it, not a new page sliding in.
+                        contentKey = {
+                            when (it) {
+                                is AtlasPage.Day -> AtlasPage.Day::class
+                                is AtlasPage.TripDetail -> AtlasPage.TripDetail::class
+                                else -> it
+                            }
+                        },
                     ) { shown ->
                         val openPlace: (String) -> Unit = { pages += AtlasPage.PlaceDetail(it) }
                         val openDay: (Int) -> Unit = { pages += AtlasPage.Day(it) }
@@ -275,9 +281,27 @@ fun AtlasAppContent(
 
                             is AtlasPage.PlaceDetail -> PlaceScreen(state, tiles, shown.placeKey, pagePadding, openDay, active = active)
 
-                            is AtlasPage.TripDetail -> state.analysis.trips.getOrNull(shown.index)?.let { trip ->
-                                TripScreen(state, tiles, trip, pagePadding, openDay, openPlace, active = active)
-                            } ?: Box(Modifier.fillMaxSize())
+                            is AtlasPage.TripDetail -> {
+                                // Newest first: the earlier trip is the next one along the list.
+                                val trips = state.analysis.trips
+                                val index = trips.indexOfFirst { it.start == shown.start }
+                                if (index < 0) {
+                                    Box(Modifier.fillMaxSize())
+                                } else {
+                                    TripScreen(
+                                        state = state,
+                                        tiles = tiles,
+                                        trip = trips[index],
+                                        padding = pagePadding,
+                                        onOpenDay = openDay,
+                                        onOpenPlace = openPlace,
+                                        // In place, as days are stepped through: Back goes back to the list.
+                                        onEarlier = trips.getOrNull(index + 1)?.let { earlier -> { pages[pages.lastIndex] = AtlasPage.TripDetail(earlier.start) } },
+                                        onLater = trips.getOrNull(index - 1)?.let { later -> { pages[pages.lastIndex] = AtlasPage.TripDetail(later.start) } },
+                                        active = active,
+                                    )
+                                }
+                            }
 
                             AtlasPage.Sync -> SyncScreen(state, pagePadding, actions.onCheckNow)
 

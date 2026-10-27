@@ -13,12 +13,13 @@ internal fun com.meticulouscreations.homesafe.weather.ui.AirQualityTile(report: 
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ui.AlertBanner(alert: com.meticulouscreations.homesafe.weather.domain.WeatherAlert, utcOffsetSeconds: kotlin.Int, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ui.AlertBanner(alert: com.meticulouscreations.homesafe.weather.domain.WeatherAlert, offsetAt: kotlin.Function1<kotlin.Long, kotlin.Int>, nowEpochSeconds: kotlin.Long, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - alert: STABLE (marked @Stable or @Immutable)
-    - utcOffsetSeconds: STABLE (primitive type)
+    - offsetAt: STABLE (function type)
+    - nowEpochSeconds: STABLE (primitive type)
     - onOpen: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
@@ -278,7 +279,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.PlaceCard(entry: com.met
     - trailing: STABLE (composable function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ui.PlacePage(entry: com.meticulouscreations.homesafe.weather.PlaceWeather, current: kotlin.Boolean, tab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, state: com.meticulouscreations.homesafe.weather.WeatherUiState, scrubbedEpochSeconds: kotlin.Long?, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, onScrub: kotlin.Function1<kotlin.Long?, kotlin.Unit>, onDim: kotlin.Function1<kotlin.Float, kotlin.Unit>, onOpenAlert: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenRadar: kotlin.Function0<kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>, animated: kotlin.Boolean): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ui.PlacePage(entry: com.meticulouscreations.homesafe.weather.PlaceWeather, current: kotlin.Boolean, tab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, state: com.meticulouscreations.homesafe.weather.WeatherUiState, scrubbedEpochSeconds: kotlin.Long?, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, onScrub: kotlin.Function1<kotlin.Long?, kotlin.Unit>, onDim: kotlin.Function1<kotlin.Float, kotlin.Unit>, onOpenAlert: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenRadar: kotlin.Function0<kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>, animated: kotlin.Boolean, scrollToTop: kotlin.Int): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -295,9 +296,10 @@ private fun com.meticulouscreations.homesafe.weather.ui.PlacePage(entry: com.met
     - onOpenRadar: STABLE (function type)
     - onRetry: STABLE (function type)
     - animated: STABLE (primitive type)
+    - scrollToTop: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ui.PlacePager(state: com.meticulouscreations.homesafe.weather.WeatherUiState, tab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, scrubbedEpochSeconds: kotlin.Long?, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.weather.ui.WeatherActions, onScrub: kotlin.Function1<kotlin.Long?, kotlin.Unit>, onDim: kotlin.Function1<kotlin.Float, kotlin.Unit>, onOpenAlert: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenRadar: kotlin.Function0<kotlin.Unit>, onOpenPlaces: kotlin.Function0<kotlin.Unit>, animated: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ui.PlacePager(state: com.meticulouscreations.homesafe.weather.WeatherUiState, tab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, scrubbedEpochSeconds: kotlin.Long?, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.weather.ui.WeatherActions, onScrub: kotlin.Function1<kotlin.Long?, kotlin.Unit>, onDim: kotlin.Function1<kotlin.Float, kotlin.Unit>, onOpenAlert: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenRadar: kotlin.Function0<kotlin.Unit>, onOpenPlaces: kotlin.Function0<kotlin.Unit>, animated: kotlin.Boolean, scrollToTop: kotlin.Int, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -313,6 +315,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.PlacePager(state: com.me
     - onOpenRadar: STABLE (function type)
     - onOpenPlaces: STABLE (function type)
     - animated: STABLE (primitive type)
+    - scrollToTop: STABLE (primitive type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable

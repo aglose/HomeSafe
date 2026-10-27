@@ -13,6 +13,7 @@ import com.meticulouscreations.homesafe.fitness.RestTimer
 import com.meticulouscreations.homesafe.fitness.WorkoutHeart
 import com.meticulouscreations.homesafe.fitness.ZoneNotice
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
+import com.meticulouscreations.homesafe.fitness.domain.Equipment
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
@@ -23,6 +24,7 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
 import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
 import com.meticulouscreations.homesafe.fitness.domain.HeartZones
+import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LogCopies
 import com.meticulouscreations.homesafe.fitness.domain.LogCopy
 import com.meticulouscreations.homesafe.fitness.domain.LogCopyText
@@ -198,6 +200,16 @@ Hammer curls
     /** [state] with the exercise called [name] going by [as] instead: a name the app knows no movement for, say. */
     fun renamed(state: FitnessUiState, name: String, `as`: String): FitnessUiState =
         state.copy(boards = state.boards.map { if (it.exercise.name == name) it.copy(exercise = it.exercise.copy(name = `as`)) else it })
+
+    /** [state] with the exercise called [name] loaded on a barbell, in pounds, so the plates a side are written under its weight. */
+    fun onBarbell(state: FitnessUiState, name: String): FitnessUiState =
+        state.copy(boards = state.boards.map { if (it.exercise.name == name) it.copy(exercise = it.exercise.copy(equipment = Equipment.BARBELL, loadKind = LoadKind.WEIGHT)) else it })
+
+    /** [state] a moment after a set of the exercise called [name] was deleted, while it is still offered back. */
+    fun justDeleted(state: FitnessUiState, name: String): FitnessUiState {
+        val exercise = state.boards.first { it.exercise.name == name }.exercise
+        return state.copy(deletedSet = LoggedSet(-1, exercise.id, 290.0, 9, NOW - 4 * 60, workoutId = state.workout?.workout?.id))
+    }
 
     /** A band for the heart-rate screens: the name such a band gives itself, at an address that is nobody's. */
     val band = HeartSensor("AA:BB:CC:00:00:01", "Fitbit Air")
@@ -453,6 +465,32 @@ private fun FitnessExerciseNearestFigurePreview() {
 @Composable
 private fun FitnessExercisePreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Lift(FitnessFixtures.exercise("Hack squat").id)) }
+}
+
+/** On a barbell, before the day's first set: the warm-ups up to the target, and the plates a side under the weight. */
+@Preview(widthDp = 412, heightDp = 1900)
+@Composable
+private fun FitnessExerciseWarmupPreview() {
+    FrigateTheme {
+        FitnessAppContent(
+            FitnessFixtures.onBarbell(FitnessFixtures.state(), "Hack squat"),
+            FitnessActions(),
+            initialPage = FitnessPage.Lift(FitnessFixtures.exercise("Hack squat").id),
+        )
+    }
+}
+
+/** Mid-rest on the exercise's own page, with a set just deleted and offered back. */
+@Preview(widthDp = 412, heightDp = 1900)
+@Composable
+private fun FitnessExerciseRestPreview() {
+    FrigateTheme {
+        FitnessAppContent(
+            FitnessFixtures.justDeleted(FitnessFixtures.onBarbell(FitnessFixtures.state(working = true), "Hack squat"), "Hack squat"),
+            FitnessActions(),
+            initialPage = FitnessPage.Lift(FitnessFixtures.exercise("Hack squat").id),
+        )
+    }
 }
 
 @Preview(widthDp = 412, heightDp = 1500)

@@ -14,7 +14,12 @@ alarm, `weather`, `weather_severe`, `budget`) are deleted and replaced by silent
 ## Settings → Notifications
 
 Every app's notifications are switched on one page, Settings → **Notifications** (it used to be
-called Alerts), one card for each app that sends any:
+called Alerts). At the top, **Mute all notifications** silences this phone completely
+(`NotificationMute`, kept in the platform's preferences so a push can read it with no app
+running): the phone re-registers with the relay with no token, so the relay pushes it nothing of
+any kind (cameras, doors, Away alerts, budget), the in-app camera poller and the weather check
+post nothing, and on Android `HomeSafeMessagingService` drops anything already on its way. Each
+app's own choices are kept for when it is turned off. Below it, one card for each app that sends any:
 
 - **Cameras**: this phone's switch, then what to hear about and when (the rules below, quiet hours,
   "only when everyone's away", "only strangers") and the test notification.
@@ -116,6 +121,20 @@ is `door=<id>`, `notif_id=door-<id>`, worded on the phone; a door opened again w
 updates its notification quietly. On Android it wears the door (the shield when it went out as an
 away alert) and a tap opens the Doors page (`homesafe://doors?door=<id>`, see
 [doors.md](doors.md#what-a-push-looks-like)).
+
+On Android a door that opened while someone was home has a **Doors** channel (`doors`, heads-up,
+silent like the rest) and a group of its own in the shade, so the doors can be turned down without
+the cameras; one that opened while everyone was away goes on the Away channel with the cameras'
+away alerts.
+
+| Android channel | Id | What goes on it |
+| --- | --- | --- |
+| Detections | `detections_v2` | The cameras' alerts while someone is home, and "Not a person" confirmations |
+| Away alerts | `away_alerts_v2` | Someone seen, or a door opened, while everyone is away (buzzes) |
+| Doors | `doors` | A door opening while someone is home |
+| Summaries | `summaries` | The relay's summaries (low importance) |
+| Weather, Severe weather | `weather_v2`, `weather_severe_v2` | The weather app's (see [weather.md](weather.md)) |
+| Budget | `budget_v2` | The month's card spending (see [budget.md](budget.md)) |
 
 ## Icons
 

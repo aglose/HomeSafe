@@ -11,6 +11,10 @@
     <string name="watchlist_add">Add</string>
     <!-- What tapping the watchlist's Add button does, for accessibility. -->
     <string name="watchlist_add_click">Add a stock, fund or coin</string>
+    <!-- How the watchlist can be ordered: as it was added, by the day's biggest moves (up or down), or by what is held in it, the most valuable first. -->
+    <string name="watchlist_sort_list">Your order</string>
+    <string name="watchlist_sort_move">Biggest moves</string>
+    <string name="watchlist_sort_held">Most held</string>
     <string name="watchlist_subtitle_sheet_and_app">Tickers marked “In sheet” come from your budget sheet; the rest you added here</string>
     <string name="watchlist_subtitle_sheet">From your budget sheet. Add more here — they stay on this device</string>
     <string name="watchlist_subtitle_app">Added here, on this device</string>

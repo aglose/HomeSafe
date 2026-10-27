@@ -278,6 +278,9 @@ class CameraDetailViewModel(
 
     private val _playback = MutableStateFlow(PlaybackUiState())
 
+    /** See [setWatched]. */
+    private val watched = MutableStateFlow(true)
+
     /** The saved preferences as last read, so saving this page's two doesn't reset the others (the Nest cameras' fit). */
     private var storedPreferences = PlaybackPreferences.DEFAULT
 
@@ -417,20 +420,31 @@ class CameraDetailViewModel(
                 _playback.update { current -> current.withSound(preferences.soundOn).withQuality(preferences.quality) }
             }
         }
-        // Keep the timeline's coverage fresh: new segments land every few seconds while a camera records.
+        // Keep the timeline's coverage fresh: new segments land every few seconds while a camera
+        // records. Only while the page is on screen ([setWatched]): a backgrounded app, or the
+        // clip editor over this page, has no timeline to keep fresh, and coming back refreshes at once.
         viewModelScope.launch {
             combine(
                 serverUrl,
                 _playback.map { it.span }.distinctUntilChanged(),
-            ) { serverUrl, span -> serverUrl to span }
-                .collectLatest { (serverUrl, span) ->
-                    if (serverUrl == null) return@collectLatest
+                watched,
+            ) { serverUrl, span, onScreen -> Triple(serverUrl, span, onScreen) }
+                .collectLatest { (serverUrl, span, onScreen) ->
+                    if (serverUrl == null || !onScreen) return@collectLatest
                     while (true) {
                         refreshHistory(serverUrl, span)
                         delay(HISTORY_REFRESH_INTERVAL_MS)
                     }
                 }
         }
+    }
+
+    /**
+     * Whether the page is on screen (started), as the screen reports it. The timeline's history
+     * is refreshed only while it is; true until told otherwise, so the first read isn't held up.
+     */
+    fun setWatched(onScreen: Boolean) {
+        watched.value = onScreen
     }
 
     fun setSpan(span: TimelineSpan) {

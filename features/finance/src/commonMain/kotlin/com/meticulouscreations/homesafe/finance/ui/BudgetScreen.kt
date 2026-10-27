@@ -28,9 +28,12 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -43,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,9 +55,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -107,6 +115,7 @@ import homesafe.shared.generated.resources.fin_budget_card_no_purchases
 import homesafe.shared.generated.resources.fin_budget_card_relink
 import homesafe.shared.generated.resources.fin_budget_category_entertainment
 import homesafe.shared.generated.resources.fin_budget_category_fees
+import homesafe.shared.generated.resources.fin_budget_category_filter_click
 import homesafe.shared.generated.resources.fin_budget_category_food
 import homesafe.shared.generated.resources.fin_budget_category_government
 import homesafe.shared.generated.resources.fin_budget_category_home
@@ -157,6 +166,7 @@ import homesafe.shared.generated.resources.fin_budget_pace_stat_limit_day
 import homesafe.shared.generated.resources.fin_budget_pace_stat_not_this_month
 import homesafe.shared.generated.resources.fin_budget_pace_stat_projected
 import homesafe.shared.generated.resources.fin_budget_pace_stat_rate
+import homesafe.shared.generated.resources.fin_budget_pace_stat_usual
 import homesafe.shared.generated.resources.fin_budget_pace_title
 import homesafe.shared.generated.resources.fin_budget_pending_note
 import homesafe.shared.generated.resources.fin_budget_problem_other_title
@@ -175,6 +185,9 @@ import homesafe.shared.generated.resources.fin_budget_role_unset
 import homesafe.shared.generated.resources.fin_budget_roles_body
 import homesafe.shared.generated.resources.fin_budget_roles_title
 import homesafe.shared.generated.resources.fin_budget_sandbox
+import homesafe.shared.generated.resources.fin_budget_search_clear
+import homesafe.shared.generated.resources.fin_budget_search_description
+import homesafe.shared.generated.resources.fin_budget_search_hint
 import homesafe.shared.generated.resources.fin_budget_setup_body
 import homesafe.shared.generated.resources.fin_budget_setup_title
 import homesafe.shared.generated.resources.fin_budget_sort_count
@@ -205,6 +218,7 @@ import homesafe.shared.generated.resources.fin_budget_who_title
 import homesafe.shared.generated.resources.fin_budget_who_unsorted_note
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_body
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_title
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -216,6 +230,25 @@ private const val TO_SORT_SHOWN = 4
 private const val UNSORTED_KEY = "unsorted"
 
 private val BucketId.key: String get() = wire ?: UNSORTED_KEY
+
+/** The purchases' header, which picking a filter scrolls to. */
+private const val LIST_HEADER_KEY = "list-h"
+
+/** A category in the filter: this before Plaid's name for it (`cat:FOOD_AND_DRINK`). */
+private const val CATEGORY_FILTER = "cat:"
+
+/** What the relay counts a purchase with no category as, in the month's categories. */
+private const val OTHER_CATEGORY = "OTHER"
+
+/** The category a purchase is counted under, as the relay counts it: one Plaid gave no name is "OTHER". */
+private val Purchase.categoryKey: String get() = category?.takeIf { it.isNotEmpty() } ?: OTHER_CATEGORY
+
+/** Whether [purchase] is in the list under [filter]: everything, one bucket's (by key), or one category's (`cat:` and its name). */
+private fun matchesFilter(purchase: Purchase, filter: String?): Boolean = when {
+    filter == null -> true
+    filter.startsWith(CATEGORY_FILTER) -> purchase.categoryKey == filter.removePrefix(CATEGORY_FILTER)
+    else -> purchase.bucket.key == filter
+}
 
 /** The Budget tab with its view model: reads the month while it is on screen, and reports the sheet's take-home and bills to the relay. */
 @Composable
@@ -275,7 +308,23 @@ fun BudgetScreen(
     // Which bucket's purchases the list shows (by key), and the purchase whose sheet is up (by id).
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
     var tagging by rememberSaveable { mutableStateOf<String?>(null) }
+    // What the purchases are searched for, by name.
+    var query by rememberSaveable { mutableStateOf("") }
     val pace = remember(budget) { budget?.let(BudgetPace::of) }
+    val scope = rememberCoroutineScope()
+
+    // The list sits well below the things that filter it, so picking a filter brings the list up to show it took.
+    val showInList: (String?) -> Unit = { key ->
+        filter = key
+        if (key != null) scope.launch { listState.scrollToKey(LIST_HEADER_KEY) }
+    }
+    val purchases = budget?.purchases.orEmpty()
+    // Worked out once per change, not on every recomposition of the list.
+    val shown = remember(purchases, filter, query) {
+        val needle = query.trim()
+        purchases.filter { matchesFilter(it, filter) && (needle.isEmpty() || it.name.contains(needle, ignoreCase = true)) }
+    }
+    val shownByDay = remember(shown) { shown.groupBy { it.date } }
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.testTag("finance_budget")) {
         when {
             budget == null && state.loading -> item(key = "loading") { BudgetSkeleton() }
@@ -331,7 +380,7 @@ fun BudgetScreen(
                                 subtitle = stringResource(Res.string.fin_budget_sort_subtitle),
                             )
                         }
-                        items(toSort.take(TO_SORT_SHOWN), key = { "sort-${it.id}" }) { purchase ->
+                        items(toSort.take(TO_SORT_SHOWN), key = { "sort-${it.id}" }, contentType = { "sort" }) { purchase ->
                             SortRow(purchase, budget.config.people, busy = purchase.id in state.tagging, onPick = { onTag(purchase.id, it, false) }, onOpen = { tagging = purchase.id })
                         }
                         if (toSort.size > TO_SORT_SHOWN) {
@@ -340,7 +389,7 @@ fun BudgetScreen(
                                     pluralStringResource(Res.plurals.fin_budget_sort_more, toSort.size - TO_SORT_SHOWN, toSort.size - TO_SORT_SHOWN),
                                     style = FinanceTheme.type.bodyStrong,
                                     color = FinanceTheme.colors.accent,
-                                    modifier = Modifier.padding(horizontal = PageGutter, vertical = 10.dp).clickable(role = Role.Button) { filter = UNSORTED_KEY },
+                                    modifier = Modifier.padding(horizontal = PageGutter, vertical = 10.dp).clickable(role = Role.Button) { showInList(UNSORTED_KEY) },
                                 )
                             }
                         }
@@ -348,8 +397,8 @@ fun BudgetScreen(
                     item(key = "pace-h") { SectionHeader(stringResource(Res.string.fin_budget_pace_title), info = "budgetpace") }
                     item(key = "pace") { PaceBlock(budget, pace) }
                     item(key = "who-h") { SectionHeader(stringResource(Res.string.fin_budget_who_title), subtitle = stringResource(Res.string.fin_budget_who_subtitle)) }
-                    items(budget.buckets.filter { it.id != BucketId.Unassigned || it.count > 0 }, key = { "who-${it.id.key}" }) { bucket ->
-                        BucketCard(bucket, budget, selected = filter == bucket.id.key, onClick = { filter = if (filter == bucket.id.key) null else bucket.id.key })
+                    items(budget.buckets.filter { it.id != BucketId.Unassigned || it.count > 0 }, key = { "who-${it.id.key}" }, contentType = { "bucket" }) { bucket ->
+                        BucketCard(bucket, budget, selected = filter == bucket.id.key, onClick = { showInList(if (filter == bucket.id.key) null else bucket.id.key) })
                     }
                     if (budget.config.sheet.takeHome != null) {
                         item(key = "flow-h") { SectionHeader(stringResource(Res.string.fin_budget_flow_title), info = "savingsline") }
@@ -357,7 +406,7 @@ fun BudgetScreen(
                     }
                     if (budget.categories.isNotEmpty()) {
                         item(key = "what-h") { SectionHeader(stringResource(Res.string.fin_budget_what_title)) }
-                        item(key = "what") { CategoryBlock(budget) }
+                        item(key = "what") { CategoryBlock(budget, selected = filter, onSelect = { showInList(it) }) }
                     }
                     if (budget.merchants.isNotEmpty()) {
                         item(key = "where-h") { SectionHeader(stringResource(Res.string.fin_budget_where_title)) }
@@ -367,16 +416,18 @@ fun BudgetScreen(
                         item(key = "months-h") { SectionHeader(stringResource(Res.string.fin_budget_months_title), subtitle = stringResource(Res.string.fin_budget_months_subtitle)) }
                         item(key = "months") { MonthsBlock(budget, onShowMonth) }
                     }
-                    val shown = budget.purchases.filter { filter == null || it.bucket.key == filter }
-                    item(key = "list-h") {
+                    item(key = LIST_HEADER_KEY) {
                         SectionHeader(stringResource(Res.string.fin_budget_purchases_title), trailing = pluralStringResource(Res.plurals.fin_budget_purchases_count, shown.size, shown.size))
                     }
                     item(key = "list-filter") { FilterChips(budget, filter, onSelect = { filter = it }) }
+                    if (budget.purchases.isNotEmpty()) {
+                        item(key = "list-search") { PurchaseSearch(query, onQuery = { query = it }) }
+                    }
                     if (shown.isEmpty()) {
                         item(key = "list-none") { FinePrint(stringResource(if (budget.purchases.isEmpty()) Res.string.fin_budget_purchases_none else Res.string.fin_budget_purchases_none_here)) }
                     }
-                    shown.groupBy { it.date }.forEach { (day, purchases) ->
-                        item(key = "day-$day") {
+                    shownByDay.forEach { (day, onDay) ->
+                        item(key = "day-$day", contentType = "day") {
                             Text(
                                 FinanceFormat.dayOfMonth(day).resolve(),
                                 style = FinanceTheme.type.label,
@@ -384,7 +435,7 @@ fun BudgetScreen(
                                 modifier = Modifier.padding(horizontal = PageGutter).padding(top = 14.dp, bottom = 2.dp),
                             )
                         }
-                        items(purchases, key = { "p-${it.id}" }) { purchase ->
+                        items(onDay, key = { "p-${it.id}" }, contentType = { "purchase" }) { purchase ->
                             PurchaseRow(purchase, budget, busy = purchase.id in state.tagging, onClick = { tagging = purchase.id })
                         }
                     }
@@ -786,14 +837,19 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
             },
         )
     }
+    // Remembered, so a scrub's recomposition hands the chart the same series and it doesn't redraw its geometry.
+    val evenLine = remember(limit, budget.daysInMonth) { limit?.let { Series.of(listOf(0L to 0.0, budget.daysInMonth.toLong() to it)) } }
+    val projectedLine = remember(budget.isCurrentMonth, pace.daysLeft, budget.day, budget.spent, budget.daysInMonth, pace.projected) {
+        if (budget.isCurrentMonth && pace.daysLeft > 0) Series.of(listOf(budget.day.toLong() to budget.spent, budget.daysInMonth.toLong() to pace.projected)) else null
+    }
     val lines = buildList {
         add(ChartLine(soFar, tint, fill = true, width = 3f))
-        if (limit != null) add(ChartLine(Series.of(listOf(0L to 0.0, budget.daysInMonth.toLong() to limit)), colors.textTertiary, width = 1.5f, dashed = true))
-        if (budget.isCurrentMonth && pace.daysLeft > 0) {
-            add(ChartLine(Series.of(listOf(budget.day.toLong() to budget.spent, budget.daysInMonth.toLong() to pace.projected)), tint.copy(alpha = 0.7f), width = 2f, dashed = true))
-        }
+        if (evenLine != null) add(ChartLine(evenLine, colors.textTertiary, width = 1.5f, dashed = true))
+        if (projectedLine != null) add(ChartLine(projectedLine, tint.copy(alpha = 0.7f), width = 2f, dashed = true))
     }
     val top = maxOf(limit ?: 0.0, pace.projected, budget.spent)
+    // What a month has come to on average, from the months before this one that spent anything; one alone is no "usual".
+    val usualMonth = remember(budget.history) { budget.history.map { it.spent }.filter { it > 0 }.takeIf { it.size >= 2 }?.average() }
     val rules = buildList {
         // Named in the legend under the chart, not on the lines: the two often sit too close for both labels.
         if (limit != null) add(ChartRule(limit, colors.textSecondary, always = true))
@@ -831,6 +887,7 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
             buildList {
                 add(stringResource(Res.string.fin_budget_pace_stat_rate) to FinanceFormat.money(pace.dailyRate, 0))
                 if (budget.isCurrentMonth) add(stringResource(Res.string.fin_budget_pace_stat_projected) to FinanceFormat.money(pace.projected, 0))
+                usualMonth?.let { add(stringResource(Res.string.fin_budget_pace_stat_usual) to FinanceFormat.money(it, 0)) }
                 pace.allowancePerDay?.takeIf { budget.isCurrentMonth && pace.daysLeft > 0 }?.let { add(stringResource(Res.string.fin_budget_pace_stat_allowance) to FinanceFormat.money(it, 0)) }
                 if (limit != null) {
                     val day = pace.limitDay?.let { FinanceFormat.dayOfMonth(budget.month, it).resolve() }
@@ -927,7 +984,7 @@ private fun FlowLine(color: Color, label: String, value: String, dot: Boolean = 
 
 /** What the month went on: Plaid's categories as a ring, the five biggest named beside it. */
 @Composable
-private fun CategoryBlock(budget: Budget) {
+private fun CategoryBlock(budget: Budget, selected: String?, onSelect: (String) -> Unit) {
     val colors = FinanceTheme.colors
     val spending = budget.categories.filter { it.spent > 0 }
     val named = spending.take(5)
@@ -938,11 +995,21 @@ private fun CategoryBlock(budget: Budget) {
         DonutChart(slices, Modifier.size(132.dp), thickness = 18.dp)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            slices.forEach { slice ->
-                Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            slices.forEachIndexed { i, slice ->
+                // A named category filters the purchases to it; "the rest" is several, so it doesn't.
+                val key = named.getOrNull(i)?.let { CATEGORY_FILTER + it.name.ifEmpty { OTHER_CATEGORY } }
+                val isSelected = key != null && key == selected
+                val clickLabel = stringResource(Res.string.fin_budget_category_filter_click, slice.label)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .then(if (key != null) Modifier.clickable(onClickLabel = clickLabel, role = Role.Button) { onSelect(key) } else Modifier)
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(slice.color))
                     Spacer(Modifier.width(8.dp))
-                    Text(slice.label, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(slice.label, style = FinanceTheme.type.label, color = if (isSelected) colors.accent else colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Text(FinanceFormat.money(slice.value, 0), style = FinanceTheme.type.label, color = colors.textPrimary)
                 }
             }
@@ -990,8 +1057,12 @@ private fun MonthsBlock(budget: Budget, onShowMonth: (String?) -> Unit) {
 @Composable
 private fun FilterChips(budget: Budget, selected: String?, onSelect: (String?) -> Unit) {
     val colors = FinanceTheme.colors
+    // A category picked from the donut shows as a chip of its own after "All", which clears it.
+    val category = selected?.takeIf { it.startsWith(CATEGORY_FILTER) }
+    val categoryName = category?.let { stringResource(categoryLabel(it.removePrefix(CATEGORY_FILTER))) }
     val options: List<Pair<String?, String>> = buildList {
         add(null to stringResource(Res.string.fin_budget_filter_all))
+        if (category != null && categoryName != null) add(category to categoryName)
         budget.buckets.forEach { bucket -> if (bucket.id != BucketId.Unassigned || bucket.count > 0) add(bucket.id.key to bucket.id.label()) }
     }
     LazyRow(Modifier.fillMaxWidth().selectableGroup(), contentPadding = PaddingValues(horizontal = PageGutter), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1008,6 +1079,46 @@ private fun FilterChips(budget: Budget, selected: String?, onSelect: (String?) -
                     .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(key) }
                     .testTag("finance_budget_filter_${key ?: "all"}")
                     .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/** A box that searches the month's purchases by name, with a clear button once something is typed. */
+@Composable
+private fun PurchaseSearch(query: String, onQuery: (String) -> Unit) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = PageGutter)
+            .padding(top = 10.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.surfaceRaised)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isEmpty()) Text(stringResource(Res.string.fin_budget_search_hint), style = type.body, color = colors.textTertiary)
+            val searchDescription = stringResource(Res.string.fin_budget_search_description)
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                textStyle = type.body.copy(color = colors.textPrimary),
+                cursorBrush = SolidColor(colors.accent),
+                modifier = Modifier.fillMaxWidth().testTag("finance_budget_search").semantics { contentDescription = searchDescription },
+            )
+        }
+        if (query.isNotEmpty()) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = stringResource(Res.string.fin_budget_search_clear),
+                tint = colors.textSecondary,
+                modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onQuery("") },
             )
         }
     }
@@ -1156,4 +1267,17 @@ private fun sourceNote(source: BucketSource): StringResource = when (source) {
     BucketSource.BANK -> Res.string.fin_budget_source_bank
     BucketSource.RULE -> Res.string.fin_budget_source_rule
     BucketSource.NONE -> Res.string.fin_budget_source_none
+}
+
+@Preview(name = "Budget · filtered to a category", widthDp = 412, heightDp = 420)
+@Composable
+private fun FinanceBudgetCategoryFilterPreview() {
+    FinanceStage {
+        Column {
+            CategoryBlock(BudgetFixtures.onPace, selected = "cat:FOOD_AND_DRINK", onSelect = {})
+            Spacer(Modifier.height(12.dp))
+            FilterChips(BudgetFixtures.onPace, selected = "cat:FOOD_AND_DRINK", onSelect = {})
+            PurchaseSearch("coffee", onQuery = {})
+        }
+    }
 }

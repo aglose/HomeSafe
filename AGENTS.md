@@ -24,6 +24,14 @@ secret the environment lacks, is skipped and named there (the script's header li
 Gradle, draw previews on CI with `scripts/fetch-ui-previews.sh`. The emulator suites and iOS can't
 run in the cloud (no `/dev/kvm`, no macOS); CI runs them.
 
+## Pull requests merge themselves
+
+Once CI is green and the code review is done, the PR autopilot squash-merges a pull request
+([docs/pr-autopilot.md](docs/pr-autopilot.md)). Copilot reviews it, or Claude does when Copilot
+can't, and the review's fixes are pushed to your branch as commits ending in `PR-Autopilot: fix`.
+So pull before you push. Open a pull request as a draft, or label it `autopilot: hold`, if it
+must not merge yet.
+
 ## Strings and localization
 
 **No user-visible text is written as a Kotlin string literal.** Every word a person can read or

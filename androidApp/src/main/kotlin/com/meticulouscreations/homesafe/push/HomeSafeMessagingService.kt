@@ -5,6 +5,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.meticulouscreations.homesafe.data.AlertNotificationPoster
 import com.meticulouscreations.homesafe.data.BudgetNotificationPoster
+import com.meticulouscreations.homesafe.data.NotificationMuteStore
 import com.meticulouscreations.homesafe.domain.model.DoorAlert
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.NestOutageAlert
@@ -27,6 +28,7 @@ import java.util.Date
  * A budget alert (`budget=1`) is no detection at all: it goes to [BudgetNotificationPoster].
  * A door opening (`door=<id>`) is worded here and posted like an alert, with no picture to fetch.
  * So is a Nest camera Google stopped streaming, and its return (`system=nest`).
+ * With every notification muted (Settings → Notifications) nothing is shown at all.
  */
 class HomeSafeMessagingService : FirebaseMessagingService() {
 
@@ -35,6 +37,8 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        // Muted, the relay is told to push nothing here; this covers what was already on its way.
+        if (NotificationMuteStore.isMuted(applicationContext)) return
         if (BudgetAlert.isBudget { message.data[it] }) return showBudgetAlert(message)
         if (DoorAlert.isDoor { message.data[it] }) return showDoorAlert(message)
         if (NestOutageAlert.isNestOutage { message.data[it] }) return showNestOutageAlert(message)
@@ -95,7 +99,7 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
      */
     private fun showDoorAlert(message: RemoteMessage) {
         val alert = DoorAlert.from { message.data[it] }
-        val title = alert?.let { getString(if (it.away) R.string.notif_door_opened_away_title else R.string.notif_door_opened_title, it.doorName) }
+        val title = alert?.let { getString(R.string.notif_door_opened_title, it.doorName) }
             ?: message.data["title"] ?: return
         val body = alert?.let { getString(if (it.away) R.string.notif_door_away_body else R.string.notif_door_body) } ?: message.data["body"].orEmpty()
         val notification = AlertNotification(

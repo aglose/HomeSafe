@@ -734,7 +734,7 @@ internal fun FlowHistoryBlock(flowHistory: List<Snapshot>) {
 internal fun DebtBlock(finance: PersonalFinance) {
     val colors = FinanceTheme.colors
     val dates = rememberFinanceDates()
-    val debtHistory = Series.of(finance.history.mapNotNull { s -> s.debt?.let { s.epochSeconds to it } })
+    val debtHistory = remember(finance.history) { Series.of(finance.history.mapNotNull { s -> s.debt?.let { s.epochSeconds to it } }) }
     Column {
         if (debtHistory.size > 2) {
             LineChart(

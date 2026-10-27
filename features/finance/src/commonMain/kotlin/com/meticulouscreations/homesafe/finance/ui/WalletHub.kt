@@ -327,7 +327,7 @@ internal fun WalletTopicScreen(
  * Brings the item with [key] to the top of the list. The list only knows the keys of what it has
  * laid out, so it glides down a screen at a time until the item is among them (or the list ends).
  */
-private suspend fun LazyListState.scrollToKey(key: Any) {
+internal suspend fun LazyListState.scrollToKey(key: Any) {
     repeat(40) {
         layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.let {
             animateScrollToItem(it.index)

@@ -15,9 +15,15 @@ in a notes app, and it reads those notes as its starting point.
 
 A **workout** lists the exercises on its shelves with last time's peak set and today's target,
 each with a still of [the movement](#the-figure-on-an-exercise) at the start of its row. A
-tap opens one into its logger, in place, with the figure performing it above. At its foot it is
+tap opens one into its logger, in place, with the figure performing it above. Before the day's
+first set the logger offers warm-ups up to the target as chips (`Progression.warmups`: half of it
+for 8, 70% for 4, 85% for 2, in the exercise's own jumps and never under the bar), a tap loading
+one without logging it; on a barbell it writes the plates a side under the weight (`Plates`, in
+pounds, for a 45 lb bar). A set deleted from its chip is offered back under them for eight
+seconds, or until the next set is logged. At its foot it is
 finished, which keeps it, or [cancelled](#cancelling-and-deleting), which throws it away. An **exercise** has a page of its own: the target and
-why, the ladder, the logger, strength over time, and an editor behind the pencil. With a
+why, the ladder, the logger, strength over time, and an editor behind the pencil; the rest after
+a set counts down at its head as it does on the workout. With a
 heart-rate sensor connected (Android), the workout also shows the [heart rate](#heart-rate) live.
 
 What a band records away from the app (steps, sleep, runs) is read from [Health Connect](#the-body-and-runs)
@@ -230,7 +236,10 @@ one the band marks as off the skin, or one outside 30–240 is shown as no readi
 
 **The heart rate is followed only while the fitness app is on screen.** There is no foreground
 service: when the phone is locked, the screen times out, or another app comes in front, the link
-is let go, and it is found again (a few seconds) on coming back. Zone alerts therefore only
+is let go, and it is found again (a few seconds) on coming back. So that a workout isn't cut off
+by the screen timing out between sets, the screen is kept on while a workout is open and the app
+is in front (`KeepScreenOn`: the view's flag on Android, the idle timer on iOS); it times out as
+usual everywhere else, and locking the phone still lets the link go. Zone alerts therefore only
 happen with the app in front. Time in zone counts only time the sensor was really reporting: a
 gap of more than five seconds between readings adds nothing, so a workout done mostly with the
 screen off will show a short "recorded" time, not a wrong one.

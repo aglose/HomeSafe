@@ -27,7 +27,6 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
-import homesafe.shared.generated.resources.notif_away_title
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -38,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -88,6 +88,8 @@ class DetectionAlertService(
     private val notifier: AlertNotifier,
     /** True while the relay has this phone's push token, so it hears every alert as a push (see [start]); `DeviceRegistrar.pushRegistered`. */
     private val pushRegistered: Flow<Boolean>,
+    /** "Mute all notifications" (`NotificationMute`): while it's on, nothing is polled for or posted. */
+    private val muted: Flow<Boolean> = flowOf(false),
     private val scope: CoroutineScope,
     /** Epoch seconds; injectable so tests control the baseline. */
     private val clock: () -> Double,
@@ -104,6 +106,9 @@ class DetectionAlertService(
     private val settings: StateFlow<AlertSettings> =
         settingsRepository.observeSettings().stateIn(scope, SharingStarted.Eagerly, AlertSettings.DEFAULT)
 
+    /** [muted] as it is now, for posts that outlive the poll loop muting stops: a notification's picture and clip. */
+    private val mutedNow: StateFlow<Boolean> = muted.stateIn(scope, SharingStarted.Eagerly, false)
+
     private var job: Job? = null
 
     /**
@@ -112,12 +117,13 @@ class DetectionAlertService(
      * every alert (and every Away escalation) as a push, folded into one notification per visit,
      * and this poller's notifications, tagged by Frigate event rather than by visit, would come on
      * top of each one. Until the relay has taken the token, or on a phone with no push, it polls.
+     * It also pauses while every notification is muted.
      */
     fun start() {
         if (job?.isActive == true || !notifier.isSupported) return
         job = scope.launch {
-            combine(settings, connectionRepository.currentServerUrl, pushRegistered) { prefs, url, pushed ->
-                url.takeIf { prefs.pushNotificationsEnabled && !pushed }
+            combine(settings, connectionRepository.currentServerUrl, pushRegistered, muted) { prefs, url, pushed, mute ->
+                url.takeIf { prefs.pushNotificationsEnabled && !pushed && !mute }
             }
                 // Zone rules must not restart the loop (and reset its baseline); only on/off and the server do.
                 .distinctUntilChanged()
@@ -280,7 +286,7 @@ class DetectionAlertService(
         val timeZone = TimeZone.currentSystemDefault()
         val today = Instant.fromEpochSeconds(clock().toLong()).toLocalDateTime(timeZone).date
         val presentation = moment.present(today, timeZone)
-        val title = if (urgent) UiText.of(Res.string.notif_away_title, presentation.title) else presentation.title
+        val title = presentation.title
         val where = UiText.Joined(
             listOfNotNull(
                 moment.cameraDisplayName.asUiText(),
@@ -298,6 +304,7 @@ class DetectionAlertService(
             offerCarTag = moment.isGenericCar,
             subject = moment.category,
         )
+        if (mutedNow.value) return
         notifier.notify(text)
         // Off the poll loop: the next detection mustn't wait on this one's downloads.
         scope.launch {
@@ -307,7 +314,7 @@ class DetectionAlertService(
                 clock = clock,
                 thumbnail = { apiClient.getEventThumbnail(url, moment.id) },
                 previewGif = { apiClient.getEventPreviewGif(url, moment.id) },
-                post = { notifier.notify(it) },
+                post = { if (!mutedNow.value) notifier.notify(it) },
                 windowSeconds = previewWindowSeconds,
                 retryDelaysMs = previewRetryDelaysMs,
             )
