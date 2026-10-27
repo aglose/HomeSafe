@@ -594,8 +594,11 @@ tasks.register<PreviewServerPrepare>("previewServerPrepare") {
 // Layoutlib gives each render step 10 s (layoutlib.thread.timeout, in ms) and fails the preview
 // after three slow tries. The heaviest previews (Fitness's stone workout figure) take longer than
 // that on CI's Linux runners, though not here, so allow a minute: still a failure when one hangs.
+// Every preview renders in one test JVM, and Gradle's default 512 MB heap ran out on CI ("Java
+// heap space") once there were a few more tall pages ahead of the weather screens' shaders.
 tasks.withType<Test>().matching { it.name.contains("ScreenshotTest") }.configureEach {
     systemProperty("layoutlib.thread.timeout", "60000")
+    maxHeapSize = "2g"
 }
 
 androidComponents {
