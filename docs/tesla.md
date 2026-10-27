@@ -19,7 +19,12 @@ asks Tesla at exactly those moments:
   home that Tesla has well away has left; one recorded away that Tesla has near home is home. This
   catches the curb: a car parked in the street comes and goes outside the camera's driveway zone,
   so only Tesla sees it. Those notifications say "Seen by Tesla" in place of the camera, and can be
-  up to half an hour late. `TESLA_CHECK_SECONDS` sets the interval (default 1800).
+  up to half an hour late. `TESLA_CHECK_SECONDS` sets the interval (default 1800). An answer
+  already in hand from the last half hour (a departure's, the parking job's) stands in for it, and
+  once Tesla has said a car is **asleep** it is asked about again only every 2 hours
+  (`TESLA_ASLEEP_CHECK_SECONDS`, default 7200): a sleeping car hasn't moved, and asked again it
+  says the same. A car parked at the curb that wakes and drives off is then seen up to 2 hours
+  late; one that leaves the driveway is asked about at once (the departure).
 
 "Near" is within the home radius (Settings → Home) plus 50 m; "away" is more than 250 m past it.
 
@@ -30,8 +35,29 @@ tells its drivers before the signs there say it must move: see [parking.md](park
 
 Personal accounts get a $10 monthly credit, and a location request costs $0.002 (500 per $1). The
 relay asks at most once a minute per car when the camera saw something, plus once per car every half
-hour, and never more than `TESLA_CALLS_PER_DAY` (200) times a day. For two cars that's about 100
-half-hourly calls and a few dozen more a day: roughly $6–7 a month, inside the $10 credit.
+hour (every 2 hours while it sleeps), and never more than `TESLA_CALLS_PER_DAY` (200) times a day.
+For two cars that sleep most of the night, that's around 60 calls a day: under $4 a month.
+
+On 2026-10-27 the relay had made 188 calls by 21:30 UTC, near the cap and on course for about $11
+a month, with too little logged to say why. Since then every call is logged with why it was made
+and the day's count, and the day's calls are tallied by reason:
+
+```bash
+docker logs homesafe-relay 2>&1 | grep "tesla: asked"
+```
+```
+tesla: asked about sarahs_car (check): asleep · 37 calls today
+```
+```bash
+docker exec homesafe-relay python -c "import sqlite3; print(sqlite3.connect('/data/relay.db').execute(\"SELECT value FROM state WHERE key='tesla_calls'\").fetchone()[0])"
+```
+```
+{"2026-10-28": 61, "why": {"check": 48, "departure": 3, "parking": 2, ...}}
+```
+
+The reasons are `check` (the half-hourly check), `arrival` and `departure` (the camera saw one),
+`parking` (the parking job, when nothing else has asked for a while), `parking: still there?` (just
+before telling someone to move a car), `parking-check` (the command) and `link` (signing in).
 
 ## Setup (once)
 

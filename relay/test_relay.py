@@ -3006,6 +3006,40 @@ class TeslaTest(CarPresenceTest):
         self.assertIsNone(relay.tesla_verdict("andrews_tesla"))
         self.assertEqual([], self.tesla_calls)
 
+    def presence_with(self, name):
+        presence = relay.CarPresence()
+        presence.cars = {name: {"here": True, "since": 0.0, "camera": "hikvision_1", "skip": None, "known": True}}
+        return presence, presence.cars[name]
+
+    def test_a_car_asleep_is_asked_about_again_only_every_two_hours(self):
+        self.where = {"VIN_A": "asleep"}
+        presence, car = self.presence_with("andrews_tesla")
+        now = time.time()
+        presence.tesla_check("andrews_tesla", car, now)
+        presence.tesla_check("andrews_tesla", car, now + relay.TESLA_CHECK_SECONDS + 1)
+        self.assertEqual(1, len(self.tesla_calls), "asleep half an hour ago, it hasn't moved")
+        presence.tesla_check("andrews_tesla", car, now + relay.TESLA_ASLEEP_CHECK_SECONDS + 1)
+        self.assertEqual(2, len(self.tesla_calls))
+
+    def test_an_answer_already_in_hand_covers_the_half_hourly_check(self):
+        self.where = {"VIN_A": self.NEAR}
+        now = time.time()
+        relay.tesla_verdict("andrews_tesla", now, "departure")
+        presence, car = self.presence_with("andrews_tesla")
+        presence.tesla_check("andrews_tesla", car, now + 600)
+        self.assertEqual(1, len(self.tesla_calls), "the departure's answer is ten minutes old")
+
+    def test_each_call_is_tallied_by_why_it_was_made(self):
+        self.where = {"VIN_A": "asleep", "VIN_S": self.NEAR}
+        now = time.time()
+        relay.tesla_verdict("andrews_tesla", now, "departure")
+        relay.tesla_verdict("sarahs_car", now, "check")
+        relay.tesla_verdict("sarahs_car", now + 30, "check")  # within the minute: the same answer, no call
+        relay.tesla_verdict("sarahs_car", now + 120, "check")
+        spent = relay.state_get(relay.TESLA_CALLS_KEY)
+        self.assertEqual({"departure": 1, "check": 2}, spent["why"])
+        self.assertEqual(3, relay.tesla_calls_today())
+
     def test_a_link_signs_in_once(self):
         url = relay.tesla_link_url()
         state = relay.parse_qs(url.split("?", 1)[1])["state"][0]
