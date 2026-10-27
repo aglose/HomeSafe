@@ -244,10 +244,10 @@ import homesafe.shared.generated.resources.fin_budget_who_unsorted_note
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_body
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_title
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.abs
 
 /** How many of the purchases nobody has been put to are offered at the top of the page; the rest are in the list. */
 private const val TO_SORT_SHOWN = 4
