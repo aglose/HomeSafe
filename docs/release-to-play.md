@@ -9,6 +9,15 @@ for the iOS jobs: nothing in the bundle comes from them, so a slow Mac or a red 
 no push run (see [dependency-updates.md](dependency-updates.md)), so CI is started on `main` for
 it, and that run publishes in the same way.
 
+When `main` didn't move between a pull request's CI run and its merge, the code on `main` is
+exactly what that run tested. `ci-green` records the tree (git's hash of every file) it passed on
+as a `ci-green tree` status on the pull request's head. `main`'s run compares it with its own (the
+`already-tested` job, [`scripts/ci/already-tested.sh`](../scripts/ci/already-tested.sh)), and on a
+match it skips the emulator tests, the cold-launch comparison and iOS, so the build goes out about
+13 minutes sooner. The quick Gradle and relay jobs still run, and so does the benchmark APK build
+that later pull requests compare against. Any difference, or anything that can't be read, runs
+everything as before.
+
 Nothing here is automatic on a fresh repo — the six secrets below have to exist first, and Play
 itself needs some one-time setup that its API cannot do for you.
 
