@@ -617,7 +617,13 @@ jobs:
     # workflow_dispatch: a merge made by the Dependency updates workflow sets off no push run, so
     # it starts one on main instead, and that build ships like any other merge.
     needs: ci-green
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # ci-green's own result, not the bare default: an `if` without a status function means
+    # success(), which looks past ci-green at every job before it, and ios-hosted (skipped
+    # whenever the Mac finished iOS) made it false, so every merge since #223 shipped nothing.
+    if: >-
+      !cancelled() && needs.ci-green.result == 'success'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Holds the release secrets, so they exist on no other job in this workflow. Add required
