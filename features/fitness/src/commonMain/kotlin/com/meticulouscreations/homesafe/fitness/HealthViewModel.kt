@@ -245,13 +245,10 @@ class HealthViewModel(
             val availability = source.availability()
             val granted = if (availability == HealthAvailability.AVAILABLE) {
                 attempt { source.granted() } ?: run {
-                    // The store couldn't say what is allowed. That isn't being told nothing is: what is shown stands, and
-                    // is read again next time. Only with nothing to show yet is it taken as off.
-                    if (_uiState.value.access == HealthAccess.ON) {
-                        _uiState.update { it.copy(failed = true) }
-                        return@launch
-                    }
-                    emptySet()
+                    // The store couldn't say what is allowed. That isn't being told nothing is: what is shown stands,
+                    // still checking on a first look, and is asked again the next time the app comes on screen.
+                    _uiState.update { it.copy(failed = true) }
+                    return@launch
                 }
             } else {
                 emptySet()

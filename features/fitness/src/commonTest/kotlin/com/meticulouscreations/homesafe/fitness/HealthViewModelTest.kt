@@ -157,6 +157,24 @@ class HealthViewModelTest {
     }
 
     @Test
+    fun aStoreThatCantSayOnTheFirstLookIsStillBeingChecked() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        h.source.grantsFailing = true
+        open(h)
+        // Not told that nothing is shared, so not offered to connect.
+        assertEquals(HealthAccess.CHECKING, h.state.access)
+        assertFalse(h.state.loaded)
+        assertEquals(emptyList(), h.source.reads)
+        // Nothing was read, so coming back asks again at once.
+        h.source.grantsFailing = false
+        open(h)
+        assertEquals(HealthAccess.ON, h.state.access)
+        assertTrue(h.state.loaded)
+        assertFalse(h.state.failed)
+    }
+
+    @Test
     fun beforeTheUserHasAllowedAnythingNothingIsRead() = runHealthTest { h ->
         fill(h.source)
         open(h)
