@@ -5068,7 +5068,7 @@ class BudgetMonthTest(_Budget):
                                   "sheet": {"take_home": 14170, "bills_off_card": 9000}}, self.NOW)
         config = self.month()["config"]
         self.assertEqual({"total": 4500.0, "people": {"Andrew": 1200.0, "Sarah": None}, "family": None}, config["limits"])
-        self.assertEqual({"total": True, "savings": False, "buckets": False}, config["alerts"])
+        self.assertEqual({"total": True, "savings": False, "buckets": False, "lines": False}, config["alerts"])
         self.assertEqual(["Dining", "Groceries"], config["card_paid_lines"])
         self.assertEqual(5170.0, self.month()["savings_line"])
         self.assertEqual(1200.0, self.bucket("person:Andrew")["limit"])
@@ -5289,6 +5289,40 @@ class BudgetAlertsTest(_Budget):
         self.assertEqual(["savings"], self.check())
         self.assertEqual(["person_100", "family_100", "savings"], [kind for _, kind in self.pushed])
 
+    def test_a_budget_line_going_over_its_plan_is_told_once_and_only_when_switched_on(self):
+        relay.budget_config_save({"card_paid_lines": ["Groceries", "Dining out"],
+                                  "sheet": {"take_home": 5000, "bills_off_card": 3800, "lines": {"Groceries": 600, "Dining out": 250}}}, self.NOW)
+        self.phone("a")
+        self.spend(650.0)
+        self.assertEqual([], self.check())
+        relay.budget_config_save({"alerts": {"lines": True}}, self.NOW)
+        self.assertEqual(["line:Groceries_100"], self.check())
+        self.assertEqual([], self.check(self.NOW + 3600))
+        # Reaching the plan exactly is on it, not over it.
+        self.spend(250.0, "t2", name="LUNA PIZZERIA", merchant="Luna Pizzeria", category="FOOD_AND_DRINK", detailed="FOOD_AND_DRINK_RESTAURANT")
+        self.assertEqual([], self.check(self.NOW + 7200))
+        self.spend(0.01, "t3", name="LUNA PIZZERIA", merchant="Luna Pizzeria", category="FOOD_AND_DRINK", detailed="FOOD_AND_DRINK_RESTAURANT")
+        self.assertEqual(["line:Dining out_100"], self.check(self.NOW + 10800))
+        self.assertEqual(["line_100", "line_100"], [kind for _, kind in self.pushed])
+
+    def test_a_line_s_push_names_the_line(self):
+        relay.budget_config_save({"card_paid_lines": ["Groceries"], "alerts": {"lines": True},
+                                  "sheet": {"take_home": 5000, "bills_off_card": 3800, "lines": {"Groceries": 600}}}, self.NOW)
+        self.phone("a")
+        self.spend(642.0)
+        sent = []
+        relay.budget_check(self.NOW, push=lambda token, title, body, data: sent.append((title, body, data)) or "sent")
+        title, body, data = sent[0]
+        self.assertEqual(("Groceries is over budget", "$642 spent of the $600 the budget sheet plans, with 24 days left this month."), (title, body))
+        self.assertEqual(("line_100", "Groceries", "", "600.00", "budget-2026-10-line:Groceries_100"),
+                         (data["budget_kind"], data["line"], data["person"], data["limit"], data["notif_id"]))
+
+    def test_a_line_the_sheet_plans_nothing_for_is_never_over(self):
+        relay.budget_config_save({"card_paid_lines": ["Groceries"], "alerts": {"lines": True}}, self.NOW)
+        self.phone("a")
+        self.spend(5000.0)
+        self.assertEqual([], self.check())
+
     def test_a_new_month_starts_the_telling_over(self):
         relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
         self.phone("a")
@@ -5306,8 +5340,8 @@ class BudgetAlertsTest(_Budget):
         relay.budget_check(self.NOW, push=lambda token, title, body, data: sent.append((title, body, data)) or "sent")
         title, body, data = sent[0]
         self.assertEqual(("Andrew is over budget", "$250 spent of $200, with 24 days left this month."), (title, body))
-        self.assertEqual({"budget": "1", "budget_kind": "person_100", "month": "2026-10", "spent": "250.00", "limit": "200.00", "person": "Andrew", "days_left": "24",
-                          "notif_id": "budget-2026-10-person:Andrew_100"}, data)
+        self.assertEqual({"budget": "1", "budget_kind": "person_100", "month": "2026-10", "spent": "250.00", "limit": "200.00", "person": "Andrew", "line": "",
+                          "days_left": "24", "notif_id": "budget-2026-10-person:Andrew_100"}, data)
 
     def test_a_dead_token_is_dropped_like_any_other_push_s(self):
         relay.budget_config_save({"alerts": {"total": True}}, self.NOW)

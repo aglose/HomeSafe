@@ -35,6 +35,8 @@ class BudgetNotificationTextTest {
     fun aPersonsLimitNamesThePersonAndTheFamilyCardItself() {
         assertEquals("Sam is over budget", BudgetNotificationPoster.text(context, alert(BudgetAlert.Kind.PERSON_OVER, daysLeft = 3, person = "Sam")).first)
         assertEquals("The family card is over budget", BudgetNotificationPoster.text(context, alert(BudgetAlert.Kind.FAMILY_OVER, daysLeft = 3)).first)
+        val groceries = alert(BudgetAlert.Kind.LINE_OVER, daysLeft = 3).copy(line = "Groceries")
+        assertEquals("Groceries is over what the budget plans", BudgetNotificationPoster.text(context, groceries).first)
     }
 
     @Test

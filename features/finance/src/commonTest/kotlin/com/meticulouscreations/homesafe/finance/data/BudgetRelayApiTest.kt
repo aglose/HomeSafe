@@ -69,7 +69,7 @@ class BudgetRelayApiTest {
                   {"key":"Northwind Platinum 2207","institution_id":"item-2","institution":"Northwind","name":"Platinum","mask":"","role":null,
                    "balance":null,"limit":null,"error":null,"needs_relink":false,"transactions":false}],
          "config":{"people":["Alex","Sam"],"limits":{"total":4500.0,"people":{"Alex":1200.0,"Sam":null},"family":2100.0},
-                   "roles":{"Summit Bank Voyager 4410":"split"},"card_paid_lines":["Groceries"],"alerts":{"total":true,"savings":false,"buckets":true},
+                   "roles":{"Summit Bank Voyager 4410":"split"},"card_paid_lines":["Groceries"],"alerts":{"total":true,"savings":false,"buckets":true,"lines":true},
                    "sheet":{"take_home":14170.0,"bills_off_card":9000.0,"at":1791370000.0},"rules":[{"merchant":"warehouse club","bucket":"person:Sam"}]},
          "savings_line":5170.0,"spent":310.55,"pending":54.2,
          "buckets":[{"id":"person:Alex","kind":"person","name":"Alex","spent":40.1,"limit":1200.0,"count":1},
@@ -115,7 +115,7 @@ class BudgetRelayApiTest {
         assertTrue(platinum.holders.isEmpty())
 
         assertEquals(BudgetLimits(total = 4_500.0, people = mapOf("Alex" to 1_200.0, "Sam" to null), family = 2_100.0), budget.config.limits)
-        assertEquals(BudgetAlertSwitches(total = true, savings = false, buckets = true), budget.config.alerts)
+        assertEquals(BudgetAlertSwitches(total = true, savings = false, buckets = true, lines = true), budget.config.alerts)
         assertEquals(listOf(MerchantRule("warehouse club", BucketId.Person("Sam"))), budget.config.rules)
         assertEquals(BudgetSheetFigures(14_170.0, 9_000.0), budget.config.sheet)
         assertEquals(5_170.0, budget.savingsLine)
@@ -232,6 +232,8 @@ class BudgetRelayApiTest {
         assertEquals("Sam", holders.getValue("holders").jsonObject.getValue("Card A").jsonObject.getValue("7726").jsonPrimitive.content)
         assertEquals(JsonNull, holders.getValue("holders").jsonObject.getValue("Card A").jsonObject.getValue("4410"))
         assertEquals("true", body.getValue("alerts").jsonObject.getValue("total").jsonPrimitive.content)
+        // The budget lines' switch goes with the others, off unless it was switched on.
+        assertEquals("false", body.getValue("alerts").jsonObject.getValue("lines").jsonPrimitive.content)
     }
 
     @Test

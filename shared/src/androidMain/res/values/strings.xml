@@ -44,6 +44,7 @@
     <string name="notif_budget_savings_title">Dipping into savings</string>
     <string name="notif_budget_person_over_title">%1$s is over budget</string>
     <string name="notif_budget_family_over_title">The family card is over budget</string>
+    <string name="notif_budget_line_over_title">%1$s is over what the budget plans</string>
     <plurals name="notif_budget_body_spent">
         <item quantity="one">%1$s spent of %2$s, with %3$d day left this month.</item>
         <item quantity="other">%1$s spent of %2$s, with %3$d days left this month.</item>

@@ -194,6 +194,8 @@
     <string name="fin_budget_settings_alert_savings_note">When the cards pass what take-home leaves after the bills</string>
     <string name="fin_budget_settings_alert_buckets">Each person and the family card</string>
     <string name="fin_budget_settings_alert_buckets_note">When one passes its own limit</string>
+    <string name="fin_budget_settings_alert_lines">Each budget line</string>
+    <string name="fin_budget_settings_alert_lines_note">When one of the sheet's lines paid by card, like Groceries, goes over what the sheet plans for it</string>
     <string name="fin_budget_settings_alerts_note">These are the household's: they go to every Android phone signed in as someone who can see Finance, once a month for each line, and wait out a phone's quiet hours. To silence them on one phone, turn off its “Budget” notifications in the phone's settings. iPhones don't get them yet.</string>
     <string name="fin_budget_settings_cards_title">Cards</string>
     <string name="fin_budget_settings_cards_subtitle">What each card is to the budget</string>

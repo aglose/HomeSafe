@@ -165,6 +165,7 @@ internal fun BudgetConfigPatch.toJson(): JsonObject = buildJsonObject {
                 put("total", alerts.total)
                 put("savings", alerts.savings)
                 put("buckets", alerts.buckets)
+                put("lines", alerts.lines)
             },
         )
     }
@@ -237,7 +238,7 @@ internal data class RelayBudget(
             people = config.people,
             limits = BudgetLimits(total = config.limits.total, people = config.limits.people, family = config.limits.family),
             cardPaidLines = config.cardPaidLines,
-            alerts = BudgetAlertSwitches(total = config.alerts.total, savings = config.alerts.savings, buckets = config.alerts.buckets),
+            alerts = BudgetAlertSwitches(total = config.alerts.total, savings = config.alerts.savings, buckets = config.alerts.buckets, lines = config.alerts.lines),
             rules = config.rules.map { MerchantRule(it.merchant, BucketId.ofWire(it.bucket)) },
             lineRules = config.lineRules.map { LineRule(it.merchant, it.line?.takeIf { line -> line.isNotEmpty() }) },
             sheet = BudgetSheetFigures(takeHome = config.sheet.takeHome, billsOffCard = config.sheet.billsOffCard, lines = config.sheet.lines),
@@ -316,7 +317,7 @@ internal data class RelayBudgetConfig(
 internal data class RelayBudgetLimits(val total: Double? = null, val people: Map<String, Double?> = emptyMap(), val family: Double? = null)
 
 @Serializable
-internal data class RelayBudgetAlerts(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false)
+internal data class RelayBudgetAlerts(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false, val lines: Boolean = false)
 
 @Serializable
 internal data class RelayBudgetRule(val merchant: String = "", val bucket: String? = null)

@@ -8789,7 +8789,7 @@ BUDGET_IGNORE = "ignore"
 BUDGET_MAX_PEOPLE = 6
 # More expense lines than any budget sheet has.
 BUDGET_MAX_LINES = 200
-BUDGET_ALERT_NAMES = ("total", "savings", "buckets")
+BUDGET_ALERT_NAMES = ("total", "savings", "buckets", "lines")
 # A purchase put in none of the lines, by hand or by its merchant's rule (a line is never named this: a sheet's line has a name).
 BUDGET_NO_LINE = ""
 # The months before this one whose average is a line's "usual", once at least two of them spent anything.
@@ -9399,7 +9399,8 @@ def budget_alerts(budget: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Every line the month has crossed that the settings say to tell the phones about, the mildest
     of each `scope` first: the share of the month's limit, what take-home leaves after the bills
-    that aren't on a card, and each person's and the family's own limit.
+    that aren't on a card, each person's and the family's own limit, and what the budget sheet
+    plans for each of its card-paid lines.
     """
     config, spent = budget["config"], budget["spent"]
     crossed = []
@@ -9413,6 +9414,10 @@ def budget_alerts(budget: dict[str, Any]) -> list[dict[str, Any]]:
     if config["alerts"]["buckets"]:
         crossed += [{"key": f"{b['id']}_100", "scope": b["id"], "kind": f"{b['kind']}_100", "spent": b["spent"], "limit": b["limit"], "person": b["name"]}
                     for b in budget["buckets"] if b["limit"] and b["spent"] >= b["limit"]]
+    if config["alerts"]["lines"]:
+        crossed += [{"key": f"line:{line['name']}_100", "scope": f"line:{line['name']}", "kind": "line_100", "spent": line["spent"], "limit": line["planned"],
+                     "person": None, "line": line["name"]}
+                    for line in budget["lines"] if line["planned"] and line["spent"] > line["planned"]]
     return crossed
 
 
@@ -9427,6 +9432,8 @@ def budget_alert_text(alert: dict[str, Any], budget: dict[str, Any]) -> tuple[st
         return f"{alert['person']} is over budget", f"{spent} spent of {limit}, with {days}."
     if alert["kind"] == "family_100":
         return "The family card is over budget", f"{spent} spent of {limit}, with {days}."
+    if alert["kind"] == "line_100":
+        return f"{alert['line']} is over budget", f"{spent} spent of the {limit} the budget sheet plans, with {days}."
     if alert["kind"] == "total_100":
         return "Over budget", f"{spent} spent of this month's {limit}, with {days}."
     return "Close to the budget", f"{spent} spent of this month's {limit}, with {days}."
@@ -9480,7 +9487,8 @@ def _budget_check(now: float, push: Callable[[str, str, str, dict[str, str]], st
         title, body = budget_alert_text(top, budget)
         data = {
             "budget": "1", "budget_kind": top["kind"], "month": budget["month"], "spent": f"{top['spent']:.2f}", "limit": f"{top['limit']:.2f}",
-            "person": top["person"] or "", "days_left": str(budget["days_in_month"] - budget["day"]), "notif_id": f"budget-{budget['month']}-{top['key']}",
+            "person": top["person"] or "", "line": top.get("line") or "", "days_left": str(budget["days_in_month"] - budget["day"]),
+            "notif_id": f"budget-{budget['month']}-{top['key']}",
         }
         for device_id, token in phones:
             if device_id in sent.get(top["key"], []):

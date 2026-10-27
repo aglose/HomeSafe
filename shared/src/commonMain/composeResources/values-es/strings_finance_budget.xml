@@ -187,6 +187,8 @@
     <string name="fin_budget_settings_alert_savings_note">Cuando las tarjetas superan lo que deja el sueldo neto después de las facturas</string>
     <string name="fin_budget_settings_alert_buckets">Cada persona y la tarjeta familiar</string>
     <string name="fin_budget_settings_alert_buckets_note">Cuando uno supera su propio límite</string>
+    <string name="fin_budget_settings_alert_lines">Cada línea del presupuesto</string>
+    <string name="fin_budget_settings_alert_lines_note">Cuando una de las líneas de la hoja que se pagan con tarjeta, como Comestibles, supera lo que la hoja prevé para ella</string>
     <string name="fin_budget_settings_alerts_note">Son del hogar: llegan a cada teléfono Android con sesión iniciada por alguien que puede ver Finanzas, una vez al mes por cada línea, y esperan a que terminen las horas de silencio del teléfono. Para silenciarlas en un teléfono, desactiva sus notificaciones de “Presupuesto” en los ajustes del teléfono. Los iPhone todavía no las reciben.</string>
     <string name="fin_budget_settings_cards_title">Tarjetas</string>
     <string name="fin_budget_settings_cards_subtitle">Qué es cada tarjeta para el presupuesto</string>

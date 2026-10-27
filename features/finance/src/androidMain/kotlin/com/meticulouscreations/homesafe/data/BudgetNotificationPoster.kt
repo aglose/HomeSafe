@@ -19,8 +19,8 @@ import com.meticulouscreations.homesafe.ui.notification.NotificationGlyph
 import com.meticulouscreations.homesafe.ui.notification.drawableRes
 
 /**
- * Posts the relay's budget alerts: the month's card spending near or past a limit, or into the
- * savings. They are about money, not about someone at the door, so they have a channel of their
+ * Posts the relay's budget alerts: the month's card spending near or past a limit, into the
+ * savings, or past what the budget sheet plans for one of its card-paid lines. They are about money, not about someone at the door, so they have a channel of their
  * own at an ordinary importance (no alarm category, no heads-up over a call), which is also the
  * one switch that silences them on this phone. A tap opens Finance on the Budget tab.
  *
@@ -66,6 +66,7 @@ object BudgetNotificationPoster {
             BudgetAlert.Kind.SAVINGS -> context.getString(R.string.notif_budget_savings_title) to context.getString(R.string.notif_budget_savings_body, spent, limit)
             BudgetAlert.Kind.PERSON_OVER -> context.getString(R.string.notif_budget_person_over_title, alert.person.orEmpty()) to standing
             BudgetAlert.Kind.FAMILY_OVER -> context.getString(R.string.notif_budget_family_over_title) to standing
+            BudgetAlert.Kind.LINE_OVER -> context.getString(R.string.notif_budget_line_over_title, alert.line.orEmpty()) to standing
         }
     }
 

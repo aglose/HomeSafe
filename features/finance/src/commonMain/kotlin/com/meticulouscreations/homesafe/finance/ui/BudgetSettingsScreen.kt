@@ -56,6 +56,8 @@ import homesafe.shared.generated.resources.fin_budget_error_generic
 import homesafe.shared.generated.resources.fin_budget_holders_title
 import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets
 import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets_note
+import homesafe.shared.generated.resources.fin_budget_settings_alert_lines
+import homesafe.shared.generated.resources.fin_budget_settings_alert_lines_note
 import homesafe.shared.generated.resources.fin_budget_settings_alert_savings
 import homesafe.shared.generated.resources.fin_budget_settings_alert_savings_note
 import homesafe.shared.generated.resources.fin_budget_settings_alert_total
@@ -299,6 +301,13 @@ private fun AlertSwitches(alerts: BudgetAlertSwitches, enabled: Boolean, onChang
             enabled,
             "finance_budget_alert_buckets",
         ) { onChange(alerts.copy(buckets = it)) }
+        AlertSwitchRow(
+            stringResource(Res.string.fin_budget_settings_alert_lines),
+            stringResource(Res.string.fin_budget_settings_alert_lines_note),
+            alerts.lines,
+            enabled,
+            "finance_budget_alert_lines",
+        ) { onChange(alerts.copy(lines = it)) }
         FinePrint(stringResource(Res.string.fin_budget_settings_alerts_note))
     }
 }

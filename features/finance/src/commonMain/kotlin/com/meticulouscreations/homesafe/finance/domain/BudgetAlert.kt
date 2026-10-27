@@ -17,6 +17,8 @@ data class BudgetAlert(
     val limit: Double,
     /** Whose limit it was, for [Kind.PERSON_OVER]. */
     val person: String?,
+    /** Which of the budget sheet's card-paid lines went over what the sheet plans for it, for [Kind.LINE_OVER]. */
+    val line: String? = null,
     /** Days of the month still to come; zero on its last day. */
     val daysLeft: Int,
 ) {
@@ -36,6 +38,9 @@ data class BudgetAlert(
 
         /** The family card's limit. */
         FAMILY_OVER("family_100"),
+
+        /** What the budget sheet plans for one of its card-paid lines ([limit] is that plan). */
+        LINE_OVER("line_100"),
     }
 
     companion object {
@@ -45,6 +50,7 @@ data class BudgetAlert(
         const val KEY_SPENT = "spent"
         const val KEY_LIMIT = "limit"
         const val KEY_PERSON = "person"
+        const val KEY_LINE = "line"
         const val KEY_DAYS_LEFT = "days_left"
         const val KEY_ID = "notif_id"
 
@@ -55,7 +61,7 @@ data class BudgetAlert(
          * From a push's data, or null when it isn't about the budget or doesn't say enough to
          * word: a kind this build doesn't know (a newer relay's), an amount or a count of days
          * that isn't one (`NaN` and the infinities are not amounts), a person's limit with no
-         * person. The caller then shows the relay's own words.
+         * person, a line's plan with no line. The caller then shows the relay's own words.
          */
         fun from(values: (String) -> String?): BudgetAlert? {
             if (!isBudget(values)) return null
@@ -65,6 +71,8 @@ data class BudgetAlert(
             val daysLeft = values(KEY_DAYS_LEFT)?.toIntOrNull() ?: return null
             val person = values(KEY_PERSON)?.takeIf { it.isNotBlank() }
             if (kind == Kind.PERSON_OVER && person == null) return null
+            val line = values(KEY_LINE)?.takeIf { it.isNotBlank() }
+            if (kind == Kind.LINE_OVER && line == null) return null
             val month = values(KEY_MONTH).orEmpty()
             return BudgetAlert(
                 id = values(KEY_ID)?.takeIf { it.isNotBlank() } ?: "budget-$month-${kind.wire}",
@@ -73,6 +81,7 @@ data class BudgetAlert(
                 spent = spent,
                 limit = limit,
                 person = person,
+                line = line,
                 daysLeft = daysLeft.coerceAtLeast(0),
             )
         }

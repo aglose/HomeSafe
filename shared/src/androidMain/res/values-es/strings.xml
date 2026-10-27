@@ -36,6 +36,7 @@
     <string name="notif_budget_savings_title">Tocando los ahorros</string>
     <string name="notif_budget_person_over_title">%1$s superó su presupuesto</string>
     <string name="notif_budget_family_over_title">La tarjeta familiar superó el presupuesto</string>
+    <string name="notif_budget_line_over_title">%1$s superó lo previsto en el presupuesto</string>
     <plurals name="notif_budget_body_spent">
         <item quantity="one">%1$s gastado de %2$s, con %3$d día restante este mes.</item>
         <item quantity="other">%1$s gastado de %2$s, con %3$d días restantes este mes.</item>

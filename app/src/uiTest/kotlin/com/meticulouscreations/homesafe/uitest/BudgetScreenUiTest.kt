@@ -173,6 +173,24 @@ class BudgetScreenUiTest {
     }
 
     @Test
+    fun theBudgetLinesAlertStartsOffAndSwitchingItOnSavesIt() {
+        val saved = mutableListOf<BudgetConfigPatch>()
+        runComposeUiTest {
+            setContent {
+                FinanceStage {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.requiredSize(412.dp, 3_000.dp)) {
+                            BudgetSettingsScreen(BudgetFixtures.state(BudgetFixtures.onPace), FinanceFixtures.finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {}, onForgetLineRule = {})
+                        }
+                    }
+                }
+            }
+            onNodeWithTag("finance_budget_alert_lines").assertIsOff().performSemanticsAction(SemanticsActions.OnClick)
+        }
+        assertEquals(listOf(BudgetConfigPatch(alerts = BudgetAlertSwitches(lines = true))), saved)
+    }
+
+    @Test
     fun aCardNumberTheBankMarksPurchasesWithIsSaidToBeSomeonesInOneTap() = onBudget(BudgetFixtures.state(BudgetFixtures.holdersUnsaid)) { calls ->
         onNodeWithText("Card ending 7726").assertExists()
         onNodeWithTag("finance_budget_holder_7726_Sam").performSemanticsAction(SemanticsActions.OnClick)

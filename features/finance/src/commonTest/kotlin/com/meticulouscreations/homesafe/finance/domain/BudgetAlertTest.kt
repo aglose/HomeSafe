@@ -27,8 +27,19 @@ class BudgetAlertTest {
 
     @Test
     fun everyLineTheRelayKnowsHasAKind() {
-        val kinds = listOf("total_80", "total_100", "savings", "person_100", "family_100").map { alert(push + ("budget_kind" to it))?.kind }
+        val kinds = listOf("total_80", "total_100", "savings", "person_100", "family_100", "line_100").map { alert(push + ("budget_kind" to it, "line" to "Groceries"))?.kind }
         assertEquals(BudgetAlert.Kind.entries.toList(), kinds)
+    }
+
+    @Test
+    fun aBudgetLineOverItsPlanNamesTheLine() {
+        val line = push + mapOf("budget_kind" to "line_100", "person" to "", "line" to "Groceries", "spent" to "642.00", "limit" to "600.00", "notif_id" to "budget-2026-10-line:Groceries_100")
+        assertEquals(
+            BudgetAlert("budget-2026-10-line:Groceries_100", BudgetAlert.Kind.LINE_OVER, "2026-10", spent = 642.0, limit = 600.0, person = null, line = "Groceries", daysLeft = 24),
+            alert(line),
+        )
+        // A line's alert that doesn't say which line can't be worded here.
+        assertNull(alert(line + ("line" to "")))
     }
 
     @Test

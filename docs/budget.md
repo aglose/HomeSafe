@@ -117,13 +117,14 @@ role are kept by name, so a renamed person starts without either.
 
 ## Alerts
 
-Under **Limits and cards → Alerts** are three switches, all off to begin with:
+Under **Limits and cards → Alerts** (and in Settings → Notifications) are four switches, all off to begin with:
 
 | Switch | A notification when |
 |---|---|
 | **The month's limit** | Spending reaches four fifths of it, and again when it is passed |
 | **Into savings** | The cards pass what take-home leaves after the bills |
 | **Each person and the family card** | One passes its own limit |
+| **Each budget line** | One of the sheet's card-paid lines goes over what the sheet plans for it ("Groceries is over what the budget plans") |
 
 - The switches are the household's, kept by the relay. Each phone hears about each line **once a
   month**. A month already over a limit when a switch goes on says so once, not once for each
