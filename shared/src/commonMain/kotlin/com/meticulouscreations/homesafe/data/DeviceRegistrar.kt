@@ -62,10 +62,11 @@ class DeviceRegistrar(
     private val registeredForPush = MutableStateFlow(false)
 
     /**
-     * True once the relay has accepted this install *with a push token*: from then on it pushes
-     * every alert here, so the in-app poller ([DetectionAlertService]) stands down. False on an
-     * install without push (iOS for now) and until the first registration succeeds. A later
-     * failed re-registration leaves it as it was — the relay still has the token it last took.
+     * True once the relay has accepted this install *with a push token* it can push to: from then
+     * on it pushes every alert here, so the in-app poller ([DetectionAlertService]) stands down.
+     * False on an install without push, on an iPhone while the relay has no APNs key (it says so),
+     * and until the first registration succeeds. A later failed re-registration leaves it as it
+     * was — the relay still has the token it last took.
      */
     override val pushRegistered: StateFlow<Boolean> = registeredForPush.asStateFlow()
 
@@ -115,7 +116,7 @@ class DeviceRegistrar(
         )
         val credentials = relayApi.registerDevice(serverUrl, registration, secret = identity.secret()).getOrThrow()
         identity.saveSecret(credentials.secret)
-        registeredForPush.value = registration.token != null
+        registeredForPush.value = registration.token != null && credentials.push
     }
 
     /**

@@ -94,7 +94,13 @@ class PushRelayApi(private val httpClient: HttpClient) {
             setBody(registration)
         }
         if (!response.status.isSuccess()) throw relayRefused(response.status)
-        response.body<RelayRegistration>().let { DeviceCredentials(it.deviceId, it.secret ?: throw FrigateResponseException(UiText.of(Res.string.error_relay_no_secret), technical = "Relay issued no secret")) }
+        response.body<RelayRegistration>().let {
+            DeviceCredentials(
+                deviceId = it.deviceId,
+                secret = it.secret ?: throw FrigateResponseException(UiText.of(Res.string.error_relay_no_secret), technical = "Relay issued no secret"),
+                push = it.push ?: true,
+            )
+        }
     }
 
     /** Asks the relay to push a sample alert to every registered phone. */
@@ -461,14 +467,19 @@ data class DeviceRegistration(
     @SerialName("utc_offset") val utcOffsetMinutes: Int? = null,
 )
 
-/** What the relay knows this install as, and the secret that proves it. */
-data class DeviceCredentials(val deviceId: String, val secret: String)
+/**
+ * What the relay knows this install as, and the secret that proves it; and whether it can push
+ * to the token it was given ([push]): an iPhone's only once the relay has APNs set up. A relay
+ * too old to say is taken at its word that it can, as it always could with an FCM token.
+ */
+data class DeviceCredentials(val deviceId: String, val secret: String, val push: Boolean = true)
 
 @Serializable
 internal data class RelayRegistration(
     val ok: Boolean = true,
     @SerialName("device_id") val deviceId: String,
     val secret: String? = null,
+    val push: Boolean? = null,
 )
 
 /** No defaults on purpose: the relay defaults match, but a body that says what it means is easier to read in its log. */

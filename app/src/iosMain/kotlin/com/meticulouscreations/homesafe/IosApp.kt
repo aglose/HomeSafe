@@ -1,11 +1,15 @@
 package com.meticulouscreations.homesafe
 
 import com.meticulouscreations.homesafe.data.IosNotificationTaps
+import com.meticulouscreations.homesafe.data.IosPushToken
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.ui.components.IosWebRtc
 import com.meticulouscreations.homesafe.ui.components.IosWebRtcPeerFactory
 import com.meticulouscreations.homesafe.weather.data.IosWeatherRefresh
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * The iOS app's one graph, built at process start. It has to exist before any screen does:
@@ -36,4 +40,19 @@ fun startIosApp() {
 fun startIosApp(webRtc: IosWebRtcPeerFactory?) {
     IosWebRtc.peerFactory = webRtc
     startIosApp()
+}
+
+/**
+ * Called from Swift with the APNs device token iOS handed the app delegate, as hex: kept for
+ * every later registration ([IosPushToken]), and the relay told at once, as Android's
+ * `PushRegistrar` does when Firebase rotates its token. The same token at every launch
+ * re-registers to no effect.
+ */
+@Suppress("unused")
+fun onApnsToken(token: String) {
+    IosPushToken.set(token)
+    CoroutineScope(Dispatchers.Default).launch {
+        IosApp.graph.deviceRegistrar.onPushTokenChanged(token)
+            .onFailure { println("HomeSafe: push re-registration failed: ${it.message}") }
+    }
 }

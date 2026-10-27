@@ -80,6 +80,10 @@ services:
       # the box. Without the first no export is fetched; without the second places go unnamed.
       - path: timeline.env
         required: false
+      # APNS_KEY_ID (relay.py, "APNs"; docs/notifications.md, "iPhone"), only on the box; the key
+      # itself is data/apns-key.p8. Without them the relay can't push to an iPhone.
+      - path: apns.env
+        required: false
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
       # relay.db, timeline.db, the vehicle memory's picture of each household car
