@@ -1796,12 +1796,13 @@ class CarPresence:
         the curb comes and goes out of the camera's car zones, so only Tesla sees it. Recorded home
         and Tesla has it well away, it left; recorded away and Tesla has it near home, it is home.
         Asleep or unsure, nothing changes. An answer already in hand that recent (a departure's, or
-        parking's) does instead, and one saying the car is asleep for TESLA_ASLEEP_CHECK_SECONDS.
+        parking's), or one saying the car is asleep from the last TESLA_ASLEEP_CHECK_SECONDS, is
+        read as it is rather than asked again.
         """
-        if name not in TESLA_CARS or now - float(car.get("checked") or 0) < TESLA_CHECK_SECONDS or not tesla_due(name, now, TESLA_CHECK_SECONDS):
+        if name not in TESLA_CARS or now - float(car.get("checked") or 0) < TESLA_CHECK_SECONDS:
             return None
         car["checked"], car["dirty"] = now, True
-        verdict = tesla_verdict(name, now, "check")
+        verdict = tesla_verdict(name, now, "check", ask=tesla_due(name, now, TESLA_CHECK_SECONDS))
         if verdict == ("away" if car["here"] else "home"):
             log.info("car presence: %s %s, by Tesla's check", name, "left" if car["here"] else "is home")
             return self.change(name, car, now, {"camera": car.get("camera") or "", "event_id": "", "movement": "parked"}, via="tesla")
@@ -9580,9 +9581,15 @@ def tesla_calls_today() -> int:
 
 def tesla_learn_vehicles(account: str) -> list[str]:
     """Files each vehicle the account can see under it, by VIN; answers the VINs."""
+    global _tesla_why
     access = tesla_access(account)
-    if not access or not tesla_spend():
+    if not access:
         return []
+    with _tesla_lock:
+        _tesla_why = "link"
+        if not tesla_spend():
+            return []
+    log.info("tesla: listed account %s's vehicles (link) · %d calls today", account[:8], tesla_calls_today())
     r = requests.get(f"{TESLA_API}/api/1/vehicles", headers={"Authorization": f"Bearer {access}"}, timeout=15)
     r.raise_for_status()
     vins = []
@@ -9672,20 +9679,22 @@ def tesla_due(name: str, now: float, every: float) -> bool:
     return now - answer[0] >= (max(every, TESLA_ASLEEP_CHECK_SECONDS) if asleep else every)
 
 
-def tesla_verdict(name: str, now: float | None = None, why: str = "presence") -> str | None:
+def tesla_verdict(name: str, now: float | None = None, why: str = "presence", ask: bool = True) -> str | None:
     """
     "home" or "away" by where Tesla says the car is against the household's home (see HOME_KEY);
     "asleep" when the car is (it won't say where, and isn't woken to); None when Tesla can't say
     (not one of TESLA_CARS, not linked, a stale fix, no home set, or somewhere in between). One
-    answer per car per TESLA_CACHE_SECONDS.
+    answer per car per TESLA_CACHE_SECONDS; with `ask` False, the last answer, however old, and
+    no call.
     """
     vin = TESLA_CARS.get(name)
     home = state_get(HOME_KEY)
     if not (tesla_on() and vin and home):
         return None
     now = time.time() if now is None else now
-    _, where = tesla_ask(name, now, why)
-    if where and not where.get("asleep") and now - float(where["at"]) <= TESLA_STALE_SECONDS:
+    asked, where = tesla_ask(name, now, why) if ask else _tesla_answers.get(name) or (now, None)
+    # A fix is stale by how old it was when Tesla gave it, not by how long ago that was.
+    if where and not where.get("asleep") and asked - float(where["at"]) <= TESLA_STALE_SECONDS:
         d = haversine_metres((where["lat"], where["lng"]), (float(home["lat"]), float(home["lng"])))
         radius = float(home.get("radius_m") or 150)
         verdict = "home" if d <= radius + TESLA_HOME_MARGIN_METRES else "away" if d > radius + TESLA_AWAY_METRES else None
@@ -10182,7 +10191,8 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
         car["spot"], car["elsewhere"] = None, float(fix["at"])
         return
     # From another spot at the curb, it was there until the last answer; else it was last seen elsewhere.
-    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - TESLA_CHECK_SECONDS)
+    # Answers come every TESLA_CHECK_SECONDS, or every TESLA_ASLEEP_CHECK_SECONDS while it slept.
+    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - max(TESLA_CHECK_SECONDS, TESLA_ASLEEP_CHECK_SECONDS))
     car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
     log.info("parking: parked on the %s side of %s since %s (by its %s)", match["side"] or "unsure", match["street"],
              datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="minutes"), match["how"] or "nothing")
@@ -10314,7 +10324,7 @@ def parking_tick(now: float | None = None, push: Callable[..., str] | None = Non
     for name in TESLA_CARS:
         car = saved.setdefault(name, {})
         answer = _tesla_answers.get(name)
-        if tesla_due(name, now, TESLA_CHECK_SECONDS + 5 * PARKING_EVERY_SECONDS):
+        if answer is None or tesla_due(name, now, TESLA_CHECK_SECONDS + 5 * PARKING_EVERY_SECONDS):
             answer = tesla_ask(name, now, "parking")
         parking_read(car, answer, stretches)
         pushed += parking_tell(name, car, config, stretches, zone, now, push or deliver)
