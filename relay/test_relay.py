@@ -3429,8 +3429,17 @@ class UptimeTest(unittest.TestCase):
         self.assertTrue(relay.tcp_reachable("127.0.0.1", port, timeout=2))
         listener.close()
         self.assertTrue(relay.tcp_reachable("127.0.0.1", port, timeout=2), "nothing listening: refused, so the host is there")
-        # 192.0.2.0/24 is reserved for documentation: nothing answers.
-        self.assertFalse(relay.tcp_reachable("192.0.2.1", 9, timeout=0.3))
+        # Silence, made here rather than found on the network: some sandboxes refuse a connection to
+        # an address nothing answers on (192.0.2.1, say) at once instead of letting it time out.
+        def silent(address, timeout=None):
+            raise TimeoutError
+
+        real = relay.socket.create_connection
+        relay.socket.create_connection = silent
+        try:
+            self.assertFalse(relay.tcp_reachable("192.0.2.1", 9, timeout=0.3))
+        finally:
+            relay.socket.create_connection = real
 
     def test_a_lookup_stuck_in_the_resolver_is_not_joined_by_another(self):
         import threading
