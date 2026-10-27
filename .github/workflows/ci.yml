@@ -612,11 +612,13 @@ jobs:
 
   publish-internal:
     name: Publish to Play internal testing
-    # Only on main, and only once every job feeding ci-green has passed: what reaches the
-    # testers has been through exactly the same gate as a merge. A red CI leaves this skipped.
+    # Only on main, and only once every job that tests what goes into the Android app has passed:
+    # the same gate as a merge, minus the iOS jobs. Nothing in the bundle is built or tested
+    # there, so a slow or asleep Mac doesn't hold the build off testers' phones, and a red iOS run
+    # leaves ci-green red without stopping Play. A red Android job leaves this skipped.
     # workflow_dispatch: a merge made by the Dependency updates workflow sets off no push run, so
     # it starts one on main instead, and that build ships like any other merge.
-    needs: ci-green
+    needs: [gradle, relay, android-ui, startup-perf]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30

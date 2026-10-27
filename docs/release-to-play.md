@@ -2,8 +2,10 @@
 
 Every push to `main` that gets a green CI publishes a signed Android App Bundle to the
 **internal testing** track. The job is `publish-internal` in
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml); it runs only after `ci-green`, so a
-failing test never reaches a tester's phone. A dependency update the automation merges sets off
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml); it runs only after every Android,
+Gradle and relay job has passed, so a failing test never reaches a tester's phone. It doesn't wait
+for the iOS jobs: nothing in the bundle comes from them, so a slow Mac or a red iOS run leaves
+`ci-green` red without holding the Play build back. A dependency update the automation merges sets off
 no push run (see [dependency-updates.md](dependency-updates.md)), so CI is started on `main` for
 it, and that run publishes in the same way.
 
