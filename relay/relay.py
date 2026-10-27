@@ -1618,6 +1618,7 @@ def home_route(item: dict[str, Any], yard: YardWatch, now: float) -> tuple[str, 
 #   for an arrival, asleep says nothing and the camera decides.
 # - And every TESLA_CHECK_SECONDS Tesla is asked about each of its cars whatever the camera saw:
 #   a car parked at the curb arrives and leaves outside the camera's car zones (Sarah's, 2026-10-01).
+#   Not when any answer came in that time, and after "asleep" only every TESLA_ASLEEP_CHECK_SECONDS.
 # The state is kept in `state` under CAR_PRESENCE_KEY; a car first heard of starts where the
 # vehicle memory has it, silently, so a deploy never replays the day.
 CAR_PRESENCE_KEY = "car_presence"
@@ -1753,7 +1754,7 @@ class CarPresence:
         if row is None:
             return None
         # Tesla, when it can say, settles it at once: near home is the car; well away, it was another.
-        verdict = tesla_verdict(name, now)
+        verdict = tesla_verdict(name, now, "arrival")
         if verdict == "away":
             log.info("car presence: %s's arrival %s turned down, Tesla has the car away", name, row["event_id"])
             car["not_arrivals"], car["dirty"] = (turned_down + [row["event_id"]])[-20:], True
@@ -1780,7 +1781,7 @@ class CarPresence:
         # A car that drove off CAR_LEFT_CONFIRM_SECONDS ago is awake — still driving, or only just
         # parked, and a Tesla takes longer than that to sleep. Asleep, it never went: on 2026-09-30
         # Tesla had Andrew's car asleep at each of the five departures the camera made up that day.
-        verdict = tesla_verdict(name, now)
+        verdict = tesla_verdict(name, now, "departure")
         if verdict in ("home", "asleep") or (verdict is None and spot_still_taken(gone["camera"], name)):
             reason = {"home": "Tesla has the car at home", "asleep": "Tesla has the car asleep, so it never drove off"}
             log.info("car presence: %s's departure %s turned down, %s", name, gone["event_id"],
@@ -1794,12 +1795,14 @@ class CarPresence:
         Every TESLA_CHECK_SECONDS, asks Tesla where a car the camera hasn't settled is: one parked at
         the curb comes and goes out of the camera's car zones, so only Tesla sees it. Recorded home
         and Tesla has it well away, it left; recorded away and Tesla has it near home, it is home.
-        Asleep or unsure, nothing changes.
+        Asleep or unsure, nothing changes. An answer already in hand that recent (a departure's, or
+        parking's), or one saying the car is asleep from the last TESLA_ASLEEP_CHECK_SECONDS, is
+        read as it is rather than asked again.
         """
         if name not in TESLA_CARS or now - float(car.get("checked") or 0) < TESLA_CHECK_SECONDS:
             return None
         car["checked"], car["dirty"] = now, True
-        verdict = tesla_verdict(name, now)
+        verdict = tesla_verdict(name, now, "check", ask=tesla_due(name, now, TESLA_CHECK_SECONDS))
         if verdict == ("away" if car["here"] else "home"):
             log.info("car presence: %s %s, by Tesla's check", name, "left" if car["here"] else "is home")
             return self.change(name, car, now, {"camera": car.get("camera") or "", "event_id": "", "movement": "parked"}, via="tesla")
@@ -9496,6 +9499,14 @@ _tesla_answers: dict[str, tuple[float, dict[str, Any] | None]] = {}
 # Car presence (the poller) and parking ask from threads of their own; one asks at a time, so the
 # second finds the first's answer rather than paying for its own.
 _tesla_lock = threading.Lock()
+# Why the call being made is made, for `tesla_spend`'s tally: set under _tesla_lock by `tesla_ask`.
+_tesla_why = "link"
+# After Tesla says a car is asleep, the half-hourly check (see `CarPresence.tesla_check`) waits
+# this long before asking again: a sleeping car hasn't moved, and asked again it mostly says the
+# same. Overnight that is 8 calls a car, not 32. A car that wakes and drives off past the camera is
+# asked about at once (the departure); one that leaves the curb, out of its sight, is found at most
+# this late, and parking asks for itself before telling anyone to move a car.
+TESLA_ASLEEP_CHECK_SECONDS = float(os.environ.get("TESLA_ASLEEP_CHECK_SECONDS", "7200"))
 
 
 def tesla_on() -> bool:
@@ -9547,21 +9558,38 @@ def tesla_access(account: str) -> str | None:
 
 
 def tesla_spend() -> bool:
-    """Counts one Fleet API call against today's TESLA_CALLS_PER_DAY; False once the day's are spent."""
+    """
+    Counts one Fleet API call against today's TESLA_CALLS_PER_DAY, and under why it was made
+    (`_tesla_why`: "check", "arrival", "departure", "parking", ...), so `TESLA_CALLS_KEY` reads
+    `{"2026-10-28": 61, "why": {"check": 40, "departure": 3, ...}}`; False once the day's are spent.
+    """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     spent = state_get(TESLA_CALLS_KEY) or {}
     count = int(spent.get(today, 0)) if isinstance(spent, dict) else 0
     if count >= TESLA_CALLS_PER_DAY:
         return False
-    state_set(TESLA_CALLS_KEY, {today: count + 1})
+    why = dict(spent.get("why") or {}) if count else {}
+    why[_tesla_why] = int(why.get(_tesla_why, 0)) + 1
+    state_set(TESLA_CALLS_KEY, {today: count + 1, "why": why})
     return True
+
+
+def tesla_calls_today() -> int:
+    spent = state_get(TESLA_CALLS_KEY) or {}
+    return int(spent.get(datetime.now(timezone.utc).strftime("%Y-%m-%d"), 0)) if isinstance(spent, dict) else 0
 
 
 def tesla_learn_vehicles(account: str) -> list[str]:
     """Files each vehicle the account can see under it, by VIN; answers the VINs."""
+    global _tesla_why
     access = tesla_access(account)
-    if not access or not tesla_spend():
+    if not access:
         return []
+    with _tesla_lock:
+        _tesla_why = "link"
+        if not tesla_spend():
+            return []
+    log.info("tesla: listed account %s's vehicles (link) · %d calls today", account[:8], tesla_calls_today())
     r = requests.get(f"{TESLA_API}/api/1/vehicles", headers={"Authorization": f"Bearer {access}"}, timeout=15)
     r.raise_for_status()
     vins = []
@@ -9612,45 +9640,67 @@ def tesla_location(vin: str) -> dict[str, Any] | None:
     }
 
 
-def tesla_ask(name: str, now: float) -> tuple[float, dict[str, Any] | None]:
+def tesla_ask(name: str, now: float, why: str) -> tuple[float, dict[str, Any] | None]:
     """
     Tesla's answer about one of TESLA_CARS, as (when asked, `tesla_location`'s answer), asking at
-    most once per car per TESLA_CACHE_SECONDS. A failed call is an answer of None, kept like any other.
+    most once per car per TESLA_CACHE_SECONDS. A failed call is an answer of None, kept like any
+    other. Each call made is logged with `why` it was made and the day's count so far.
     """
+    global _tesla_why
     with _tesla_lock:
         cached = _tesla_answers.get(name)
         if cached and now - cached[0] < TESLA_CACHE_SECONDS:
             return cached
-        where = None
+        before, _tesla_why = tesla_calls_today(), why
+        where, said = None, "nothing"
         try:
             where = tesla_location(TESLA_CARS[name])
+            said = "asleep" if where and where.get("asleep") else f"{now - float(where['at']):.0f} s old fix" if where else "nothing"
         except Exception as e:
-            log.warning("tesla: asking where %s is failed: %s", name, e)
+            said = f"failed: {e}"
+        after = tesla_calls_today()
+        if after > before:
+            log.info("tesla: asked about %s (%s): %s · %d calls today", name, why, said, after)
+        elif said != "nothing":
+            log.warning("tesla: asking about %s (%s) %s", name, why, said)
         _tesla_answers[name] = (now, where)
         return now, where
 
 
-def tesla_verdict(name: str, now: float | None = None) -> str | None:
+def tesla_due(name: str, now: float, every: float) -> bool:
+    """
+    Whether `name` is due to be asked about again, by the last answer about it: older than
+    `every`, or, when it was that the car is asleep, older than TESLA_ASLEEP_CHECK_SECONDS.
+    """
+    answer = _tesla_answers.get(name)
+    if answer is None:
+        return True
+    asleep = bool(answer[1] and answer[1].get("asleep"))
+    return now - answer[0] >= (max(every, TESLA_ASLEEP_CHECK_SECONDS) if asleep else every)
+
+
+def tesla_verdict(name: str, now: float | None = None, why: str = "presence", ask: bool = True) -> str | None:
     """
     "home" or "away" by where Tesla says the car is against the household's home (see HOME_KEY);
     "asleep" when the car is (it won't say where, and isn't woken to); None when Tesla can't say
     (not one of TESLA_CARS, not linked, a stale fix, no home set, or somewhere in between). One
-    answer per car per TESLA_CACHE_SECONDS.
+    answer per car per TESLA_CACHE_SECONDS; with `ask` False, the last answer, however old, and
+    no call.
     """
     vin = TESLA_CARS.get(name)
     home = state_get(HOME_KEY)
     if not (tesla_on() and vin and home):
         return None
     now = time.time() if now is None else now
-    _, where = tesla_ask(name, now)
-    if where and not where.get("asleep") and now - float(where["at"]) <= TESLA_STALE_SECONDS:
+    asked, where = tesla_ask(name, now, why) if ask else _tesla_answers.get(name) or (now, None)
+    # A fix is stale by how old it was when Tesla gave it, not by how long ago that was.
+    if where and not where.get("asleep") and asked - float(where["at"]) <= TESLA_STALE_SECONDS:
         d = haversine_metres((where["lat"], where["lng"]), (float(home["lat"]), float(home["lng"])))
         radius = float(home.get("radius_m") or 150)
         verdict = "home" if d <= radius + TESLA_HOME_MARGIN_METRES else "away" if d > radius + TESLA_AWAY_METRES else None
         log.info("tesla: %s is %.0f m from home -> %s", name, d, verdict)
         return verdict
     if where and where.get("asleep"):
-        log.info("tesla: %s is asleep", name)
         return "asleep"
     return None
 
@@ -10141,7 +10191,8 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
         car["spot"], car["elsewhere"] = None, float(fix["at"])
         return
     # From another spot at the curb, it was there until the last answer; else it was last seen elsewhere.
-    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - TESLA_CHECK_SECONDS)
+    # Answers come every TESLA_CHECK_SECONDS, or every TESLA_ASLEEP_CHECK_SECONDS while it slept.
+    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - max(TESLA_CHECK_SECONDS, TESLA_ASLEEP_CHECK_SECONDS))
     car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
     log.info("parking: parked on the %s side of %s since %s (by its %s)", match["side"] or "unsure", match["street"],
              datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="minutes"), match["how"] or "nothing")
@@ -10217,7 +10268,7 @@ def parking_tell(name: str, car: dict[str, Any], config: dict[str, Any], stretch
     owed = [p for p in parking_phones(name, config, now) if plan and stages.get(p[0], 0) < plan["stage"]]
     if owed and now - float(car.get("asked") or 0) > PARKING_VERIFY_SECONDS:
         # About to tell someone the car must move: make sure it is still there.
-        parking_read(car, tesla_ask(name, now), stretches)
+        parking_read(car, tesla_ask(name, now, "parking: still there?"), stretches)
         plan = parking_plan(car, stretches, config, zone, now)
         stages = stages if plan and told.get("key") == plan["key"] else {}
         owed = [p for p in owed if plan and stages.get(p[0], 0) < plan["stage"]]
@@ -10273,8 +10324,8 @@ def parking_tick(now: float | None = None, push: Callable[..., str] | None = Non
     for name in TESLA_CARS:
         car = saved.setdefault(name, {})
         answer = _tesla_answers.get(name)
-        if answer is None or now - answer[0] > TESLA_CHECK_SECONDS + 5 * PARKING_EVERY_SECONDS:
-            answer = tesla_ask(name, now)
+        if answer is None or tesla_due(name, now, TESLA_CHECK_SECONDS + 5 * PARKING_EVERY_SECONDS):
+            answer = tesla_ask(name, now, "parking")
         parking_read(car, answer, stretches)
         pushed += parking_tell(name, car, config, stretches, zone, now, push or deliver)
     state_set(PARKING_KEY, saved)
@@ -12252,7 +12303,7 @@ if __name__ == "__main__":
         stretches = parking_stretches(parking_config(), state_get(HOME_KEY), now)
         report = parking_status(now)
         for name in TESLA_CARS:
-            asked, where = tesla_ask(name, now)
+            asked, where = tesla_ask(name, now, "parking-check")
             match = parking_match(where, stretches) if where and not where.get("asleep") else None
             report.setdefault("now", {})[name] = {"tesla": where, "match": match}
         print(json.dumps(report, indent=2, default=str))
