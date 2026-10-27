@@ -99,7 +99,6 @@ import homesafe.shared.generated.resources.finance_stats_title
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import kotlin.time.Clock
 
 private val IndexSymbols = MarketCatalog.indices.map { it.symbol }
 
@@ -287,7 +286,7 @@ internal fun PriceHeroAndChart(
     } else {
         1f
     }
-    val now = Clock.System.now().epochSeconds
+    val now = LocalFinanceClock.current.now().epochSeconds
     val live = range == ChartRange.DAY && quote != null && (meta.kind == InstrumentKind.CRYPTO || quote.isSessionOpen(now)) && scrub == null
 
     Box(modifier.fillMaxWidth()) {
@@ -370,7 +369,7 @@ internal fun rangeCaption(range: ChartRange): StringResource = when (range) {
 @Composable
 private fun MarketStatus(sp: Quote?) {
     if (sp == null) return
-    val now = Clock.System.now().epochSeconds
+    val now = LocalFinanceClock.current.now().epochSeconds
     val open = sp.isSessionOpen(now)
     val colors = FinanceTheme.colors
     Row(

@@ -98,7 +98,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncRoute(contentPa
     - contentPadding: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: com.meticulouscreations.homesafe.finance.BankSyncUiState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onLink: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BankLinkKind, kotlin.Unit>, onRelink: kotlin.Function1<kotlin.String, kotlin.Unit>, onCancelLink: kotlin.Function0<kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onUnlink: kotlin.Function1<kotlin.String, kotlin.Unit>, onUndoWrite: kotlin.Function1<kotlin.Long, kotlin.Unit>, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>, now: kotlin.Long): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: com.meticulouscreations.homesafe.finance.BankSyncUiState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onLink: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BankLinkKind, kotlin.Unit>, onRelink: kotlin.Function1<kotlin.String, kotlin.Unit>, onCancelLink: kotlin.Function0<kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onUnlink: kotlin.Function1<kotlin.String, kotlin.Unit>, onUndoWrite: kotlin.Function1<kotlin.Long, kotlin.Unit>, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -112,7 +112,6 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: c
     - onUndoWrite: STABLE (function type)
     - onPauseLine: STABLE (function type)
     - onRetry: STABLE (function type)
-    - now: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.BucketCard(bucket: com.meticulouscreations.homesafe.finance.domain.BudgetBucket, budget: com.meticulouscreations.homesafe.finance.domain.Budget, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit

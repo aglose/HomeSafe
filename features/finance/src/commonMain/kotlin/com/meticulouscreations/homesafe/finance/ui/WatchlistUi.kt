@@ -142,7 +142,6 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
-import kotlin.time.Clock
 
 /** "+ Add", the watchlist header's button. */
 @Composable
@@ -590,7 +589,8 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
     val meta = state.meta(symbol)
     val load = state.chart(symbol, ChartRange.MAX)
     val history = load?.history
-    val stats = remember(history, quote) { history?.let { LongRunStats.of(it, quote, Clock.System.now().epochSeconds) } }
+    val now = LocalFinanceClock.current.now().epochSeconds
+    val stats = remember(history, quote) { history?.let { LongRunStats.of(it, quote, now) } }
     val gmt = history?.gmtOffsetSeconds ?: 0
     val dash = "—"
     val since = stats?.let { stringResource(Res.string.longrun_since_year, FinanceFormat.year(it.firstEpochSeconds + 12 * 3600, gmt)) }
