@@ -17,6 +17,8 @@
 #                     (TS_TAG to use another tag), or an ephemeral, tagged auth key
 #   FRIGATE_SSH_KEY   the private key of a restricted user on the box, base64 on one line
 #   FRIGATE_SSH_USER  that user (default andrew); FRIGATE_HOST its tailnet address (default 100.99.163.71)
+#   FRIGATE_SSH_PORT  where OpenSSH answers (default 22); the box's port 22 is Tailscale SSH, which
+#                     admits no tagged device
 set -uo pipefail
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
@@ -149,22 +151,29 @@ if [ -n "${FRIGATE_SSH_KEY:-}" ]; then
     printf '%s' "$FRIGATE_SSH_KEY" | base64 -d >~/.ssh/frigate
   fi
   chmod 600 ~/.ssh/frigate
-  if ! grep -q '^Host frigate$' ~/.ssh/config 2>/dev/null; then
-    cat >>~/.ssh/config <<EOF
+  # Its own file, written afresh each start so a changed variable takes effect. The box runs
+  # Tailscale SSH on port 22, which admits no tagged device, so FRIGATE_SSH_PORT can name a second
+  # port where OpenSSH answers.
+  cat >~/.ssh/frigate.conf <<EOF
 Host frigate
   HostName ${FRIGATE_HOST:-100.99.163.71}
+  Port ${FRIGATE_SSH_PORT:-22}
   User ${FRIGATE_SSH_USER:-andrew}
   IdentityFile ~/.ssh/frigate
   IdentitiesOnly yes
   StrictHostKeyChecking accept-new
   ProxyCommand tailscale nc %h %p
 EOF
+  if ! grep -q '^Include ~/.ssh/frigate.conf$' ~/.ssh/config 2>/dev/null; then
+    { echo 'Include ~/.ssh/frigate.conf'; cat ~/.ssh/config 2>/dev/null; } >~/.ssh/config.new
+    mv ~/.ssh/config.new ~/.ssh/config
   fi
   env_out "export HOMESAFE_BOX=frigate"
-  if timeout 20 ssh -o BatchMode=yes frigate true >>"$LOG" 2>&1; then
+  if ssh_out=$(timeout 20 ssh -o BatchMode=yes frigate true 2>&1); then
     note "ssh frigate: works"
   else
-    note "ssh frigate: configured, but the box didn't answer (see $LOG)"
+    echo "$ssh_out" >>"$LOG"
+    note "ssh frigate: failed: $(tr -d '\r' <<<"$ssh_out" | grep -v -e '^$' -e '^Pseudo-terminal' | head -n 1)"
   fi
 elif [ -n "${TS_AUTHKEY:-}" ]; then
   note "ssh frigate: no FRIGATE_SSH_KEY in the environment"
