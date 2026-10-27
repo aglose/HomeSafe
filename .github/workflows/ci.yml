@@ -313,13 +313,20 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
-      # ffmpeg draws the test patterns. It is a hundred packages (20 to 70 seconds), so it
+      # ffmpeg draws the test patterns. It is a few dozen packages (20 to 70 seconds), so it
       # installs beside the builds below instead of after them; "Start the fake Frigate" waits
       # for it, and installs it itself if this didn't work.
+      #
+      # The Azure mirror sometimes stalls partway through a package and apt-get waits on it for
+      # good, holding dpkg's lock all the while. So downloads time out and are retried, the whole
+      # install gives up after ten minutes, and only what ffmpeg needs is fetched (its
+      # recommends are the VA and VDPAU drivers, which the test patterns don't use).
       - name: Install ffmpeg in the background
         if: steps.base.outputs.present == 'true'
+        env:
+          APT_OPTIONS: -o Acquire::http::Timeout=30 -o Acquire::Retries=3
         run: |
-          nohup sh -c "sudo apt-get update && sudo apt-get install -y ffmpeg; echo \$? > '$RUNNER_TEMP/ffmpeg-install.status'" \
+          nohup sh -c "sudo timeout 600 apt-get $APT_OPTIONS update && sudo timeout 600 apt-get $APT_OPTIONS install -y --no-install-recommends ffmpeg; echo \$? > '$RUNNER_TEMP/ffmpeg-install.status'" \
             > "$RUNNER_TEMP/ffmpeg-install.log" 2>&1 &
 
       # The base's APK is the same whichever run builds it, and the base of most runs is a commit
@@ -377,6 +384,8 @@ jobs:
 
       - name: Start the fake Frigate and go2rtc test patterns
         if: steps.base.outputs.present == 'true'
+        env:
+          APT_OPTIONS: -o Acquire::http::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=60
         run: |
           # "Install ffmpeg in the background" has normally finished long before the builds have.
           for _ in $(seq 1 180); do
@@ -386,7 +395,17 @@ jobs:
           if ! command -v ffmpeg > /dev/null; then
             echo "::warning::The background ffmpeg install didn't finish; installing it now."
             cat "$RUNNER_TEMP/ffmpeg-install.log" || true
-            sudo apt-get -o DPkg::Lock::Timeout=300 update && sudo apt-get -o DPkg::Lock::Timeout=300 install -y ffmpeg
+            # A background apt-get still stuck on a download holds dpkg's lock, and would until
+            # its timeout: stop it. A dpkg it had already started is left to finish (killing that
+            # is what breaks a package database), then whatever is half-unpacked is finished.
+            sudo pkill -x apt-get || true
+            for _ in $(seq 1 180); do
+              pgrep -x apt-get > /dev/null || pgrep -x dpkg > /dev/null || break
+              sleep 1
+            done
+            sudo dpkg --configure -a
+            # shellcheck disable=SC2086 # APT_OPTIONS is several options
+            sudo timeout 600 apt-get $APT_OPTIONS update && sudo timeout 600 apt-get $APT_OPTIONS install -y --no-install-recommends ffmpeg
           fi
           nohup fake-frigate/build/install/fake-frigate/bin/fake-frigate --port 8971 --host 0.0.0.0 --advertise 10.0.2.2 \
             > build/startup-perf/fake-frigate.log 2>&1 &
