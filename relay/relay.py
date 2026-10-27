@@ -9878,8 +9878,10 @@ def osm_street_name(street: str) -> str:
 def osm_ways(name: str, lat: float, lng: float) -> list[dict[str, Any]]:
     """Every way for cars called `name` within PARKING_RADIUS_METRES of (lat, lng), as {"line", "one_way"}."""
     quoted = name.replace("\\", "\\\\").replace('"', '\\"')
-    query = f'[out:json][timeout:25];way["highway"]["name"="{quoted}"](around:{PARKING_RADIUS_METRES},{lat},{lng});out geom;'
-    r = requests.post(OVERPASS_URL, data={"data": query}, headers={"User-Agent": "HomeSafe relay"}, timeout=30)
+    query = f'[out:json][timeout:60];way["highway"]["name"="{quoted}"](around:{PARKING_RADIUS_METRES},{lat},{lng});out geom;'
+    # The public server queues a query before it runs it: from the box, 34-42 s for one street
+    # (2026-10-27). Asked once a week, in the background, so waiting costs nothing.
+    r = requests.post(OVERPASS_URL, data={"data": query}, headers={"User-Agent": "HomeSafe relay"}, timeout=90)
     r.raise_for_status()
     ways = []
     for element in r.json().get("elements") or []:
