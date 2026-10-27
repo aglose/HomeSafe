@@ -106,6 +106,32 @@ class KeyVaultTest {
     }
 
     @Test
+    fun aSecondPhoneSigningInAtOnceUsesTheFirstsKeyPairInsteadOfReplacingIt() = runTest {
+        val first = vault("andrew")
+        first.signIn("pw")
+        first.vault.awaitOpen()
+        first.vault.save(HouseholdKeys.GOOGLE_MAPS, GOOGLE_KEY).getOrThrow()
+
+        // The second phone's first look predates the first phone's key pair.
+        relay.staleOnce = "andrew"
+        val second = vault("andrew")
+        second.signIn("pw")
+        assertEquals(GOOGLE_KEY, second.vault.awaitOpen().secrets[HouseholdKeys.GOOGLE_MAPS], "it looked again, and the household's keys survived")
+    }
+
+    @Test
+    fun aVaultOpenedOnOneServerIsNeverUsedForAnother() = runTest {
+        val andrew = vault("andrew")
+        andrew.signIn("pw")
+        andrew.vault.awaitOpen()
+
+        andrew.connection.currentServerUrl.value = "https://$OLD_RELAY_HOST"
+        andrew.vault.await { it is VaultState.Unsupported }
+        assertTrue(andrew.vault.save(HouseholdKeys.GOOGLE_MAPS, GOOGLE_KEY).isFailure, "not sent to the household on the other server")
+        assertFalse(relay.hasSecret(HouseholdKeys.GOOGLE_MAPS))
+    }
+
+    @Test
     fun withNoLoginNothingIsAskedOrSaved() = runTest {
         val andrew = vault("andrew")
         assertIs<VaultState.SignedOut>(andrew.vault.state.value)
@@ -113,13 +139,17 @@ class KeyVaultTest {
         assertEquals(0, relay.calls)
     }
 
-    private class Phone(val vault: KeyVault, private val login: SignedInLogin, private val user: String) {
+    private class Phone(val vault: KeyVault, private val login: SignedInLogin, private val user: String, val connection: FakeConnection) {
         fun signIn(password: String) = login.signedIn(user, password)
     }
 
     private fun vault(user: String, assistantStore: InMemoryApiKeyStore = InMemoryApiKeyStore()): Phone {
         val engine = MockEngine { request ->
-            val (status, text) = relay.answer(user, request.method, request.url.encodedPath, request.body.toByteArray().decodeToString())
+            val (status, text) = if (request.url.host == OLD_RELAY_HOST) {
+                HttpStatusCode.NotFound to ""
+            } else {
+                relay.answer(user, request.method, request.url.encodedPath, request.body.toByteArray().decodeToString())
+            }
             respond(text, status, headersOf(HttpHeaders.ContentType, "application/json"))
         }
         val client = HttpClient(engine) {
@@ -127,8 +157,9 @@ class KeyVaultTest {
             defaultRequest { header("X-Test-User", user) }
         }
         val login = SignedInLogin()
-        val vault = KeyVault(login, FakeConnection("https://frigate.test"), PushRelayApi(client), assistantStore, scope).apply { iterations = 1_000 }
-        return Phone(vault, login, user)
+        val connection = FakeConnection("https://frigate.test")
+        val vault = KeyVault(login, connection, PushRelayApi(client), assistantStore, scope).apply { iterations = 1_000 }
+        return Phone(vault, login, user, connection)
     }
 
     private suspend fun KeyVault.await(predicate: (VaultState) -> Boolean): VaultState =
@@ -160,7 +191,12 @@ class KeyVaultTest {
         var calls = 0
             private set
 
+        /** The next `GET /vault` for this user answers as if they had no key pair yet: what a second phone saw just before the first set one. */
+        var staleOnce: String? = null
+
         suspend fun granted(user: String): Boolean = lock.withLock { members[user]?.let(::isGranted) == true }
+
+        suspend fun hasSecret(name: String): Boolean = lock.withLock { name in secrets }
 
         fun blobs(): List<String> = members.values.flatMap { listOfNotNull(it.public, it.private, it.grant?.toString()) } + secrets.values
 
@@ -173,11 +209,22 @@ class KeyVaultTest {
             val json = body.takeIf { it.isNotBlank() }?.let { Json.parseToJsonElement(it).jsonObject }
             fun field(name: String) = json!![name]!!.jsonPrimitive.content
             val refused = when {
-                method == HttpMethod.Get && path == "/vault" -> null
+                method == HttpMethod.Get && path == "/vault" -> {
+                    if (staleOnce == user) {
+                        staleOnce = null
+                        return@withLock HttpStatusCode.OK to view(user, hideMe = true).toString()
+                    }
+                    null
+                }
 
                 method == HttpMethod.Put && path == "/vault/me" -> {
-                    members[user] = Member(field("public"), field("private"))
-                    null
+                    val replaces = json!!["replaces"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.content
+                    if (members[user]?.public != replaces) {
+                        HttpStatusCode.Conflict
+                    } else {
+                        members[user] = Member(field("public"), field("private"))
+                        null
+                    }
                 }
 
                 method == HttpMethod.Put && path.startsWith("/vault/grants/") -> {
@@ -186,6 +233,8 @@ class KeyVaultTest {
                         field("household") != household || members[user]?.let(::isGranted) != true -> HttpStatusCode.Conflict
 
                         target == null -> HttpStatusCode.NotFound
+
+                        target.public != field("recipient") -> HttpStatusCode.Conflict
 
                         else -> {
                             target.grant = buildJsonObject {
@@ -201,7 +250,7 @@ class KeyVaultTest {
 
                 method == HttpMethod.Post && path == "/vault/household" -> {
                     val me = members[user]
-                    if (me == null || members.values.any(::isGranted)) {
+                    if (me == null || members.values.any(::isGranted) || me.public != field("recipient")) {
                         HttpStatusCode.Conflict
                     } else {
                         household = field("household")
@@ -231,10 +280,10 @@ class KeyVaultTest {
             HttpStatusCode.OK to view(user).toString()
         }
 
-        private fun view(user: String): JsonElement = buildJsonObject {
+        private fun view(user: String, hideMe: Boolean = false): JsonElement = buildJsonObject {
             put("user", user)
             household?.let { put("household", it) }
-            members[user]?.let { me ->
+            members[user]?.takeUnless { hideMe }?.let { me ->
                 put(
                     "me",
                     buildJsonObject {
@@ -247,7 +296,7 @@ class KeyVaultTest {
             put(
                 "members",
                 buildJsonArray {
-                    members.forEach { (name, member) ->
+                    members.filterKeys { !hideMe || it != user }.forEach { (name, member) ->
                         add(
                             buildJsonObject {
                                 put("user", name)
@@ -264,5 +313,8 @@ class KeyVaultTest {
 
     private companion object {
         const val GOOGLE_KEY = "AIza-household-key"
+
+        /** A server whose relay predates the vault: it answers 404. */
+        const val OLD_RELAY_HOST = "old-relay.test"
     }
 }

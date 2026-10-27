@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.vault
 
+import com.meticulouscreations.homesafe.AppVisibility
 import com.meticulouscreations.homesafe.data.ASSISTANT_KEYS
 import com.meticulouscreations.homesafe.data.ApiKeyStore
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -7,6 +8,7 @@ import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.network.RelayVault
 import com.meticulouscreations.homesafe.network.RelayVaultGrant
 import com.meticulouscreations.homesafe.network.RelayVaultGrantBody
+import com.meticulouscreations.homesafe.network.VaultConflictException
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
@@ -45,7 +47,9 @@ import kotlin.uuid.Uuid
  * 4. The secrets are opened, and any member still waiting is granted the household key.
  *
  * A key the assistant kept on this phone before the vault is moved into it, and the phone's copy
- * dropped. A failure is tried again every few minutes while the login lasts.
+ * dropped. It looks again while the app is in front (every minute while waiting to be let in,
+ * every ten once open, three after a failure, and each time the app comes back to the
+ * foreground), and an open household is only ever used for the login and server it was opened for.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -57,7 +61,8 @@ class KeyVault(
     @Named(ASSISTANT_KEYS) private val assistantStore: ApiKeyStore,
     appScope: CoroutineScope,
 ) : HouseholdKeys {
-    private class Opened(val serverUrl: String, val household: String, val householdKey: ByteArray)
+    /** The household open on this phone, and whose login and which server it was opened for: it is never used for another. */
+    private class Opened(val login: SignedInLogin.Login, val serverUrl: String, val household: String, val householdKey: ByteArray)
 
     private val _state = MutableStateFlow<VaultState>(VaultState.SignedOut)
     override val state: StateFlow<VaultState> = _state.asStateFlow()
@@ -72,26 +77,44 @@ class KeyVault(
 
     init {
         appScope.launch {
-            combine(signedIn.login, connection.currentServerUrl, refreshes) { login, url, _ -> login to url }.collectLatest { (login, url) ->
-                if (login == null || url == null) {
-                    lock.withLock { opened = null }
-                    _state.value = VaultState.SignedOut
-                    return@collectLatest
-                }
-                while (true) {
-                    if (_state.value !is VaultState.Open) _state.value = VaultState.Opening
-                    val result = try {
-                        lock.withLock { open(url, login) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        VaultState.Failed(e.userMessage())
+            combine(signedIn.login, connection.currentServerUrl, refreshes, AppVisibility.inForeground) { login, url, _, visible -> Triple(login, url, visible) }
+                .collectLatest { (login, url, visible) ->
+                    if (login == null || url == null) {
+                        lock.withLock { opened = null }
+                        _state.value = VaultState.SignedOut
+                        return@collectLatest
                     }
-                    _state.value = result
-                    if (result !is VaultState.Failed) break
-                    delay(RETRY)
+                    // Another login or another server: what was open belongs to that one, and is never shown or written for this.
+                    lock.withLock {
+                        if (opened?.let { it.login != login || it.serverUrl != url } == true) {
+                            opened = null
+                            _state.value = VaultState.Opening
+                        }
+                    }
+                    // In the background, nothing to look at; coming back to the foreground looks again.
+                    if (!visible) return@collectLatest
+                    while (true) {
+                        if (_state.value !is VaultState.Open) _state.value = VaultState.Opening
+                        val result = try {
+                            lock.withLock { openLookingAgain(url, login) }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            VaultState.Failed(e.userMessage())
+                        }
+                        // A recheck that can't reach the server leaves an open vault open: the keys in hand are still good.
+                        val keepOpen = result is VaultState.Failed && _state.value is VaultState.Open && lock.withLock { opened != null }
+                        if (!keepOpen) _state.value = result
+                        // Keep looking: a waiting login is let in, and keys saved or forgotten on another phone arrive.
+                        delay(
+                            when (result) {
+                                is VaultState.Failed -> RETRY
+                                VaultState.Waiting -> WAITING_RECHECK
+                                else -> OPEN_RECHECK
+                            },
+                        )
+                    }
                 }
-            }
         }
     }
 
@@ -100,7 +123,9 @@ class KeyVault(
     }
 
     override suspend fun save(name: String, value: String?): Result<Unit> = lock.withLock {
-        val vault = opened ?: return@withLock Result.failure(LocalizedException(_state.value.note() ?: UiText.of(Res.string.vault_not_open), technical = "Vault not open"))
+        // Only into the household open for this login on this server, never one opened earlier for another.
+        val vault = opened?.takeIf { it.login == signedIn.login.value && it.serverUrl == connection.currentServerUrl.value && _state.value is VaultState.Open }
+            ?: return@withLock Result.failure(LocalizedException(_state.value.note() ?: UiText.of(Res.string.vault_not_open), technical = "Vault not open"))
         runCatching {
             val box = value?.let { VaultCrypto.sealSecret(vault.householdKey, name, it) }
             val answer = relay.putVaultSecrets(vault.serverUrl, vault.household, mapOf(name to box)).getOrThrow()
@@ -108,37 +133,57 @@ class KeyVault(
         }.onFailure { if (it is CancellationException) throw it }
     }
 
+    /**
+     * [open], again from the top when the vault changed under it (another phone of the same login
+     * set its key pair first, or someone's was replaced): the second look finds what won.
+     */
+    private suspend fun openLookingAgain(serverUrl: String, login: SignedInLogin.Login): VaultState {
+        repeat(CONFLICT_ATTEMPTS - 1) {
+            try {
+                return open(serverUrl, login)
+            } catch (_: VaultConflictException) {
+                // Look again.
+            }
+        }
+        return open(serverUrl, login)
+    }
+
     private suspend fun open(serverUrl: String, login: SignedInLogin.Login): VaultState {
-        var vault = relay.getVault(serverUrl).getOrThrow() ?: return VaultState.Unsupported
+        var vault = relay.getVault(serverUrl).getOrThrow() ?: run {
+            this.opened = null
+            return VaultState.Unsupported
+        }
         val loginKey = loginKeyFor(login)
 
-        // This login's key pair: opened, or made afresh (a first sign-in, or a new password).
+        // This login's key pair: opened, or made afresh (a first sign-in, or a new password), in
+        // place of exactly the one seen here, so a phone never replaces one it hasn't looked at.
         val me = vault.me
         var member = me?.let { VaultCrypto.openMember(loginKey, it.public, it.private) }
         if (member == null) {
             member = VaultCrypto.newMember(loginKey)
-            vault = relay.putVaultMember(serverUrl, member.public, member.sealedPrivate).getOrThrow()
+            vault = relay.putVaultMember(serverUrl, member.public, member.sealedPrivate, replaces = me?.public).getOrThrow()
         }
 
         // The household key: this login's grant, or a new one when nobody holds it.
         val household = vault.household
         var householdKey = vault.me?.grant?.let { VaultCrypto.openGrant(member, it.toCrypto()) }
         val opened = if (householdKey != null && household != null) {
-            Opened(serverUrl, household, householdKey)
+            Opened(login, serverUrl, household, householdKey)
         } else if (vault.members.none { it.granted }) {
             householdKey = VaultCrypto.newHouseholdKey()
             val started = Uuid.random().toString()
-            vault = relay.startVaultHousehold(serverUrl, VaultCrypto.grant(householdKey, member.public).toBody(started)).getOrThrow()
-            Opened(serverUrl, started, householdKey)
+            vault = relay.startVaultHousehold(serverUrl, VaultCrypto.grant(householdKey, member.public).toBody(started, member.public)).getOrThrow()
+            Opened(login, serverUrl, started, householdKey)
         } else {
             this.opened = null
             return VaultState.Waiting
         }
         this.opened = opened
 
-        // Let in whoever is waiting: their phone will open the household key next time.
+        // Let in whoever is waiting: their phone will open the household key next time. A grant the
+        // relay refuses (their key pair changed meanwhile) is made again at the next look.
         for (waiting in vault.members.filter { !it.granted && it.user != vault.user }) {
-            relay.putVaultGrant(serverUrl, waiting.user, VaultCrypto.grant(opened.householdKey, waiting.public).toBody(opened.household))
+            relay.putVaultGrant(serverUrl, waiting.user, VaultCrypto.grant(opened.householdKey, waiting.public).toBody(opened.household, waiting.public))
                 .onSuccess { vault = it }
         }
 
@@ -170,9 +215,12 @@ class KeyVault(
 
     private fun RelayVaultGrant.toCrypto() = VaultCrypto.Grant(ephemeral, box)
 
-    private fun VaultCrypto.Grant.toBody(household: String) = RelayVaultGrantBody(household, ephemeral, box)
+    private fun VaultCrypto.Grant.toBody(household: String, recipient: String) = RelayVaultGrantBody(household, recipient, ephemeral, box)
 
     private companion object {
         val RETRY = 3.minutes
+        val WAITING_RECHECK = 1.minutes
+        val OPEN_RECHECK = 10.minutes
+        const val CONFLICT_ATTEMPTS = 3
     }
 }

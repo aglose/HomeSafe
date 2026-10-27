@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.floor
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
  * Keeps [onCopyright] told the copyright line Google's terms want shown over the view in
@@ -44,8 +45,10 @@ suspend fun MapTileSource.followCopyright(map: BaseMap?, camera: () -> MapCamera
     snapshotFlow {
         val at = camera()
         val count = 1 shl at.level
-        // Quarter-view steps: the line names whose data is in view, which doesn't change with every pixel of a drag.
-        Triple(at.level, floor(at.centerX * count * 4).toInt(), floor(at.centerY * count * 4).toInt())
+        // Quarter steps, of a tile across and of a zoom level in: the line names whose data is in
+        // view, which doesn't change with every pixel of a drag, but does with a pinch that stays
+        // within one tile level and still takes in more ground.
+        Triple((at.zoom * 4).roundToInt(), floor(at.centerX * count * 4).toInt(), floor(at.centerY * count * 4).toInt())
     }
         .distinctUntilChanged()
         .debounce(COPYRIGHT_SETTLE_MILLIS)

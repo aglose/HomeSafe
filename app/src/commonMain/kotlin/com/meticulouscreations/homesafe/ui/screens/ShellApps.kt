@@ -165,6 +165,13 @@ fun ShellAppTab(nav: ShellNavigation, app: InnerApp) {
     val sides = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
     Box(Modifier.fillMaxSize().windowInsetsPadding(sides).consumeWindowInsets(sides)) {
         AppTabContent(nav, app, visible)
+        // A parking notification's tap while this app's tab is the one up: the map comes up over it,
+        // as it does over the shell (each sidebar tab is a composition of its own, so it needs its own).
+        if (visible) {
+            val weather: WeatherViewModel = metroViewModel()
+            val parking by ParkingDeepLinks.pending.collectAsStateWithLifecycle()
+            ParkingMapOverlay(parking, weather.tiles, onClose = ParkingDeepLinks::consume)
+        }
     }
 }
 

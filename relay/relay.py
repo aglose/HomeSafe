@@ -10589,10 +10589,14 @@ VAULT_BLOB_MAX = 8192
 class VaultMember(BaseModel):
     public: str
     private: str
+    # The public key this replaces, as the phone last saw it; None when it saw no key pair at all.
+    replaces: str | None = None
 
 
 class VaultGrant(BaseModel):
     household: str
+    # The public key the household key was sealed to: the grant only counts while it is still theirs.
+    recipient: str
     ephemeral: str
     box: str
 
@@ -10661,7 +10665,13 @@ def put_vault_member(body: VaultMember, request: Request) -> dict[str, Any]:
     vault_blob(body.public, body.private)
 
     def change(state: dict[str, Any]) -> None:
-        state.setdefault("members", {})[user] = {"public": body.public, "private": body.private, "grant": None}
+        members = state.setdefault("members", {})
+        current = (members.get(user) or {}).get("public")
+        # Two phones signing in as one user at once: the second must look again and use the pair
+        # the first set, not replace it (which would take the first's grant away with it).
+        if current != body.replaces:
+            raise HTTPException(status_code=409, detail="The key pair changed; look again")
+        members[user] = {"public": body.public, "private": body.private, "grant": None}
 
     log.info("vault: %s set a key pair", user)
     return vault_change(user, change)
@@ -10678,6 +10688,8 @@ def put_vault_grant(member: str, body: VaultGrant, request: Request) -> dict[str
         target = (state.get("members") or {}).get(member)
         if not target:
             raise HTTPException(status_code=404, detail="No such member")
+        if target["public"] != body.recipient:
+            raise HTTPException(status_code=409, detail="Their key pair changed; look again")
         target["grant"] = {"household": body.household, "ephemeral": body.ephemeral, "box": body.box, "for": target["public"]}
 
     view = vault_change(user, change)
@@ -10697,6 +10709,8 @@ def start_vault_household(body: VaultGrant, request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=409, detail="Set a key pair first")
         if any(vault_granted(state, m) for m in members.values()):
             raise HTTPException(status_code=409, detail="Someone holds the household key: ask them to open the app")
+        if members[user]["public"] != body.recipient:
+            raise HTTPException(status_code=409, detail="Your key pair changed; look again")
         state["household"] = body.household
         state["secrets"] = {}
         members[user]["grant"] = {"household": body.household, "ephemeral": body.ephemeral, "box": body.box, "for": members[user]["public"]}

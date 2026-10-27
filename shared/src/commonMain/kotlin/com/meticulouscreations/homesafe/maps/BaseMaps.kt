@@ -14,6 +14,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.maps_google_rejected
 import homesafe.shared.generated.resources.maps_google_unreachable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
@@ -82,7 +84,14 @@ class BaseMaps(
     private class Choice(val provider: MapProvider, val key: String?)
 
     private val provider = MutableStateFlow(MapProvider.fromName(store.string(PREF_PROVIDER)))
-    private val choice: Flow<Choice> = combine(provider, keys.observe(HouseholdKeys.GOOGLE_MAPS), ::Choice)
+
+    /** Bumped when Google refuses tiles under a session it gave ([tilesRefused]): the maps then work out what to draw again. */
+    private val refusals = MutableStateFlow(0)
+
+    /** Until when Google's tiles aren't asked for after a refusal, in epoch seconds. */
+    private val refusedUntil = MutableStateFlow(0L)
+
+    private val choice: Flow<Choice> = combine(provider, keys.observe(HouseholdKeys.GOOGLE_MAPS), refusals) { provider, key, _ -> Choice(provider, key) }
     private val status = MutableStateFlow<GoogleMapsStatus>(GoogleMapsStatus.Unchecked)
     private val saveError = MutableStateFlow<UiText?>(null)
     private val sessionLock = Mutex()
@@ -107,6 +116,12 @@ class BaseMaps(
             if (choice.provider != MapProvider.GOOGLE || key == null) {
                 emit(BaseMap.OpenStreetMap)
                 return@transformLatest
+            }
+            // Google refused its tiles a moment ago: OpenStreetMap until it is worth asking again.
+            val refusedFor = refusedUntil.value - clock.now().epochSeconds
+            if (refusedFor > 0) {
+                emit(BaseMap.OpenStreetMap)
+                delay(refusedFor.seconds)
             }
             // Nothing to draw while a session is on its way, rather than OpenStreetMap's tiles to be thrown away.
             if (!hasSession(key)) emit(null)
@@ -139,6 +154,22 @@ class BaseMaps(
                 saveError.value = null
             }
             .onFailure { saveError.value = it.userMessage() }
+    }
+
+    /**
+     * Google answered a tile request at [url] with [status]. A refusal (401, 403: the key revoked or
+     * restricted; 429: over quota) under a session it gave means its tiles can't be drawn: the
+     * session is dropped, the maps go to OpenStreetMap for a while, and Settings says why. Anything
+     * else (a tile that isn't there, OpenStreetMap's own answers) is the tile store's business.
+     */
+    fun tilesRefused(url: String, status: Int) {
+        if (!url.startsWith(GoogleMapTiles.TILES) || status !in REFUSALS) return
+        val now = clock.now().epochSeconds
+        if (refusedUntil.value > now) return
+        refusedUntil.value = now + RETRY.inWholeSeconds
+        scope.launch { sessionLock.withLock { session = null } }
+        this.status.value = GoogleMapsStatus.Failed(UiText.of(Res.string.maps_google_rejected, status))
+        refusals.value++
     }
 
     /** Asks Google for a session now if Google is picked, so Settings can say whether the key works before a map is opened. */
@@ -183,6 +214,7 @@ class BaseMaps(
         const val FALLBACK_REGION = "US"
         const val RENEW_AHEAD_SECONDS = 3_600L
         val RETRY = 5.minutes
+        val REFUSALS = setOf(401, 403, 429)
 
         /** OpenStreetMap at once when that is what will be drawn; null for Google, whose tiles need a session first. */
         fun initial(provider: MapProvider, key: String?): BaseMap? = if (provider == MapProvider.GOOGLE && key != null) null else BaseMap.OpenStreetMap

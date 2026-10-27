@@ -107,6 +107,9 @@ class GoogleMapTiles(@Named(MAPS_CLIENT) private val httpClient: HttpClient) {
     companion object {
         const val BASE = "https://tile.googleapis.com"
 
+        /** Where the 2D tiles are: what [BaseMaps.tilesRefused] recognises a Google tile by. */
+        const val TILES = "$BASE/v1/2dtiles/"
+
         private val json = Json {
             ignoreUnknownKeys = true
             explicitNulls = false

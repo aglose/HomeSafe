@@ -108,6 +108,21 @@ class BaseMapsTest {
     }
 
     @Test
+    fun googleRefusingItsTilesMovesTheMapsToOpenStreetMap() = runTest {
+        val maps = BaseMaps(InMemoryApiKeyStore(), InMemoryHouseholdKeys(HouseholdKeys.GOOGLE_MAPS to GOOD_KEY), google, clock)
+        maps.setProvider(MapProvider.GOOGLE)
+        val map = assertIs<BaseMap.Google>(maps.settled { it is BaseMap.Google })
+
+        maps.tilesRefused("https://tile.openstreetmap.org/12/654/1583.png", 403)
+        maps.tilesRefused(map.url(12, 654, 1583), 404)
+        assertEquals(GoogleMapsStatus.Working, maps.settings.first().google, "only Google refusing its own tiles counts")
+
+        maps.tilesRefused(map.url(12, 654, 1583), 403)
+        assertEquals(BaseMap.OpenStreetMap, maps.settled { it == BaseMap.OpenStreetMap })
+        assertIs<GoogleMapsStatus.Failed>(maps.settings.first().google)
+    }
+
+    @Test
     fun aClosedVaultKeepsTheMapsOnOpenStreetMapAndSaysWhy() = runTest {
         val keys = InMemoryHouseholdKeys(HouseholdKeys.GOOGLE_MAPS to GOOD_KEY).apply { set(VaultState.Waiting) }
         val maps = BaseMaps(InMemoryApiKeyStore(), keys, google, clock)

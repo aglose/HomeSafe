@@ -31,6 +31,7 @@ import com.meticulouscreations.homesafe.domain.model.UptimeCheck
 import com.meticulouscreations.homesafe.domain.model.UptimeDevice
 import com.meticulouscreations.homesafe.domain.model.UptimeOutage
 import com.meticulouscreations.homesafe.domain.model.UptimeState
+import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
@@ -412,9 +413,13 @@ class PushRelayApi(private val httpClient: HttpClient) {
         response.body<RelayVault>()
     }.onFailure { if (it is CancellationException) throw it }
 
-    /** Sets the signed-in user's key pair, its private half sealed with their login. */
-    suspend fun putVaultMember(serverUrl: String, public: String, sealedPrivate: String): Result<RelayVault> =
-        vaultCall { httpClient.put(relayUrl(serverUrl, "/vault/me")) { json(RelayVaultMemberBody(public, sealedPrivate)) } }
+    /**
+     * Sets the signed-in user's key pair, its private half sealed with their login, in place of
+     * [replaces] (the public key this phone last saw, or null for none). Fails with
+     * [VaultConflictException] when another phone has set one since.
+     */
+    suspend fun putVaultMember(serverUrl: String, public: String, sealedPrivate: String, replaces: String?): Result<RelayVault> =
+        vaultCall { httpClient.put(relayUrl(serverUrl, "/vault/me")) { json(RelayVaultMemberBody(public, sealedPrivate, replaces)) } }
 
     /** Gives [member] the household key, sealed to their public key. */
     suspend fun putVaultGrant(serverUrl: String, member: String, grant: RelayVaultGrantBody): Result<RelayVault> =
@@ -430,6 +435,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
 
     private suspend fun vaultCall(call: suspend () -> HttpResponse): Result<RelayVault> = runCatching {
         val response = call()
+        if (response.status == HttpStatusCode.Conflict) throw VaultConflictException(relayRefused(response.status))
         if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayVault>()
     }.onFailure { if (it is CancellationException) throw it }
@@ -886,10 +892,14 @@ data class RelayVaultMember(val user: String, val public: String, val granted: B
 data class RelayVaultGrant(val ephemeral: String, val box: String)
 
 @Serializable
-internal data class RelayVaultMemberBody(val public: String, val private: String)
+internal data class RelayVaultMemberBody(val public: String, val private: String, val replaces: String?)
 
+/** The household key sealed to [recipient], the public key it is for: the relay refuses it once that key pair has been replaced. */
 @Serializable
-data class RelayVaultGrantBody(val household: String, val ephemeral: String, val box: String)
+data class RelayVaultGrantBody(val household: String, val recipient: String, val ephemeral: String, val box: String)
+
+/** The vault changed under this phone (another phone set a key pair, or someone's was replaced): look again and redo. */
+class VaultConflictException(refused: FrigateResponseException) : LocalizedException(refused.text, refused.message, refused)
 
 @Serializable
 internal data class RelayVaultSecretsBody(val household: String, val secrets: Map<String, String?>)

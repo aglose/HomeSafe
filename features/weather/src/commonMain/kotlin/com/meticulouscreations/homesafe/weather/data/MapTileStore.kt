@@ -152,6 +152,8 @@ class MapTileStore(
         val bytes = try {
             downloads.withPermit {
                 val response = httpClient.get(url)
+                // Google refusing its tiles (a revoked key, no quota left) moves the maps off it.
+                if (!response.status.isSuccess()) baseMaps.tilesRefused(url, response.status.value)
                 if (response.status.isSuccess()) response.bodyAsBytes() else null
             }
         } catch (e: CancellationException) {

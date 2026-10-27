@@ -51,7 +51,7 @@ sealed interface BaseMap {
         override val provider = MapProvider.GOOGLE
         override val keep = false
 
-        override fun url(z: Int, x: Int, y: Int): String = "${GoogleMapTiles.BASE}/v1/2dtiles/$z/$x/$y?session=$session&key=$key"
+        override fun url(z: Int, x: Int, y: Int): String = "${GoogleMapTiles.TILES}$z/$x/$y?session=$session&key=$key"
 
         override fun equals(other: Any?): Boolean = other is Google && other.session == session && other.key == key
 
