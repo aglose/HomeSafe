@@ -150,6 +150,43 @@ data class BudgetBucket(val id: BucketId, val spent: Double, val limit: Double?,
 /** How a purchase came to be in its bucket. */
 enum class BucketSource { MANUAL, ACCOUNT, BANK, RULE, NONE }
 
+/** How a purchase came to be in its budget line: by hand, by its merchant's rule, on its own (by what it is), or it is in none. */
+enum class LineSource { MANUAL, RULE, AUTO, NONE }
+
+/**
+ * Where a purchase is to go among the budget sheet's card-paid lines: one of them by name, none of
+ * them ([None]), or wherever it falls on its own ([Automatic], taking back a choice made by hand).
+ * [wire] is how the relay is told (`put_budget_transaction_line` in `relay/relay.py`).
+ */
+@Immutable
+sealed interface LinePick {
+    val wire: String?
+
+    @Immutable
+    data class Line(val name: String) : LinePick {
+        override val wire: String get() = name
+    }
+
+    @Immutable
+    data object None : LinePick {
+        override val wire: String get() = ""
+    }
+
+    @Immutable
+    data object Automatic : LinePick {
+        override val wire: String? get() = null
+    }
+}
+
+/**
+ * One of the budget sheet's lines that is paid by card ("Groceries"): what the sheet plans for it
+ * a month, what this month's purchases in it have come to, and what it usually comes to (the
+ * average of the months before, once there are two to go by).
+ */
+@Immutable
+@Serializable
+data class BudgetLine(val name: String, val planned: Double?, val spent: Double, val count: Int, val usual: Double? = null)
+
 /** One purchase (or, with a negative [amount], a refund) on a card that is part of the budget. */
 @Immutable
 @Serializable
@@ -169,6 +206,11 @@ data class Purchase(
     val source: BucketSource,
     /** Its merchant's purchases are always put the same way. */
     val remembered: Boolean,
+    /** The card-paid line of the budget sheet it is in, or null for none. */
+    val line: String? = null,
+    val lineSource: LineSource = LineSource.NONE,
+    /** Its merchant's purchases always go in the same line (or in none). */
+    val lineRemembered: Boolean = false,
 ) {
     val isRefund: Boolean get() = amount < 0
 }
@@ -183,21 +225,29 @@ data class BudgetLimits(val total: Double? = null, val people: Map<String, Doubl
 @Serializable
 data class MerchantRule(val merchantKey: String, val bucket: BucketId)
 
+/** A merchant whose purchases always go in one of the card-paid lines, or ([line] null) in none of them. */
+@Immutable
+@Serializable
+data class LineRule(val merchantKey: String, val line: String?)
+
 /**
- * The two numbers only the budget sheet knows, as this app last reported them to the relay: the
- * month's take-home, and the bills that are paid from the bank rather than on a card.
+ * The numbers only the budget sheet knows, as this app last reported them to the relay: the
+ * month's take-home, the bills that are paid from the bank rather than on a card, and what each
+ * line that is paid by card plans for a month, by its name.
  */
 @Immutable
 @Serializable
-data class BudgetSheetFigures(val takeHome: Double?, val billsOffCard: Double?) {
+data class BudgetSheetFigures(val takeHome: Double?, val billsOffCard: Double?, val lines: Map<String, Double> = emptyMap()) {
     companion object {
         /**
          * Read from the sheet: every expense line counts as a bill unless it is one of
-         * [cardPaidLines], the lines whose money goes out through the cards.
+         * [cardPaidLines], the lines whose money goes out through the cards. Two lines of the
+         * same name are ticked together, so they plan together.
          */
         fun of(finance: PersonalFinance, cardPaidLines: Collection<String>): BudgetSheetFigures = BudgetSheetFigures(
             takeHome = finance.monthlyIncome ?: finance.income.takeIf { it.isNotEmpty() }?.sumOf { it.monthly },
             billsOffCard = finance.expenses.takeIf { it.isNotEmpty() }?.filter { it.name !in cardPaidLines }?.sumOf { it.monthly },
+            lines = finance.expenses.filter { it.name in cardPaidLines }.groupBy { it.name }.mapValues { (_, same) -> same.sumOf { it.monthly } },
         )
     }
 }
@@ -211,6 +261,7 @@ data class BudgetConfig(
     val cardPaidLines: List<String> = emptyList(),
     val alerts: BudgetAlertSwitches = BudgetAlertSwitches(),
     val rules: List<MerchantRule> = emptyList(),
+    val lineRules: List<LineRule> = emptyList(),
     val sheet: BudgetSheetFigures = BudgetSheetFigures(null, null),
 )
 
@@ -272,6 +323,10 @@ data class Budget(
     /** How much of [spent] hasn't settled yet. */
     val pending: Double,
     val buckets: List<BudgetBucket>,
+    /** Each of the budget sheet's card-paid lines, in [BudgetConfig.cardPaidLines]' order. */
+    val lines: List<BudgetLine> = emptyList(),
+    /** What the purchases in none of the [lines] come to. */
+    val outsideLines: BudgetSlice = BudgetSlice("", 0.0, 0),
     /** What was spent on each day so far, the 1st first. */
     val daily: List<Double>,
     val categories: List<BudgetSlice>,
@@ -301,6 +356,11 @@ interface BudgetRepository {
     suspend fun tag(purchaseId: String, bucket: BucketId, remember: Boolean): Result<Budget>
 
     suspend fun forgetRule(merchantKey: String): Result<Budget>
+
+    /** Puts a purchase in one of the card-paid lines, or none, or back where it falls on its own; with [remember] its merchant's others too. */
+    suspend fun tagLine(purchaseId: String, line: LinePick, remember: Boolean): Result<Budget>
+
+    suspend fun forgetLineRule(merchantKey: String): Result<Budget>
 
     /** Asks the relay to read the cards now; the answer says whether that has begun. */
     suspend fun syncNow(): Result<Budget>

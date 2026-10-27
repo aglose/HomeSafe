@@ -78,6 +78,8 @@ import homesafe.shared.generated.resources.fin_budget_settings_lines_title
 import homesafe.shared.generated.resources.fin_budget_settings_people
 import homesafe.shared.generated.resources.fin_budget_settings_people_none
 import homesafe.shared.generated.resources.fin_budget_settings_rules_forget
+import homesafe.shared.generated.resources.fin_budget_settings_rules_line
+import homesafe.shared.generated.resources.fin_budget_settings_rules_no_line
 import homesafe.shared.generated.resources.fin_budget_settings_rules_none
 import homesafe.shared.generated.resources.fin_budget_settings_rules_subtitle
 import homesafe.shared.generated.resources.fin_budget_settings_rules_title
@@ -93,13 +95,14 @@ internal fun BudgetSettingsRoute(finance: PersonalFinance?, contentPadding: Padd
     LaunchedEffect(Unit) { if (budget == null) viewModel.refresh() }
     // Ticking a line as paid by card changes the bills the relay is told about.
     LaunchedEffect(finance, budget?.config?.cardPaidLines, budget?.config?.sheet, budget?.isCurrentMonth) { viewModel.onSheet(finance) }
-    BudgetSettingsScreen(state, finance, contentPadding, onSave = viewModel::save, onForgetRule = viewModel::forgetRule)
+    BudgetSettingsScreen(state, finance, contentPadding, onSave = viewModel::save, onForgetRule = viewModel::forgetRule, onForgetLineRule = viewModel::forgetLineRule)
 }
 
 /**
  * What the month is measured against and how its purchases are sorted: the limits, what each
- * card is, which of the budget sheet's lines are paid by card (the rest being the bills that
- * take-home has to cover first), and the merchants whose purchases always go one way.
+ * card is, which of the budget sheet's lines are paid by card (each a budget line the purchases
+ * are sorted into, the rest being the bills that take-home has to cover first), and the merchants
+ * whose purchases always go to one person or in one line.
  */
 // Public for another module to place; it fills whatever it is given, so it takes no Modifier.
 @Suppress("ktlint:compose:modifier-missing-check")
@@ -110,6 +113,7 @@ fun BudgetSettingsScreen(
     contentPadding: PaddingValues,
     onSave: (BudgetConfigPatch) -> Unit,
     onForgetRule: (String) -> Unit,
+    onForgetLineRule: (String) -> Unit,
 ) {
     val budget = state.budget
     val colors = FinanceTheme.colors
@@ -170,20 +174,18 @@ fun BudgetSettingsScreen(
         }
 
         item(key = "rules-h") { SectionHeader(stringResource(Res.string.fin_budget_settings_rules_title), subtitle = stringResource(Res.string.fin_budget_settings_rules_subtitle)) }
-        if (config.rules.isEmpty()) item(key = "rules-none") { FinePrint(stringResource(Res.string.fin_budget_settings_rules_none)) }
+        if (config.rules.isEmpty() && config.lineRules.isEmpty()) item(key = "rules-none") { FinePrint(stringResource(Res.string.fin_budget_settings_rules_none)) }
         items(config.rules, key = { "rule-${it.merchantKey}" }) { rule ->
-            Row(Modifier.fillMaxWidth().padding(start = PageGutter, end = PageGutter - 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(rule.merchantKey, style = FinanceTheme.type.body, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val whose = when (val bucket = rule.bucket) {
-                        is BucketId.Person -> bucket.name
-                        BucketId.Family -> stringResource(Res.string.fin_budget_bucket_family)
-                        BucketId.Unassigned -> stringResource(Res.string.fin_budget_bucket_unsorted)
-                    }
-                    Text(whose, style = FinanceTheme.type.label, color = colors.textSecondary)
-                }
-                PillButton(stringResource(Res.string.fin_budget_settings_rules_forget), colors.textSecondary, onClick = { onForgetRule(rule.merchantKey) })
+            val whose = when (val bucket = rule.bucket) {
+                is BucketId.Person -> bucket.name
+                BucketId.Family -> stringResource(Res.string.fin_budget_bucket_family)
+                BucketId.Unassigned -> stringResource(Res.string.fin_budget_bucket_unsorted)
             }
+            RuleRow(rule.merchantKey, whose, onForget = { onForgetRule(rule.merchantKey) })
+        }
+        items(config.lineRules, key = { "line-rule-${it.merchantKey}" }) { rule ->
+            val where = rule.line?.let { stringResource(Res.string.fin_budget_settings_rules_line, it) } ?: stringResource(Res.string.fin_budget_settings_rules_no_line)
+            RuleRow(rule.merchantKey, where, onForget = { onForgetLineRule(rule.merchantKey) })
         }
 
         item(key = "people") {
@@ -196,6 +198,19 @@ fun BudgetSettingsScreen(
                 Modifier.padding(top = 20.dp),
             )
         }
+    }
+}
+
+/** A remembered shop, where its purchases always go, and the button that forgets it. */
+@Composable
+private fun RuleRow(merchantKey: String, where: String, onForget: () -> Unit) {
+    val colors = FinanceTheme.colors
+    Row(Modifier.fillMaxWidth().padding(start = PageGutter, end = PageGutter - 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(merchantKey, style = FinanceTheme.type.body, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(where, style = FinanceTheme.type.label, color = colors.textSecondary)
+        }
+        PillButton(stringResource(Res.string.fin_budget_settings_rules_forget), colors.textSecondary, onClick = onForget)
     }
 }
 

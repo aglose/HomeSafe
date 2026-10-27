@@ -4742,9 +4742,9 @@ class _PagedPlaid:
         return [body for asked, body in self.calls if asked == path]
 
 
-def _txn(txn_id, amount, date="2026-10-05", account="venture", name="COSTCO WHSE #0123", merchant="Costco", category="GENERAL_MERCHANDISE", **more):
+def _txn(txn_id, amount, date="2026-10-05", account="venture", name="COSTCO WHSE #0123", merchant="Costco", category="GENERAL_MERCHANDISE", detailed=None, **more):
     return {"transaction_id": txn_id, "account_id": account, "amount": amount, "date": date, "authorized_date": date, "name": name, "merchant_name": merchant,
-            "iso_currency_code": "USD", "pending": False, "personal_finance_category": {"primary": category, "detailed": f"{category}_OTHER"}, **more}
+            "iso_currency_code": "USD", "pending": False, "personal_finance_category": {"primary": category, "detailed": detailed or f"{category}_OTHER"}, **more}
 
 
 class _Budget(_ScratchDb):
@@ -5086,6 +5086,113 @@ class BudgetMonthTest(_Budget):
                 relay.budget_config_save(patch, self.NOW)
             self.assertEqual((400, "bad_budget"), (refused.exception.status_code, refused.exception.detail["error"]), patch)
         self.assertEqual(before, relay.budget_config())
+
+
+class BudgetLinesTest(_Budget):
+    """The budget sheet's card-paid lines: which purchases fill each, by hand, by rule and on their own, and each against its plan."""
+
+    def setUp(self):
+        super().setUp()
+        relay.budget_config_save({"card_paid_lines": ["Groceries", "Dining out", "Amazon"],
+                                  "sheet": {"take_home": 10000, "bills_off_card": 6000, "lines": {"Groceries": 600, "Dining out": 250, "Amazon": 100}}}, self.NOW)
+
+    def line(self, name, month=None):
+        body = self.month(month)
+        return next(line for line in body["lines"] if line["name"] == name) if name else body["outside_lines"]
+
+    def found(self, body=None):
+        return {t["id"]: (t["line"], t["line_source"]) for t in (body or self.month())["transactions"]}
+
+    def test_a_purchase_finds_its_line_on_its_own(self):
+        self.store(_txn("costco", 180.0, category="GENERAL_MERCHANDISE"),
+                   _txn("safeway", 64.5, name="SAFEWAY #1234", merchant="Safeway", category="FOOD_AND_DRINK", detailed="FOOD_AND_DRINK_GROCERIES"),
+                   _txn("market", 22.0, name="CORNER MARKET", merchant=None, category="FOOD_AND_DRINK", detailed="FOOD_AND_DRINK_GROCERIES"),
+                   _txn("pizza", 38.0, name="LUNA PIZZERIA", merchant="Luna Pizzeria", category="FOOD_AND_DRINK", detailed="FOOD_AND_DRINK_RESTAURANT"),
+                   _txn("amazon", 41.0, name="AMAZON MKTPL*2K1", merchant="Amazon", category="GENERAL_MERCHANDISE", detailed="GENERAL_MERCHANDISE_ONLINE_MARKETPLACES"),
+                   _txn("shell", 50.0, name="SHELL OIL", merchant="Shell", category="TRANSPORTATION", detailed="TRANSPORTATION_GAS"))
+        self.assertEqual({"costco": ("Groceries", "auto"), "safeway": ("Groceries", "auto"), "market": ("Groceries", "auto"), "pizza": ("Dining out", "auto"),
+                          "amazon": ("Amazon", "auto"), "shell": (None, "none")}, self.found())
+        self.assertEqual({"name": "Groceries", "planned": 600.0, "spent": 266.5, "count": 3, "usual": None}, self.line("Groceries"))
+        self.assertEqual({"name": None, "planned": None, "spent": 50.0, "count": 1, "usual": None}, self.line(None))
+
+    def test_only_the_lines_paid_by_card_are_lines(self):
+        self.store(_txn("safeway", 64.5, name="SAFEWAY #1234", merchant="Safeway", category="FOOD_AND_DRINK"))
+        relay.budget_config_save({"card_paid_lines": ["Dining out"]}, self.NOW)
+        month = self.month()
+        self.assertEqual(["Dining out"], [line["name"] for line in month["lines"]])
+        self.assertEqual({"safeway": (None, "none")}, self.found(month))
+
+    def test_putting_a_purchase_in_a_line_by_hand_outranks_the_rest_and_can_be_taken_back(self):
+        self.store(_txn("tv", 899.0), _txn("bulk", 120.0, name="COSTCO WHSE #0456"))
+        relay.put_budget_transaction_line("tv", types.SimpleNamespace(line="", remember=False), object(), self.response)
+        body = relay.put_budget_transaction_line("bulk", types.SimpleNamespace(line="Dining out", remember=False), object(), self.response)
+        self.assertEqual({"tv": (None, "manual"), "bulk": ("Dining out", "manual")}, self.found(body))
+        body = relay.put_budget_transaction_line("tv", types.SimpleNamespace(line=None, remember=False), object(), self.response)
+        self.assertEqual(("Groceries", "auto"), self.found(body)["tv"])
+
+    def test_remembering_a_shop_puts_its_other_purchases_in_the_line_and_forgetting_it_does_not_undo_the_tag(self):
+        self.store(_txn("t1", 30.0, name="BIG BOX #1", merchant="Big Box"), _txn("t2", 12.0, name="BIG BOX #2", merchant="Big Box"))
+        body = relay.put_budget_transaction_line("t1", types.SimpleNamespace(line="Groceries", remember=True), object(), self.response)
+        self.assertEqual({"t1": ("Groceries", "manual"), "t2": ("Groceries", "rule")}, self.found(body))
+        self.assertTrue(all(t["line_remembered"] for t in body["transactions"]))
+        self.assertEqual([{"merchant": "big box", "line": "Groceries"}], body["config"]["line_rules"])
+        # Whose a purchase is and which line it is in are two things: the one doesn't touch the other.
+        self.assertEqual([None, None], [t["bucket"] for t in body["transactions"]])
+        body = relay.delete_budget_line_rule("big box", object(), self.response)
+        self.assertEqual({"t1": ("Groceries", "manual"), "t2": (None, "none")}, self.found(body))
+
+    def test_a_shop_can_be_said_to_never_be_in_a_line(self):
+        self.store(_txn("t1", 300.0), _txn("t2", 200.0, name="COSTCO WHSE #0456"))
+        body = relay.put_budget_transaction_line("t1", types.SimpleNamespace(line="", remember=True), object(), self.response)
+        self.assertEqual({"t1": (None, "manual"), "t2": (None, "rule")}, self.found(body))
+        self.assertEqual([{"merchant": "costco", "line": None}], body["config"]["line_rules"])
+
+    def test_a_line_s_tag_passes_from_the_pending_purchase_to_the_posted_one(self):
+        self.store(_txn("p1", 54.2, pending=True))
+        relay.put_budget_transaction_line("p1", types.SimpleNamespace(line="Dining out", remember=False), object(), self.response)
+        self.store(_txn("t1", 56.0, pending_transaction_id="p1"), removed=["p1"], cursor="c2")
+        self.assertEqual({"t1": ("Dining out", "manual")}, self.found())
+
+    def test_a_line_usually_comes_to_the_average_of_the_months_before_that_spent_anything(self):
+        self.store(_txn("aug", 700.0, date="2026-08-10"), _txn("sep", 500.0, date="2026-09-10"), _txn("oct", 100.0),
+                   _txn("jul-gas", 40.0, date="2026-07-02", name="SHELL OIL", merchant="Shell", category="TRANSPORTATION"))
+        # July spent only on gas, so it counts as a month the Groceries line spent nothing in.
+        self.assertEqual((100.0, round((0 + 700 + 500) / 3, 2)), (self.line("Groceries")["spent"], self.line("Groceries")["usual"]))
+        self.assertIsNone(self.line("Groceries", "2026-08")["usual"])
+
+    def test_a_line_that_is_not_paid_by_card_or_a_tag_on_one_that_was_is_refused_or_forgotten(self):
+        self.store(_txn("t1", 54.2))
+        with self.assertRaises(relay.HTTPException) as bad:
+            relay.put_budget_transaction_line("t1", types.SimpleNamespace(line="Mortgage", remember=False), object(), self.response)
+        self.assertEqual((400, "bad_line"), (bad.exception.status_code, bad.exception.detail["error"]))
+        with self.assertRaises(relay.HTTPException) as gone:
+            relay.put_budget_transaction_line("nope", types.SimpleNamespace(line="Groceries", remember=False), object(), self.response)
+        self.assertEqual(404, gone.exception.status_code)
+        relay.put_budget_transaction_line("t1", types.SimpleNamespace(line="Dining out", remember=False), object(), self.response)
+        relay.budget_config_save({"card_paid_lines": ["Groceries"]}, self.NOW)
+        self.assertEqual({"t1": ("Groceries", "auto")}, self.found())
+
+    def test_the_sheet_s_lines_are_amounts(self):
+        self.assertEqual({"Groceries": 600.0, "Dining out": 250.0, "Amazon": 100.0}, relay.budget_config()["sheet"]["lines"])
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.budget_config_save({"sheet": {"take_home": 1, "bills_off_card": 1, "lines": {"Groceries": "lots"}}}, self.NOW)
+        self.assertEqual("bad_budget", refused.exception.detail["error"])
+        # A sheet reported before there were lines, as an older app does, has none.
+        relay.budget_config_save({"sheet": {"take_home": 1, "bills_off_card": 1}}, self.NOW)
+        self.assertEqual({}, relay.budget_config()["sheet"]["lines"])
+        self.assertIsNone(self.line("Groceries")["planned"])
+
+    def test_a_line_guesses_by_its_name(self):
+        guess = relay.budget_line_guess
+        self.assertEqual("Food", guess(["Food"], "safeway", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES"))
+        self.assertEqual("Gas", guess(["Gas", "Groceries"], "chevron", "TRANSPORTATION", "TRANSPORTATION_GAS"))
+        self.assertEqual("Meal kits", guess(["Meal kits"], "hellofresh", "FOOD_AND_DRINK", "FOOD_AND_DRINK_OTHER_FOOD_AND_DRINK"))
+        self.assertEqual("Streaming", guess(["Streaming"], "netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"))
+        self.assertIsNone(guess(["Gasoline savings"], "chevron", "TRANSPORTATION", "TRANSPORTATION_GAS"))
+        self.assertIsNone(guess([], "safeway", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES"))
+        # A line named for a shop has that shop, but not one that merely starts with the same letters.
+        self.assertEqual("Target", guess(["Target", "Groceries"], "target", "GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_SUPERSTORES"))
+        self.assertIsNone(guess(["Target"], "targeted ads", None, None))
 
 
 class BudgetAlertsTest(_Budget):

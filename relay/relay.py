@@ -344,6 +344,13 @@ def db() -> sqlite3.Connection:
     conn.execute("CREATE INDEX IF NOT EXISTS plaid_transactions_date ON plaid_transactions (date)")
     conn.execute("CREATE INDEX IF NOT EXISTS plaid_transactions_pending ON plaid_transactions (pending_id)")
     conn.execute("CREATE TABLE IF NOT EXISTS budget_rules (merchant_key TEXT PRIMARY KEY, bucket TEXT NOT NULL, by TEXT, at REAL)")
+    # Which of the budget sheet's lines a purchase was put in by hand (`line_tag`: the line's name,
+    # or "" for none of them), and the merchants someone said always go in one line.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_transactions)")}
+    for column in ("line_tag", "line_tag_by"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} TEXT")
+    conn.execute("CREATE TABLE IF NOT EXISTS budget_line_rules (merchant_key TEXT PRIMARY KEY, line TEXT NOT NULL, by TEXT, at REAL)")
     # Where each institution's transactions were read up to (Plaid's cursor), when they were last
     # asked for and last changed, and whether Plaid has finished fetching their history.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_items)")}
@@ -8743,9 +8750,16 @@ def post_bank_fill_line(body: FillLine, request: Request, response: Response) ->
 # ("1203"). So each such mark on a card can be said once to be one person's (the card's
 # "holders"), and a mark that holds a person's name needs no telling.
 #
-# The limits, the roles and the two numbers the relay can't work out for itself (the month's
-# take-home and the bills that aren't paid by card, both of which only the app reads out of the
-# budget sheet) are one JSON value in `state`. Past the limits, and past what take-home leaves
+# Across that, each purchase can also be put in one of the budget sheet's lines that are paid by
+# card ("Groceries", $600 a month), so the month shows each line's spending against what the sheet
+# plans for it. It goes there by hand, or by its merchant having been said to always go there, or
+# on its own: by what Plaid says it is (a supermarket for a line called Groceries), by its shop
+# being one everybody files there (Costco), or by the line being named after the shop
+# (`budget_line`).
+#
+# The limits, the roles and the numbers the relay can't work out for itself (the month's
+# take-home, the bills that aren't paid by card, and what each card-paid line plans for, all of
+# which only the app reads out of the budget sheet) are one JSON value in `state`. Past the limits, and past what take-home leaves
 # after those bills, the phones of the people who may see the finances are told (`budget_check`).
 #
 # Only credit cards' transactions are kept, and never in the log: a purchase is nobody's business
@@ -8773,7 +8787,43 @@ BUDGET_PERSON = "person:"
 BUDGET_SPLIT = "split"
 BUDGET_IGNORE = "ignore"
 BUDGET_MAX_PEOPLE = 6
+# More expense lines than any budget sheet has.
+BUDGET_MAX_LINES = 200
 BUDGET_ALERT_NAMES = ("total", "savings", "buckets")
+# A purchase put in none of the lines, by hand or by its merchant's rule (a line is never named this: a sheet's line has a name).
+BUDGET_NO_LINE = ""
+# The months before this one whose average is a line's "usual", once at least two of them spent anything.
+BUDGET_USUAL_MIN_MONTHS = 2
+# What finds a card-paid line's purchases on its own: a line whose name matches the first pattern
+# takes the purchases Plaid files under one of its categories (primary or detailed), and those from
+# a shop whose name starts with one of the third's. The first line that takes a purchase has it.
+BUDGET_LINE_GUESSES: tuple[tuple[re.Pattern[str], frozenset[str], re.Pattern[str] | None], ...] = tuple(
+    (re.compile(name, re.IGNORECASE), frozenset(categories), re.compile(shops) if shops else None)
+    for name, categories, shops in (
+        (r"grocer|supermarket|food at home|^food$", {"FOOD_AND_DRINK_GROCERIES"},
+         r"^(costco|sams club|bjs wholesale|safeway|trader joes|whole foods|kroger|albertsons|sprouts|aldi|lucky|raleys|wegmans|publix|heb|vons|ralphs|qfc|fred meyer|grocery outlet|instacart)\b"),
+        (r"dining|restaurant|eating out|take ?out|food out|fast food", {"FOOD_AND_DRINK_RESTAURANT", "FOOD_AND_DRINK_FAST_FOOD"}, r"^(doordash|uber eats|grubhub|postmates)\b"),
+        (r"coffee|cafe", {"FOOD_AND_DRINK_COFFEE"}, None),
+        (r"alcohol|liquor|wine|beer", {"FOOD_AND_DRINK_BEER_WINE_AND_LIQUOR"}, None),
+        (r"meal ?kit", set(), r"^(hellofresh|hello fresh|blue apron|home chef|factor|green chef|everyplate|sunbasket)\b"),
+        (r"\bgas\b|fuel|petrol", {"TRANSPORTATION_GAS"}, None),
+        (r"stream|subscription", {"ENTERTAINMENT_TV_AND_MOVIES", "ENTERTAINMENT_MUSIC_AND_AUDIO"},
+         r"^(netflix|hulu|spotify|disney|max|hbo|youtube|apple tv|peacock|paramount|audible)\b"),
+        (r"entertainment", {"ENTERTAINMENT"}, None),
+        (r"cloth|apparel", {"GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES"}, None),
+        (r"\bpets?\b|\bdogs?\b|\bcats?\b", {"GENERAL_MERCHANDISE_PET_SUPPLIES", "MEDICAL_VETERINARY_SERVICES"}, None),
+        (r"pharmac|medical|health|doctor", {"MEDICAL"}, None),
+        (r"gym|fitness", {"PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS"}, None),
+        (r"hair|beauty|personal care", {"PERSONAL_CARE_HAIR_AND_BEAUTY"}, None),
+        (r"travel|vacation|holiday", {"TRAVEL"}, None),
+        (r"transit|parking|rideshare|uber|lyft", {"TRANSPORTATION_PUBLIC_TRANSIT", "TRANSPORTATION_PARKING", "TRANSPORTATION_TAXIS_AND_RIDE_SHARES"}, None),
+        (r"home improvement|hardware|garden", {"HOME_IMPROVEMENT"}, None),
+        (r"child ?care|daycare", {"GENERAL_SERVICES_CHILDCARE"}, None),
+        (r"education|tuition|school", {"GENERAL_SERVICES_EDUCATION"}, None),
+        (r"gifts?|donation|charity", {"GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES", "GOVERNMENT_AND_NON_PROFIT_DONATIONS"}, None),
+        (r"utilit|electric|internet|phone", {"RENT_AND_UTILITIES"}, None),
+    )
+)
 # The share of the month's limit at which the phones are first told, and then told it is passed.
 BUDGET_TOTAL_PERCENTS = (80, 100)
 BUDGET_HISTORY_MONTHS = 6
@@ -8802,6 +8852,13 @@ class BudgetPatch(BaseModel):
 class BudgetTag(BaseModel):
     # "person:<name>", "family", or null to take the tag off.
     bucket: str | None = None
+    # Whether every purchase from this merchant goes the same way from now on.
+    remember: bool = False
+
+
+class BudgetLineTag(BaseModel):
+    # One of the card-paid lines by name, "" for none of them, or null to take the tag off.
+    line: str | None = None
     # Whether every purchase from this merchant goes the same way from now on.
     remember: bool = False
 
@@ -8918,6 +8975,9 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
                 was = c.execute("SELECT tag, tag_by FROM plaid_transactions WHERE txn_id=? AND tag IS NOT NULL", (row[13],)).fetchone()
                 if was:
                     c.execute("UPDATE plaid_transactions SET tag=?, tag_by=? WHERE txn_id=? AND tag IS NULL", (was[0], was[1], row[0]))
+                was = c.execute("SELECT line_tag, line_tag_by FROM plaid_transactions WHERE txn_id=? AND line_tag IS NOT NULL", (row[13],)).fetchone()
+                if was:
+                    c.execute("UPDATE plaid_transactions SET line_tag=?, line_tag_by=? WHERE txn_id=? AND line_tag IS NULL", (was[0], was[1], row[0]))
         for txn_id in pulled["removed"]:
             changed += c.execute("UPDATE plaid_transactions SET removed_at=? WHERE txn_id=? AND item_id=? AND removed_at IS NULL", (now, txn_id, item_id)).rowcount
         c.execute("DELETE FROM plaid_transactions WHERE removed_at IS NOT NULL AND removed_at < ?", (now - TXN_TOMBSTONE_SECONDS,))
@@ -9006,7 +9066,8 @@ def budget_config() -> dict[str, Any]:
         "holders": {card: dict(marks) for card, marks in (kept.get("holders") or {}).items() if marks},
         "card_paid_lines": list(kept.get("card_paid_lines") or []),
         "alerts": {name: bool((kept.get("alerts") or {}).get(name)) for name in BUDGET_ALERT_NAMES},
-        "sheet": {"take_home": sheet.get("take_home"), "bills_off_card": sheet.get("bills_off_card"), "at": sheet.get("at")},
+        "sheet": {"take_home": sheet.get("take_home"), "bills_off_card": sheet.get("bills_off_card"),
+                  "lines": {str(name): amount for name, amount in (sheet.get("lines") or {}).items() if isinstance(amount, (int, float))}, "at": sheet.get("at")},
     }
 
 
@@ -9078,7 +9139,14 @@ def budget_config_save(patch: dict[str, Any], now: float) -> dict[str, Any]:
             config["alerts"][name] = bool(on)
     if patch.get("sheet") is not None:
         sheet = patch["sheet"]
-        config["sheet"] = {"take_home": _budget_amount(sheet.get("take_home"), "take-home"), "bills_off_card": _budget_amount(sheet.get("bills_off_card"), "the bills"), "at": now}
+        lines = sheet.get("lines") or {}
+        if not isinstance(lines, dict) or len(lines) > BUDGET_MAX_LINES:
+            raise _budget_refusal(f"the sheet's lines are up to {BUDGET_MAX_LINES} names, each with an amount")
+        config["sheet"] = {
+            "take_home": _budget_amount(sheet.get("take_home"), "take-home"), "bills_off_card": _budget_amount(sheet.get("bills_off_card"), "the bills"),
+            "lines": {str(name)[:200]: amount for name, amount in ((name, _budget_amount(value, f"the {name} line")) for name, value in lines.items()) if amount is not None},
+            "at": now,
+        }
     # A role naming someone who has since left the budget goes back to unset.
     config["roles"] = {key: role for key, role in config["roles"].items() if not role.startswith(BUDGET_PERSON) or role in budget_buckets(config["people"])}
     # Likewise a cardholder's mark said to be theirs.
@@ -9118,6 +9186,51 @@ def budget_bucket(tag: str | None, role: str, owner: str | None, key: str | None
     if role == BUDGET_FAMILY:
         return BUDGET_FAMILY, "account"
     return None, "none"
+
+
+def budget_line_rules() -> dict[str, str]:
+    """Each merchant (by `merchant_key`) said to always go in one of the lines, and that line's name ("" for none of them)."""
+    return dict(with_db(lambda c: c.execute("SELECT merchant_key, line FROM budget_line_rules ORDER BY merchant_key").fetchall()))
+
+
+def budget_line_guess(lines: list[str], key: str | None, category: str | None, detail: str | None) -> str | None:
+    """
+    The line a purchase goes in on its own, if any: one named after its shop ("Costco" takes
+    "COSTCO WHSE #0123"), else one whose name says what kind of spending it is and the purchase
+    being that (see `BUDGET_LINE_GUESSES`). A shop that is its line's by name outranks a category,
+    so a Groceries line still has Costco though Plaid calls it a superstore.
+    """
+    key = key or ""
+    for line in lines:
+        named = merchant_key(None, line)
+        if len(named) >= 3 and (key == named or key.startswith(named + " ")):
+            return line
+    for line in lines:
+        for pattern, categories, shops in BUDGET_LINE_GUESSES:
+            if pattern.search(line) and shops is not None and shops.search(key):
+                return line
+    for line in lines:
+        for pattern, categories, _ in BUDGET_LINE_GUESSES:
+            if pattern.search(line) and (category in categories or detail in categories):
+                return line
+    return None
+
+
+def budget_line(tag: str | None, key: str | None, category: str | None, detail: str | None, lines: list[str], rules: dict[str, str]) -> tuple[str | None, str]:
+    """
+    Which of the card-paid lines a purchase is in, and how that is known: a tag made by hand
+    ("manual"); else what its merchant was said to always be ("rule"); else what it is on its own
+    ("auto", see `budget_line_guess`); else none (None, "none"). A tag or a rule can say "none of
+    them" (""), which a guess doesn't overrule. One naming a line no longer paid by card is as if
+    it weren't there.
+    """
+    if tag is not None and (tag == BUDGET_NO_LINE or tag in lines):
+        return tag or None, "manual"
+    rule = rules.get(key or "")
+    if rule is not None and (rule == BUDGET_NO_LINE or rule in lines):
+        return rule or None, "rule"
+    guess = budget_line_guess(lines, key, category, detail)
+    return (guess, "auto") if guess else (None, "none")
 
 
 def month_days(month: str) -> int:
@@ -9164,7 +9277,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     doesn't count, nor a transaction Plaid took back, nor a pending one whose posted one is here.
     """
     rows = with_db(lambda c: c.execute(
-        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key"
+        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key, t.category_detail, t.line_tag"
         " FROM plaid_transactions t JOIN plaid_feed_keys k ON k.account_id = t.account_id"
         " WHERE t.removed_at IS NULL AND t.kind != 'payment' AND t.date >= ? AND t.date <= ?"
         " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
@@ -9172,15 +9285,19 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
         (first, last),
     ).fetchall())
     rules = budget_rules()
+    line_rules = budget_line_rules()
+    lines = config["card_paid_lines"]
     purchases = []
-    for txn_id, date, amount, name, merchant, key, category, pending, owner, kind, tag, card in rows:
+    for txn_id, date, amount, name, merchant, key, category, pending, owner, kind, tag, card, detail, line_tag in rows:
         role = config["roles"].get(card) or ""
         if role in ("", BUDGET_IGNORE):
             continue
         bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules, holder=(config["holders"].get(card) or {}).get(owner or ""))
+        line, line_source = budget_line(line_tag, key, category, detail, lines, line_rules)
         purchases.append({
             "id": txn_id, "date": date, "amount": round(amount, 2), "name": merchant or name or "", "merchant": key or None, "category": category,
             "pending": bool(pending), "card": card, "bucket": bucket, "source": source, "kind": kind, "remembered": bool(key) and key in rules,
+            "line": line, "line_source": line_source, "line_remembered": bool(key) and key in line_rules,
         })
     return purchases
 
@@ -9211,6 +9328,16 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
     def bucket(bucket_id: str | None, kind: str, name: str | None, limit: float | None) -> dict[str, Any]:
         mine = [p for p in purchases if p["bucket"] == bucket_id]
         return {"id": bucket_id or "unassigned", "kind": kind, "name": name, "spent": round(sum(p["amount"] for p in mine), 2), "limit": limit, "count": len(mine)}
+
+    # Each card-paid line against what the sheet plans for it, and what it usually comes to: the
+    # average of the months before this one, of those in which the cards spent anything at all.
+    earlier = [m for m in (month_before(month, back) for back in range(BUDGET_HISTORY_MONTHS - 1, 0, -1)) if spent_by_month.get(m)]
+
+    def line(name: str | None) -> dict[str, Any]:
+        mine = [p for p in purchases if p["line"] == name]
+        before = [sum(p["amount"] for p in counted if p["line"] == name and p["date"][:7] == m) for m in earlier]
+        usual = round(sum(before) / len(before), 2) if len(before) >= BUDGET_USUAL_MIN_MONTHS else None
+        return {"name": name, "planned": config["sheet"]["lines"].get(name) if name else None, "spent": round(sum(p["amount"] for p in mine), 2), "count": len(mine), "usual": usual}
 
     buckets = [bucket(BUDGET_PERSON + p, "person", p, config["limits"]["people"].get(p)) for p in config["people"]]
     buckets.append(bucket(BUDGET_FAMILY, "family", None, config["limits"]["family"]))
@@ -9246,11 +9373,14 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
         # False while Plaid is still fetching a card's first transactions: the month isn't all there yet.
         "ready": all(status in TXN_READY for status, _ in reading),
         "cards": budget_cards(config["roles"], config["holders"], config["people"]),
-        "config": {**config, "rules": [{"merchant": key, "bucket": to} for key, to in rules.items()]},
+        "config": {**config, "rules": [{"merchant": key, "bucket": to} for key, to in rules.items()],
+                   "line_rules": [{"merchant": key, "line": to or None} for key, to in budget_line_rules().items()]},
         "savings_line": round(take_home - bills, 2) if take_home is not None and bills is not None else None,
         "spent": round(sum(p["amount"] for p in purchases), 2),
         "pending": round(sum(p["amount"] for p in purchases if p["pending"]), 2),
         "buckets": buckets,
+        "lines": [line(name) for name in config["card_paid_lines"]],
+        "outside_lines": line(None),
         "daily": [{"date": f"{month}-{d:02d}", "spent": round(by_day.get(f"{month}-{d:02d}", 0.0), 2)} for d in range(1, day + 1)],
         "categories": sorted(({"id": name, "spent": round(total, 2), "count": count} for name, (total, count) in categories.items()), key=lambda c: -c["spent"]),
         "merchants": sorted(({"name": name, "spent": round(total, 2), "count": count} for name, total, count in merchants.values()), key=lambda m: -m["spent"])[:BUDGET_TOP_MERCHANTS],
@@ -9423,6 +9553,47 @@ def put_budget_transaction(txn_id: str, body: BudgetTag, request: Request, respo
     if row is None:
         raise HTTPException(404, {"error": "not_found", "message": "That purchase isn't there any more"})
     return budget_month(row[0][:7])
+
+
+@app.put("/finance/budget/transactions/{txn_id}/line")
+def put_budget_transaction_line(txn_id: str, body: BudgetLineTag, request: Request, response: Response) -> dict[str, Any]:
+    """
+    Says which of the card-paid lines a purchase is in ("" for none of them; a null takes that
+    back, leaving it to fall where it would on its own), and with `remember` that its merchant's
+    always are.
+    """
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
+    if body.line not in (None, BUDGET_NO_LINE) and body.line not in budget_config()["card_paid_lines"]:
+        raise HTTPException(400, {"error": "bad_line", "message": "A purchase goes in one of the lines paid by card, or none of them"})
+    now = time.time()
+
+    def tag(c: sqlite3.Connection) -> tuple | None:
+        row = c.execute("SELECT date, merchant_key FROM plaid_transactions WHERE txn_id=? AND removed_at IS NULL", (txn_id,)).fetchone()
+        if row is None:
+            return None
+        c.execute("UPDATE plaid_transactions SET line_tag=?, line_tag_by=? WHERE txn_id=?", (body.line, user if body.line is not None else None, txn_id))
+        if body.remember and row[1]:
+            if body.line is not None:
+                c.execute("INSERT OR REPLACE INTO budget_line_rules VALUES (?,?,?,?)", (row[1], body.line, user, now))
+            else:
+                c.execute("DELETE FROM budget_line_rules WHERE merchant_key=?", (row[1],))
+        c.commit()
+        return row
+
+    row = with_db(tag)
+    if row is None:
+        raise HTTPException(404, {"error": "not_found", "message": "That purchase isn't there any more"})
+    return budget_month(row[0][:7])
+
+
+@app.delete("/finance/budget/line-rules")
+def delete_budget_line_rule(merchant: str, request: Request, response: Response) -> dict[str, Any]:
+    """Forgets that a merchant's purchases always go in one line (see `delete_budget_rule`). The ones put in a line by hand stay as they are."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    require_finance_user(request)
+    with_db(lambda c: (c.execute("DELETE FROM budget_line_rules WHERE merchant_key=?", (merchant,)), c.commit()))
+    return budget_month()
 
 
 @app.delete("/finance/budget/rules")

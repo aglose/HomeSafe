@@ -49,7 +49,8 @@ class FinanceSheetTool(private val finance: FinanceRepository, private val acces
 class BudgetTool(private val budgets: BudgetRepository, private val access: FinanceAccess) : AssistantTool {
     override val name = "budget"
     override val description = "The monthly budget built from the household's synced bank cards: what has been spent and is " +
-        "pending, each bucket against its limit, the cards, and the month's purchases with their buckets. Defaults to this month."
+        "pending, each bucket against its limit, each budget line paid by card (groceries and the like) against what the sheet plans " +
+        "for it, the cards, and the month's purchases with their buckets and lines. Defaults to this month."
     override val inputSchema = inputOf("month" to stringProperty("The month to look at, as YYYY-MM. Leave out for the current month."))
     override val activity = Res.string.assistant_tool_budget
     override val lock get() = access.locked

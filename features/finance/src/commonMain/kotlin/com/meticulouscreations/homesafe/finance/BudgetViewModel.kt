@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetRepository
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
+import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
@@ -47,7 +48,7 @@ data class BudgetUiState(
     val syncRequested: Boolean = false,
     /** The settings are being saved. */
     val saving: Boolean = false,
-    /** The purchases being put in a bucket, by id. */
+    /** The purchases being put in a bucket or a line, by id. */
     val tagging: Set<String> = emptySet(),
     val notice: BankNotice? = null,
     /** When the page was last read, for saying how long ago the cards were. */
@@ -209,6 +210,21 @@ class BudgetViewModel(
         }
     }
 
+    /** Says which of the card-paid lines a purchase is in; with [remember], which every purchase from its merchant is. */
+    fun tagLine(purchaseId: String, line: LinePick, remember: Boolean) {
+        if (purchaseId in _uiState.value.tagging) return
+        _uiState.update { it.copy(tagging = it.tagging + purchaseId, notice = null) }
+        viewModelScope.launch {
+            // In turn with the buckets' tags, for the same reason.
+            tagOrder.withLock { repository.tagLine(purchaseId, line, remember) }
+                .onSuccess { budget ->
+                    _uiState.update { it.copy(tagging = it.tagging - purchaseId) }
+                    applied(budget)
+                }
+                .onFailure { e -> failed(e) { it.copy(tagging = it.tagging - purchaseId) } }
+        }
+    }
+
     fun save(patch: BudgetConfigPatch) {
         _uiState.update { it.copy(saving = true, notice = null) }
         actionJob = viewModelScope.launch {
@@ -229,6 +245,14 @@ class BudgetViewModel(
         }
     }
 
+    fun forgetLineRule(merchantKey: String) {
+        actionJob = viewModelScope.launch {
+            repository.forgetLineRule(merchantKey)
+                .onSuccess { applied(it) }
+                .onFailure { e -> failed(e) { it } }
+        }
+    }
+
     private fun failed(e: Throwable, settle: (BudgetUiState) -> BudgetUiState) {
         if (e is CancellationException) throw e
         if (shutOut(e)) return
@@ -238,7 +262,8 @@ class BudgetViewModel(
     /**
      * The budget sheet was read. The relay can't read take-home or the bills out of it (only this
      * app parses the sheet), and needs both to know where spending starts to come out of savings,
-     * so they are reported whenever they differ from what it has. The budget's people are the
+     * nor what each card-paid line plans for, which each line's spending is set against; so they
+     * are reported whenever they differ from what it has. The budget's people are the
      * sheet's too, and follow it: someone added to the sheet, or renamed there, is told to the
      * relay. A sheet that names nobody (a block the parser didn't find) changes nothing.
      */
@@ -266,7 +291,8 @@ class BudgetViewModel(
 
     private fun BudgetSheetFigures.sameAs(other: BudgetSheetFigures): Boolean {
         fun near(a: Double?, b: Double?) = a != null && b != null && abs(a - b) < 1.0
-        return near(takeHome, other.takeHome) && near(billsOffCard, other.billsOffCard)
+        return near(takeHome, other.takeHome) && near(billsOffCard, other.billsOffCard) &&
+            lines.keys == other.lines.keys && lines.all { (line, monthly) -> near(monthly, other.lines[line]) }
     }
 
     fun dismissNotice() = _uiState.update { it.copy(notice = null) }

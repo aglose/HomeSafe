@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -74,9 +75,12 @@ import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.BudgetBucket
 import com.meticulouscreations.homesafe.finance.domain.BudgetCard
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
+import com.meticulouscreations.homesafe.finance.domain.BudgetLine
 import com.meticulouscreations.homesafe.finance.domain.BudgetPace
 import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
+import com.meticulouscreations.homesafe.finance.domain.LinePick
+import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.PaceStatus
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.Purchase
@@ -149,6 +153,24 @@ import homesafe.shared.generated.resources.fin_budget_holder_ending
 import homesafe.shared.generated.resources.fin_budget_holders_body
 import homesafe.shared.generated.resources.fin_budget_holders_title
 import homesafe.shared.generated.resources.fin_budget_how
+import homesafe.shared.generated.resources.fin_budget_line_source_auto
+import homesafe.shared.generated.resources.fin_budget_line_source_manual
+import homesafe.shared.generated.resources.fin_budget_line_source_manual_none
+import homesafe.shared.generated.resources.fin_budget_line_source_none
+import homesafe.shared.generated.resources.fin_budget_line_source_rule
+import homesafe.shared.generated.resources.fin_budget_line_source_rule_none
+import homesafe.shared.generated.resources.fin_budget_lines_heading
+import homesafe.shared.generated.resources.fin_budget_lines_of_planned
+import homesafe.shared.generated.resources.fin_budget_lines_outside
+import homesafe.shared.generated.resources.fin_budget_lines_outside_note
+import homesafe.shared.generated.resources.fin_budget_lines_setup_action
+import homesafe.shared.generated.resources.fin_budget_lines_setup_body
+import homesafe.shared.generated.resources.fin_budget_lines_setup_title
+import homesafe.shared.generated.resources.fin_budget_lines_subtitle
+import homesafe.shared.generated.resources.fin_budget_lines_title
+import homesafe.shared.generated.resources.fin_budget_lines_usual
+import homesafe.shared.generated.resources.fin_budget_lines_usual_less
+import homesafe.shared.generated.resources.fin_budget_lines_usual_more
 import homesafe.shared.generated.resources.fin_budget_link_body
 import homesafe.shared.generated.resources.fin_budget_link_title
 import homesafe.shared.generated.resources.fin_budget_merchant_times
@@ -200,6 +222,9 @@ import homesafe.shared.generated.resources.fin_budget_source_manual
 import homesafe.shared.generated.resources.fin_budget_source_none
 import homesafe.shared.generated.resources.fin_budget_source_rule
 import homesafe.shared.generated.resources.fin_budget_tag_clear
+import homesafe.shared.generated.resources.fin_budget_tag_line_auto
+import homesafe.shared.generated.resources.fin_budget_tag_line_none
+import homesafe.shared.generated.resources.fin_budget_tag_line_title
 import homesafe.shared.generated.resources.fin_budget_tag_remember
 import homesafe.shared.generated.resources.fin_budget_tag_remember_note
 import homesafe.shared.generated.resources.fin_budget_tag_remembered_note
@@ -219,6 +244,7 @@ import homesafe.shared.generated.resources.fin_budget_who_unsorted_note
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_body
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_title
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -237,16 +263,29 @@ private const val LIST_HEADER_KEY = "list-h"
 /** A category in the filter: this before Plaid's name for it (`cat:FOOD_AND_DRINK`). */
 private const val CATEGORY_FILTER = "cat:"
 
+/** A budget line in the filter: this before the line's name, or alone for the purchases in none (`line:Groceries`). */
+private const val LINE_FILTER = "line:"
+
+/** How far a line's usual month has to be from its plan before the page says so: a tenth of the plan, and never under this. */
+private const val USUAL_GAP_MIN = 25.0
+
+/** The days into a month before a line says where its pace is heading: sooner, one shop's trip is the whole pace. */
+private const val LINE_HEADING_FROM_DAY = 7
+
 /** What the relay counts a purchase with no category as, in the month's categories. */
 private const val OTHER_CATEGORY = "OTHER"
 
 /** The category a purchase is counted under, as the relay counts it: one Plaid gave no name is "OTHER". */
 private val Purchase.categoryKey: String get() = category?.takeIf { it.isNotEmpty() } ?: OTHER_CATEGORY
 
-/** Whether [purchase] is in the list under [filter]: everything, one bucket's (by key), or one category's (`cat:` and its name). */
+/**
+ * Whether [purchase] is in the list under [filter]: everything, one bucket's (by key), one
+ * category's (`cat:` and its name), or one budget line's (`line:` and its name, or nothing for none).
+ */
 private fun matchesFilter(purchase: Purchase, filter: String?): Boolean = when {
     filter == null -> true
     filter.startsWith(CATEGORY_FILTER) -> purchase.categoryKey == filter.removePrefix(CATEGORY_FILTER)
+    filter.startsWith(LINE_FILTER) -> purchase.line.orEmpty() == filter.removePrefix(LINE_FILTER)
     else -> purchase.bucket.key == filter
 }
 
@@ -273,6 +312,7 @@ internal fun BudgetRoute(
         listState = listState,
         contentPadding = contentPadding,
         onTag = viewModel::tag,
+        onTagLine = viewModel::tagLine,
         onSetRole = { card, role -> viewModel.save(BudgetConfigPatch(roles = mapOf(card to role))) },
         onSetHolder = { card, mark, person -> viewModel.save(BudgetConfigPatch(holders = mapOf(card to mapOf(mark to person)))) },
         onShowMonth = viewModel::showMonth,
@@ -285,8 +325,9 @@ internal fun BudgetRoute(
 
 /**
  * The month's card spending against the budget: how full the month is, how fast it is filling
- * and where that leads, who spent what, where take-home goes, and every purchase, each of which
- * can be put to the person it belongs to.
+ * and where that leads, each card-paid line of the budget sheet against its plan, who spent what,
+ * where take-home goes, and every purchase, each of which can be put to the person it belongs to
+ * and in the line it belongs in.
  */
 // Public for another module to place; it fills whatever it is given, so it takes no Modifier.
 @Suppress("ktlint:compose:modifier-missing-check")
@@ -296,6 +337,7 @@ fun BudgetScreen(
     listState: LazyListState,
     contentPadding: PaddingValues,
     onTag: (purchaseId: String, bucket: BucketId, remember: Boolean) -> Unit,
+    onTagLine: (purchaseId: String, line: LinePick, remember: Boolean) -> Unit,
     onSetRole: (cardKey: String, role: CardRole) -> Unit,
     onSetHolder: (cardKey: String, mark: String, person: String?) -> Unit,
     onShowMonth: (String?) -> Unit,
@@ -396,6 +438,31 @@ fun BudgetScreen(
                     }
                     item(key = "pace-h") { SectionHeader(stringResource(Res.string.fin_budget_pace_title), info = "budgetpace") }
                     item(key = "pace") { PaceBlock(budget, pace) }
+                    if (budget.config.cardPaidLines.isEmpty()) {
+                        // Only for the month under way: an earlier one is looked back at, not set up.
+                        if (budget.isCurrentMonth) {
+                            item(key = "lines-setup") {
+                                BudgetMessageCard(
+                                    stringResource(Res.string.fin_budget_lines_setup_title),
+                                    stringResource(Res.string.fin_budget_lines_setup_body),
+                                    stringResource(Res.string.fin_budget_lines_setup_action),
+                                    onOpenSettings,
+                                    Modifier.testTag("finance_budget_lines_setup"),
+                                )
+                            }
+                        }
+                    } else {
+                        item(key = "lines-h") { SectionHeader(stringResource(Res.string.fin_budget_lines_title), subtitle = stringResource(Res.string.fin_budget_lines_subtitle)) }
+                        itemsIndexed(budget.lines, key = { _, line -> "line-${line.name}" }, contentType = { _, _ -> "line" }) { index, line ->
+                            val key = LINE_FILTER + line.name
+                            LineCard(line, index, budget, selected = filter == key, onClick = { showInList(if (filter == key) null else key) })
+                        }
+                        if (budget.outsideLines.count > 0) {
+                            item(key = "lines-outside") {
+                                OutsideLinesRow(budget, selected = filter == LINE_FILTER, onClick = { showInList(if (filter == LINE_FILTER) null else LINE_FILTER) })
+                            }
+                        }
+                    }
                     item(key = "who-h") { SectionHeader(stringResource(Res.string.fin_budget_who_title), subtitle = stringResource(Res.string.fin_budget_who_subtitle)) }
                     items(budget.buckets.filter { it.id != BucketId.Unassigned || it.count > 0 }, key = { "who-${it.id.key}" }, contentType = { "bucket" }) { bucket ->
                         BucketCard(bucket, budget, selected = filter == bucket.id.key, onClick = { showInList(if (filter == bucket.id.key) null else bucket.id.key) })
@@ -451,9 +518,14 @@ fun BudgetScreen(
             purchase = picked,
             card = budget.cards.firstOrNull { it.key == picked.cardKey },
             people = budget.config.people,
+            lines = budget.lines.map { it.name },
             onPick = { bucket, remember ->
                 tagging = null
                 onTag(picked.id, bucket, remember)
+            },
+            onPickLine = { line, remember ->
+                tagging = null
+                onTagLine(picked.id, line, remember)
             },
             onDismiss = { tagging = null },
         )
@@ -938,6 +1010,99 @@ private fun BucketCard(bucket: BudgetBucket, budget: Budget, selected: Boolean, 
     }
 }
 
+/** Each budget line its own colour, by its place among the lines. */
+@Composable
+private fun lineColor(index: Int): Color = FinanceTheme.colors.categorical[index % FinanceTheme.colors.categorical.size]
+
+/**
+ * One of the sheet's card-paid lines: what its purchases have come to against what the sheet
+ * plans, as a meter that heats as the plan nears; where this pace takes it by the month's end when
+ * that is past the plan; and, when it differs from the plan by enough to matter, what the line
+ * usually comes to, which says the plan wants changing. Tapping it filters the purchases to it.
+ */
+@Composable
+private fun LineCard(line: BudgetLine, index: Int, budget: Budget, selected: Boolean, onClick: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val planned = line.planned?.takeIf { it > 0 }
+    FinanceCard(Modifier.padding(bottom = 10.dp).testTag("finance_budget_line_${line.name}"), onClick = onClick, padding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(lineColor(index)))
+            Spacer(Modifier.width(10.dp))
+            Text(line.name, style = FinanceTheme.type.bodyStrong, color = if (selected) colors.accent else colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (planned != null) stringResource(Res.string.fin_budget_lines_of_planned, FinanceFormat.money(line.spent, 0), FinanceFormat.money(planned, 0)) else FinanceFormat.money(line.spent, 0),
+                style = FinanceTheme.type.bodyStrong,
+                color = colors.textPrimary,
+            )
+        }
+        if (planned != null) {
+            val level = (line.spent / planned).toFloat().coerceAtLeast(0f)
+            HeatMeter(level, BudgetPace.heatOf(level))
+        } else {
+            Spacer(Modifier.height(10.dp))
+            Meter(if (budget.spent > 0) (line.spent / budget.spent).toFloat().coerceIn(0f, 1f) else 0f, lineColor(index))
+        }
+        Spacer(Modifier.height(6.dp))
+        // A month's pace carried to its end, said only once it is a week in and only when it ends past the plan.
+        val heading = if (budget.isCurrentMonth && budget.day >= LINE_HEADING_FROM_DAY) line.spent / budget.day * budget.daysInMonth else null
+        val standing = when {
+            planned == null -> null
+            line.spent > planned -> stringResource(Res.string.fin_budget_who_over, FinanceFormat.money(line.spent - planned, 0))
+            heading != null && heading > planned -> stringResource(Res.string.fin_budget_lines_heading, FinanceFormat.money(heading, 0))
+            else -> stringResource(Res.string.fin_budget_who_left, FinanceFormat.money(planned - line.spent, 0))
+        }
+        val warn = planned != null && (line.spent > planned || (heading != null && heading > planned))
+        Text(
+            listOfNotNull(pluralStringResource(Res.plurals.fin_budget_purchases_count, line.count, line.count), standing).joinToString(stringResource(Res.string.common_dot_separator)),
+            style = FinanceTheme.type.label,
+            color = when {
+                planned != null && line.spent > planned -> colors.loss
+                warn -> colors.watch
+                else -> colors.textSecondary
+            },
+        )
+        line.usual?.let { usual ->
+            // Only a gap big enough to be worth changing the plan for is pointed out.
+            val gap = planned?.let { plan -> (usual - plan).takeIf { abs(it) >= maxOf(USUAL_GAP_MIN, plan * 0.1) } }
+            val usualText = FinanceFormat.money(usual, 0)
+            val plannedText = planned?.let { FinanceFormat.money(it, 0) }.orEmpty()
+            Text(
+                when {
+                    gap == null -> stringResource(Res.string.fin_budget_lines_usual, usualText)
+                    gap > 0 -> stringResource(Res.string.fin_budget_lines_usual_more, usualText, plannedText)
+                    else -> stringResource(Res.string.fin_budget_lines_usual_less, usualText, plannedText)
+                },
+                style = FinanceTheme.type.label,
+                color = if (gap != null && gap > 0) colors.watch else colors.textTertiary,
+                modifier = Modifier.padding(top = 2.dp).testTag("finance_budget_line_usual_${line.name}"),
+            )
+        }
+    }
+}
+
+/** What the purchases in none of the lines come to. Tapping it lists them, from where each can be put in a line. */
+@Composable
+private fun OutsideLinesRow(budget: Budget, selected: Boolean, onClick: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val outside = budget.outsideLines
+    FinanceCard(Modifier.padding(bottom = 10.dp).testTag("finance_budget_line_outside"), onClick = onClick, padding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(colors.textTertiary))
+            Spacer(Modifier.width(10.dp))
+            Text(stringResource(Res.string.fin_budget_lines_outside), style = FinanceTheme.type.bodyStrong, color = if (selected) colors.accent else colors.textPrimary, modifier = Modifier.weight(1f))
+            Text(FinanceFormat.money(outside.spent, 0), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            listOf(pluralStringResource(Res.plurals.fin_budget_purchases_count, outside.count, outside.count), stringResource(Res.string.fin_budget_lines_outside_note))
+                .joinToString(stringResource(Res.string.common_dot_separator)),
+            style = FinanceTheme.type.label,
+            color = colors.textSecondary,
+        )
+    }
+}
+
 /**
  * Where the month's take-home goes: a bar its width, cut into the bills that aren't on a card,
  * the cards so far and what is left. When the first two are more than take-home, nothing is
@@ -1057,12 +1222,15 @@ private fun MonthsBlock(budget: Budget, onShowMonth: (String?) -> Unit) {
 @Composable
 private fun FilterChips(budget: Budget, selected: String?, onSelect: (String?) -> Unit) {
     val colors = FinanceTheme.colors
-    // A category picked from the donut shows as a chip of its own after "All", which clears it.
+    // A category picked from the donut, or a budget line from its card, shows as a chip of its own after "All", which clears it.
     val category = selected?.takeIf { it.startsWith(CATEGORY_FILTER) }
     val categoryName = category?.let { stringResource(categoryLabel(it.removePrefix(CATEGORY_FILTER))) }
+    val line = selected?.takeIf { it.startsWith(LINE_FILTER) }
+    val lineName = line?.removePrefix(LINE_FILTER)?.ifEmpty { stringResource(Res.string.fin_budget_lines_outside) }
     val options: List<Pair<String?, String>> = buildList {
         add(null to stringResource(Res.string.fin_budget_filter_all))
         if (category != null && categoryName != null) add(category to categoryName)
+        if (line != null && lineName != null) add(line to lineName)
         budget.buckets.forEach { bucket -> if (bucket.id != BucketId.Unassigned || bucket.count > 0) add(bucket.id.key to bucket.id.label()) }
     }
     LazyRow(Modifier.fillMaxWidth().selectableGroup(), contentPadding = PaddingValues(horizontal = PageGutter), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1136,7 +1304,8 @@ private fun PurchaseRow(purchase: Purchase, budget: Budget, busy: Boolean, onCli
             Text(purchase.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val about = listOfNotNull(
                 card?.name,
-                purchase.category?.let { stringResource(categoryLabel(it)) },
+                // The budget line it is in says more than Plaid's broad category, which is for those in none.
+                purchase.line ?: purchase.category?.let { stringResource(categoryLabel(it)) },
                 if (purchase.pending) stringResource(Res.string.fin_budget_purchase_pending) else null,
             )
             Text(about.joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1161,12 +1330,21 @@ private fun PurchaseRow(purchase: Purchase, budget: Budget, busy: Boolean, onCli
 
 /**
  * Whose a purchase is: each of the budget's people, the family, or (for one tagged by hand) back
- * to wherever it would fall on its own. With the switch on, the choice is remembered for every
- * purchase from the same merchant.
+ * to wherever it would fall on its own; and, when the sheet has card-paid lines, which of them it
+ * is in, none, or (for one put somewhere by hand) wherever it falls on its own. With the switch
+ * on, the choice is remembered for every purchase from the same merchant.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>, onPick: (BucketId, Boolean) -> Unit, onDismiss: () -> Unit) {
+private fun TagSheet(
+    purchase: Purchase,
+    card: BudgetCard?,
+    people: List<String>,
+    lines: List<String>,
+    onPick: (BucketId, Boolean) -> Unit,
+    onPickLine: (LinePick, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val colors = FinanceTheme.colors
     var always by rememberSaveable(purchase.id) { mutableStateOf(false) }
     ModalBottomSheet(
@@ -1211,6 +1389,42 @@ private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>
                     }
                 }
             }
+            if (lines.isNotEmpty()) {
+                Hairline(Modifier.padding(horizontal = PageGutter, vertical = 6.dp))
+                Column(Modifier.padding(horizontal = PageGutter)) {
+                    Text(stringResource(Res.string.fin_budget_tag_line_title), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+                    Spacer(Modifier.height(2.dp))
+                    Text(stringResource(lineSourceNote(purchase)), style = FinanceTheme.type.label, color = colors.textTertiary)
+                    Spacer(Modifier.height(10.dp))
+                    val picks = lines.map { LinePick.Line(it) } + LinePick.None + listOfNotNull(LinePick.Automatic.takeIf { purchase.lineSource == LineSource.MANUAL })
+                    FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        picks.forEach { pick ->
+                            val isSelected = when (pick) {
+                                is LinePick.Line -> purchase.line == pick.name
+                                LinePick.None -> purchase.line == null && purchase.lineSource != LineSource.NONE
+                                LinePick.Automatic -> false
+                            }
+                            Text(
+                                when (pick) {
+                                    is LinePick.Line -> pick.name
+                                    LinePick.None -> stringResource(Res.string.fin_budget_tag_line_none)
+                                    LinePick.Automatic -> stringResource(Res.string.fin_budget_tag_line_auto)
+                                },
+                                style = FinanceTheme.type.label,
+                                color = if (isSelected) colors.accent else colors.textSecondary,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (isSelected) colors.accent.copy(alpha = 0.18f) else colors.surface)
+                                    .border(1.dp, if (isSelected) colors.accent.copy(alpha = 0.6f) else colors.hairline, CircleShape)
+                                    .selectable(selected = isSelected, role = Role.RadioButton) { onPickLine(pick, always) }
+                                    .testTag("finance_budget_tag_line_${pick.wire ?: "auto"}")
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
             Hairline(Modifier.padding(horizontal = PageGutter, vertical = 6.dp))
             Row(
                 Modifier
@@ -1224,7 +1438,7 @@ private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(Res.string.fin_budget_tag_remember, purchase.name), style = FinanceTheme.type.body, color = colors.textPrimary)
                     Text(
-                        stringResource(if (purchase.remembered) Res.string.fin_budget_tag_remembered_note else Res.string.fin_budget_tag_remember_note),
+                        stringResource(if (purchase.remembered || purchase.lineRemembered) Res.string.fin_budget_tag_remembered_note else Res.string.fin_budget_tag_remember_note),
                         style = FinanceTheme.type.label,
                         color = colors.textSecondary,
                     )
@@ -1269,6 +1483,14 @@ private fun sourceNote(source: BucketSource): StringResource = when (source) {
     BucketSource.NONE -> Res.string.fin_budget_source_none
 }
 
+/** How a purchase came to be in its budget line, or in none. */
+private fun lineSourceNote(purchase: Purchase): StringResource = when (purchase.lineSource) {
+    LineSource.MANUAL -> if (purchase.line != null) Res.string.fin_budget_line_source_manual else Res.string.fin_budget_line_source_manual_none
+    LineSource.RULE -> if (purchase.line != null) Res.string.fin_budget_line_source_rule else Res.string.fin_budget_line_source_rule_none
+    LineSource.AUTO -> Res.string.fin_budget_line_source_auto
+    LineSource.NONE -> Res.string.fin_budget_line_source_none
+}
+
 @Preview(name = "Budget · filtered to a category", widthDp = 412, heightDp = 420)
 @Composable
 private fun FinanceBudgetCategoryFilterPreview() {
@@ -1278,6 +1500,24 @@ private fun FinanceBudgetCategoryFilterPreview() {
             Spacer(Modifier.height(12.dp))
             FilterChips(BudgetFixtures.onPace, selected = "cat:FOOD_AND_DRINK", onSelect = {})
             PurchaseSearch("coffee", onQuery = {})
+        }
+    }
+}
+
+@Preview(name = "Budget · budget lines", widthDp = 412, heightDp = 640)
+@Composable
+private fun FinanceBudgetLinesPreview() {
+    val budget = BudgetFixtures.close
+    FinanceStage {
+        Column {
+            // Over its plan, heading past it, comfortably under with a plan that wants raising, and one the sheet has no amount for.
+            listOf(
+                BudgetLine("Groceries", 600.0, 642.18, 9, usual = 710.0),
+                BudgetLine("Dining out", 250.0, 214.60, 7),
+                BudgetLine("Meal kits", 240.0, 119.96, 2, usual = 180.0),
+                BudgetLine("Pets", null, 63.40, 2),
+            ).forEachIndexed { index, line -> LineCard(line, index, budget, selected = index == 1, onClick = {}) }
+            OutsideLinesRow(budget, selected = false, onClick = {})
         }
     }
 }

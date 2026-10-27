@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
+import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.network.isTransportFailure
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
@@ -55,6 +56,10 @@ class BudgetRepositoryImpl(
     override suspend fun tag(purchaseId: String, bucket: BucketId, remember: Boolean): Result<Budget> = change { relay.tag(it, purchaseId, bucket, remember) }
 
     override suspend fun forgetRule(merchantKey: String): Result<Budget> = change { relay.forgetRule(it, merchantKey) }
+
+    override suspend fun tagLine(purchaseId: String, line: LinePick, remember: Boolean): Result<Budget> = change { relay.tagLine(it, purchaseId, line, remember) }
+
+    override suspend fun forgetLineRule(merchantKey: String): Result<Budget> = change { relay.forgetLineRule(it, merchantKey) }
 
     override suspend fun syncNow(): Result<Budget> = change { relay.syncNow(it) }
 
