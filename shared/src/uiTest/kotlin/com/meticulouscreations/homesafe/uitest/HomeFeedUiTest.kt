@@ -1,16 +1,10 @@
 package com.meticulouscreations.homesafe.uitest
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithText
@@ -20,19 +14,14 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.v2.runComposeUiTest
-import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.Door
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
-import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
-import com.meticulouscreations.homesafe.text.asUiText
+import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeed
-import com.meticulouscreations.homesafe.ui.screens.IN_VIEW_CHECK_TEST_TAG
-import com.meticulouscreations.homesafe.ui.screens.InViewContent
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
-import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -53,34 +42,6 @@ class HomeFeedUiTest {
         camera = Camera(name = name, enabled = true),
         streamUrl = "http://frigate.test/live/$name",
         posterUrl = "http://frigate.test/snapshot/$name",
-    )
-
-    private fun parkedCar(
-        cameraName: String = "front_door",
-        title: String = "Sarah's Tesla",
-        placeLabel: String = "Driveway",
-        sinceLabel: String? = "since 3:33 PM",
-        lastSeenLabel: String? = null,
-    ) = InViewItem(
-        subject = StationaryObject(
-            thumbnailEventId = "sighting-$cameraName",
-            cameraName = cameraName,
-            label = "car",
-            subLabel = "sarahs_tesla",
-            zones = listOf("driveway"),
-            firstSeenEpochSeconds = 1_789_400_000.0,
-            lastSeenEpochSeconds = 1_789_408_700.0,
-            seenRecently = lastSeenLabel == null,
-            sightings = 4,
-            sinceIsKnown = true,
-        ),
-        presentation = StationaryObjectPresentation(
-            title = title.asUiText(),
-            placeLabel = placeLabel,
-            sinceLabel = sinceLabel?.asUiText(),
-            lastSeenLabel = lastSeenLabel?.asUiText(),
-        ),
-        thumbnailUrl = null,
     )
 
     @Test
@@ -252,29 +213,6 @@ class HomeFeedUiTest {
     }
 
     @Test
-    fun theGlanceRowNamesEachParkedCarAndWhereItIsOnOneLine() = runComposeUiTest {
-        mainClock.autoAdvance = false
-        setContent {
-            FrigatePreview {
-                HomeFeed(
-                    everyoneAway = false,
-                    cameras = listOf(tile("front_door")),
-                    onAwayBack = {},
-                    inView = listOf(parkedCar(), parkedCar(cameraName = "back_yard", title = "Truck", placeLabel = "Front lawn")),
-                ) { tile -> Text(tile.camera.displayName) }
-            }
-        }
-
-        // No heading and no times on Home: those are on the In View page.
-        onAllNodesWithText("In view now").assertCountEquals(0)
-        onNodeWithText("Sarah's Tesla").assertIsDisplayed()
-        onNodeWithText("Driveway").assertIsDisplayed()
-        onAllNodesWithText("Driveway · since 3:33 PM").assertCountEquals(0)
-        // The second pill may be off the right-hand edge — the row scrolls sideways.
-        onNodeWithText("Truck").assertExists()
-    }
-
-    @Test
     fun thereIsNoGlanceRowWithNoCarsAndNoDoors() = runComposeUiTest {
         mainClock.autoAdvance = false
         setContent {
@@ -288,7 +226,7 @@ class HomeFeedUiTest {
     }
 
     @Test
-    fun tappingAParkedCarOpensTheInViewPage() = runComposeUiTest {
+    fun tappingATeslaOpensTheCarsMap() = runComposeUiTest {
         var opened = 0
         mainClock.autoAdvance = false
         setContent {
@@ -297,13 +235,21 @@ class HomeFeedUiTest {
                     everyoneAway = false,
                     cameras = listOf(tile("front_door")),
                     onAwayBack = {},
-                    inView = listOf(parkedCar()),
-                    onOpenInView = { opened++ },
+                    cars = listOf(
+                        HouseholdCar(
+                            id = "sarahs_car",
+                            name = "Sarah's Tesla",
+                            lastSeen = CarFix(37.77020, -122.25800, 90f, 1_789_408_000, moving = false, home = true),
+                            parked = null,
+                            asleep = false,
+                        ),
+                    ),
+                    onOpenCars = { opened++ },
                 ) { }
             }
         }
 
-        onNodeWithText("Sarah's Tesla").performClick()
+        onNodeWithText("Sarah's Tesla").assertIsDisplayed().performClick()
 
         assertEquals(1, opened)
     }
@@ -330,53 +276,6 @@ class HomeFeedUiTest {
         onNodeWithText("Back door").performClick()
 
         assertEquals(2, doorTaps)
-    }
-
-    @Test
-    fun theInViewPageTellsEachCarsArrivalAndLastSighting() = runComposeUiTest {
-        mainClock.autoAdvance = false
-        setContent {
-            FrigatePreview {
-                Column {
-                    InViewContent(
-                        items = listOf(
-                            parkedCar(),
-                            parkedCar(cameraName = "back_yard", title = "Truck", placeLabel = "Front lawn", sinceLabel = "since 9:02 AM", lastSeenLabel = "last seen 4:51 PM"),
-                        ),
-                        onOpenCamera = {},
-                        onTagCars = {},
-                    )
-                }
-            }
-        }
-
-        onNodeWithText("Sarah's Tesla").assertIsDisplayed()
-        onNodeWithText("Driveway · since 3:33 PM").assertIsDisplayed()
-        // A car Frigate has stopped seeing for a while says when it was last actually seen; a fresh one doesn't hedge.
-        onNodeWithText("last seen 4:51 PM").assertExists()
-    }
-
-    @Test
-    fun eachCamerasCheckAndTagIsAFullSizeButtonToItsCarTagging() = runComposeUiTest {
-        val tagged = mutableListOf<String>()
-        var opened: String? = null
-        mainClock.autoAdvance = false
-        setContent {
-            FrigatePreview {
-                Column {
-                    InViewContent(items = listOf(parkedCar()), onOpenCamera = { opened = it }, onTagCars = { tagged += it })
-                }
-            }
-        }
-
-        onNodeWithTag(IN_VIEW_CHECK_TEST_TAG)
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
-            .assertHeightIsAtLeast(48.dp)
-            .performClick()
-        onNodeWithText("Sarah's Tesla").performClick()
-
-        assertEquals(listOf("front_door"), tagged, "the button opens the car tagging on the camera the car is on")
-        assertEquals("front_door", opened, "a car opens the camera that can see it")
     }
 
     @Test

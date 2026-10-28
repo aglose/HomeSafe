@@ -140,13 +140,13 @@
     <string name="cars_load_known_cars_failed">Couldn't load the known cars: %1$s</string>
     <string name="cars_load_camera_failed">Couldn't load the camera: %1$s</string>
     <string name="cars_unreadable_frame">The camera sent a picture the app can't read.</string>
-    <!-- After a tag: "Tagged as Sarah's Car." then what it did to In view now, then to training. -->
+    <!-- After a tag: "Tagged as Sarah's Car." then what it did to the sighting Frigate is tracking, then to training. -->
     <string name="cars_tagged">Tagged as %1$s. %2$s %3$s</string>
     <string name="cars_tagged_not_ours">Tagged as not ours. %1$s %2$s</string>
-    <string name="cars_in_view_untracked">Frigate isn't tracking a car there, so it can't show in view until it detects one.</string>
-    <string name="cars_in_view_rename_failed">Couldn't rename the tracked car; it'll show once the model recognises it.</string>
-    <string name="cars_in_view_removed">Taken off In view now.</string>
-    <string name="cars_in_view_shown">Showing as in view now.</string>
+    <string name="cars_sighting_untracked">Frigate isn't tracking a car there, so no sighting was renamed.</string>
+    <string name="cars_sighting_rename_failed">Couldn't rename the sighting Frigate is tracking; it'll be named once the model recognises it.</string>
+    <string name="cars_sighting_cleared">Its sighting's name is cleared.</string>
+    <string name="cars_sighting_renamed">Its sighting is renamed too.</string>
     <string name="cars_retraining">Retraining now.</string>
     <string name="cars_saved_for_training">Saved for the next training.</string>
     <string name="cars_tag_failed">Couldn't save the tag: %1$s</string>

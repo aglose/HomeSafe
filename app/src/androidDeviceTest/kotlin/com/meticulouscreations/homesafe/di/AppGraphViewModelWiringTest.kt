@@ -23,7 +23,6 @@ import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.DoorsViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
-import com.meticulouscreations.homesafe.viewmodel.InViewViewModel
 import com.meticulouscreations.homesafe.viewmodel.LandedPersonViewModel
 import com.meticulouscreations.homesafe.viewmodel.LiveLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
@@ -70,7 +69,6 @@ class AppGraphViewModelWiringTest {
                 DoorsViewModel::class,
                 CarsViewModel::class,
                 MapTilesViewModel::class,
-                InViewViewModel::class,
                 ConnectionNoticeViewModel::class,
                 WeatherViewModel::class,
                 FitnessViewModel::class,

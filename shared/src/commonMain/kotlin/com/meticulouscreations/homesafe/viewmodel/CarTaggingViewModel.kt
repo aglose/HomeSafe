@@ -29,16 +29,16 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.cars_in_view_removed
-import homesafe.shared.generated.resources.cars_in_view_rename_failed
-import homesafe.shared.generated.resources.cars_in_view_shown
-import homesafe.shared.generated.resources.cars_in_view_untracked
 import homesafe.shared.generated.resources.cars_load_camera_failed
 import homesafe.shared.generated.resources.cars_load_classifiers_failed
 import homesafe.shared.generated.resources.cars_load_known_cars_failed
 import homesafe.shared.generated.resources.cars_no_car_classifier
 import homesafe.shared.generated.resources.cars_retraining
 import homesafe.shared.generated.resources.cars_saved_for_training
+import homesafe.shared.generated.resources.cars_sighting_cleared
+import homesafe.shared.generated.resources.cars_sighting_rename_failed
+import homesafe.shared.generated.resources.cars_sighting_renamed
+import homesafe.shared.generated.resources.cars_sighting_untracked
 import homesafe.shared.generated.resources.cars_tag_failed
 import homesafe.shared.generated.resources.cars_tagged
 import homesafe.shared.generated.resources.cars_tagged_not_ours
@@ -189,19 +189,19 @@ class CarTaggingViewModel(
         tagJob = viewModelScope.launch {
             tagCarUseCase(CarTag(model.name, category, frame.jpeg, box, state.selectedEventId))
                 .onSuccess { outcome ->
-                    val inView = UiText.of(
+                    val sighting = UiText.of(
                         when {
-                            state.selectedEventId == null -> Res.string.cars_in_view_untracked
-                            !outcome.namedInView -> Res.string.cars_in_view_rename_failed
-                            category == NONE -> Res.string.cars_in_view_removed
-                            else -> Res.string.cars_in_view_shown
+                            state.selectedEventId == null -> Res.string.cars_sighting_untracked
+                            !outcome.namedTrackedCar -> Res.string.cars_sighting_rename_failed
+                            category == NONE -> Res.string.cars_sighting_cleared
+                            else -> Res.string.cars_sighting_renamed
                         },
                     )
                     val training = UiText.of(if (outcome.trainingStarted) Res.string.cars_retraining else Res.string.cars_saved_for_training)
                     val notice = if (category == NONE) {
-                        UiText.of(Res.string.cars_tagged_not_ours, inView, training)
+                        UiText.of(Res.string.cars_tagged_not_ours, sighting, training)
                     } else {
-                        UiText.of(Res.string.cars_tagged, subLabelDisplayName(category), inView, training)
+                        UiText.of(Res.string.cars_tagged, subLabelDisplayName(category), sighting, training)
                     }
                     updateFor(launch) {
                         it.copy(isSaving = false, notice = notice, noticeIsError = false, selection = null, selectedEventId = null)

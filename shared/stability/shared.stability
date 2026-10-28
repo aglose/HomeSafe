@@ -915,13 +915,6 @@ public fun com.meticulouscreations.homesafe.ui.screens.CarTaggingScreen(cameraNa
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CarThumbnail(url: kotlin.String?): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - url: STABLE (class with no mutable properties)
-
-@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Card(content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -1561,7 +1554,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.FullScreenPlayerChrome(
     - overflowMenu: STABLE (composable function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.GlancePill(label: kotlin.String, detail: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClickLabel: kotlin.String, leading: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, container: androidx.compose.ui.graphics.Color, content: androidx.compose.ui.graphics.Color, detailColor: androidx.compose.ui.graphics.Color?, faded: kotlin.Boolean, stateDescription: kotlin.String?): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.GlancePill(label: kotlin.String, detail: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClickLabel: kotlin.String, leading: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, container: androidx.compose.ui.graphics.Color, content: androidx.compose.ui.graphics.Color, detailColor: androidx.compose.ui.graphics.Color?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1573,8 +1566,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.GlancePill(label: kotlin
     - container: STABLE (marked @Stable or @Immutable)
     - content: STABLE (marked @Stable or @Immutable)
     - detailColor: STABLE (marked @Stable or @Immutable)
-    - faded: STABLE (primitive type)
-    - stateDescription: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.GlancePreviewFrame(content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
@@ -1649,7 +1640,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.HistoryChip(dayLabel: ko
     - onClear: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, onAwayBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, allHidden: kotlin.Boolean, inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, onOpenInView: kotlin.Function0<kotlin.Unit>, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenDoors: kotlin.Function0<kotlin.Unit>, cars: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.HouseholdCar>, onOpenCars: kotlin.Function0<kotlin.Unit>, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests, refreshing: kotlin.Boolean, onRefresh: kotlin.Function0<kotlin.Unit>?, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?, connectionRetrying: kotlin.Boolean, onConnectionRetry: kotlin.Function0<kotlin.Unit>, onOpenTailscale: kotlin.Function0<kotlin.Unit>?, placement: com.meticulouscreations.homesafe.domain.model.CameraPlacement?, onPlacementChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CameraPlacement, kotlin.Unit>, arranging: kotlin.Boolean, onFinishArranging: kotlin.Function0<kotlin.Unit>, onMoveCamera: kotlin.Function2<@[ParameterName(name = \, onDrop: kotlin.Function0<kotlin.Unit>, listTestTag: kotlin.String?, cameraCard: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction2<androidx.compose.foundation.lazy.grid.LazyGridItemScope, com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, onAwayBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, allHidden: kotlin.Boolean, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenDoors: kotlin.Function0<kotlin.Unit>, cars: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.HouseholdCar>, onOpenCars: kotlin.Function0<kotlin.Unit>, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests, refreshing: kotlin.Boolean, onRefresh: kotlin.Function0<kotlin.Unit>?, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?, connectionRetrying: kotlin.Boolean, onConnectionRetry: kotlin.Function0<kotlin.Unit>, onOpenTailscale: kotlin.Function0<kotlin.Unit>?, placement: com.meticulouscreations.homesafe.domain.model.CameraPlacement?, onPlacementChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CameraPlacement, kotlin.Unit>, arranging: kotlin.Boolean, onFinishArranging: kotlin.Function0<kotlin.Unit>, onMoveCamera: kotlin.Function2<@[ParameterName(name = \, onDrop: kotlin.Function0<kotlin.Unit>, listTestTag: kotlin.String?, cameraCard: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction2<androidx.compose.foundation.lazy.grid.LazyGridItemScope, com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1658,8 +1649,6 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: 
     - onAwayBack: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - allHidden: STABLE (primitive type)
-    - inView: RUNTIME (requires runtime check)
-    - onOpenInView: STABLE (function type)
     - doors: RUNTIME (requires runtime check)
     - onOpenDoors: STABLE (function type)
     - cars: RUNTIME (requires runtime check)
@@ -1681,35 +1670,33 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: 
     - cameraCard: STABLE (composable function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.HomeFeedPreviewContent(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, refreshing: kotlin.Boolean, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?, placement: com.meticulouscreations.homesafe.domain.model.CameraPlacement?, arranging: kotlin.Boolean, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, allHidden: kotlin.Boolean): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.HomeFeedPreviewContent(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, refreshing: kotlin.Boolean, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?, placement: com.meticulouscreations.homesafe.domain.model.CameraPlacement?, arranging: kotlin.Boolean, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, cars: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.HouseholdCar>, allHidden: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - everyoneAway: STABLE (primitive type)
     - cameras: RUNTIME (requires runtime check)
-    - inView: RUNTIME (requires runtime check)
     - refreshing: STABLE (primitive type)
     - connectionProblem: STABLE (class with no mutable properties)
     - placement: STABLE (class with no mutable properties)
     - arranging: STABLE (primitive type)
     - doors: RUNTIME (requires runtime check)
+    - cars: RUNTIME (requires runtime check)
     - allHidden: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.HomeGlanceRows(inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenInView: kotlin.Function0<kotlin.Unit>, onOpenDoors: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, cars: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.HouseholdCar>, onOpenCars: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.HomeGlanceRows(doors: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.Door>, onOpenDoors: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, cars: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.HouseholdCar>, onOpenCars: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
-    - inView: RUNTIME (requires runtime check)
     - doors: RUNTIME (requires runtime check)
-    - onOpenInView: STABLE (function type)
     - onOpenDoors: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - cars: RUNTIME (requires runtime check)
     - onOpenCars: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, zoomState: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onFrameCamera: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onOpenInView: kotlin.Function0<kotlin.Unit>, onOpenDoors: kotlin.Function0<kotlin.Unit>, onOpenCars: kotlin.Function0<kotlin.Unit>, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, zoomState: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onFrameCamera: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onOpenDoors: kotlin.Function0<kotlin.Unit>, onOpenCars: kotlin.Function0<kotlin.Unit>, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1717,7 +1704,6 @@ public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTran
     - zoomState: STABLE (marked @Stable or @Immutable)
     - onCameraClick: STABLE (function type)
     - onFrameCamera: STABLE (function type)
-    - onOpenInView: STABLE (function type)
     - onOpenDoors: STABLE (function type)
     - onOpenCars: STABLE (function type)
     - scrollToTopRequests: STABLE (marked @Stable or @Immutable)
@@ -1731,41 +1717,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.HomeTabNav(backStack: an
     - stores: STABLE (marked @Stable or @Immutable)
     - cardZoom: STABLE (marked @Stable or @Immutable)
     - scrollToTop: STABLE (marked @Stable or @Immutable)
-
-@Composable
-private fun com.meticulouscreations.homesafe.ui.screens.InViewCard(item: com.meticulouscreations.homesafe.viewmodel.InViewItem, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - item: STABLE (marked @Stable or @Immutable)
-    - onClick: STABLE (function type)
-
-@Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.InViewContent(items: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>?, onOpenCamera: kotlin.Function1<@[ParameterName(name = \, onTagCars: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - items: RUNTIME (requires runtime check)
-    - onOpenCamera: STABLE (function type)
-    - onTagCars: STABLE (function type)
-
-@Composable
-private fun com.meticulouscreations.homesafe.ui.screens.InViewPills(inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, onOpenInView: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - inView: RUNTIME (requires runtime check)
-    - onOpenInView: STABLE (function type)
-
-@Composable
-public fun com.meticulouscreations.homesafe.ui.screens.InViewScreen(onBack: kotlin.Function0<kotlin.Unit>, onOpenCamera: kotlin.Function1<@[ParameterName(name = \, onTagCars: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - onBack: STABLE (function type)
-    - onOpenCamera: STABLE (function type)
-    - onTagCars: STABLE (function type)
-    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.InfoRow(label: kotlin.String, value: kotlin.String, note: kotlin.String?): kotlin.Unit

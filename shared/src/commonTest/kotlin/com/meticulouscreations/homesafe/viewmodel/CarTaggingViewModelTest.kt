@@ -19,10 +19,10 @@ import com.meticulouscreations.homesafe.domain.usecase.GetTrackedObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TagCarUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.cars_in_view_shown
-import homesafe.shared.generated.resources.cars_in_view_untracked
 import homesafe.shared.generated.resources.cars_retraining
 import homesafe.shared.generated.resources.cars_saved_for_training
+import homesafe.shared.generated.resources.cars_sighting_renamed
+import homesafe.shared.generated.resources.cars_sighting_untracked
 import homesafe.shared.generated.resources.cars_tagged
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -264,7 +264,7 @@ class CarTaggingViewModelTest {
     }
 
     @Test
-    fun taggingATrackedCarTrainsItAndNamesItInView() = runTest(dispatcher) {
+    fun taggingATrackedCarTrainsItAndNamesIt() = runTest(dispatcher) {
         val repo = FakeClassifiers(tracked = listOf(tesla, unnamed), jpeg = frame)
         val moments = FakeMoments()
         val vm = viewModel(repo, moments)
@@ -282,7 +282,7 @@ class CarTaggingViewModelTest {
         assertNull(state.selection)
         assertFalse(state.noticeIsError)
         assertEquals(
-            UiText.of(Res.string.cars_tagged, "Sarah's Car", UiText.of(Res.string.cars_in_view_shown), UiText.of(Res.string.cars_retraining)),
+            UiText.of(Res.string.cars_tagged, "Sarah's Car", UiText.of(Res.string.cars_sighting_renamed), UiText.of(Res.string.cars_retraining)),
             state.notice,
         )
         assertEquals("sarahs_car", state.trackedCars.first { it.eventId == unnamed.eventId }.subLabel, "the fresh frame shows the new name")
@@ -306,7 +306,7 @@ class CarTaggingViewModelTest {
         assertEquals(1, repo.trained)
         assertEquals(0, moments.nudges)
         assertEquals(
-            UiText.of(Res.string.cars_tagged, "Sarah's Car", UiText.of(Res.string.cars_in_view_untracked), UiText.of(Res.string.cars_retraining)),
+            UiText.of(Res.string.cars_tagged, "Sarah's Car", UiText.of(Res.string.cars_sighting_untracked), UiText.of(Res.string.cars_retraining)),
             vm.uiState.value.notice,
         )
     }
@@ -356,7 +356,7 @@ class CarTaggingViewModelTest {
         assertEquals(1, repo.names.size)
         assertFalse(vm.uiState.value.noticeIsError)
         assertEquals(
-            UiText.of(Res.string.cars_tagged, "Andrew's Tesla", UiText.of(Res.string.cars_in_view_shown), UiText.of(Res.string.cars_saved_for_training)),
+            UiText.of(Res.string.cars_tagged, "Andrew's Tesla", UiText.of(Res.string.cars_sighting_renamed), UiText.of(Res.string.cars_saved_for_training)),
             vm.uiState.value.notice,
         )
     }

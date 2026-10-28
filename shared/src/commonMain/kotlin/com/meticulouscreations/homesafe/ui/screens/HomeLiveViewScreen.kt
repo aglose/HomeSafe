@@ -114,7 +114,6 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
-import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import com.meticulouscreations.homesafe.viewmodel.onHome
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
@@ -157,7 +156,6 @@ fun HomeTabContent(
     zoomState: CameraCardZoomState,
     onCameraClick: (CameraTile) -> Unit = {},
     onFrameCamera: (CameraTile) -> Unit = {},
-    onOpenInView: () -> Unit = {},
     onOpenDoors: () -> Unit = {},
     onOpenCars: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
@@ -168,7 +166,6 @@ fun HomeTabContent(
     val placement by viewModel.placement.collectAsStateWithLifecycle()
     val arranging by viewModel.arranging.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
-    val inView by viewModel.inView.collectAsStateWithLifecycle()
     val doors by viewModel.doors.collectAsStateWithLifecycle()
     val cars by viewModel.cars.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
@@ -196,8 +193,6 @@ fun HomeTabContent(
         onMoveCamera = { from, to -> viewModel.moveCamera(shownPlacement, from, to) },
         onDrop = { viewModel.saveOrder(shownPlacement) },
         onAwayBack = viewModel::markBack,
-        inView = inView,
-        onOpenInView = onOpenInView,
         doors = doors,
         onOpenDoors = onOpenDoors,
         cars = cars,
@@ -266,18 +261,17 @@ internal fun homeArrangeAction(): ArrangeAction? {
 }
 
 /**
- * The home page's list: the cars in view, the doors and the household's Teslas, and one card per camera — or, while [cameras] is still null
+ * The home page's list: the doors and the household's Teslas, and one card per camera — or, while [cameras] is still null
  * (the first cache read in flight), the loading skeleton: outlined cards where the cameras will
  * land, with a runner going round each. The sign-in screen draws this same list in its loading
  * state, so the skeleton and the real page are one layout by construction, and the real cards
  * fade in exactly onto their outlines rather than near them.
  *
  * At the top sit two rows of pills ([HomeGlanceRows]) when there is anything to put in them: the
- * vehicles standing in view of a camera right now ([inView]), the doors ([doors]), and where
- * each of the household's Teslas is ([cars]). It is
- * deliberately the first thing on the page — the question it answers ("is her car in the
- * driveway? is the back door shut?") is the one the app gets opened for — and each is one line,
- * so the cameras still start near the top. The details are a tap away: [onOpenInView], [onOpenDoors], [onOpenCars].
+ * doors ([doors]) and where each of the household's Teslas is ([cars]). It is deliberately the
+ * first thing on the page — the question it answers ("is her car home? is the back door shut?")
+ * is the one the app gets opened for — and each is one line, so the cameras still start near the
+ * top. The details are a tap away: [onOpenDoors], [onOpenCars].
  * A row with nothing in it isn't drawn, rather than spending a row to say so.
  * It usually arrives a beat after the cameras (its cache is read, and its poll runs, apart from
  * theirs), so it fades in and the cards below slide down to make room rather than jumping by the
@@ -317,8 +311,6 @@ internal fun HomeFeed(
     onAwayBack: () -> Unit,
     modifier: Modifier = Modifier,
     allHidden: Boolean = false,
-    inView: List<InViewItem> = emptyList(),
-    onOpenInView: () -> Unit = {},
     doors: List<Door> = emptyList(),
     onOpenDoors: () -> Unit = {},
     cars: List<HouseholdCar> = emptyList(),
@@ -378,7 +370,7 @@ internal fun HomeFeed(
     LaunchedEffect(arranging) { if (arranging) swipe.cancel() }
     // Arrange mode starts from the top bar's menu, wherever the list is: with the list scrolled
     // past where its header goes, the header would land above the screen, so the list moves to it.
-    val arrangeHeaderIndex = listOf(connectionProblem != null, everyoneAway, inView.isNotEmpty() || doors.isNotEmpty() || cars.isNotEmpty()).count { it }
+    val arrangeHeaderIndex = listOf(connectionProblem != null, everyoneAway, doors.isNotEmpty() || cars.isNotEmpty()).count { it }
     LaunchedEffect(arranging) {
         if (arranging && gridState.firstVisibleItemIndex >= arrangeHeaderIndex) gridState.animateScrollToItem(arrangeHeaderIndex)
     }
@@ -417,13 +409,11 @@ internal fun HomeFeed(
                     item(key = "away-banner", span = { GridItemSpan(maxLineSpan) }) { AwayBanner(onBack = onAwayBack) }
                 }
 
-                if (inView.isNotEmpty() || doors.isNotEmpty() || cars.isNotEmpty()) {
+                if (doors.isNotEmpty() || cars.isNotEmpty()) {
                     item(key = "glance", span = { GridItemSpan(maxLineSpan) }) {
                         HomeGlanceRows(
-                            inView = inView,
                             doors = doors,
                             cars = cars,
-                            onOpenInView = onOpenInView,
                             onOpenDoors = onOpenDoors,
                             onOpenCars = onOpenCars,
                             modifier = Modifier.animateItem(),

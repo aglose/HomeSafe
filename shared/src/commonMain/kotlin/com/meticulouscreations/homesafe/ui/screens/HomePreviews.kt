@@ -19,18 +19,16 @@ import com.meticulouscreations.homesafe.domain.model.CameraCrop
 import com.meticulouscreations.homesafe.domain.model.CameraFraming
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
+import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
+import com.meticulouscreations.homesafe.domain.model.CurbSpot
 import com.meticulouscreations.homesafe.domain.model.Door
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
-import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
-import com.meticulouscreations.homesafe.viewmodel.InViewItem
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
 
 /*
  * The Home tab, drawn from fixtures. These are the previews every renderer shares: Android
@@ -47,21 +45,21 @@ import kotlinx.datetime.TimeZone
 @Preview(name = "Home, in Spanish", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP, locale = "es")
 @Composable
 fun HomeFeedPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView, doors = previewDoors)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, doors = previewDoors, cars = previewCars)
 }
 
 /** A server with Nest cameras too: the switch floats above the nav, on the outdoor ones as the page opens. */
 @Preview(name = "Home, with indoor cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedWithIndoorPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView, placement = CameraPlacement.Outdoor)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, cars = previewCars, placement = CameraPlacement.Outdoor)
 }
 
 /** Switched to the indoor (Nest) cameras. */
 @Preview(name = "Home, indoor cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedIndoorPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = previewIndoorTiles, inView = previewInView, placement = CameraPlacement.Indoor)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewIndoorTiles, cars = previewCars, placement = CameraPlacement.Indoor)
 }
 
 /**
@@ -77,39 +75,39 @@ fun HomeFeedArrangingPreview() {
             else -> it.copy(hidden = true)
         }
     }
-    HomeFeedPreviewContent(everyoneAway = false, cameras = tiles, inView = emptyList(), placement = CameraPlacement.Indoor, arranging = true)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = tiles, placement = CameraPlacement.Indoor, arranging = true)
 }
 
 /** Every camera in the list hidden: the page says how to bring one back rather than that the server has none. */
 @Preview(name = "Home, every camera hidden", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 private fun HomeFeedAllHiddenPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = emptyList(), inView = previewInView, allHidden = true)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = emptyList(), cars = previewCars, allHidden = true)
 }
 
 @Preview(name = "Home, loading", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedLoadingPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = null, inView = emptyList())
+    HomeFeedPreviewContent(everyoneAway = false, cameras = null)
 }
 
 @Preview(name = "Home, everyone away", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedAwayPreview() {
-    HomeFeedPreviewContent(everyoneAway = true, cameras = previewTiles.take(1), inView = emptyList())
+    HomeFeedPreviewContent(everyoneAway = true, cameras = previewTiles.take(1))
 }
 
 /** Signed in on what the device kept, with Tailscale off on it: the notice leads the page. Only the JVM renderer and Studio draw it. */
 @Preview(name = "Home, Tailscale off", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 private fun HomeFeedTailscaleOffPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = emptyList(), connectionProblem = ConnectionProblem.TailscaleOff)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, connectionProblem = ConnectionProblem.TailscaleOff)
 }
 
 @Preview(name = "Home, no cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedEmptyPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = emptyList(), inView = emptyList())
+    HomeFeedPreviewContent(everyoneAway = false, cameras = emptyList())
 }
 
 /**
@@ -119,7 +117,7 @@ fun HomeFeedEmptyPreview() {
 @Preview(name = "Home, refreshing", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 private fun HomeFeedRefreshingPreview() {
-    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView, refreshing = true)
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, cars = previewCars, refreshing = true)
 }
 
 /** The camera card's corner pill in each state it can be in; sized to the pills, not a phone. */
@@ -157,12 +155,12 @@ private fun CameraArrangeControlsPreview() {
 private fun HomeFeedPreviewContent(
     everyoneAway: Boolean,
     cameras: List<CameraTile>?,
-    inView: List<InViewItem>,
     refreshing: Boolean = false,
     connectionProblem: ConnectionProblem? = null,
     placement: CameraPlacement? = null,
     arranging: Boolean = false,
     doors: List<Door> = emptyList(),
+    cars: List<HouseholdCar> = emptyList(),
     allHidden: Boolean = false,
 ) {
     FrigatePreview {
@@ -173,8 +171,8 @@ private fun HomeFeedPreviewContent(
                 cameras = cameras,
                 onAwayBack = {},
                 allHidden = allHidden,
-                inView = inView,
                 doors = doors,
+                cars = cars,
                 refreshing = refreshing,
                 // Only the refreshing preview is pullable, so the others draw exactly as their reference screenshots.
                 onRefresh = if (refreshing) ({}) else null,
@@ -207,23 +205,23 @@ private val previewIndoorTiles = listOf("living_room", "nursery").map { name ->
     CameraTile(camera = Camera(name = name, enabled = true, placement = CameraPlacement.Indoor), streamUrl = null, posterUrl = null)
 }
 
-/** The day [previewInView]'s car arrived, so its card reads "since 3:33 PM" (in UTC) rather than naming the date. */
-private val PREVIEW_TODAY = LocalDate(2026, 9, 14)
-
-private val previewInView = listOf(
-    StationaryObject(
-        thumbnailEventId = "sighting-front_door",
-        cameraName = "front_door",
-        label = "car",
-        subLabel = "sarahs_tesla",
-        zones = listOf("driveway"),
-        firstSeenEpochSeconds = 1_789_400_000.0,
-        lastSeenEpochSeconds = 1_789_408_700.0,
-        seenRecently = true,
-        sightings = 4,
-        sinceIsKnown = true,
+/** One Tesla at the curb with a sign coming up, one at home. */
+private val previewCars = listOf(
+    HouseholdCar(
+        id = "andrews_tesla",
+        name = "Andrew's Tesla",
+        lastSeen = CarFix(37.77004, -122.25732, 270f, 1_789_405_000, moving = false, home = false),
+        parked = CurbSpot(37.77004, -122.25732, "Elm St", side = null, sinceEpochSeconds = 1_789_400_000, moveByEpochSeconds = 1_789_430_000, note = "Street sweeping", limitMinutes = null, fromEpochSeconds = null, untilEpochSeconds = null),
+        asleep = true,
     ),
-).map { subject -> InViewItem(subject = subject, presentation = subject.present(PREVIEW_TODAY, TimeZone.UTC), thumbnailUrl = null) }
+    HouseholdCar(
+        id = "sarahs_car",
+        name = "Sarah's Tesla",
+        lastSeen = CarFix(37.77020, -122.25800, 90f, 1_789_408_000, moving = false, home = true),
+        parked = null,
+        asleep = false,
+    ),
+)
 
 /** Four doors: the back one open, the other three closed, so the row shows one door and a count. */
 private val previewDoors = listOf(

@@ -6,11 +6,6 @@
   See AGENTS.md, "Strings and localization".
 -->
 <resources>
-    <string name="home_in_view_title">A la vista ahora</string>
-    <string name="home_in_view_subtitle">Autos estacionados a la vista de las cámaras</string>
-    <string name="home_in_view_empty">No hay nada estacionado a la vista ahora.</string>
-    <string name="home_in_view_check">Revisar y etiquetar</string>
-    <string name="home_glance_open_in_view">Ver los autos a la vista</string>
     <string name="home_glance_all_doors_closed">Todas las puertas cerradas</string>
     <plurals name="home_glance_doors_closed">
         <item quantity="one">%1$d puerta cerrada</item>
