@@ -152,6 +152,69 @@ class RunsTest {
         assertEquals(emptyList(), Runs.board(listOf(RunRecord("a", start, start - 5)), monday, utc).runs)
     }
 
+    // ---- What isn't a run ---------------------------------------------------------------------
+
+    @Test
+    fun walkingPaceTheWholeWayIsAWalk() {
+        // Two miles in 36 minutes is 18:00 a mile.
+        assertEquals(NotRunReason.WALK, Runs.notRunReason(run(seconds = 2_160, miles = 2.0)))
+        // 15:00 a mile is still a run, if a slow one; 10:00 plainly is.
+        assertNull(Runs.notRunReason(run(seconds = 1_800, miles = 2.0)))
+        assertNull(Runs.notRunReason(run(seconds = 1_800, miles = 3.0)))
+    }
+
+    @Test
+    fun aWalkersCadenceIsAWalkWhateverTheDistanceSays() {
+        // A treadmill's distance is the band's guess, so 10:00 a mile counts for nothing against 110 steps a minute.
+        val treadmill = Runs.of(RunRecord("t", start, start + 1_800, treadmill = true, meters = 3 * METERS_PER_MILE, steps = 3_300), utc)
+        assertEquals(NotRunReason.WALK, Runs.notRunReason(treadmill))
+        val running = Runs.of(RunRecord("t", start, start + 1_800, treadmill = true, meters = 3 * METERS_PER_MILE, steps = 4_950), utc)
+        assertNull(Runs.notRunReason(running))
+        // Nor is a treadmill's slow guessed pace held against it.
+        assertNull(Runs.notRunReason(Runs.of(RunRecord("t", start, start + 1_800, treadmill = true, meters = METERS_PER_MILE, steps = 4_950), utc)))
+    }
+
+    @Test
+    fun timeSpentInOnePlaceIsAWorkout() {
+        assertEquals(NotRunReason.WORKOUT, Runs.notRunReason(run(seconds = 1_800, miles = 0.1)))
+        // A short dash of the same ground is still a run.
+        assertNull(Runs.notRunReason(run(seconds = 120, miles = 0.2)))
+    }
+
+    @Test
+    fun aRunDuringALoggedWorkoutWasThatWorkout() {
+        val quick = run(seconds = 1_800, miles = 3.0)
+        assertEquals(NotRunReason.WORKOUT, Runs.notRunReason(quick, listOf(start - 600..start + 1_500)))
+        // A run straight after a workout, overlapping it by a few minutes, is still a run.
+        assertNull(Runs.notRunReason(quick, listOf(start - 3_600..start + 300)))
+    }
+
+    @Test
+    fun withNothingToGoByItStaysARun() {
+        assertNull(Runs.notRunReason(Runs.of(record(miles = null), utc)))
+    }
+
+    @Test
+    fun theBoardSetsWhatWasntARunApartAndCountsItNowhere() {
+        val board = Runs.board(
+            listOf(
+                record("run", startAt = start - DAY, seconds = 1_800, miles = 3.0),
+                record("walk", startAt = start, seconds = 2_400, miles = 2.0),
+                record("lift", startAt = start - 2 * DAY, seconds = 2_400, miles = 3.0),
+            ),
+            todayEpochDay = monday,
+            offsetAt = utc,
+            workouts = listOf(start - 2 * DAY - 300..start - 2 * DAY + 3_000),
+        )
+        assertEquals(listOf("run"), board.runs.map { it.id })
+        assertEquals(listOf("walk" to NotRunReason.WALK, "lift" to NotRunReason.WORKOUT), board.notRuns.map { it.run.id to it.reason })
+        assertEquals(3.0, board.weeks.sumOf { it.miles }, 1e-9)
+        // Neither is held against the run for the longest or the quickest.
+        assertNull(board.longestId)
+        // What was left out still opens.
+        assertEquals("walk", board.run("walk")?.id)
+    }
+
     // ---- Splits -------------------------------------------------------------------------------
 
     @Test

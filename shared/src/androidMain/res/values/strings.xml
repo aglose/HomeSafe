@@ -14,6 +14,15 @@
     <string name="notif_channel_doors_description">A door opening while someone is home</string>
     <string name="notif_channel_summaries_name">Summaries</string>
     <string name="notif_channel_summaries_description">A few times a day: what the cameras saw while someone was home</string>
+    <string name="notif_channel_run_name">Run recording</string>
+    <string name="notif_channel_run_description">While a run is being recorded: how long and how far</string>
+    <string name="notif_run_title">Recording a run</string>
+    <string name="notif_run_searching">Finding GPS…</string>
+    <!-- %1$s miles already written, like "3.10" -->
+    <string name="notif_run_distance">%1$s mi</string>
+    <string name="notif_run_paused_title">Run paused</string>
+    <!-- %1$s how far, like "3.10 mi"; %2$s how long it has been moving, like "28:14" -->
+    <string name="notif_run_paused_text">%1$s · %2$s</string>
     <string name="notif_channel_weather_name">Weather</string>
     <string name="notif_channel_weather_description">Rain or snow on the way, and what today and tomorrow hold</string>
     <string name="notif_channel_weather_severe_name">Severe weather</string>

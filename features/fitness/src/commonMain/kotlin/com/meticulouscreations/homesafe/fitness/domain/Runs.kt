@@ -33,7 +33,8 @@ enum class RunTime {
  * A run, as the screens show it. [seconds] is the time spent moving (what it was paused for is
  * left out, when the tracker says). [meters] is 0 when no distance was recorded for it, and then
  * it has no pace. [utcOffsetSeconds] is the offset it was run in, so that its day and its hour
- * stay what they were.
+ * stay what they were. A run [recorded] in this app has its distance and route from the phone's
+ * GPS; its heart and steps, when there are any, are a band's.
  */
 @Immutable
 data class Run(
@@ -50,6 +51,7 @@ data class Run(
     val steps: Long? = null,
     val climbMeters: Double? = null,
     val route: RouteAccess = RouteAccess.NONE,
+    val recorded: Boolean = false,
 ) {
     val miles: Double get() = meters / METERS_PER_MILE
 
@@ -72,6 +74,19 @@ data class RunSplit(val number: Int, val miles: Double, val seconds: Long, val a
     val whole: Boolean get() = miles > 0.999
 }
 
+/** Why a session the tracker called a run isn't counted as one. */
+enum class NotRunReason {
+    /** Walking pace, or a walker's cadence, the whole way. */
+    WALK,
+
+    /** Hardly any ground covered for the time, or it happened during a workout logged here: lifting, with the heart up. */
+    WORKOUT,
+}
+
+/** A session recorded as a run that the runs page leaves out, and why. */
+@Immutable
+data class NotRun(val run: Run, val reason: NotRunReason)
+
 /** A week of running, from the Monday that is [startEpochDay]. */
 @Immutable
 data class RunWeek(val startEpochDay: Long, val meters: Double = 0.0, val seconds: Long = 0, val runs: Int = 0) {
@@ -81,7 +96,9 @@ data class RunWeek(val startEpochDay: Long, val meters: Double = 0.0, val second
 /**
  * Every run there is to show, the latest first, with the last [Runs.WEEKS] weeks added up
  * (oldest first, this week last) and the two that stand out: the longest, and the quickest over
- * a mile or more. Neither is named until there are two runs to choose between.
+ * a mile or more. Neither is named until there are two runs to choose between. [notRuns] are
+ * the sessions the tracker called runs that plainly weren't (see [Runs.notRunReason]), the
+ * latest first: listed, but counted nowhere.
  */
 @Immutable
 data class RunsBoard(
@@ -89,10 +106,12 @@ data class RunsBoard(
     val weeks: List<RunWeek> = emptyList(),
     val longestId: String? = null,
     val fastestId: String? = null,
+    val notRuns: List<NotRun> = emptyList(),
 ) {
     val thisWeek: RunWeek? get() = weeks.lastOrNull()
 
-    fun run(id: String): Run? = runs.firstOrNull { it.id == id }
+    /** A run by its [id], or a session that was left out, which still opens onto its own page. */
+    fun run(id: String): Run? = runs.firstOrNull { it.id == id } ?: notRuns.firstOrNull { it.run.id == id }?.run
 }
 
 /**
@@ -115,6 +134,24 @@ object Runs {
 
     /** Under this far (a tenth of a mile) a pace is noise. */
     const val LEAST_PACED_METERS = 160.0
+
+    /**
+     * Slower than this a mile (15:00) the whole way is walking: an easy jog is 10 to 13 minutes
+     * a mile, a brisk walk 15 to 17.
+     */
+    const val SLOWEST_RUN_PACE_SECONDS = 900
+
+    /** Fewer steps a minute than this is a walker's stride: the slowest jog is about 150. */
+    const val LEAST_RUN_CADENCE = 130
+
+    /** A session this long or longer that covered under [LEAST_RUN_METERS] was spent in one place: a workout, not a run. */
+    private const val LEAST_IDLE_SECONDS = 600L
+
+    /** A quarter of a mile. */
+    private const val LEAST_RUN_METERS = 400.0
+
+    /** A session that spent more than this share of itself inside a workout logged here was that workout. */
+    private const val WORKOUT_OVERLAP = 0.5
 
     /** The part of a mile a run ended on is its own split from this far up. */
     private const val LEAST_PART_MILES = 0.05
@@ -149,9 +186,73 @@ object Runs {
         )
     }
 
-    /** The runs page's state from the [records] read, on the local day [todayEpochDay]. */
-    fun board(records: List<RunRecord>, todayEpochDay: Long, offsetAt: (Long) -> Int): RunsBoard {
-        val runs = records.filter { it.endEpochSeconds > it.startEpochSeconds }.map { of(it, offsetAt) }.sortedByDescending { it.startEpochSeconds }
+    /**
+     * Why [run] isn't a run, or null when it is one or there is nothing to tell by. A band decides
+     * a run has begun from the wrist alone, and calls a brisk walk or a set of lunges one. Told
+     * apart, in order, by:
+     * - **a workout logged here** ([workouts], from start to end) that more than half of it fell inside;
+     * - **ground**: ten minutes or more that covered under a quarter of a mile was spent in one place;
+     * - **pace**: slower than 15:00 a mile the whole way, or under 130 steps a minute, is a walk.
+     *
+     * A treadmill session's distance is the band's guess from steps, so it is judged by cadence
+     * alone. With no distance and no steps there is nothing to go on, and it stays a run.
+     */
+    fun notRunReason(run: Run, workouts: List<LongRange> = emptyList()): NotRunReason? {
+        val length = run.endEpochSeconds - run.startEpochSeconds
+        val overlap = workouts.sumOf { (minOf(it.last, run.endEpochSeconds) - maxOf(it.first, run.startEpochSeconds)).coerceAtLeast(0) }
+        if (length > 0 && overlap > length * WORKOUT_OVERLAP) return NotRunReason.WORKOUT
+        val cadence = run.cadence
+        val measured = run.meters > 0 && !run.treadmill
+        return when {
+            measured && run.seconds >= LEAST_IDLE_SECONDS && run.meters < LEAST_RUN_METERS -> NotRunReason.WORKOUT
+            measured && (run.paceSeconds ?: 0) > SLOWEST_RUN_PACE_SECONDS -> NotRunReason.WALK
+            cadence != null && cadence < LEAST_RUN_CADENCE -> NotRunReason.WALK
+            else -> null
+        }
+    }
+
+    /**
+     * A run recorded in this app, with what a band worn on it measured ([worn], the session the
+     * band recorded at the same time) where there is one: its heart, calories and steps. The
+     * distance and the moving time are the phone's own.
+     */
+    fun of(recorded: RecordedRun, worn: Run? = null): Run = Run(
+        id = recorded.id,
+        startEpochSeconds = recorded.startEpochMillis / 1_000,
+        endEpochSeconds = recorded.endEpochMillis / 1_000,
+        utcOffsetSeconds = recorded.utcOffsetSeconds,
+        meters = recorded.meters,
+        seconds = recorded.movingMillis / 1_000,
+        calories = worn?.calories,
+        averageBpm = worn?.averageBpm,
+        peakBpm = worn?.peakBpm,
+        steps = worn?.steps,
+        route = if (recorded.meters > 0) RouteAccess.READABLE else RouteAccess.NONE,
+        recorded = true,
+    )
+
+    /** Whether [a] and [b] were the same outing: more than half of the shorter of the two was spent in the other. */
+    fun same(a: Run, b: Run): Boolean {
+        val overlap = minOf(a.endEpochSeconds, b.endEpochSeconds) - maxOf(a.startEpochSeconds, b.startEpochSeconds)
+        val shorter = minOf(a.endEpochSeconds - a.startEpochSeconds, b.endEpochSeconds - b.startEpochSeconds)
+        return shorter > 0 && overlap * 2 > shorter
+    }
+
+    /**
+     * The runs page's state from the [records] read, on the local day [todayEpochDay]. What
+     * wasn't a run ([notRunReason], against the [workouts] logged here) is set apart and counted
+     * nowhere. The runs [recorded] here are runs whatever their pace: a band's session at the
+     * same time is the same run, and only lends it its heart.
+     */
+    fun board(records: List<RunRecord>, todayEpochDay: Long, offsetAt: (Long) -> Int, workouts: List<LongRange> = emptyList(), recorded: List<RecordedRun> = emptyList()): RunsBoard {
+        val read = records.filter { it.endEpochSeconds > it.startEpochSeconds }.map { of(it, offsetAt) }
+        val ours = recorded.filter { it.endEpochMillis > it.startEpochMillis }.map { run ->
+            val bare = of(run)
+            of(run, read.firstOrNull { same(it, bare) })
+        }
+        val sessions = read.filter { band -> ours.none { same(it, band) } }.sortedByDescending { it.startEpochSeconds }
+        val reasons = sessions.associate { it.id to notRunReason(it, workouts) }
+        val runs = (ours + sessions.filter { reasons[it.id] == null }).sortedByDescending { it.startEpochSeconds }
         val measured = runs.filter { it.meters > 0 }
         val paced = runs.filter { it.meters >= METERS_PER_MILE && it.paceSeconds != null }
         return RunsBoard(
@@ -159,6 +260,7 @@ object Runs {
             weeks = weeks(runs, todayEpochDay),
             longestId = measured.takeIf { it.size > 1 }?.maxBy { it.meters }?.id,
             fastestId = paced.takeIf { it.size > 1 }?.minBy { it.paceSeconds ?: Int.MAX_VALUE }?.id,
+            notRuns = sessions.mapNotNull { run -> reasons[run.id]?.let { NotRun(run, it) } },
         )
     }
 
@@ -180,7 +282,8 @@ object Runs {
      * [run] mile by mile, from the stretches of distance in [track]. Where a mile mark falls
      * inside a stretch, the moment is taken as that far through it. The first mile is timed from
      * the start of the run and the last part from the end of the last stretch, so standing about
-     * afterwards isn't in it. A mile's heart rate is the mean of the readings inside it.
+     * afterwards isn't in it, and a mile is timed without the [RunTrack.pauses] inside it. A mile's
+     * heart rate is the mean of the readings inside it.
      */
     fun splits(run: Run, track: RunTrack): List<RunSplit> {
         val spans = track.distance.filter { it.meters > 0 && it.endEpochSeconds > it.startEpochSeconds }.sortedBy { it.startEpochSeconds }
@@ -200,7 +303,8 @@ object Runs {
 
         fun split(number: Int, miles: Double, from: Double, to: Double): RunSplit {
             val within = heart.filter { it.epochSeconds >= from && it.epochSeconds < to }
-            return RunSplit(number, miles, (to - from).roundToLong().coerceAtLeast(1), if (within.isEmpty()) null else within.map { it.value }.average().roundToInt())
+            val paused = track.pauses.sumOf { (minOf(to, it.endEpochSeconds.toDouble()) - maxOf(from, it.startEpochSeconds.toDouble())).coerceAtLeast(0.0) }
+            return RunSplit(number, miles, (to - from - paused).roundToLong().coerceAtLeast(1), if (within.isEmpty()) null else within.map { it.value }.average().roundToInt())
         }
 
         val splits = mutableListOf<RunSplit>()

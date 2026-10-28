@@ -37,8 +37,10 @@
     <string name="fitness_run_last">Last: %1$s · %2$s · %3$s</string>
     <!-- The same for a run with no distance recorded: %1$s how long ago, %2$s how long it took -->
     <string name="fitness_run_last_timed">Last: %1$s · %2$s</string>
-    <string name="fitness_run_none">No runs yet. Record one with your band or in Google Health and it appears here.</string>
+    <string name="fitness_run_none">No runs yet. Start one here, or record one with your band or in Google Health, and it appears here.</string>
     <string name="fitness_run_not_shared">Exercise isn't shared with PercySafe, so there are no runs to show.</string>
+    <!-- The same where runs can be recorded in the app -->
+    <string name="fitness_run_not_shared_recording">Exercise isn't shared with PercySafe, so your band's runs aren't here: only the ones recorded on this phone.</string>
 
     <!-- The runs page -->
     <string name="fitness_run_this_week">This week</string>
@@ -53,11 +55,45 @@
     <string name="fitness_run_all">Every run</string>
     <!-- A run in the list: %1$s how far, %2$s its pace, %3$s how long it took -->
     <string name="fitness_run_row_stats">%1$s · %2$s · %3$s</string>
+    <!-- A session with no pace worth showing: %1$s how far, %2$s how long it took -->
+    <string name="fitness_run_row_timed">%1$s · %2$s</string>
     <string name="fitness_run_badge_longest">Longest</string>
     <string name="fitness_run_badge_fastest">Fastest pace</string>
     <!-- For a screen reader, a run to open: %1$s its name, %2$s its day -->
     <string name="fitness_run_open_run">Open %1$s, %2$s</string>
-    <string name="fitness_run_source">Runs are recorded by your band or the Google Health app, and read from Health Connect.</string>
+    <!-- Sessions the band recorded as runs that the app doesn't count: their pace, steps or a workout logged at the time say they were something else -->
+    <string name="fitness_run_not_runs_title">Not counted as runs</string>
+    <string name="fitness_run_not_runs_note">Your band called these runs, but they look like something else, so they aren't in your miles.</string>
+    <!-- What a session left out looks to have been, in a word -->
+    <string name="fitness_run_reason_walk">Walk</string>
+    <string name="fitness_run_reason_workout">Workout</string>
+    <!-- On the page of a session left out, under its name -->
+    <string name="fitness_run_not_run_walk">Not counted as a run: it was walking pace the whole way.</string>
+    <string name="fitness_run_not_run_workout">Not counted as a run: it covered hardly any ground, or happened during a workout.</string>
+    <string name="fitness_run_source">Runs come from your band or the Google Health app by way of Health Connect, or are recorded here with your phone's GPS.</string>
+
+    <!-- Recording a run in the app with the phone's GPS -->
+    <string name="fitness_run_start">Start a run</string>
+    <string name="fitness_run_location_refused">PercySafe needs your location to record a run. If it isn't asked for again, allow it for PercySafe in your phone's Settings.</string>
+    <string name="fitness_run_recording_title">Recording</string>
+    <string name="fitness_run_recording_banner">Recording a run</string>
+    <string name="fitness_run_recording_paused">Run paused</string>
+    <!-- For a screen reader: the card that opens the run being recorded -->
+    <string name="fitness_run_open_recording">Open the run being recorded</string>
+    <string name="fitness_run_signal_searching">Finding GPS…</string>
+    <string name="fitness_run_signal_lost">GPS lost. The distance waits until it's back.</string>
+    <string name="fitness_run_signal_good">Recording</string>
+    <string name="fitness_run_stat_pace_now">Pace now</string>
+    <string name="fitness_run_stat_pace_average">Avg pace</string>
+    <string name="fitness_run_pause">Pause</string>
+    <string name="fitness_run_resume">Resume</string>
+    <string name="fitness_run_finish">Finish run</string>
+    <string name="fitness_run_discard">Throw this run away</string>
+    <string name="fitness_run_discard_confirm">Tap again to throw it away</string>
+    <!-- Under a run recorded in the app -->
+    <string name="fitness_run_recorded">Recorded on this phone</string>
+    <string name="fitness_run_delete">Delete run</string>
+    <string name="fitness_run_delete_confirm">Tap again to delete for good</string>
 
     <!-- One run -->
     <string name="fitness_run_stat_distance">Distance</string>

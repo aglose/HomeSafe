@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MonitorHeart
@@ -30,7 +31,11 @@ import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +59,9 @@ import com.meticulouscreations.homesafe.fitness.HealthUiState
 import com.meticulouscreations.homesafe.fitness.domain.FEET_PER_METER
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
 import com.meticulouscreations.homesafe.fitness.domain.METERS_PER_MILE
+import com.meticulouscreations.homesafe.fitness.domain.NotRun
+import com.meticulouscreations.homesafe.fitness.domain.NotRunReason
+import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.RouteAccess
 import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunDetail
@@ -73,6 +81,8 @@ import homesafe.shared.generated.resources.fitness_run_all
 import homesafe.shared.generated.resources.fitness_run_badge_fastest
 import homesafe.shared.generated.resources.fitness_run_badge_longest
 import homesafe.shared.generated.resources.fitness_run_bpm
+import homesafe.shared.generated.resources.fitness_run_delete
+import homesafe.shared.generated.resources.fitness_run_delete_confirm
 import homesafe.shared.generated.resources.fitness_run_feet
 import homesafe.shared.generated.resources.fitness_run_heart
 import homesafe.shared.generated.resources.fitness_run_heart_described
@@ -85,14 +95,23 @@ import homesafe.shared.generated.resources.fitness_run_name_midday
 import homesafe.shared.generated.resources.fitness_run_name_morning
 import homesafe.shared.generated.resources.fitness_run_name_night
 import homesafe.shared.generated.resources.fitness_run_none
+import homesafe.shared.generated.resources.fitness_run_not_run_walk
+import homesafe.shared.generated.resources.fitness_run_not_run_workout
+import homesafe.shared.generated.resources.fitness_run_not_runs_note
+import homesafe.shared.generated.resources.fitness_run_not_runs_title
 import homesafe.shared.generated.resources.fitness_run_not_shared
+import homesafe.shared.generated.resources.fitness_run_not_shared_recording
 import homesafe.shared.generated.resources.fitness_run_open_run
 import homesafe.shared.generated.resources.fitness_run_pace
 import homesafe.shared.generated.resources.fitness_run_reading
+import homesafe.shared.generated.resources.fitness_run_reason_walk
+import homesafe.shared.generated.resources.fitness_run_reason_workout
+import homesafe.shared.generated.resources.fitness_run_recorded
 import homesafe.shared.generated.resources.fitness_run_route
 import homesafe.shared.generated.resources.fitness_run_route_ask
 import homesafe.shared.generated.resources.fitness_run_route_described
 import homesafe.shared.generated.resources.fitness_run_row_stats
+import homesafe.shared.generated.resources.fitness_run_row_timed
 import homesafe.shared.generated.resources.fitness_run_source
 import homesafe.shared.generated.resources.fitness_run_split_mile
 import homesafe.shared.generated.resources.fitness_run_splits
@@ -192,11 +211,21 @@ internal fun lastRunLine(health: HealthUiState): String? {
 /**
  * Every run the health store holds, the latest first, under what this week came to and the last
  * eight weeks as bars of miles. The longest run and the quickest are marked. A run opens onto
- * its own page. Runs aren't started here: the band (or the Google Health app) records them, and
- * they turn up once it has synced.
+ * its own page. A run is started here (where the phone's GPS can record one: [recording] is the
+ * one going, if any), or the band (or the Google Health app) records it and it turns up once it
+ * has synced.
  */
 @Composable
-internal fun RunsScreen(health: HealthUiState, padding: PaddingValues, onOpenRun: (String) -> Unit, onManage: () -> Unit, modifier: Modifier = Modifier) {
+internal fun RunsScreen(
+    health: HealthUiState,
+    padding: PaddingValues,
+    onOpenRun: (String) -> Unit,
+    onManage: () -> Unit,
+    modifier: Modifier = Modifier,
+    recording: Recording? = null,
+    onStartRun: () -> Unit = {},
+    onOpenRecording: () -> Unit = {},
+) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     val board = health.runs
@@ -204,13 +233,14 @@ internal fun RunsScreen(health: HealthUiState, padding: PaddingValues, onOpenRun
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(horizontal = FitnessGutter).testTag("fitness_runs"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (!health.runsShared) {
+        if (health.canRecord) RecordRunCard(recording, health.locationRefused, onStartRun, onOpenRecording)
+        if (!health.runsShared && health.supported) {
             FitnessCard(Modifier.testTag("fitness_runs_unshared")) {
-                Text(stringResource(Res.string.fitness_run_not_shared), style = type.body, color = colors.textMuted)
+                Text(stringResource(if (health.canRecord) Res.string.fitness_run_not_shared_recording else Res.string.fitness_run_not_shared), style = type.body, color = colors.textMuted)
                 Spacer(Modifier.height(14.dp))
                 ManageButton(onManage)
             }
-            return@Column
+            if (!health.canRecord) return@Column
         }
         WeekCard(board)
         if (board.runs.isEmpty()) {
@@ -219,8 +249,13 @@ internal fun RunsScreen(health: HealthUiState, padding: PaddingValues, onOpenRun
             CardLabel(stringResource(Res.string.fitness_run_all), Modifier.padding(top = 6.dp))
             board.runs.forEach { run -> RunCard(run, longest = run.id == board.longestId, fastest = run.id == board.fastestId, onOpen = { onOpenRun(run.id) }) }
         }
+        if (board.notRuns.isNotEmpty()) {
+            CardLabel(stringResource(Res.string.fitness_run_not_runs_title), Modifier.padding(top = 6.dp))
+            Text(stringResource(Res.string.fitness_run_not_runs_note), style = type.label, color = colors.textFaint)
+            board.notRuns.forEach { left -> NotRunCard(left, onOpen = { onOpenRun(left.run.id) }) }
+        }
         Text(stringResource(Res.string.fitness_run_source), style = type.label, color = colors.textFaint, modifier = Modifier.padding(top = 6.dp))
-        ManageButton(onManage)
+        if (health.runsShared) ManageButton(onManage)
     }
 }
 
@@ -318,10 +353,55 @@ private fun RunCard(run: Run, longest: Boolean, fastest: Boolean, onOpen: () -> 
     }
 }
 
+/** What a session left out as no run was, in a word. */
+private fun reasonName(reason: NotRunReason): StringResource = when (reason) {
+    NotRunReason.WALK -> Res.string.fitness_run_reason_walk
+    NotRunReason.WORKOUT -> Res.string.fitness_run_reason_workout
+}
+
+/** A session the band called a run that wasn't one: dimmer than a run, with what it looks to have been in place of a name. */
+@Composable
+private fun NotRunCard(left: NotRun, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = FitnessTheme.colors
+    val type = FitnessTheme.type
+    val run = left.run
+    val name = stringResource(reasonName(left.reason))
+    val day = FitnessFormat.day(run.epochDay).resolve()
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(FitnessCardShape)
+            .border(1.dp, colors.hairline, FitnessCardShape)
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fitness_run_open_run, name, day), onClick = onOpen)
+            .testTag("fitness_not_run_${run.id}")
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.fitness_history_when, day, FitnessFormat.timeOfDay(run.startEpochSeconds, run.utcOffsetSeconds).resolve()),
+                style = type.label,
+                color = colors.textFaint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // A workout's pace over the few yards it moved means nothing.
+            val line = if (left.reason == NotRunReason.WORKOUT && run.meters > 0) {
+                stringResource(Res.string.fitness_run_row_timed, RunFormat.distance(run.meters).resolve(), RunFormat.clock(run.seconds))
+            } else {
+                runLine(run)
+            }
+            Text(line, style = type.body, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(name, style = type.label, color = colors.textMuted, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textFaint, modifier = Modifier.padding(start = 4.dp).size(20.dp))
+    }
+}
+
 /** What marks a run out: the longest there is, the quickest, or that it was run indoors. Nothing drawn for a run that is none of them. */
 @Composable
 private fun RunBadges(run: Run, longest: Boolean, fastest: Boolean, modifier: Modifier = Modifier) {
-    if (!longest && !fastest && !run.treadmill) return
+    if (!longest && !fastest && !run.treadmill && !run.recorded) return
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -336,6 +416,7 @@ private fun RunBadges(run: Run, longest: Boolean, fastest: Boolean, modifier: Mo
             }
         }
         if (run.treadmill) Text(stringResource(Res.string.fitness_run_treadmill), style = type.label, color = colors.textFaint, maxLines = 1)
+        if (run.recorded) Text(stringResource(Res.string.fitness_run_recorded), style = type.label, color = colors.textFaint, maxLines = 1)
     }
 }
 
@@ -358,10 +439,25 @@ internal fun RunScreen(
     bounds: ZoneBounds? = null,
     /** Opens the heart-rate page, where the zones are set; null where there is none. */
     onOpenHeart: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     val none = stringResource(Res.string.fitness_history_none)
+    var deleting by rememberSaveable(run.id) { mutableStateOf(false) }
+
+    /** A run recorded here can be taken off the phone, at a second tap. */
+    @Composable
+    fun DeleteButton() {
+        if (onDelete == null) return
+        GhostButton(
+            stringResource(if (deleting) Res.string.fitness_run_delete_confirm else Res.string.fitness_run_delete),
+            { if (deleting) onDelete() else deleting = true },
+            Modifier.fillMaxWidth().padding(top = 6.dp).testTag("fitness_run_delete"),
+            icon = Icons.Filled.Delete,
+            tint = colors.danger,
+        )
+    }
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(horizontal = FitnessGutter).testTag("fitness_run"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -380,6 +476,19 @@ internal fun RunScreen(
                 modifier = Modifier.padding(top = 4.dp),
             )
             RunBadges(run, longest = run.id == board.longestId, fastest = run.id == board.fastestId, Modifier.padding(top = 6.dp))
+            board.notRuns.firstOrNull { it.run.id == run.id }?.let { left ->
+                Text(
+                    stringResource(
+                        when (left.reason) {
+                            NotRunReason.WALK -> Res.string.fitness_run_not_run_walk
+                            NotRunReason.WORKOUT -> Res.string.fitness_run_not_run_workout
+                        },
+                    ),
+                    style = type.body,
+                    color = colors.textMuted,
+                    modifier = Modifier.padding(top = 6.dp).testTag("fitness_run_not_counted"),
+                )
+            }
         }
 
         FitnessCard(Modifier.testTag("fitness_run_stats")) {
@@ -406,6 +515,7 @@ internal fun RunScreen(
 
         if (detail == null) {
             Text(stringResource(Res.string.fitness_run_reading), style = type.body, color = colors.textMuted, modifier = Modifier.testTag("fitness_run_reading"))
+            DeleteButton()
             return@Column
         }
 
@@ -435,6 +545,7 @@ internal fun RunScreen(
         if (detail.splits.isNotEmpty()) {
             FitnessCard(Modifier.testTag("fitness_run_splits"), title = stringResource(Res.string.fitness_run_splits)) { Splits(detail) }
         }
+        DeleteButton()
     }
 }
 
@@ -561,7 +672,7 @@ private fun HeartChart(detail: RunDetail, startEpochSeconds: Long, endEpochSecon
  * runner lives to a tile server.
  */
 @Composable
-private fun RouteSketch(detail: RunDetail, modifier: Modifier = Modifier) {
+internal fun RouteSketch(detail: RunDetail, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors
     val route = detail.route
     val described = stringResource(Res.string.fitness_run_route_described)

@@ -85,6 +85,8 @@ kotlin {
             implementation(libs.androidx.fragment)
             // Steps, sleep and runs from the band, by way of Google Health (HealthSource.android.kt).
             implementation(libs.androidx.health.connect)
+            // The phone's GPS for a run recorded in the app (RunLocation.android.kt).
+            implementation(libs.play.services.location)
         }
         listOf("iosArm64Main", "iosSimulatorArm64Main").forEach { name ->
             getByName(name).kotlin.srcDir("src/skiaMain/kotlin")

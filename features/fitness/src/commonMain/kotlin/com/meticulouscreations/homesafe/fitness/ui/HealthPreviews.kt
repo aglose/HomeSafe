@@ -6,10 +6,12 @@ import com.meticulouscreations.homesafe.fitness.HealthAccess
 import com.meticulouscreations.homesafe.fitness.HealthUiState
 import com.meticulouscreations.homesafe.fitness.domain.BodyBoards
 import com.meticulouscreations.homesafe.fitness.domain.DistanceSpan
+import com.meticulouscreations.homesafe.fitness.domain.GpsSignal
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
 import com.meticulouscreations.homesafe.fitness.domain.HealthSample
 import com.meticulouscreations.homesafe.fitness.domain.HeartZones
 import com.meticulouscreations.homesafe.fitness.domain.METERS_PER_MILE
+import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.RouteAccess
 import com.meticulouscreations.homesafe.fitness.domain.RoutePoint
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
@@ -81,6 +83,9 @@ object HealthFixtures {
         Outing(24, 6, 30, 3.12, 571, 149),
         Outing(31, 16, 15, 2.50, 602, 144),
         Outing(40, 7, 0, 4.00, 585, 147),
+        // What the band called runs that weren't: a walk at lunch, and forty minutes of lunges.
+        Outing(2, 12, 15, 1.60, 1_110, 104),
+        Outing(4, 18, 30, 0.12, 20_000, 128),
     )
 
     val records: List<RunRecord> = outings.mapIndexed { index, outing ->
@@ -138,7 +143,7 @@ object HealthFixtures {
      * run's page has its track.
      */
     fun connected(lastNightMinutes: Int? = 432, variability: Double? = 49.0, resting: Double? = 53.0, opened: String? = null): HealthUiState {
-        val board = Runs.board(records, today) { 0 }
+        val board = Runs.board(records, today, offsetAt = { 0 })
         return HealthUiState(
             access = HealthAccess.ON,
             granted = HealthKind.entries.toSet(),
@@ -160,6 +165,29 @@ object HealthFixtures {
     fun off(refused: Boolean = false): HealthUiState = HealthUiState(access = HealthAccess.OFF, refused = refused)
 
     val missing = HealthUiState(access = HealthAccess.MISSING)
+
+    /**
+     * A run being recorded with the phone's GPS: 2.14 miles in 19:40 of moving, most of the way
+     * round the loop, [paused] or going at a 9:05 mile just now.
+     */
+    fun recording(paused: Boolean = false): Recording {
+        val loop = (0..96).map { step ->
+            val turn = 2 * PI * step / 120
+            RoutePoint(45.0 + 0.006 * sin(turn) * (1 + 0.3 * sin(3 * turn)), -93.0 + 0.009 * cos(turn) * (1 + 0.2 * cos(2 * turn)))
+        }
+        val startedAt = NOW * 1_000 - 1_260_000
+        return Recording(
+            id = "app-preview",
+            startEpochMillis = startedAt,
+            paused = paused,
+            meters = 2.14 * METERS_PER_MILE,
+            movingMillis = 1_180_000,
+            asOfMillis = NOW * 1_000,
+            paceSeconds = if (paused) null else 545,
+            signal = GpsSignal.GOOD,
+            route = loop,
+        )
+    }
 
     /** Connected with only exercise shared: runs, and nothing for the body card. */
     fun runsOnly(): HealthUiState = connected().let { it.copy(granted = setOf(HealthKind.EXERCISE), body = BodyBoards.build(NOW, { 0 })) }
@@ -192,7 +220,35 @@ private fun FitnessTodayBodyConnectPreview() {
 @Preview(widthDp = 412, heightDp = 1700)
 @Composable
 private fun FitnessRunsPreview() {
-    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Runs, health = HealthFixtures.connected()) }
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Runs, health = HealthFixtures.connected().copy(canRecord = true)) }
+}
+
+@Preview(widthDp = 412, heightDp = 700)
+@Composable
+private fun FitnessRunsRecordingPreview() {
+    FrigateTheme {
+        FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Runs, health = HealthFixtures.connected().copy(canRecord = true), recording = HealthFixtures.recording())
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 700)
+@Composable
+private fun FitnessRunsNotSharedPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Runs, health = HealthFixtures.off().copy(canRecord = true, locationRefused = true)) }
+}
+
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FitnessRecordingPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Recording, health = HealthFixtures.connected().copy(canRecord = true), recording = HealthFixtures.recording()) }
+}
+
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FitnessRecordingPausedPreview() {
+    FrigateTheme {
+        FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Recording, health = HealthFixtures.connected().copy(canRecord = true), recording = HealthFixtures.recording(paused = true))
+    }
 }
 
 @Preview(widthDp = 412, heightDp = 1900)

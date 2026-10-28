@@ -97,6 +97,7 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
+import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground
@@ -116,6 +117,7 @@ import homesafe.shared.generated.resources.fitness_close
 import homesafe.shared.generated.resources.fitness_copy_share_title
 import homesafe.shared.generated.resources.fitness_heart_title
 import homesafe.shared.generated.resources.fitness_run_page_title
+import homesafe.shared.generated.resources.fitness_run_recording_title
 import homesafe.shared.generated.resources.fitness_run_title
 import homesafe.shared.generated.resources.fitness_tab_history
 import homesafe.shared.generated.resources.fitness_tab_lifts
@@ -164,6 +166,9 @@ sealed interface FitnessPage {
 
     /** One run, opened up. */
     data class Run(val id: String) : FitnessPage
+
+    /** The run being recorded with the phone's GPS. */
+    data object Recording : FitnessPage
 }
 
 /** Everything the fitness screens can ask for, as one thing to hand down: the view model's side of the app. */
@@ -206,6 +211,16 @@ class FitnessActions(
     val onOpenRun: (String) -> Unit = {},
     /** Asks the user for the open run's route. */
     val onAskRunRoute: () -> Unit = {},
+    /** Starts recording a run with the phone's GPS. */
+    val onStartRun: () -> Unit = {},
+    val onPauseRun: () -> Unit = {},
+    val onResumeRun: () -> Unit = {},
+    /** Ends the run being recorded and keeps it. */
+    val onFinishRun: () -> Unit = {},
+    /** Ends the run being recorded and throws it away. */
+    val onDiscardRun: () -> Unit = {},
+    /** Takes a run recorded here off the phone. */
+    val onDeleteRun: (String) -> Unit = {},
     /** Sends a copy of the whole log out through the platform's share sheet; null where there is none to send it through. */
     val onSendCopy: (() -> Unit)? = null,
 )
@@ -227,6 +242,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val heart by viewModel.heart.collectAsStateWithLifecycle()
     val healthViewModel: HealthViewModel = metroViewModel()
     val health by healthViewModel.uiState.collectAsStateWithLifecycle()
+    val recording by healthViewModel.recording.collectAsStateWithLifecycle()
     val close by rememberUpdatedState(onClose)
     val share = rememberShareText()
     val shareTitle by rememberUpdatedState(stringResource(Res.string.fitness_copy_share_title))
@@ -264,10 +280,16 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onManageHealth = healthViewModel::manage,
             onOpenRun = healthViewModel::openRun,
             onAskRunRoute = healthViewModel::askForRoute,
+            onStartRun = healthViewModel::startRun,
+            onPauseRun = healthViewModel::pauseRun,
+            onResumeRun = healthViewModel::resumeRun,
+            onFinishRun = healthViewModel::finishRun,
+            onDiscardRun = healthViewModel::discardRun,
+            onDeleteRun = healthViewModel::deleteRun,
             onSendCopy = share?.let { send -> { scope.launch { viewModel.sendLogCopy { text -> send(text, shareTitle) } } } },
         )
     }
-    FitnessAppContent(state, actions, modifier, active, heart = heart, health = health)
+    FitnessAppContent(state, actions, modifier, active, heart = heart, health = health, recording = recording)
 }
 
 /**
@@ -275,7 +297,8 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
  * tests as much as for the app. The [heart] rate is beside it, since it alone changes every
  * second; left out, the app is as it is where there is no sensor to be had. So is what the
  * device's health store says ([health]), which comes from elsewhere and at its own pace; left
- * out, the app is as it is where there is no such store.
+ * out, the app is as it is where there is no such store. The run being [recording] is beside
+ * it too, for the same reason as the heart.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -288,6 +311,7 @@ fun FitnessAppContent(
     initialPage: FitnessPage? = null,
     heart: HeartUiState = HeartUiState(),
     health: HealthUiState = HealthUiState(),
+    recording: Recording? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<FitnessPage>().apply { initialPage?.let(::add) } }
@@ -304,6 +328,15 @@ fun FitnessAppContent(
     // with none it leaves the app, which the overlay around it drains predictively (InnerAppOverlay).
     // Off while the app animates closed ([active] false), so that Back reaches what's beneath.
     val back = rememberPredictiveBack(enabled = active && pages.isNotEmpty()) { pop() }
+
+    // A run asked for opens its page once it is recording: the location may yet be refused, which the runs page says.
+    var startingRun by remember { mutableStateOf(false) }
+    LaunchedEffect(startingRun, recording != null) {
+        if (startingRun && recording != null) {
+            startingRun = false
+            if (pages.lastOrNull() == FitnessPage.Runs) pages += FitnessPage.Recording
+        }
+    }
 
     // Notes handed over from outside (shared into the app) open on the page that reads them.
     LaunchedEffect(state.import.text.isNotBlank()) {
@@ -332,7 +365,7 @@ fun FitnessAppContent(
             page == FitnessPage.Workout && workout != null -> palette.focus(workout.workout.focus)
             page is FitnessPage.Lift -> state.board(page.exerciseId)?.let { palette.focus(focusOf(it.exercise.bodyPart)) } ?: palette.phase(state.phase.kind)
             page is FitnessPage.Session -> state.session(page.workoutId, page.epochDay)?.focus?.let { palette.focus(it) } ?: palette.phase(state.phase.kind)
-            page == FitnessPage.Runs || page is FitnessPage.Run -> palette.run
+            page == FitnessPage.Runs || page is FitnessPage.Run || page == FitnessPage.Recording -> palette.run
             else -> palette.phase(state.phase.kind)
         }
 
@@ -385,6 +418,8 @@ fun FitnessAppContent(
                         onConnectHealth = actions.onConnectHealth,
                         onManageHealth = actions.onManageHealth,
                         onOpenRuns = { pages += FitnessPage.Runs },
+                        recording = recording,
+                        onOpenRecording = { pages += listOf(FitnessPage.Runs, FitnessPage.Recording) },
                         heart = if (heart.supported) ({ latestHeart.value }) else null,
                         onOpenHeart = { pages += FitnessPage.Heart },
                     )
@@ -501,6 +536,27 @@ fun FitnessAppContent(
                             pages += FitnessPage.Run(id)
                         },
                         onManage = actions.onManageHealth,
+                        recording = recording,
+                        onStartRun = {
+                            actions.onStartRun()
+                            startingRun = true
+                        },
+                        onOpenRecording = { pages += FitnessPage.Recording },
+                    )
+
+                    FitnessPage.Recording -> RecordingScreen(
+                        recording = recording,
+                        padding = pagePadding,
+                        onPause = actions.onPauseRun,
+                        onResume = actions.onResumeRun,
+                        onFinish = {
+                            actions.onFinishRun()
+                            pages.remove(FitnessPage.Recording)
+                        },
+                        onDiscard = {
+                            actions.onDiscardRun()
+                            pages.remove(FitnessPage.Recording)
+                        },
                     )
 
                     is FitnessPage.Run -> {
@@ -516,6 +572,14 @@ fun FitnessAppContent(
                                 onAskRoute = actions.onAskRunRoute,
                                 bounds = heart.bounds,
                                 onOpenHeart = if (heart.supported) ({ pages += FitnessPage.Heart }) else null,
+                                onDelete = if (run.recorded) {
+                                    {
+                                        actions.onDeleteRun(run.id)
+                                        pages.remove(shown)
+                                    }
+                                } else {
+                                    null
+                                },
                             )
                         } else {
                             // Deleted in the health store since: the page under this one shows through.
@@ -548,6 +612,7 @@ fun FitnessAppContent(
                     is FitnessPage.Session -> stringResource(Res.string.fitness_title_session)
                     FitnessPage.Runs -> stringResource(Res.string.fitness_run_title)
                     is FitnessPage.Run -> stringResource(Res.string.fitness_run_page_title)
+                    FitnessPage.Recording -> stringResource(Res.string.fitness_run_recording_title)
                 },
                 paged = page != null,
                 onBack = ::pop,
