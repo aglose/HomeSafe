@@ -244,7 +244,10 @@ The relay keeps the last 200 writes and shows the newest 20.
 
 Home value, the RSU and ESPP vesting schedule, and the income and expense lines are not things a
 bank reports, so they stay as typed, as does any balance at an institution that isn't linked. The
-sheet's history table is still filled in by hand.
+sheet's history table is still filled in by hand. The balances among them (an account, a debt, the
+home's value) can be typed in from the app, which also says how long ago each was last updated:
+**Finance → Wallet → Typed balances** (see "Balances typed by hand" in [finance.md](finance.md)).
+Those writes are listed under **What was changed** like the sheet fill's, and undone the same way.
 
 ## How it's built
 

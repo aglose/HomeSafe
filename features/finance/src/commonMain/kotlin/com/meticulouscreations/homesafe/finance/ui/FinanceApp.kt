@@ -105,6 +105,7 @@ import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.fin_balance_title
 import homesafe.shared.generated.resources.fin_bank_title
 import homesafe.shared.generated.resources.fin_budget_settings_title
 import homesafe.shared.generated.resources.finance_close
@@ -142,6 +143,9 @@ internal sealed interface FinanceDetail {
 
     /** How every chart looks and feels. */
     data object ChartSettings : FinanceDetail
+
+    /** The balances typed into the sheet by hand, how old each is, and typing a new one in. */
+    data object TypedBalances : FinanceDetail
 
     /** A part of the Wallet on a page of its own; [focus] is a section a checkup link asked for. */
     data class WalletPage(val topic: WalletTopic, val focus: WalletSection? = null) : FinanceDetail
@@ -328,6 +332,7 @@ private fun FinanceAppContent(
                             onOpenTopic = { topic, focus -> push(FinanceDetail.WalletPage(topic, focus)) },
                             budget = budgetState.budget,
                             onOpenBudget = { tab = FinanceTab.BUDGET },
+                            onOpenBalances = { push(FinanceDetail.TypedBalances) },
                         )
 
                         FinanceTab.BUDGET -> BudgetRoute(
@@ -385,6 +390,8 @@ private fun FinanceAppContent(
                         FinanceDetail.ChartSettings -> ChartSettingsScreen(chartStyle, detailPadding, onChange = chartStyleViewModel::update)
 
                         is FinanceDetail.WalletPage -> WalletTopicScreen(page.topic, page.focus, state, detailPadding)
+
+                        FinanceDetail.TypedBalances -> TypedBalancesScreen(state, detailPadding, onSave = viewModel::updateBalance, onClearSave = viewModel::clearBalanceSave)
                     }
                 }
             }
@@ -477,6 +484,7 @@ private fun titleOf(detail: FinanceDetail): String = when (detail) {
     FinanceDetail.BankSync -> stringResource(Res.string.fin_bank_title)
     FinanceDetail.BudgetSettings -> stringResource(Res.string.fin_budget_settings_title)
     FinanceDetail.ChartSettings -> stringResource(Res.string.finance_title_chart_settings)
+    FinanceDetail.TypedBalances -> stringResource(Res.string.fin_balance_title)
     is FinanceDetail.WalletPage -> stringResource(detail.topic.title)
 }
 

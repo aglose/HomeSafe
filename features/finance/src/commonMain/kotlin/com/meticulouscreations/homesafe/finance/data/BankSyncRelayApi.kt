@@ -320,7 +320,7 @@ internal data class RelayFillWrite(
         atEpochSeconds = at.toLong(),
         undoneAtEpochSeconds = undoneAt?.toLong(),
         undoneBy = undoneBy?.takeIf { it.isNotBlank() },
-        changes = changes.map { SheetChange(label = it.label, tab = it.tab, cell = it.cell, before = it.before, after = it.after, restored = it.restored) },
+        changes = changes.map { SheetChange(label = it.label, tab = it.tab, cell = it.cell, before = it.before, after = it.after, restored = it.restored, typedBy = it.typedBy) },
     )
 }
 
@@ -332,6 +332,7 @@ internal data class RelayFillChange(
     val before: Double? = null,
     val after: Double? = null,
     val restored: Boolean? = null,
+    @SerialName("typed_by") val typedBy: String? = null,
 )
 
 @Serializable

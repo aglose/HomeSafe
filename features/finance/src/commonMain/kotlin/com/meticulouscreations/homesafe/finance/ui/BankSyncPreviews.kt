@@ -110,6 +110,13 @@ internal object BankSyncFixtures {
             ),
             writes = listOf(
                 SheetWrite(
+                    id = 13,
+                    atEpochSeconds = NOW - 40 * 60,
+                    undoneAtEpochSeconds = null,
+                    undoneBy = null,
+                    changes = listOf(SheetChange("Pension", "Home", "J14", before = 61_250.0, after = 62_480.0, restored = null, typedBy = "sam")),
+                ),
+                SheetWrite(
                     id = 12,
                     atEpochSeconds = NOW - 3 * 3_600,
                     undoneAtEpochSeconds = null,
@@ -218,6 +225,13 @@ private fun FinanceBankSyncLinkingPreview() {
 @Composable
 private fun FinanceBankSyncSetupPreview() {
     BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.empty.copy(configured = false), loading = false))
+}
+
+@Preview(name = "Bank sync · not set up, a balance typed in the app", widthDp = 412, heightDp = 640)
+@Composable
+private fun FinanceBankSyncSetupTypedPreview() {
+    val typed = BankSyncFixtures.filled.fill.writes.filter { w -> w.changes.any { it.typedBy != null } }
+    BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.empty.copy(configured = false, fill = BankSyncFixtures.empty.fill.copy(writes = typed)), loading = false))
 }
 
 @Preview(name = "Bank sync · relay too old", widthDp = 412, heightDp = 420)

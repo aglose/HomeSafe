@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
+import com.meticulouscreations.homesafe.finance.domain.BalanceFreshness
 import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.HomeEquity
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
@@ -53,6 +54,7 @@ import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.Series
+import com.meticulouscreations.homesafe.finance.domain.SheetCell
 import com.meticulouscreations.homesafe.finance.domain.Snapshot
 import com.meticulouscreations.homesafe.finance.ui.components.AuroraBackground
 import com.meticulouscreations.homesafe.finance.ui.components.Bar
@@ -192,6 +194,7 @@ internal fun WalletScreen(
     onOpenTopic: (WalletTopic, WalletSection?) -> Unit = { _, _ -> },
     budget: Budget? = null,
     onOpenBudget: () -> Unit = {},
+    onOpenBalances: () -> Unit = {},
 ) {
     val finance = state.finance
     val fedRate = state.readings[IndicatorCatalog.fedFunds.id]?.latest
@@ -208,6 +211,7 @@ internal fun WalletScreen(
                 budget,
                 onOpenBudget,
                 onOpenTopic,
+                onOpenBalances,
                 onOpenCheckup = { page ->
                     checkupPage = page
                     checkupOpen = true
@@ -240,6 +244,7 @@ private fun LazyListScope.walletItems(
     budget: Budget?,
     onOpenBudget: () -> Unit,
     onOpenTopic: (WalletTopic, WalletSection?) -> Unit,
+    onOpenBalances: () -> Unit,
     onOpenCheckup: (CheckKind?) -> Unit,
 ) {
     item(key = "hero") { NetWorthHero(finance) }
@@ -249,6 +254,8 @@ private fun LazyListScope.walletItems(
     if (budget != null && budget.isCurrentMonth && budget.budgetCards.isNotEmpty()) {
         item(key = "budget") { CascadeIn(2) { BudgetTeaser(budget, onOpenBudget, Modifier.padding(top = 12.dp)) } }
     }
+    // The numbers no bank reports, and how long since they were copied over.
+    item(key = "typed") { CascadeIn(2) { TypedBalancesTeaser(finance, onOpenBalances, Modifier.padding(top = 12.dp)) } }
     val topics = walletTopics(finance)
     if (topics.isNotEmpty()) {
         item(key = "money-h") { SectionHeader(stringResource(Res.string.finance_wallet_your_money)) }
@@ -557,15 +564,29 @@ internal fun AccountsBlock(finance: PersonalFinance) {
             { owner = it },
         )
         Spacer(Modifier.height(8.dp))
+        val now = LocalFinanceClock.current.now().epochSeconds
         shown.forEachIndexed { i, account ->
-            AccountRow(account, account.balance / total, i)
+            AccountRow(account, account.balance / total, i, typedAge(account.cell, finance, now))
             if (i < shown.lastIndex) Hairline(Modifier.padding(horizontal = PageGutter))
         }
     }
 }
 
+/**
+ * How old a typed balance is, for a row: the words and their colour, or null for one the sheet
+ * works out (or that has no cell of its own). Amber or red when it is worth updating.
+ */
 @Composable
-private fun AccountRow(account: Account, share: Double, index: Int) {
+private fun typedAge(cell: SheetCell?, finance: PersonalFinance, now: Long): Pair<String, Color>? {
+    if (cell == null || cell.calculated) return null
+    val age = finance.balanceAges[cell.id]
+    val freshness = BalanceFreshness.of(age, now)
+    val color = if (freshness.wantsUpdate && cell.id !in finance.bankFilled) freshness.color() else FinanceTheme.colors.textSecondary
+    return balanceAgeText(age, now).resolve() to color
+}
+
+@Composable
+private fun AccountRow(account: Account, share: Double, index: Int, age: Pair<String, Color>? = null) {
     val colors = FinanceTheme.colors
     Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -574,6 +595,7 @@ private fun AccountRow(account: Account, share: Double, index: Int) {
             Column(Modifier.weight(1f)) {
                 Text(account.name.resolve(), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(listOf(account.owner.label.resolve(), stringResource(account.category.label)).joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary)
+                if (age != null) Text(age.first, style = FinanceTheme.type.label, color = age.second, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(FinanceFormat.money(account.balance, 0), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
@@ -745,6 +767,7 @@ internal fun DebtBlock(finance: PersonalFinance) {
             )
             Spacer(Modifier.height(8.dp))
         }
+        val now = LocalFinanceClock.current.now().epochSeconds
         finance.debts.sortedWith(compareBy({ it.isMortgage }, { -it.balance })).forEach { debt ->
             Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -759,6 +782,7 @@ internal fun DebtBlock(finance: PersonalFinance) {
                         style = FinanceTheme.type.label,
                         color = colors.textSecondary,
                     )
+                    typedAge(debt.cell, finance, now)?.let { (text, color) -> Text(text, style = FinanceTheme.type.label, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 if (debt.isPaidOff) {
                     Text(stringResource(Res.string.finance_wallet_paid_off), style = FinanceTheme.type.bodyStrong, color = colors.gain)

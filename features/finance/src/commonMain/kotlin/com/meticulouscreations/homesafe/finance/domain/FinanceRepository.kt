@@ -78,4 +78,12 @@ interface FinanceRepository {
      * allows it to be shown; [PersonalFinance.fetchedAtEpochSeconds] says when that was.
      */
     suspend fun personalFinance(refresh: Boolean = false): Result<PersonalFinance>
+
+    /**
+     * Types [amount] into the budget sheet for [balance] (what's held, or what's owed, as the app
+     * shows it), or with the same amount marks it as still right. Fails with a
+     * [BalanceUpdateException] saying why when the relay won't. The next [personalFinance] with
+     * `refresh` has the new number and its age.
+     */
+    suspend fun updateBalance(balance: TypedBalance, amount: Double): Result<BalanceAge>
 }

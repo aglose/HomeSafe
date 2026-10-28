@@ -329,6 +329,14 @@ def db() -> sqlite3.Connection:
     # `changes` is a JSON list of what each cell held before and after, which is what the app
     # shows and what an undo puts back. `undone_at` and `undone_by` once someone undid it.
     conn.execute("CREATE TABLE IF NOT EXISTS sheet_writes (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, changes TEXT NOT NULL, undone_at REAL, undone_by TEXT)")
+    # When each of the budget sheet's balances was last known to be right (see "typed balances"):
+    # someone typed it in the app, or said it still was, or the sheet fill wrote it or found it
+    # already there. `cell` is the balance's line id (tab|label|right), `source` "app" or "bank",
+    # and `by` who typed it.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sheet_values (cell TEXT PRIMARY KEY, tab TEXT NOT NULL, label TEXT NOT NULL, right INTEGER NOT NULL,"
+        " value REAL, at REAL NOT NULL, by TEXT, source TEXT NOT NULL)"
+    )
     # What was bought on the credit cards (see "budget"): one row per transaction as Plaid last
     # told it. `date` is the day it was spent (`posted` the day it settled), `amount` positive for
     # a purchase, `kind` "spend", "refund" or "payment" (paying the card off, which is not
@@ -7447,11 +7455,13 @@ def with_formats(charts: list[dict[str, Any]], formats: dict[tuple[str, int, int
     return charts
 
 
-def sheet_payload(meta: dict[str, Any], values: dict[str, Any], sheet_id: str, fetched_at: float, formats: dict[tuple[str, int, int], dict[str, str]] | None = None) -> dict[str, Any]:
+def sheet_payload(meta: dict[str, Any], values: dict[str, Any], sheet_id: str, fetched_at: float, formats: dict[tuple[str, int, int], dict[str, str]] | None = None,
+                  formulas: list[list[list[int]]] | None = None) -> dict[str, Any]:
     """
     The workbook as the app reads it: each grid tab's rows of raw values and its merged ranges
     (0-based, end-exclusive), and the workbook's charts. `values` holds one range per grid tab,
-    in order.
+    in order, and `formulas` (when they could be read) each grid tab's cells that hold a formula
+    rather than a typed value, as [row, column].
     """
     ranges = values.get("valueRanges", [])
     sheets = []
@@ -7467,7 +7477,10 @@ def sheet_payload(meta: dict[str, Any], values: dict[str, Any], sheet_id: str, f
             }
             for m in sheet.get("merges", [])
         ]
-        sheets.append({"title": sheet.get("properties", {}).get("title", ""), "values": rows, "merges": merges})
+        tab = {"title": sheet.get("properties", {}).get("title", ""), "values": rows, "merges": merges}
+        if formulas is not None and i < len(formulas):
+            tab["formulas"] = formulas[i]
+        sheets.append(tab)
     return {
         "title": meta.get("properties", {}).get("title", ""),
         "fetched_at": fetched_at,
@@ -7522,6 +7535,32 @@ def chart_formats(session: Any, meta: dict[str, Any]) -> dict[tuple[str, int, in
         return {}
 
 
+def formula_cells(rows: list[list[Any]]) -> list[list[int]]:
+    """A tab's cells, read with their formulas as written, that hold one: [row, column] each."""
+    return [[r, c] for r, row in enumerate(rows) for c, value in enumerate(row) if isinstance(value, str) and value.startswith("=")]
+
+
+def sheet_formulas(session: Any, titles: list[str]) -> list[list[list[int]]] | None:
+    """
+    Which cells of each grid tab are worked out by a formula, in one more call: the app offers to
+    update only a balance that is typed (see "typed balances"), never one the sheet calculates or
+    looks up in the bank feed. A failure is logged and the sheet is served without them; the app
+    then offers every balance, and the write route still refuses a formula's cell.
+    """
+    try:
+        params = [("ranges", sheet_range(t)) for t in titles]
+        params += [("valueRenderOption", "FORMULA"), ("majorDimension", "ROWS")]
+        answer = session.get(f"{SHEETS_API}/{FINANCE_SHEET_ID}/values:batchGet", params=params, timeout=20)
+        if answer.status_code != 200:
+            log.warning("finance: formulas unavailable (%s)", answer.status_code)
+            return None
+        ranges = answer.json().get("valueRanges", [])
+        return [formula_cells(r.get("values", [])) for r in ranges]
+    except Exception as e:
+        log.warning("finance: formulas unavailable: %s", e)
+        return None
+
+
 def read_finance_sheet() -> dict[str, Any]:
     """Asks Google for the whole workbook. Raises HTTPException with the app's problem on failure."""
     session = finance_google()
@@ -7540,7 +7579,7 @@ def read_finance_sheet() -> dict[str, Any]:
         values = session.get(f"{SHEETS_API}/{FINANCE_SHEET_ID}/values:batchGet", params=params, timeout=20)
         if values.status_code != 200:
             raise HTTPException(*sheet_problem(values.status_code, _google_json(values), account))
-        return sheet_payload(meta.json(), values.json(), FINANCE_SHEET_ID, time.time(), chart_formats(session, meta.json()))
+        return sheet_payload(meta.json(), values.json(), FINANCE_SHEET_ID, time.time(), chart_formats(session, meta.json()), sheet_formulas(session, titles))
     except HTTPException:
         raise
     except Exception as e:
@@ -7557,9 +7596,18 @@ FINANCE_CACHE_CONTROL = "private, no-store"
 
 @app.get("/finance/sheet")
 def get_finance_sheet(request: Request, response: Response, refresh: bool = False) -> dict[str, Any]:
-    """The household budget workbook (see "finance"), every grid tab. A Frigate admin, or a user in FINANCE_USERS."""
+    """
+    The household budget workbook (see "finance"), every grid tab, with when each balance was last
+    known to be right (see "typed balances"). A Frigate admin, or a user in FINANCE_USERS.
+    """
     response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     require_finance_user(request)
+    # The workbook may be a minute old; when its balances were last updated never is.
+    return {**finance_sheet(refresh), "updates": typed_updates(), "filled": typed_filled()}
+
+
+def finance_sheet(refresh: bool) -> dict[str, Any]:
+    """The workbook from memory when it was read lately enough, else from Google (see `get_finance_sheet`)."""
     if not FINANCE_SHEET_ID:
         raise HTTPException(503, {"error": "not_configured", "message": "FINANCE_SHEET_ID isn't set on the relay"})
     if not _finance_lock.acquire(timeout=FINANCE_LOCK_SECONDS):
@@ -8551,6 +8599,11 @@ def fill_sheet(now: float) -> None:
         for p in plan:
             if p["status"] == "change":
                 p["status"], p["before"] = "written", p["value"]
+        # Each line written, or found already holding its number, is as old as the oldest read of
+        # its accounts: an institution Plaid couldn't read keeps its last balance, not a new age.
+        read_at = {a["key"]: a["updated"] for institution in bank_institutions() for a in institution["accounts"]}
+        typed_seen([{**p, "at": min(read_at[key] for key in p["accounts"])} for p in plan
+                    if p["status"] in ("written", "same") and all(read_at.get(key) for key in p["accounts"])], now, None, "bank")
         state_set(FILL_KEY, {"at": now, "error": None, "message": None, "lines": plan})
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, dict) else {}
@@ -8594,7 +8647,9 @@ def fill_undo(write_id: int, user: str, now: float) -> None:
         fill_put(session, back)
         _finance_cache["at"] = 0.0
     with_db(lambda c: (c.execute("UPDATE sheet_writes SET undone_at=?, undone_by=?, changes=? WHERE id=?", (now, user, json.dumps(changes), write_id)), c.commit()))
-    state_set(FILL_PAUSED_KEY, sorted(fill_paused() | {c["line"] for c in changes}))
+    # A balance typed in the app is as old again as it was before; nothing will write it back, so nothing is paused.
+    typed_restore([c for c in changes if c.get("typed") and c["restored"]])
+    state_set(FILL_PAUSED_KEY, sorted(fill_paused() | {c["line"] for c in changes if not c.get("typed")}))
     log.info("bank: %s undid a write to the budget sheet (%d of %d cells put back)", user, len(back), len(changes))
 
 
@@ -8631,7 +8686,9 @@ def fill_status() -> dict[str, Any]:
         "writes": [
             {"id": write_id, "at": at, "undone_at": undone_at, "undone_by": undone_by,
              "changes": [{"label": c.get("label"), "tab": c.get("tab"), "cell": c.get("cell"), "before": c.get("before"), "after": c.get("after"),
-                          "restored": c.get("restored")} for c in json.loads(changes)]}
+                          "restored": c.get("restored"),
+                          # Who typed it in the app, for a balance typed there rather than read from a bank.
+                          "typed_by": c.get("by") if c.get("typed") else None} for c in json.loads(changes)]}
             for write_id, at, changes, undone_at, undone_by in writes
         ],
     }
@@ -8829,8 +8886,12 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
 
 @app.post("/finance/bank/fill/writes/{write_id}/undo")
 def post_bank_fill_undo(write_id: int, request: Request, response: Response) -> dict[str, Any]:
-    """Undoes one write to the budget sheet's cells and pauses its lines (see `fill_undo`)."""
-    user = require_bank(request, response)
+    """
+    Undoes one write to the budget sheet's cells and pauses its lines (see `fill_undo`). Needs no
+    Plaid: a balance typed in the app is a write too (see "typed balances").
+    """
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
     if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
         raise bank_busy()
     try:
@@ -8862,6 +8923,168 @@ def post_bank_fill_line(body: FillLine, request: Request, response: Response) ->
     finally:
         _bank_lock.release()
     return bank_status()
+
+
+# ---------------------------------------------------------------- typed balances
+#
+# Not every balance comes from a bank Plaid can read: a small 401(k) record keeper, a pension, a
+# health savings account at a payroll provider, what the house is worth. Those stay typed in the
+# budget sheet, and whoever looks after them logs in now and then and copies the number over. The
+# app can do the typing instead (`PUT /finance/sheet/value`): it sends the balance it showed and
+# the new one, and the relay writes the new one into that cell of the budget sheet.
+#
+# The cell is found the sheet fill's way (see "sheet fill"): by its row's label and how many
+# columns to the right of it the number sits, never by an address, and only a typed number or an
+# empty cell is written over. On top of that, the cell must still hold the number the app showed:
+# with the sheet changed since the app read it, the write is refused rather than made over
+# someone's edit. A cell the sheet fill writes each morning isn't typed into either, since the
+# next sync would overwrite it.
+#
+# Every balance also has an age. Google keeps no time per cell, so the relay keeps its own
+# (`sheet_values`): when a balance was typed in the app, or someone said it was still right, or
+# the sheet fill wrote it or found it already there. `GET /finance/sheet` sends them along
+# (`updates`), and the app says how old each typed balance is. A typed write is kept with the
+# sheet fill's (`sheet_writes`), so it shows under "What was changed" and can be undone there.
+
+# A balance beyond this is a slip of the keyboard, not money the household has.
+TYPED_MAX = 1e12
+
+
+class SheetValue(BaseModel):
+    # The balance's row: its tab, the words in its label cell, and how many columns to the right of
+    # the label the number sits (as a line of the sheet fill names one). A label in the tab twice
+    # isn't guessed between: an undo finds the cell by its label again, and couldn't.
+    tab: str
+    label: str
+    right: int = 1
+    # What the app showed; the write is refused when the cell holds anything else. None for an empty cell.
+    expected: float | None = None
+    value: float
+
+
+def typed_id(tab: str, label: str, right: int) -> str:
+    """A balance's id, as a line of the sheet fill has it (`fill_lines`): tab|label|right."""
+    return f"{tab.strip()}|{fill_text(label)}|{right}"
+
+
+def typed_seen(entries: list[dict[str, Any]], now: float, by: str | None, source: str) -> None:
+    """Marks each balance (its `tab`, `label`, `right` and `value`) as right as of its own `at`, or `now`."""
+    if not entries:
+        return
+
+    def keep(c: sqlite3.Connection) -> None:
+        c.executemany(
+            "INSERT OR REPLACE INTO sheet_values (cell, tab, label, right, value, at, by, source) VALUES (?,?,?,?,?,?,?,?)",
+            [(typed_id(e["tab"], e["label"], e["right"]), e["tab"], e["label"], e["right"], e["value"], e.get("at", now), by, source) for e in entries],
+        )
+        c.commit()
+
+    with_db(keep)
+
+
+def typed_restore(changes: list[dict[str, Any]]) -> None:
+    """Gives each balance whose typed write was undone back the age it had before it (`was`), or none."""
+    def restore(c: sqlite3.Connection) -> None:
+        for change in changes:
+            was = change.get("was")
+            if was:
+                c.execute(
+                    "INSERT OR REPLACE INTO sheet_values (cell, tab, label, right, value, at, by, source) VALUES (?,?,?,?,?,?,?,?)",
+                    (change["line"], change["tab"], change["label"], change["right"], was.get("value"), was["at"], was.get("by"), was["source"]),
+                )
+            else:
+                c.execute("DELETE FROM sheet_values WHERE cell=?", (change["line"],))
+        c.commit()
+
+    if changes:
+        with_db(restore)
+
+
+def typed_updates() -> list[dict[str, Any]]:
+    """When each balance was last known to be right, as `GET /finance/sheet` sends it."""
+    rows = with_db(lambda c: c.execute("SELECT cell, tab, label, right, value, at, by, source FROM sheet_values ORDER BY cell").fetchall())
+    return [{"id": cell, "tab": tab, "label": label, "right": right, "value": value, "at": at, "by": by, "source": source}
+            for cell, tab, label, right, value, at, by, source in rows]
+
+
+def typed_filled() -> list[dict[str, Any]]:
+    """The balances the sheet fill writes every morning: its lines that aren't paused. A typed number there would be written over."""
+    paused = fill_paused()
+    return [{"tab": line["tab"], "label": line["label"], "right": line["right"]} for line in fill_lines()[0] if line["id"] not in paused]
+
+
+def typed_write(body: SheetValue, user: str, now: float) -> dict[str, Any]:
+    """
+    Types `body.value` into the budget sheet's cell for the balance `body` names (see "typed
+    balances") and marks it right as of `now`. The same number as the cell holds writes nothing
+    and only marks it. The caller holds `_bank_lock`, so a sync can't fill the sheet meanwhile.
+    Raises HTTPException with why when the cell can't be written.
+    """
+    if not FINANCE_SHEET_ID:
+        raise HTTPException(503, {"error": "not_configured", "message": "FINANCE_SHEET_ID isn't set on the relay"})
+    tab, label = body.tab.strip(), " ".join(body.label.split())
+    if not tab or not fill_text(label) or not 1 <= body.right <= 26:
+        raise HTTPException(422, {"error": "bad_request", "message": "A balance needs its tab, its label and how far right of it the number is"})
+    if not math.isfinite(body.value) or abs(body.value) >= TYPED_MAX:
+        raise HTTPException(422, {"error": "bad_value", "message": "That isn't a balance"})
+    line = typed_id(tab, label, body.right)
+    if line in {fill["id"] for fill in fill_lines()[0]} and line not in fill_paused():
+        raise HTTPException(409, {"error": "bank_filled", "message": "The bank sync fills this balance in every morning"})
+    session = feed_google()
+    rows = fill_read(session, [tab])[tab]
+    if rows is None:
+        raise HTTPException(404, {"error": "no_tab", "message": f"The budget sheet has no tab {tab}"})
+    found = fill_find(rows, label)
+    if isinstance(found, str):
+        raise HTTPException(404 if found == "no_label" else 409, {"error": found, "message": f"The label {label} is not in {tab} once"})
+    row, column = found[0], found[1] + body.right
+    cell = f"{column_letters(column)}{row + 1}"
+    writable, before = fill_amount(rows, row, column)
+    if not writable:
+        raise HTTPException(409, {"error": "not_a_number", "message": f"{tab}!{cell} holds a formula or words, not a typed number"})
+    if not fill_same(before, body.expected):
+        # The app reads the sheet again to show what the cell holds now: not the minute-old copy.
+        _finance_cache["at"] = 0.0
+        raise HTTPException(409, {"error": "changed", "message": "The sheet has changed since it was read", "value": before})
+    value = round(body.value, 2)
+    written = not fill_same(before, value)
+    if written:
+        kept = with_db(lambda c: c.execute("SELECT value, at, by, source FROM sheet_values WHERE cell=?", (line,)).fetchone())
+        was = {"value": kept[0], "at": kept[1], "by": kept[2], "source": kept[3]} if kept else None
+        fill_put(session, [(tab, cell, value)])
+        change = {"line": line, "tab": tab, "label": label, "right": body.right, "cell": cell, "before": before, "after": value,
+                  "typed": True, "by": user, "was": was}
+
+        def keep(c: sqlite3.Connection) -> None:
+            c.execute("INSERT INTO sheet_writes (at, changes) VALUES (?,?)", (now, json.dumps([change])))
+            c.execute("DELETE FROM sheet_writes WHERE id NOT IN (SELECT id FROM sheet_writes ORDER BY id DESC LIMIT ?)", (FILL_WRITES_KEPT,))
+            c.commit()
+
+        with_db(keep)
+        # The app reads the sheet again straight after, and should find the new number there.
+        _finance_cache["at"] = 0.0
+    typed_seen([{"tab": tab, "label": label, "right": body.right, "value": value}], now, user, "app")
+    # Who and which, never how much: the log isn't where the household's balances are kept.
+    log.info("finance: %s %s a balance in %s", user, "typed" if written else "confirmed", tab)
+    return {"id": line, "cell": cell, "before": before, "value": value, "written": written, "at": now, "by": user}
+
+
+@app.put("/finance/sheet/value")
+def put_finance_sheet_value(body: SheetValue, request: Request, response: Response) -> dict[str, Any]:
+    """Types a balance into the budget sheet, or says it is still right (see "typed balances")."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
+    if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
+        raise bank_busy()
+    try:
+        return typed_write(body, user, time.time())
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("finance: a balance wasn't typed: %s", type(e).__name__)
+        raise HTTPException(502, {"error": "google_error", "message": "Couldn't reach Google"}) from e
+    finally:
+        _bank_lock.release()
 
 
 # ---------------------------------------------------------------- budget

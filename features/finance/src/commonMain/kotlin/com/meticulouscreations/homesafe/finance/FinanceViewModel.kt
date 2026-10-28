@@ -4,6 +4,8 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
+import com.meticulouscreations.homesafe.finance.domain.BalanceProblem
+import com.meticulouscreations.homesafe.finance.domain.BalanceUpdateException
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
@@ -25,6 +27,7 @@ import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.finance.domain.StressScore
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.finance.domain.TypedBalance
 import com.meticulouscreations.homesafe.finance.domain.WatchEntry
 import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
 import com.meticulouscreations.homesafe.finance.domain.WatchlistRepository
@@ -37,6 +40,7 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_balance_error_generic
 import homesafe.shared.generated.resources.fin_data_error_chart
 import homesafe.shared.generated.resources.fin_data_error_markets
 import homesafe.shared.generated.resources.fin_data_error_sheet
@@ -62,6 +66,14 @@ data class SheetIssue(val problem: SheetProblem, val message: UiText, val servic
 /** The add-a-symbol search: what was typed, and what Yahoo matched it with. */
 @Immutable
 data class SymbolSearch(val query: String = "", val results: List<SymbolMatch> = emptyList(), val loading: Boolean = false, val error: UiText? = null)
+
+/**
+ * A balance being typed into the sheet from the app ([FinanceViewModel.updateBalance]): which one
+ * (its `SheetCell.id`), and how it is going. [done] once it is in the sheet and the sheet has been
+ * read again with it.
+ */
+@Immutable
+data class BalanceSave(val cellId: String, val saving: Boolean = true, val error: UiText? = null, val done: Boolean = false)
 
 /** A price history being fetched for one symbol and range. */
 @Immutable
@@ -94,6 +106,8 @@ data class FinanceUiState(
     val tone: EconomyTone = EconomyTone.DEFAULT,
     /** What the drawer's card shows, chosen in Settings. */
     val drawerItems: List<FinanceDrawerItem> = FinanceDrawerItem.DEFAULT,
+    /** A balance being typed in from the app, or the last one, until its editor is closed. */
+    val balanceSave: BalanceSave? = null,
 ) {
     /** The tickers the budget sheet names. */
     val sheetSymbols: List<String> get() = finance?.watchlist.orEmpty()
@@ -460,6 +474,35 @@ class FinanceViewModel(
             }
         // The sheet may have named tickers the quotes haven't covered yet.
         if (_uiState.value.watchlist != watchBefore) fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS)
+    }
+
+    /**
+     * Types [amount] into the budget sheet for [balance], or with its own amount says it is still
+     * right; then reads the sheet again, so the new number and its age are on screen when
+     * [BalanceSave.done]. A sheet changed since it was read is read again too, so the editor shows
+     * what it holds now.
+     */
+    fun updateBalance(balance: TypedBalance, amount: Double) {
+        if (_uiState.value.balanceSave?.saving == true) return
+        val id = balance.cell.id
+        _uiState.update { it.copy(balanceSave = BalanceSave(id)) }
+        viewModelScope.launch {
+            repository.updateBalance(balance, amount)
+                .onSuccess {
+                    fetchSheet(refresh = true)
+                    _uiState.update { it.copy(balanceSave = BalanceSave(id, saving = false, done = true)) }
+                }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    _uiState.update { it.copy(balanceSave = BalanceSave(id, saving = false, error = e.shownAs(Res.string.fin_balance_error_generic))) }
+                    if ((e as? BalanceUpdateException)?.problem == BalanceProblem.CHANGED) fetchSheet(refresh = true)
+                }
+        }
+    }
+
+    /** The balance editor closed: what its last save said is let go. A save still under way carries on, out of sight. */
+    fun clearBalanceSave() {
+        _uiState.update { s -> if (s.balanceSave?.saving == true) s else s.copy(balanceSave = null) }
     }
 
     override fun onCleared() {

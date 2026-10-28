@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Finance: the balances typed into the budget sheet by hand (an account no linked bank reports, a
+  debt, what the home is worth), how long ago each was last updated, and typing a new one in from
+  the app. fin_balance_* throughout. %1$s in the "updated" strings is a time word from the
+  narrator's formats ("today", "5 days ago", "2 months ago").
+-->
+<resources>
+    <string name="fin_balance_title">Update balances</string>
+    <string name="fin_balance_intro">These balances are typed into the budget sheet by hand, since no linked bank reports them. Log in where each one is kept, copy the balance, and tap it here: the new number goes straight into the sheet.</string>
+    <plurals name="fin_balance_summary_due">
+        <item quantity="one">%1$d balance to update</item>
+        <item quantity="other">%1$d balances to update</item>
+    </plurals>
+    <string name="fin_balance_summary_fresh">Every typed balance is up to date</string>
+    <string name="fin_balance_section_due">Needs updating</string>
+    <string name="fin_balance_section_fresh">Up to date</string>
+    <string name="fin_balance_section_bank">Filled in by the bank</string>
+    <string name="fin_balance_section_bank_note">The bank sync writes these into the sheet every morning.</string>
+    <string name="fin_balance_updated">Updated %1$s</string>
+    <string name="fin_balance_updated_by">Updated %1$s by %2$s</string>
+    <string name="fin_balance_synced">Synced %1$s</string>
+    <string name="fin_balance_never">No update recorded</string>
+    <string name="fin_balance_fine_print">A balance's age counts from when it was last typed or confirmed here, or written by the bank sync; an edit made straight in the sheet isn't seen. Over a month old is worth a look, and over two is out of date.</string>
+    <string name="fin_balance_open_action">update this balance</string>
+
+    <string name="fin_balance_editor_held">Balance</string>
+    <string name="fin_balance_editor_owed">Amount owed</string>
+    <string name="fin_balance_editor_worth">What it's worth</string>
+    <string name="fin_balance_editor_where">Goes into the “%1$s” row of the %2$s tab.</string>
+    <string name="fin_balance_editor_still_right">Still right</string>
+    <string name="fin_balance_editor_saving">Saving…</string>
+    <string name="fin_balance_editor_bank_note">The bank sync fills this in every morning, so a number typed here would be written over.</string>
+
+    <string name="fin_balance_teaser_title">Typed balances</string>
+    <plurals name="fin_balance_teaser_due">
+        <item quantity="one">%1$d to update</item>
+        <item quantity="other">%1$d to update</item>
+    </plurals>
+    <string name="fin_balance_teaser_fresh">Up to date</string>
+    <plurals name="fin_balance_teaser_never">
+        <item quantity="one">%1$d never updated from the app</item>
+        <item quantity="other">%1$d never updated from the app</item>
+    </plurals>
+    <string name="fin_balance_teaser_oldest">Oldest updated %1$s</string>
+
+    <string name="fin_balance_error_changed">The sheet changed since it was read. The number in it now is shown: check it and try again.</string>
+    <string name="fin_balance_error_calculated">This balance is worked out by a formula in the sheet, so it can't be typed over.</string>
+    <string name="fin_balance_error_bank_filled">The bank sync fills this balance in every morning.</string>
+    <string name="fin_balance_error_not_found">Its row couldn't be found in the sheet once. Refresh and try again.</string>
+    <string name="fin_balance_error_not_shared">The server can't write to the budget sheet. Share the sheet with the server's account as an Editor.</string>
+    <string name="fin_balance_error_busy">The accounts are being read just now. Try again in a minute.</string>
+    <string name="fin_balance_error_relay_outdated">The server is older than this feature. Update the relay to type balances in from the app.</string>
+    <string name="fin_balance_error_generic">Couldn't save the balance.</string>
+</resources>
