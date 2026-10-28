@@ -3,7 +3,6 @@ package com.meticulouscreations.homesafe.domain.repository
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.text.UiText
 import kotlinx.coroutines.flow.Flow
 
@@ -81,27 +80,8 @@ interface MomentsRepository {
     fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>>
 
     /**
-     * The household's cars parked in view of any camera right now — only the ones the classifier
-     * has named — folded and placed the way [observeMoments] folds a visit but kept even when the
-     * app never saw them arrive — see [com.meticulouscreations.homesafe.domain.model.stationaryObjects].
-     * Its own poll, from now, across every camera: the feed's window is wherever the Moments tab
-     * last left it. Opens on the device's cache of detections like [observeMoments] does, so the
-     * strip has something to show before the server answers and while it can't, then polls while
-     * collected; each answer replaces the cached list wholesale.
-     */
-    fun observeStationaryObjects(): Flow<List<StationaryObject>>
-
-    /**
-     * Asks [observeStationaryObjects]'s poll to run now rather than at its next turn — after a car
-     * was named by hand, say, so the strip shows it straight away. Nothing happens while nothing
-     * collects the strip; its next collection polls first thing anyway.
-     */
-    fun refreshStationaryObjects()
-
-    /**
      * Shows the detection [eventId] as the car [subLabel] from now on, in [observeMoments] and
-     * [observeRecentMoments], and looks for it in view ([refreshStationaryObjects]): a person has
-     * just named it (see `TagMomentCarUseCase`), and a detection older than the pages the polls
+     * [observeRecentMoments]: a person has just named it (see `TagMomentCarUseCase`), and a detection older than the pages the polls
      * re-read would otherwise go on reading "Car" until the app next starts.
      */
     fun nameCar(eventId: String, subLabel: String)

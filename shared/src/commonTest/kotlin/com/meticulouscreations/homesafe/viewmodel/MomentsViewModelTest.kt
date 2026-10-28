@@ -10,7 +10,6 @@ import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.VisitKind
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
@@ -107,8 +106,6 @@ class MomentsViewModelTest {
         override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
         override suspend fun readRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double) = fail("unused")
         override fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
-        override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
-        override fun refreshStationaryObjects() = Unit
         override fun nameCar(eventId: String, subLabel: String) = Unit
         override suspend fun refresh() {
             refreshCalls++

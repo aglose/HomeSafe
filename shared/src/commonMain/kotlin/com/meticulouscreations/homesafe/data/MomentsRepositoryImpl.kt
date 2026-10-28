@@ -5,10 +5,8 @@ import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.inZones
 import com.meticulouscreations.homesafe.domain.model.mergeVehicleVisits
-import com.meticulouscreations.homesafe.domain.model.stationaryObjects
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.domain.repository.RecentMoments
@@ -25,12 +23,8 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.error_load_detections
 import homesafe.shared.generated.resources.error_load_older_detections
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,14 +32,12 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -133,7 +125,7 @@ class MomentsRepositoryImpl(
 
     /**
      * [head] came out of the cache, not from the server, since the window opened. The cache is
-     * filled by several polls — the in-view strip's, each camera's recent moments — so its newest
+     * filled by several polls — the feed's and each camera's recent moments — so its newest
      * rows needn't be contiguous across every camera, and nothing below the first fetched page may
      * be kept on the strength of them.
      */
@@ -211,7 +203,7 @@ class MomentsRepositoryImpl(
      * Its own poll rather than a slice of [observeMoments]: that feed is whatever window the
      * Moments tab last opened — another camera, an earlier day — and even live, a quiet camera's
      * newest moments needn't be among the newest hundred across all of them. Like the feed, it
-     * opens on the cache so the strip isn't blank while the first poll runs, and files what it
+     * opens on the cache so the list isn't blank while the first poll runs, and files what it
      * fetches there. Zones come from the feed's cache, read here only when nothing has read them
      * for this server yet. A failed poll keeps what was shown; the feed is where fetch errors are
      * reported, and a disconnect keeps it too, as the feed does.
@@ -328,119 +320,8 @@ class MomentsRepositoryImpl(
     /** Cars a person named in this run of the app, by event id (see [nameCar]). */
     private val namedByHand = MutableStateFlow<Map<String, String>>(emptyMap())
 
-    /** [refreshStationaryObjects]'s signal: dropped when no poll is waiting, since the next one to start polls straight away. */
-    private val stationaryNudges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-
-    /**
-     * Its own poll, like [observeRecentMoments], and for the same reason: the Moments feed's
-     * window may be narrowed to one camera or opened at an earlier day, and this has to be every
-     * camera, now. It reads back [STATIONARY_LOOKBACK_SECONDS] so a car parked this morning is
-     * still anchored to the moment it arrived, and tells [stationaryObjects] how far back the page
-     * actually reached — with a busy camera minting hundreds of car events a day, [PAGE_SIZE]
-     * detections can run out well inside that window, and a card shouldn't claim an arrival time
-     * it only inferred from where the page happened to stop.
-     *
-     * That page alone is not the answer, though, because it is the newest detections by when they
-     * *started*. Frigate can keep one sighting of a parked car open for hours, and on a busy
-     * street a hundred newer ones bury it: on 2026-10-05 the page reached back 73 minutes while
-     * Sarah's car and Andrew's Tesla had been tracked for two and a half and four and a half
-     * hours, so neither sighting reached the strip, which had no card for Sarah's car at all,
-     * while the tagging screen, which asks what is being tracked, boxed both. So every poll asks
-     * that as well ([fetchTracking], which reads it to the end rather than stopping at a page of
-     * its own) and reads the two answers as one list. What is tracked now is not held to the
-     * lookback window: a car still in sight is in view however long ago it pulled in. If only
-     * that second question fails, the page stands on its own, as it used to.
-     *
-     * Like the feed, it opens on the cache and files what it fetches there: the strip paints with
-     * the cars the device last knew about while the first poll is still on its way to the server,
-     * and keeps showing them for as long as the server can't be reached. The cache is only ever a
-     * stand-in for an answer the server hasn't given yet — every poll that lands replaces it
-     * wholesale, and the clock runs against the cached sightings just as it does against fetched
-     * ones, so a car unseen for [com.meticulouscreations.homesafe.domain.model.StationaryObjects.AT_REST_SECONDS]
-     * drops off whether the server is answering or not. The one thing the cache can't know is
-     * that a sighting still in progress when it was written has since ended: that car reads as in
-     * view until the first fetch corrects it, which is seconds away once connected.
-     */
-    override fun observeStationaryObjects(): Flow<List<StationaryObject>> = channelFlow {
-        server.collectLatest { server ->
-            if (server == null) {
-                send(emptyList())
-                return@collectLatest
-            }
-            cachedStationaryObjects(server.identity).takeIf { it.isNotEmpty() }?.let { send(it) }
-            var failures = 0
-            while (true) {
-                loadZones(server.url, force = false)
-                val now = clock.now().toEpochMilliseconds() / 1000.0
-                val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
-                val (page, tracking) = coroutineScope {
-                    val page = async { apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart) }
-                    val tracking = async { fetchTracking(server.url) }
-                    page.await() to tracking.await()
-                }
-                val fetched = page
-                    .onSuccess { events ->
-                        val zones = stateLock.withLock { zonesByCamera }
-                        // Full pages stop where the server ran the limit out, not where the window ends.
-                        val oldestFetched = if (events.size >= PAGE_SIZE) {
-                            events.minOfOrNull { it.startTime } ?: lookbackStart
-                        } else {
-                            lookbackStart
-                        }
-                        // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
-                        val placed = events.map { it.toDomain() }.inZones(zones, now)
-                        // Only the tracked sightings the page didn't reach; ended ones are the page's to report.
-                        val pageIds = events.mapTo(HashSet()) { it.id }
-                        val tracked = tracking
-                            .filter { it.endTime == null && it.id !in pageIds }
-                            .map { it.toDomain() }
-                            .inZones(zones, now)
-                        send((placed + tracked).stationaryObjects(now, oldestFetched))
-                        // The same slice the live feed files — the newest detections across every camera — so the
-                        // two share one cache rather than fighting over it. [oldestFetched], not the raw oldest
-                        // event: a short or empty page still answered for the whole window back to
-                        // [lookbackStart], and a car purged from that gap must be pruned from the cache too.
-                        // The older tracked sightings stay out of it: nothing would ever tell the cache they had
-                        // ended, since no page reaches them, and it would go on claiming those cars.
-                        cache(server.identity, camera = null, placed, from = oldestFetched, to = null)
-                    }
-                    // Unreachable: the cache stands in, re-aged against the clock so a car stops being claimed on time.
-                    .onFailure { send(cachedStationaryObjects(server.identity)) }
-                    .isSuccess
-                failures = if (fetched) 0 else failures + 1
-                // Waits out the interval, or less when someone asks for a poll now.
-                withTimeoutOrNull(nextPollDelayMs(failures)) { stationaryNudges.first() }
-            }
-        }
-    }
-
-    /**
-     * Everything Frigate is tracking, on every camera, for [observeStationaryObjects]. Paged until
-     * a page comes back short or [TRACKING_MAX_PAGES] have been read: one page is the newest
-     * [PAGE_SIZE] by start again, and the car that has been there longest is exactly the one a
-     * full page would drop. Empty when the server didn't answer the first page; what had been
-     * read when a later one failed.
-     */
-    private suspend fun fetchTracking(url: String): List<FrigateEvent> {
-        val tracking = ArrayList<FrigateEvent>()
-        var cursor: Double? = null
-        for (page in 0 until TRACKING_MAX_PAGES) {
-            val events = apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = cursor, inProgress = true).getOrElse { break }
-            tracking += events
-            cursor = events.minOfOrNull { it.startTime } ?: break
-            if (events.size < PAGE_SIZE) break
-        }
-        // The cursor is rounded to the millisecond on its way out, so a page can open on the row the last one closed on.
-        return tracking.distinctBy { it.id }
-    }
-
-    override fun refreshStationaryObjects() {
-        stationaryNudges.tryEmit(Unit)
-    }
-
     override fun nameCar(eventId: String, subLabel: String) {
         namedByHand.update { it + (eventId to subLabel) }
-        refreshStationaryObjects()
     }
 
     /**
@@ -450,22 +331,6 @@ class MomentsRepositoryImpl(
      */
     private fun List<MomentEvent>.withNames(named: Map<String, String>): List<MomentEvent> =
         if (named.isEmpty()) this else map { event -> named[event.id]?.let { event.copy(subLabel = it, subLabelScore = MANUAL_NAME_SCORE) } ?: event }
-
-    /**
-     * The in-view strip out of the cache: this server's cached detections back to the lookback
-     * window, folded exactly as a fetched page would be. How far the cache reaches is its oldest
-     * row — it is a few pages of the feed, not necessarily twelve hours — so a stay that starts
-     * at its edge says where the car is without claiming since when, the same courtesy a full
-     * page from the server gets.
-     */
-    private suspend fun cachedStationaryObjects(identity: String): List<StationaryObject> {
-        val now = clock.now().toEpochMilliseconds() / 1000.0
-        val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
-        val page = cachedPage(identity, before = null, camera = null, limit = PAGE_SIZE)
-        // A cache whose oldest row is older than the window covers the whole window; one that stops inside it stops there.
-        val reach = maxOf(page.minOfOrNull { it.startEpochSeconds } ?: lookbackStart, lookbackStart)
-        return page.filter { it.startEpochSeconds >= lookbackStart }.stationaryObjects(now, reach)
-    }
 
     /**
      * Reads down until the feed has a moment more to show, not merely a page more: on a camera
@@ -804,7 +669,7 @@ class MomentsRepositoryImpl(
         return true
     }
 
-    /** The clock, as Frigate counts time: what "parked" and "in view" are judged against. */
+    /** The clock, as Frigate counts time: what "parked" is judged against. */
     private fun nowEpochSeconds(): Double = clock.now().toEpochMilliseconds() / 1000.0
 
     /** Under [stateLock]. Where the loaded lists end: the oldest raw detection, which is where the next page down starts. */
@@ -876,20 +741,6 @@ class MomentsRepositoryImpl(
          * hour, which even a busy camera fills with far fewer than a thousand detections.
          */
         const val RANGE_MAX_PAGES = 10
-
-        /**
-         * The most pages [fetchTracking] reads per poll. One is every home's ordinary day; five
-         * hundred objects tracked at once is past anything a household's cameras produce, and a
-         * poll that runs every thirty seconds needs an end.
-         */
-        const val TRACKING_MAX_PAGES = 5
-
-        /**
-         * How far back the in-view strip looks for the vehicles standing in the yard. Long enough
-         * to catch the morning's arrival — so a card can say "since 8:12 AM" rather than only that
-         * the car is there — without reaching back into yesterday's parking for a car that left.
-         */
-        const val STATIONARY_LOOKBACK_SECONDS = 12.0 * 60.0 * 60.0
     }
 }
 

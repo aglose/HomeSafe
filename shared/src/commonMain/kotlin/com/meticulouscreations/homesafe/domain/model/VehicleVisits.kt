@@ -26,7 +26,7 @@ import kotlin.math.abs
  * [isStill] asks whether a sighting *ever* went anywhere, which is what news is made of. Whether
  * the vehicle is sitting there *now* is a different question with a different answer for the one
  * sighting that is both: the car that drove in and has been parked, in a single Frigate event,
- * ever since. That is [isParked], and it is what the home screen's strip and the zones ask.
+ * ever since. That is [isParked], and it is what the zones ask.
  */
 object VehicleVisits {
     /** Share of a path that must sit within the box's size of the path's median for it to be gathered ([isStill]). */

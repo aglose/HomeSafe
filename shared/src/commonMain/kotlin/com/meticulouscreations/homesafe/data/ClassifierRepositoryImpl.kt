@@ -177,8 +177,8 @@ class ClassifierRepositoryImpl(
     private companion object {
         /**
          * A person naming the car is as sure as a name gets. It also outranks every guess the
-         * classifier made about the same parked car, which is what lets the in-view strip take the
-         * person's word for it: a stay is named by its best-scored sighting.
+         * classifier made about the same parked car, which is what lets the feed take the person's
+         * word for it: a folded visit is named by its best-scored sighting.
          */
         const val MANUAL_NAME_SCORE = 1.0
     }
