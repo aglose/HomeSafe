@@ -28,6 +28,7 @@
     </plurals>
     <string name="household_cars_asleep">Asleep</string>
     <string name="household_cars_empty">No cars yet. Once a Tesla is linked to the server, it shows here wherever it is.</string>
+    <string name="household_cars_no_places">The server doesn’t know where any car is yet. Each one shows on the map once the server hears where it is.</string>
     <string name="household_cars_load_failed">Couldn't load the cars: %1$s</string>
     <string name="household_cars_show_all">Show all</string>
     <string name="household_cars_map_description">Map of where the cars are</string>
