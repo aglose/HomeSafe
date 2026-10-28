@@ -6,9 +6,12 @@ import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.CurbSpot
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.domain.model.ParkingAlert
+import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.CarsUiState
 import com.meticulouscreations.homesafe.weather.ui.NoTiles
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.household_cars_unreachable_kept
 
 /*
  * The cars' map: one Tesla at the curb with street sweeping in the morning, one at home and asleep,
@@ -77,5 +80,16 @@ private fun CarsMapNowherePreview() = CarsPreviewFrame(
         cars = listOf(curb.copy(lastSeen = null, parked = null), home.copy(lastSeen = null, asleep = false)),
         loaded = true,
         nowEpochSeconds = NOW,
+    ),
+)
+
+@Preview(name = "Cars map, server unreachable", widthDp = 412, heightDp = 892)
+@Composable
+private fun CarsMapUnreachablePreview() = CarsPreviewFrame(
+    CarsUiState(
+        cars = listOf(curb, home),
+        loaded = true,
+        nowEpochSeconds = NOW,
+        error = UiText.of(Res.string.household_cars_unreachable_kept),
     ),
 )

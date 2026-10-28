@@ -167,10 +167,12 @@ fun CarsContent(
         Column(
             Modifier
                 .fillMaxWidth()
+                // The cards end above the shell's floating nav: in a list this short, room to scroll
+                // clear of it would leave the second card half under it at rest.
+                .padding(bottom = bottomNavClearance())
                 .heightIn(max = 340.dp)
                 .verticalScroll(rememberScrollState())
-                // The last card scrolls clear of the shell's floating nav, as on the other pages under Home.
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp + bottomNavClearance()),
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Google's map credits itself on the map; OpenStreetMap's contributors are named here.

@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.maps.BaseMap
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.data.RadarDecoder
+import com.meticulouscreations.homesafe.weather.data.requestUntilArrived
 import com.meticulouscreations.homesafe.weather.domain.MapCamera
 import com.meticulouscreations.homesafe.weather.domain.PlacedTile
 import com.meticulouscreations.homesafe.weather.domain.RadarFrame
@@ -139,14 +140,17 @@ internal fun RadarMap(
                 tiles.reserve(base.size + perFrame * frames.size)
             }
             if (map != null) tiles.request(base, scope, keep = map.keep)
-            if (frames == null) return@collectLatest
-            val current = key.last()
-            // The frame on screen first, then outward from it in both directions.
-            frames.indices.sortedBy { abs(it - current) }.take(if (wholeLoop) frames.size else 1).forEach { i ->
-                val frame = frames[i]
-                val urls = camera.tiles(width, height, tilePx, radarLevel(camera, frame)).map { frame.url(it.z, it.x, it.y) }
-                tiles.request(urls, scope, keep = false, radar = RadarDecoder.tableFor(timeline.source, frame.forecast))
+            if (frames != null) {
+                val current = key.last()
+                // The frame on screen first, then outward from it in both directions.
+                frames.indices.sortedBy { abs(it - current) }.take(if (wholeLoop) frames.size else 1).forEach { i ->
+                    val frame = frames[i]
+                    val urls = camera.tiles(width, height, tilePx, radarLevel(camera, frame)).map { frame.url(it.z, it.x, it.y) }
+                    tiles.request(urls, scope, keep = false, radar = RadarDecoder.tableFor(timeline.source, frame.forecast))
+                }
             }
+            // Then keeps after any of the map's tiles the network dropped, until the view moves on.
+            if (map != null) tiles.requestUntilArrived(base, scope, keep = map.keep)
         }
     }
 

@@ -74,6 +74,7 @@ import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_HEAT_SHADER
 import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_NIGHT_SHADER
 import com.meticulouscreations.homesafe.maps.BaseMap
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
+import com.meticulouscreations.homesafe.weather.data.requestUntilArrived
 import com.meticulouscreations.homesafe.weather.domain.MapCamera
 import com.meticulouscreations.homesafe.weather.domain.PlacedTile
 import com.meticulouscreations.homesafe.weather.domain.WebMercator
@@ -397,7 +398,8 @@ fun AtlasMap(
             val height = viewport.height.toFloat()
             if (width <= 0f || height <= 0f) return@collectLatest
             val camera = state.destination ?: state.camera
-            tiles.request(camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }, scope, keep = map.keep)
+            // Asked again while any is missing: one a slow network dropped would stay a hole until the view moved.
+            tiles.requestUntilArrived(camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }, scope, keep = map.keep)
         }
     }
 

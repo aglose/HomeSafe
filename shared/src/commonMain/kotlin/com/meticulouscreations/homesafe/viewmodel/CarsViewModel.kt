@@ -6,14 +6,15 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCarsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshCarsUseCase
+import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
-import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.household_cars_load_failed
+import homesafe.shared.generated.resources.household_cars_unreachable
+import homesafe.shared.generated.resources.household_cars_unreachable_kept
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,7 +46,8 @@ class CarsViewModel(
     private val clock: Clock,
 ) : ViewModel() {
 
-    private data class Local(val refreshed: Boolean = false, val error: UiText? = null)
+    /** Whether a refresh has answered, and how the last one failed (null when it didn't). */
+    private data class Local(val refreshed: Boolean = false, val failure: Throwable? = null)
 
     private val local = MutableStateFlow(Local())
 
@@ -57,16 +59,24 @@ class CarsViewModel(
     }
 
     val uiState: StateFlow<CarsUiState> = combine(observeCarsUseCase(), local, ticks) { cars, local, now ->
-        CarsUiState(cars = cars.orEmpty(), loaded = cars != null || local.refreshed, nowEpochSeconds = now, error = local.error)
+        CarsUiState(cars = cars.orEmpty(), loaded = cars != null || local.refreshed, nowEpochSeconds = now, error = local.failure?.let { failed(it, cars) })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CarsUiState())
 
     /** Reads the cars again now: each visit to the page, and its pull to refresh. */
     fun refresh() {
         viewModelScope.launch {
             val result = refreshCarsUseCase()
-            local.update { it.copy(refreshed = true, error = result.exceptionOrNull()?.userMessage(Res.string.household_cars_load_failed)) }
+            local.update { it.copy(refreshed = true, failure = result.exceptionOrNull()) }
         }
     }
+
+    /**
+     * What to say about a failed refresh: what the relay said, when it said something meant for
+     * the reader; otherwise that the server couldn't be reached (a timeout's text, with the URL
+     * in it, is for the logs), and, with cars already on the map, that they are its last answer.
+     */
+    private fun failed(failure: Throwable, cars: List<HouseholdCar>?): UiText = (failure as? LocalizedException)?.text
+        ?: UiText.of(if (cars.isNullOrEmpty()) Res.string.household_cars_unreachable else Res.string.household_cars_unreachable_kept)
 
     companion object {
         const val TICK_MS = 30_000L
