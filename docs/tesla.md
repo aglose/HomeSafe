@@ -24,7 +24,15 @@ asks Tesla at exactly those moments:
   once Tesla has said a car is **asleep** it is asked about again only every 2 hours
   (`TESLA_ASLEEP_CHECK_SECONDS`, default 7200): a sleeping car hasn't moved, and asked again it
   says the same. A car parked at the curb that wakes and drives off is then seen up to 2 hours
-  late; one that leaves the driveway is asked about at once (the departure).
+  late, or never: on 2026-10-28 Sarah's car drove off from the curb and was asleep again
+  between two checks, so the Cars page kept it on the curb. The box has had
+  `TESLA_ASLEEP_CHECK_SECONDS=1800` in `tesla.env` since, until the cars stream (below).
+- **Whenever a car streams (Fleet Telemetry):** an awake car tells the relay where it is as it
+  moves, so a car is seen to leave or come home within 15 seconds of passing the line, a car that
+  parks is placed from the moment it shifts into P, and the Cars page follows a drive within a
+  minute. Asking stays the backstop for a stream that has stopped; a sleeping car that streams is
+  asked about every 6 hours (`TESLA_STREAM_ASLEEP_CHECK_SECONDS`), since it says itself when it
+  wakes. See "Telemetry" below.
 
 "Near" is within the home radius (Settings → Home) plus 50 m; "away" is more than 250 m past it.
 
@@ -58,6 +66,11 @@ docker exec homesafe-relay python -c "import sqlite3; print(sqlite3.connect('/da
 The reasons are `check` (the half-hourly check), `arrival` and `departure` (the camera saw one),
 `parking` (the parking job, when nothing else has asked for a while), `parking: still there?` (just
 before telling someone to move a car), `parking-check` (the command) and `link` (signing in).
+
+Streaming is billed per value sent: Tesla's own example is $0.006 an hour of driving, and the
+fields here come to about $0.01. For two cars driving an hour or two a day that's well under $1 a
+month, and the calls it saves (no half-hourly checks while a car drives, fewer while it sleeps)
+pay for it.
 
 ## Setup (once)
 
@@ -112,6 +125,66 @@ name, `debian-surveillance.tail4c441a.ts.net`.
 
 The page after sign-in names the cars the relay can now see. From then on, the relay log shows
 lines like `tesla: sarahs_car is 42 m from home -> home` whenever it asks.
+
+## Telemetry
+
+With Fleet Telemetry each car, whenever it is awake, opens a mutual-TLS connection to a server of
+the application's and streams the fields it was told to (relay.py, "Tesla telemetry",
+`TESLA_TELEMETRY_FIELDS`: where it is, its heading, speed and gear, battery and range, charging,
+locks, Sentry Mode, odometer, the route's destination and time to it, the temperatures). That
+server is Tesla's own [fleet-telemetry](https://github.com/teslamotors/fleet-telemetry), the
+`tesla-telemetry` container beside the relay, which publishes each value to the Mosquitto broker
+the door sensors use (`tesla/<VIN>/v/<field>`), where the relay listens. The relay takes in only
+TESLA_CARS' VINs. What the stream last said is in `/parking` as each car's `live`.
+
+Once, on the box:
+
+1. **Certificate.** The cars trust the CA the configuration names, so the server's certificate
+   comes from a CA of our own (ten years; nothing to renew):
+   ```bash
+   cd ~/surveillance/relay && mkdir -p data/telemetry && cd data/telemetry
+   ```
+   ```bash
+   openssl ecparam -name prime256v1 -genkey -noout -out ca.key && openssl req -x509 -new -key ca.key -sha256 -days 3650 -subj "/CN=HomeSafe telemetry CA" -out ca.pem
+   ```
+   ```bash
+   openssl ecparam -name prime256v1 -genkey -noout -out server.key && openssl req -new -key server.key -subj "/CN=<host>" -out server.csr && printf "subjectAltName=DNS:<host>\nextendedKeyUsage=serverAuth\n" > server.ext && openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -sha256 -days 3650 -extfile server.ext -out server.pem
+   ```
+   ```bash
+   chmod 600 ca.key server.key
+   ```
+2. **Funnel.** Port 8443 goes through to the server untouched, since the TLS has to end there:
+   ```bash
+   sudo tailscale funnel --bg --tcp 8443 tcp://127.0.0.1:4443
+   ```
+3. **Start it.** `relay/deploy.sh` brings it up with the relay from then on.
+   ```bash
+   cd ~/surveillance/relay && docker compose up -d tesla-telemetry
+   ```
+   ```bash
+   docker logs tesla-telemetry 2>&1 | tail
+   ```
+
+Then:
+
+4. **Virtual key, on each car.** Tesla only lets a car stream to an application whose key it
+   holds. On a phone that is a key for the car, standing by the car, open
+   `https://tesla.com/_ak/<host>` and approve it in the Tesla app.
+5. **Tell the cars,** from the Mac that holds the private key:
+   ```bash
+   scripts/tesla-telemetry.sh
+   ```
+   Each car Tesla took the configuration for is under `updated_vehicles`; a car under
+   `skipped_vehicles` as `missing_key` needs step 4. A car takes it up the next time it wakes:
+   ```bash
+   scripts/tesla-telemetry.sh status
+   ```
+   says `synced: true` once it has, and lists anything the car reported going wrong (a
+   certificate it didn't trust, a server it couldn't reach). The relay log then says
+   `tesla: sarahs_car's stream connected` when it wakes and `streaming, 42 m from home`.
+
+The configuration lapses after 350 days: run step 5 again before then, and after changing
+`TESLA_TELEMETRY_FIELDS`.
 
 ## If Tesla refuses
 

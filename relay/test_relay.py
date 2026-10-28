@@ -2934,6 +2934,7 @@ class TeslaTest(CarPresenceTest):
         relay.TESLA_CLIENT_ID, relay.TESLA_CLIENT_SECRET, relay.TESLA_PUBLIC_URL = "client", "secret", "https://box.example.ts.net"
         relay.TESLA_CARS = {"andrews_tesla": "VIN_A", "sarahs_car": "VIN_S"}
         relay._tesla_answers.clear()
+        relay._tesla_live.clear()
         relay.state_set(relay.HOME_KEY, self.HOME)
         relay.tesla_save_tokens({"access_token": _jwt("andrew"), "refresh_token": "r1", "expires_in": 3600})
         for vin in ("VIN_A", "VIN_S"):
@@ -2947,7 +2948,17 @@ class TeslaTest(CarPresenceTest):
         for name, value in self._tesla.items():
             setattr(relay, name, value)
         relay._tesla_answers.clear()
+        relay._tesla_live.clear()
         super().tearDown()
+
+    def stream(self, vin, at, connectivity=None, **fields):
+        """What the telemetry server publishes for one record of the car's, as the broker hands it over."""
+        if connectivity:
+            relay.tesla_stream_receive(f"tesla/{vin}/connectivity", json.dumps({"ConnectionId": "c1", "Status": connectivity}).encode(), at)
+        for field, value in fields.items():
+            if field == "Location":
+                value = {"latitude": value[0], "longitude": value[1]}
+            relay.tesla_stream_receive(f"tesla/{vin}/v/{field}", json.dumps(value).encode(), at)
 
     def get(self, url, params=None, timeout=None, headers=None):
         if url.startswith(relay.TESLA_API):
@@ -3153,6 +3164,72 @@ class TeslaTest(CarPresenceTest):
         self.assertEqual([], self.tick(self.clock + relay.TESLA_CHECK_SECONDS))
         self.assertEqual({"andrews_tesla": True, "sarahs_car": False}, {n: c["here"] for n, c in self.cars.cars.items()})
         self.assertEqual(4, len(self.tesla_calls), "each car once a half hour")
+
+    def test_a_car_that_streams_is_seen_leaving_the_curb_at_once_without_asking(self):
+        # 2026-10-28: Sarah's car drove off from the curb and slept again between two checks, never seen to move.
+        self.cars.cars = None
+        relay.state_set(relay.CAR_PRESENCE_KEY, {"sarahs_car": {"here": True, "since": self.T - 3600, "camera": "hikvision_1", "skip": None, "known": True}})
+        self.where = {"VIN_A": self.NEAR, "VIN_S": "asleep"}
+        self.assertEqual([], self.tick(self.T))
+        calls = len(self.tesla_calls)
+        self.stream("VIN_S", self.T + 300, connectivity="CONNECTED", Location=self.NEAR, Gear="ShiftStateD", VehicleSpeed=12.0)
+        self.assertEqual([], self.tick(self.T + 310), "still near home")
+        self.stream("VIN_S", self.T + 400, Location=self.FAR, VehicleSpeed=35.0)
+        changes = self.cars.tick(self.T + 410)
+        self.assertEqual([("sarahs_car", "left", "tesla")], [(c["name"], c["movement"], c["via"]) for c in changes])
+        self.assertEqual(calls, len(self.tesla_calls), "the stream said, so nobody asked")
+
+    def test_a_streaming_car_is_answered_from_its_stream_until_it_disconnects(self):
+        self.where = {"VIN_S": "asleep"}
+        self.stream("VIN_S", 1000.0, connectivity="CONNECTED", Location=self.FAR, Gear="ShiftStateP", GpsHeading=270)
+        self.assertEqual("away", relay.tesla_verdict("sarahs_car", now=1100.0))
+        asked, where = relay._tesla_answers["sarahs_car"]
+        self.assertEqual((1100.0, "P", 270.0, True), (asked, where["shift"], where["heading"], where["streamed"]))
+        self.assertEqual([], self.tesla_calls)
+        relay._tesla_answers.clear()
+        self.assertIsNone(relay.tesla_stream_answer("sarahs_car", 1000.0 + relay.TESLA_STREAM_FRESH_SECONDS + 1), "quiet too long")
+        self.stream("VIN_S", 1200.0, connectivity="DISCONNECTED")
+        self.assertEqual("asleep", relay.tesla_verdict("sarahs_car", now=1300.0), "gone to sleep: Tesla is asked")
+        self.assertEqual(1, len(self.tesla_calls))
+
+    def test_a_sleeping_car_that_streams_is_asked_about_less_often(self):
+        relay._tesla_answers["sarahs_car"] = (1000.0, {"asleep": True})
+        later = 1000.0 + relay.TESLA_ASLEEP_CHECK_SECONDS
+        self.assertTrue(relay.tesla_due("sarahs_car", later, relay.TESLA_CHECK_SECONDS))
+        self.stream("VIN_S", 900.0, Location=self.NEAR)
+        relay._tesla_answers["sarahs_car"] = (1000.0, {"asleep": True})  # asked once it had gone to sleep
+        self.assertFalse(relay.tesla_due("sarahs_car", later, relay.TESLA_CHECK_SECONDS), "it says itself when it wakes")
+        self.assertTrue(relay.tesla_due("sarahs_car", 1000.0 + relay.TESLA_STREAM_ASLEEP_CHECK_SECONDS, relay.TESLA_CHECK_SECONDS))
+        self.assertTrue(relay.tesla_due("sarahs_car", 900.0 + relay.TESLA_STREAM_TRUST_SECONDS + relay.TESLA_ASLEEP_CHECK_SECONDS,
+                                        relay.TESLA_CHECK_SECONDS), "a stream not heard for days is trusted no more")
+
+    def test_only_the_households_cars_are_listened_to_and_strings_are_read_as_numbers(self):
+        relay.tesla_stream_receive("tesla/VIN_X/v/Location", b'{"latitude": 37.45, "longitude": -122.1}', 1000.0)
+        relay.tesla_stream_receive("zigbee2mqtt/VIN_S/v/Soc", b"80", 1000.0)
+        self.assertEqual({}, relay._tesla_live)
+        self.stream("VIN_A", 1000.0, connectivity="CONNECTED", Soc="81.5", EstBatteryRange=240.25, DetailedChargeState="DetailedChargeStateCharging",
+                    Locked=True, SentryMode="SentryModeStateArmed", DestinationName="Springfield", MinutesToArrival="12.0")
+        self.assertEqual({}, relay._tesla_answers, "no location yet")
+        live = relay.tesla_live_status("andrews_tesla", 1010.0)
+        self.assertEqual((True, 81.5, 240.25, "Charging", True, "Armed", "Springfield", 12.0),
+                         (live["connected"], live["battery"], live["range_mi"], live["charging"], live["locked"], live["sentry"],
+                          live["destination"], live["minutes_to_arrival"]))
+        self.assertIsNone(relay.tesla_live_status("sarahs_car", 1010.0))
+        self.assertIsNone(relay.tesla_stream_fix({"fields": {"Location": {"latitude": 0, "longitude": 0}}}, 1.0), "no fix")
+
+    def test_the_configuration_names_the_box_its_ca_and_the_fields(self):
+        ca = os.path.join(self._dir.name, "ca.pem")
+        with open(ca, "w", encoding="utf-8") as f:
+            f.write("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n")
+        old, relay.TESLA_TELEMETRY_CA_FILE = relay.TESLA_TELEMETRY_CA_FILE, ca
+        try:
+            config = relay.tesla_telemetry_config(1000.0)
+        finally:
+            relay.TESLA_TELEMETRY_CA_FILE = old
+        self.assertEqual(("box.example.ts.net", 8443), (config["hostname"], config["port"]))
+        self.assertTrue(config["ca"].startswith("-----BEGIN CERTIFICATE-----"))
+        self.assertEqual({"interval_seconds": 10}, config["fields"]["Location"])
+        self.assertEqual(1000 + relay.TESLA_TELEMETRY_DAYS * 86400, config["exp"])
 
     def test_account_by_the_tokens_subject(self):
         self.assertEqual("andrew", relay.jwt_subject(_jwt("andrew")))
@@ -7976,6 +8053,7 @@ class ParkingTest(_FakeFrigate):
         relay.PARKING_FILE = os.path.join(self._dir.name, "parking.json")
         relay._parking_file.update(mtime=None, config={})
         relay._tesla_answers.clear()
+        relay._tesla_live.clear()
         relay.state_set(relay.HOME_KEY, self.HOME)
         self.where = {}  # vin -> tesla_location's answer
         self.asked = []
@@ -7997,6 +8075,7 @@ class ParkingTest(_FakeFrigate):
         for name, value in self._parking.items():
             setattr(relay, name, value)
         relay._tesla_answers.clear()
+        relay._tesla_live.clear()
         relay._parking_file.update(mtime=None, config={})
         super().tearDown()
 
@@ -8122,6 +8201,24 @@ class ParkingTest(_FakeFrigate):
         self.assertTrue(andrew["asleep"])
         self.assertEqual((_metres(self.CROSSING, 60, 5), "Elm St"), ((andrew["last"]["lat"], andrew["last"]["lng"]), andrew["street"]), "asleep, it is where it was")
         self.assertEqual((True, False, self.WED_7PM + 7200), (sarah["last"]["moving"], sarah["last"]["home"], sarah["last"]["at"]), "driving, away from home")
+
+    def test_a_car_that_streams_is_parked_from_when_it_said_so_and_shown_live(self):
+        lat, lng = _metres(self.CROSSING, 60, 5)
+        at = self.WED_7PM + 3600
+
+        def stream(when, **fields):
+            for field, value in fields.items():
+                relay.tesla_stream_receive(f"tesla/VIN_S/v/{field}", json.dumps(value).encode(), when)
+
+        stream(at - 120, Location={"latitude": lat + 0.01, "longitude": lng}, Gear="ShiftStateD", VehicleSpeed=20.0, Soc=64)
+        stream(at, Location={"latitude": lat, "longitude": lng}, GpsHeading=270, VehicleSpeed=0.0)
+        stream(at + 5, Gear="ShiftStateP")
+        relay.parking_tick(at + 50, push=self.push)
+        spot = (relay.state_get(relay.PARKING_KEY) or {})["sarahs_car"]["spot"]
+        self.assertEqual(("Elm St", "north", at + 5), (spot["street"], spot["side"], spot["since"]), "parked as it shifted into P, not up to hours before")
+        self.assertNotIn("VIN_S", self.asked, "the stream said where it is")
+        sarah = next(c for c in relay.parking_status(at + 60)["cars"] if c["car"] == "sarahs_car")
+        self.assertEqual((False, 64.0, True), (sarah["last"]["moving"], sarah["live"]["battery"], sarah["live"]["connected"]))
 
     def test_with_no_watched_streets_the_cars_are_still_kept_where_presence_last_heard_them(self):
         self.config({"tz": self.ZONE, "streets": []})
