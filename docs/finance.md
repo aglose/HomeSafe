@@ -146,9 +146,11 @@ A few conventions the parser relies on:
 - **Net worth** is total assets less every debt except the mortgage. The sheet counts the house as
   the equity built in it, not its full value, so the mortgage against that full value isn't
   subtracted again. The sheet's own history does the same.
-- The big chart plots **total assets**, not net worth. Before the old house was sold, the history's
-  "Debt" column included that house's mortgage, but "Total Assets" didn't include the house, so a
-  net-worth line would jump by a house's worth at the sale.
+- The history's **"Debt" column** leaves mortgages out too, so the Debt chart and today's debt
+  figure count the same things. Its snapshots from before the old house was sold used to include
+  that house's mortgage; in October 2026 they were rewritten in the sheet without it, the loan's
+  balance on each date worked out from its last statement.
+- The big chart plots **total assets**, not net worth.
 
 ### One-time setup
 
