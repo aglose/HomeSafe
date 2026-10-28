@@ -6,9 +6,9 @@ import kotlin.math.min
 /**
  * Tagging a car on a camera frame by hand: a person points at a car they can see — taps the box
  * Frigate drew around it, or drags a rectangle round one Frigate hasn't boxed — and says whose it
- * is. It is the check on the home screen's "In view now" strip, which only knows what the
- * classifier guessed: the tag both teaches the classifier (an example cut from this frame, then a
- * retrain) and, when Frigate is tracking that car, names it on the spot.
+ * is. It is the check on what the classifier guessed: the tag both teaches the classifier (an
+ * example cut from this frame, then a retrain) and, when Frigate is tracking that car, names it on
+ * the spot.
  */
 object CarTagging {
     /**

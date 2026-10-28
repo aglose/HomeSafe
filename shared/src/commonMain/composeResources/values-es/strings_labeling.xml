@@ -133,10 +133,10 @@
     <string name="cars_unreadable_frame">La cámara envió una imagen que la app no puede leer.</string>
     <string name="cars_tagged">Etiquetado como %1$s. %2$s %3$s</string>
     <string name="cars_tagged_not_ours">Etiquetado como "No es nuestro". %1$s %2$s</string>
-    <string name="cars_in_view_untracked">Frigate no está siguiendo un auto ahí, así que no puede aparecer a la vista hasta que detecte uno.</string>
-    <string name="cars_in_view_rename_failed">No se pudo renombrar el auto en seguimiento; aparecerá cuando el modelo lo reconozca.</string>
-    <string name="cars_in_view_removed">Se quitó de "A la vista ahora".</string>
-    <string name="cars_in_view_shown">Se muestra en "A la vista ahora".</string>
+    <string name="cars_sighting_untracked">Frigate no está siguiendo un auto ahí, así que no se renombró ningún avistamiento.</string>
+    <string name="cars_sighting_rename_failed">No se pudo renombrar el avistamiento que Frigate está siguiendo; tendrá nombre cuando el modelo lo reconozca.</string>
+    <string name="cars_sighting_cleared">Se borró el nombre de su avistamiento.</string>
+    <string name="cars_sighting_renamed">Su avistamiento también se renombró.</string>
     <string name="cars_retraining">Reentrenando ahora.</string>
     <string name="cars_saved_for_training">Guardado para el próximo entrenamiento.</string>
     <string name="cars_tag_failed">No se pudo guardar la etiqueta: %1$s</string>

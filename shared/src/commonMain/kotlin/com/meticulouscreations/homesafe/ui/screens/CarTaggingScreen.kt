@@ -94,8 +94,8 @@ import kotlin.random.Random
  * Tagging the cars a camera can see, by hand: a still of [cameraName] as big as the screen allows,
  * the boxes Frigate is tracking drawn over it with what it calls each car, and the known cars to
  * name the chosen one. Tap a box to tag that car, or drag a rectangle round a car Frigate missed
- * or boxed badly. It is where the "In view now" strip gets checked: a car the strip names wrongly,
- * or misses, is put right here, and the classifier learns from the correction.
+ * or boxed badly. A car the classifier names wrongly, or misses, is put right here, and the
+ * classifier learns from the correction.
  */
 @Composable
 fun CarTaggingScreen(cameraName: String, onBack: () -> Unit, modifier: Modifier = Modifier) {

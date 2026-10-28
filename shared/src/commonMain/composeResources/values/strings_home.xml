@@ -5,14 +5,7 @@
   See AGENTS.md, "Strings and localization".
 -->
 <resources>
-    <!-- The In View page: the cars parked in view of the cameras, with all their details. -->
-    <string name="home_in_view_title">In view now</string>
-    <string name="home_in_view_subtitle">Cars parked in view of the cameras</string>
-    <string name="home_in_view_empty">Nothing is parked in view right now.</string>
-    <!-- A button beside each camera's name on the In View page: opens its frame to tag the cars actually there. -->
-    <string name="home_in_view_check">Check and tag</string>
-    <!-- The row of pills at the top of Home: cars in view, and the doors. -->
-    <string name="home_glance_open_in_view">Show the cars in view</string>
+    <!-- The rows of pills at the top of Home: the doors, and the household's Teslas. -->
     <string name="home_glance_all_doors_closed">All doors closed</string>
     <plurals name="home_glance_doors_closed">
         <item quantity="one">%1$d door closed</item>
