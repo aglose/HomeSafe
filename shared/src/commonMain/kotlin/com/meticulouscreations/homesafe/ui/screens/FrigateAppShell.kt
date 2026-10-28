@@ -1029,6 +1029,9 @@ internal data object DoorsHomeRoute
 /** The In View page: the cars parked in view, from a car's pill on Home. */
 private data object InViewRoute
 
+/** The cars' map: the household's Teslas where they are, from a Tesla's pill on Home ([LocalCarsPage]). */
+private data object CarsHomeRoute
+
 /**
  * The full-screen clip editor for [cameraName], around [anchorEpochSeconds] (what the camera
  * page was showing, or "now" at the live edge). [originX] / [originY] are where the scissors
@@ -1081,6 +1084,7 @@ private fun HomeTabNav(
                         onFrameCamera = { tile -> if (backStack.lastOrNull() !is CameraFramingRoute) backStack.add(CameraFramingRoute(tile)) },
                         onOpenInView = { if (backStack.lastOrNull() != InViewRoute) backStack.add(InViewRoute) },
                         onOpenDoors = { if (backStack.lastOrNull() != DoorsHomeRoute) backStack.add(DoorsHomeRoute) },
+                        onOpenCars = { if (backStack.lastOrNull() != CarsHomeRoute) backStack.add(CarsHomeRoute) },
                         scrollToTopRequests = scrollToTop,
                     )
                 }
@@ -1177,6 +1181,7 @@ private fun HomeTabNav(
                     }
                 }
                 entry<DoorsHomeRoute> { route -> stores.Scoped(route) { DoorsScreen(onBack = { backStack.removeLastOrNull() }) } }
+                entry<CarsHomeRoute> { route -> stores.Scoped(route) { LocalCarsPage.current { backStack.removeLastOrNull() } } }
                 entry<InViewRoute> { route ->
                     stores.Scoped(route) {
                         InViewScreen(
@@ -1310,4 +1315,12 @@ fun bottomNavTestTag(route: TopLevelRoute): String = "bottom_nav_" + when (route
  */
 val LocalShellApps = staticCompositionLocalOf<@Composable (nav: ShellNavigation, tab: TopLevelRoute) -> Unit> {
     { _, _ -> }
+}
+
+/**
+ * The cars' map, the page Home's car pills open ([CarsHomeRoute]): drawn in :app, where the street
+ * map is (it is the weather app's). App() provides it; [onBack] pops it.
+ */
+val LocalCarsPage = staticCompositionLocalOf<@Composable (onBack: () -> Unit) -> Unit> {
+    { _ -> }
 }

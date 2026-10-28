@@ -122,6 +122,35 @@ data class MapCamera(val centerX: Double, val centerY: Double, val zoom: Double)
 
         fun at(latitude: Double, longitude: Double, zoom: Double): MapCamera = MapCamera(WebMercator.x(longitude), WebMercator.y(latitude), zoom)
 
+        /**
+         * The view that shows every one of [places] (latitude to longitude) in a [width] by
+         * [height] pixel map, [marginPx] in from each edge: centred on them, as far in as they
+         * allow and no further than [maxZoom], nor out past [minZoom]. One place, or several on the
+         * same spot, is shown at [maxZoom]. Null for no places, or a view not laid out yet.
+         */
+        fun fitting(
+            places: List<Pair<Double, Double>>,
+            width: Float,
+            height: Float,
+            tilePx: Float,
+            maxZoom: Double,
+            marginPx: Float = 0f,
+            minZoom: Double = MIN_ZOOM,
+        ): MapCamera? {
+            if (places.isEmpty() || width <= 0f || height <= 0f) return null
+            val xs = places.map { WebMercator.x(it.second) }
+            val ys = places.map { WebMercator.y(it.first) }
+            val (west, east) = xs.min() to xs.max()
+            val (north, south) = ys.min() to ys.max()
+            val roomX = (width - 2 * marginPx).coerceAtLeast(1f)
+            val roomY = (height - 2 * marginPx).coerceAtLeast(1f)
+
+            // The world is 2^zoom * tilePx pixels across: the zoom at which the span just fits the room.
+            fun fit(span: Double, room: Float): Double = if (span <= 0.0) maxZoom else ln(room / (span * tilePx)) / ln(2.0)
+            val zoom = minOf(fit(east - west, roomX), fit(south - north, roomY), maxZoom).coerceAtLeast(minZoom)
+            return MapCamera((west + east) / 2, (north + south) / 2, zoom)
+        }
+
         private fun wrap(x: Double): Double = x - floor(x)
     }
 }

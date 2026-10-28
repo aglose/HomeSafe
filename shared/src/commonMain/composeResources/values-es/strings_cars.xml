@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="household_cars_title">Coches</string>
+    <string name="household_cars_open">Ver los coches en un mapa</string>
+    <string name="household_cars_where_home">En casa</string>
+    <string name="household_cars_where_driving">En marcha</string>
+    <string name="household_cars_where_away">Fuera</string>
+    <string name="household_cars_where_unknown">Aún sin ver</string>
+    <string name="household_cars_move_by">Moverlo antes de %1$s</string>
+    <string name="household_cars_move_now">Hay que moverlo ya</string>
+    <string name="household_cars_seen_just_now">Visto ahora mismo</string>
+    <plurals name="household_cars_seen_minutes">
+        <item quantity="one">Visto hace %1$d min</item>
+        <item quantity="other">Visto hace %1$d min</item>
+    </plurals>
+    <plurals name="household_cars_seen_hours">
+        <item quantity="one">Visto hace %1$d hora</item>
+        <item quantity="other">Visto hace %1$d horas</item>
+    </plurals>
+    <plurals name="household_cars_seen_days">
+        <item quantity="one">Visto hace %1$d día</item>
+        <item quantity="other">Visto hace %1$d días</item>
+    </plurals>
+    <string name="household_cars_asleep">Dormido</string>
+    <string name="household_cars_empty">Aún no hay coches. Cuando un Tesla esté vinculado al servidor, aparecerá aquí esté donde esté.</string>
+    <string name="household_cars_load_failed">No se pudieron cargar los coches: %1$s</string>
+    <string name="household_cars_show_all">Ver todos</string>
+    <string name="household_cars_map_description">Mapa de dónde están los coches</string>
+    <string name="household_cars_select">Ver en el mapa</string>
+</resources>

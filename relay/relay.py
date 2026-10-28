@@ -10704,6 +10704,7 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
     if where is None or asked <= float(car.get("asked") or 0) or (not where.get("asleep") and asked - float(where["at"]) > TESLA_STALE_SECONDS):
         return
     before, car["asked"] = float(car.get("asked") or 0), asked
+    parking_seen(car, answer)
     if where.get("asleep"):
         if not car.get("spot"):
             car["elsewhere"] = asked
@@ -10729,6 +10730,25 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
     car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
     log.info("parking: parked on the %s side of %s since %s (by its %s)", match["side"] or "unsure", match["street"],
              datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="minutes"), match["how"] or "nothing")
+
+
+def parking_seen(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None]) -> None:
+    """
+    Keeps what an answer from Tesla says about where the car is, wherever that is, for the phones'
+    map of the cars: whether it is asleep, and its fix as `last` (with whether it was moving), when
+    that is fresh and newer than the one kept. Watched streets or not.
+    """
+    asked, where = answer
+    if where is None:
+        return
+    if where.get("asleep"):
+        car["asleep"] = True
+        return
+    if asked - float(where["at"]) > TESLA_STALE_SECONDS or float(where["at"]) < float((car.get("last") or {}).get("at") or 0):
+        return
+    car["asleep"] = False
+    moving = where.get("shift") in ("D", "R", "N") or float(where.get("speed") or 0) > 0
+    car["last"] = {**{k: where.get(k) for k in ("lat", "lng", "heading", "at")}, "moving": moving}
 
 
 def parking_phones(name: str, config: dict[str, Any], now: float, quiet_too: bool = False) -> list[tuple[str, str]]:
@@ -10856,15 +10876,25 @@ def parking_tick(now: float | None = None, push: Callable[..., str] | None = Non
     """
     Once a PARKING_EVERY_SECONDS: takes in what Tesla last said about each of TESLA_CARS (car
     presence asks every TESLA_CHECK_SECONDS; asked here only when it hasn't been), and pushes what
-    is owed. Answers the pushes. `push` stands in for `deliver` in tests.
+    is owed. With no watched streets it only keeps where each car was last seen, from what car
+    presence already heard. Answers the pushes. `push` stands in for `deliver` in tests.
     """
     now = time.time() if now is None else now
     config = parking_config()
-    if not (tesla_on() and config.get("streets")):
+    if not tesla_on():
+        return []
+    saved = state_get(PARKING_KEY) or {}
+    if not config.get("streets"):
+        # Nothing to watch at a curb, so Tesla isn't asked for it; but where car presence last
+        # heard each car is is still kept, for the phones' map of the cars.
+        for name in TESLA_CARS:
+            answer = _tesla_answers.get(name)
+            if answer is not None:
+                parking_seen(saved.setdefault(name, {}), answer)
+        state_set(PARKING_KEY, saved)
         return []
     stretches = parking_stretches(config, state_get(HOME_KEY), now)
     zone = parking_zone(config)
-    saved = state_get(PARKING_KEY) or {}
     pushed = []
     for name in TESLA_CARS:
         car = saved.setdefault(name, {})
@@ -10887,9 +10917,14 @@ def parking_forever() -> None:
 
 
 def parking_status(now: float) -> dict[str, Any]:
-    """Where each of TESLA_CARS is parked by the file's streets, and its next deadline there."""
+    """
+    Where each of TESLA_CARS is parked by the file's streets, and its next deadline there; and,
+    wherever it is, where Tesla last saw it (`last`: the fix, whether it was moving, and whether
+    that is home), and whether the car is asleep now.
+    """
     config = parking_config()
-    stretches = parking_stretches(config, state_get(HOME_KEY), now) if config.get("streets") else []
+    home = state_get(HOME_KEY)
+    stretches = parking_stretches(config, home, now) if config.get("streets") else []
     zone = parking_zone(config)
     saved = state_get(PARKING_KEY) or {}
     cars = []
@@ -10898,12 +10933,21 @@ def parking_status(now: float) -> dict[str, Any]:
         spot = car.get("spot")
         match = parking_match(spot, stretches) if spot else None
         deadline = parking_deadline(match["rules"], float(spot["since"]), now, zone, set(config.get("permits") or [])) if match else None
+        # A relay from before `last` was kept knows only the spot at the curb.
+        last = car.get("last") or (spot and {**{k: spot.get(k) for k in ("lat", "lng", "heading", "at")}, "moving": False})
+        at_home = None
+        if last and home:
+            d = haversine_metres((float(last["lat"]), float(last["lng"])), (float(home["lat"]), float(home["lng"])))
+            at_home = d <= float(home.get("radius_m") or 150) + TESLA_HOME_MARGIN_METRES
         cars.append({
             "car": name, "name": display_name(name), "asked": car.get("asked"),
             "street": match and match["street"], "side": match and match["side"], "how": match and match["how"],
             "lat": spot and spot.get("lat"), "lng": spot and spot.get("lng"), "heading": spot and spot.get("heading"),
             "since": spot and spot["since"], "move_by": deadline and deadline["at"],
             "rule": deadline and {k: v for k, v in deadline["rule"].items()},
+            "window": deadline and {"from": deadline["from"], "until": deadline["until"]},
+            "last": last and {**{k: last.get(k) for k in ("lat", "lng", "heading", "at", "moving")}, "home": at_home},
+            "asleep": bool(car.get("asleep")),
         })
     return {"streets": [{"street": s["street"], "points": len(s["line"]), "home_side": s["home_side"]} for s in stretches], "cars": cars}
 

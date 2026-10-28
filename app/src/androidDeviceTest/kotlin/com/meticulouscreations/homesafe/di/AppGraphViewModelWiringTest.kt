@@ -9,11 +9,13 @@ import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
 import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.integration.testPlatformContext
+import com.meticulouscreations.homesafe.ui.screens.MapTilesViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.AssistantViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraFramingViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
+import com.meticulouscreations.homesafe.viewmodel.CarsViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
 import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
@@ -66,6 +68,8 @@ class AppGraphViewModelWiringTest {
                 BudgetViewModel::class,
                 ServerUptimeViewModel::class,
                 DoorsViewModel::class,
+                CarsViewModel::class,
+                MapTilesViewModel::class,
                 InViewViewModel::class,
                 ConnectionNoticeViewModel::class,
                 WeatherViewModel::class,
