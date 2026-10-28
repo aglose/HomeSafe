@@ -106,7 +106,7 @@ class DoorsTool(private val doors: DoorRepository) : AssistantTool {
         if (!snapshot.supported) return "This server has no door sensors."
         val names = snapshot.doors.associate { it.id to it.name }
         return (if (refreshed) "" else STALE) + "Doors:\n" + listing(snapshot.doors, limit = 50) { door ->
-            "${door.name}: open=${door.open}, changed at ${door.changedAtMillis}, battery ${door.battery?.let { "$it%" }}${if (door.needsBattery) " (low)" else ""}, online=${door.online}"
+            "${door.name}: open=${door.open}, changed at ${door.changedAtMillis}, battery ${door.battery?.let { "$it%" }}${if (door.needsBattery) " (low)" else ""}, link quality ${door.linkQuality} of 255 (${door.signal?.name?.lowercase()}), online=${door.online}"
         } + "\n\nRecent events, newest first:\n" + listing(snapshot.events.sortedByDescending { it.atMillis }, limit = 40) { event ->
             "${names[event.doorId] ?: event.doorId} ${if (event.open) "opened" else "closed"} at ${event.atMillis}"
         }

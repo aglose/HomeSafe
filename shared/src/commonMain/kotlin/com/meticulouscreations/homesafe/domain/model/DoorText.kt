@@ -9,7 +9,10 @@ import homesafe.shared.generated.resources.doors_day_yesterday
 import homesafe.shared.generated.resources.doors_detail_battery
 import homesafe.shared.generated.resources.doors_detail_battery_low
 import homesafe.shared.generated.resources.doors_detail_offline
-import homesafe.shared.generated.resources.doors_detail_weak_signal
+import homesafe.shared.generated.resources.doors_detail_signal_fair
+import homesafe.shared.generated.resources.doors_detail_signal_good
+import homesafe.shared.generated.resources.doors_detail_signal_strong
+import homesafe.shared.generated.resources.doors_detail_signal_weak
 import homesafe.shared.generated.resources.doors_notify_always
 import homesafe.shared.generated.resources.doors_notify_away
 import homesafe.shared.generated.resources.doors_notify_never
@@ -54,7 +57,19 @@ fun doorStateText(door: Door, nowMillis: Long): UiText {
     }
 }
 
-/** The sensor's own health, only what's worth saying: offline, battery, a weak signal. Null when there's nothing. */
+/** What each [DoorSignal] is called, with the link quality it came from as its argument. */
+val DoorSignal.label: StringResource
+    get() = when (this) {
+        DoorSignal.WEAK -> Res.string.doors_detail_signal_weak
+        DoorSignal.FAIR -> Res.string.doors_detail_signal_fair
+        DoorSignal.GOOD -> Res.string.doors_detail_signal_good
+        DoorSignal.STRONG -> Res.string.doors_detail_signal_strong
+    }
+
+/**
+ * The sensor's own health: offline, battery, signal. Null when there's nothing. An offline
+ * sensor's signal is from before it went quiet, so only a weak one is said, as the likely why.
+ */
 fun doorHealthText(door: Door): UiText? {
     val parts = buildList {
         if (door.online == false) add(UiText.of(Res.string.doors_detail_offline))
@@ -62,7 +77,10 @@ fun doorHealthText(door: Door): UiText? {
             door.needsBattery -> add(UiText.of(Res.string.doors_detail_battery_low))
             door.battery != null -> add(UiText.of(Res.string.doors_detail_battery, door.battery))
         }
-        if (door.weakSignal) add(UiText.of(Res.string.doors_detail_weak_signal))
+        val signal = door.signal
+        if (signal != null && door.linkQuality != null && (door.online != false || signal == DoorSignal.WEAK)) {
+            add(UiText.of(signal.label, door.linkQuality))
+        }
     }
     return parts.takeIf { it.isNotEmpty() }?.let { UiText.Joined(it, UiText.of(Res.string.common_dot_separator)) }
 }
