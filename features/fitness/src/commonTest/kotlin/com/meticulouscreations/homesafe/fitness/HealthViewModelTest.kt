@@ -17,6 +17,7 @@ import com.meticulouscreations.homesafe.fitness.domain.RunTrack
 import com.meticulouscreations.homesafe.fitness.domain.SleepSession
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.data.MutableClock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -107,6 +108,70 @@ class HealthViewModelTest {
         // Nothing to ask for yet: the button goes to where the store is got.
         assertEquals(1, h.source.managed)
         assertEquals(0, h.source.asked)
+    }
+
+    @Test
+    fun beforeTheStoreIsAskedItIsNotTakenToBeOff() = runHealthTest { h ->
+        h.source.allowed = everything
+        // A view model is made afresh with each activity: it mustn't offer to connect what may be connected.
+        assertEquals(HealthAccess.CHECKING, h.state.access)
+        assertTrue(h.state.supported)
+        assertFalse(h.state.loaded)
+    }
+
+    @Test
+    fun aConnectedStoreIsOnWhileItIsStillBeingRead() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        val held = CompletableDeferred<Unit>()
+        h.source.runsHeld = held
+        open(h)
+        // The card reads "reading", not "connect", and the runs door waits for its runs.
+        assertEquals(HealthAccess.ON, h.state.access)
+        assertFalse(h.state.loaded)
+        assertFalse(h.state.runsShared)
+        held.complete(Unit)
+        runCurrent()
+        assertTrue(h.state.loaded)
+        assertTrue(h.state.runsShared)
+        assertEquals(everything, h.state.granted)
+    }
+
+    @Test
+    fun aStoreThatCantSayWhatIsAllowedDoesNotTurnTheCardOff() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        open(h)
+        h.source.grantsFailing = true
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(HealthAccess.ON, h.state.access)
+        assertTrue(h.state.loaded)
+        assertTrue(h.state.failed)
+        assertEquals(4_200L, h.state.body.steps?.today)
+        // Back again, it is read afresh.
+        h.source.grantsFailing = false
+        h.clock.seconds += 120
+        open(h)
+        assertFalse(h.state.failed)
+    }
+
+    @Test
+    fun aStoreThatCantSayOnTheFirstLookIsStillBeingChecked() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        h.source.grantsFailing = true
+        open(h)
+        // Not told that nothing is shared, so not offered to connect.
+        assertEquals(HealthAccess.CHECKING, h.state.access)
+        assertFalse(h.state.loaded)
+        assertEquals(emptyList(), h.source.reads)
+        // Nothing was read, so coming back asks again at once.
+        h.source.grantsFailing = false
+        open(h)
+        assertEquals(HealthAccess.ON, h.state.access)
+        assertTrue(h.state.loaded)
+        assertFalse(h.state.failed)
     }
 
     @Test
