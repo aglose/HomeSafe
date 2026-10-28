@@ -8031,3 +8031,114 @@ class ParkingTest(_FakeFrigate):
         relay._tesla_answers["andrews_tesla"] = (self.WED_7PM + 20 * 3600 - 900, relay._tesla_answers["andrews_tesla"][1])
         self.assertEqual([], relay.parking_tick(self.WED_7PM + 20 * 3600, push=self.push), "a day ahead now, but asked first, and it had gone")
         self.assertEqual([], self.pushes)
+
+
+class ApnsTest(unittest.TestCase):
+    """Pushing straight to an iPhone through Apple's push service, with Apple and the key faked."""
+
+    TOKEN = "a1" * 32
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {n: getattr(relay, n) for n in ("DB_PATH", "CONN", "APNS_KEY_ID", "APNS_KEY_FILE", "apns_post", "apns_sign")}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        relay.APNS_KEY_FILE = os.path.join(self._dir.name, "apns-key.p8")
+        with open(relay.APNS_KEY_FILE, "w") as f:
+            f.write("not read: apns_sign is faked")
+        relay.APNS_KEY_ID = "KEY123"
+        relay.apns_sign = lambda now: f"jwt-{int(now)}"
+        relay._apns.update(jwt=None, at=0.0)
+        self.posts = []  # (url, headers, payload)
+        self.answers = {}  # host -> (status, reason)
+        relay.apns_post = self.post
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        relay._apns.update(jwt=None, at=0.0)
+        self._dir.cleanup()
+
+    def post(self, url, headers, payload):
+        self.posts.append((url, headers, payload))
+        host = "sandbox" if "sandbox" in url else "production"
+        return self.answers.get(host, (200, ""))
+
+    def test_an_iphone_token_goes_to_apple_and_an_fcm_one_does_not(self):
+        self.assertTrue(relay.apns_token(self.TOKEN))
+        self.assertFalse(relay.apns_token("cXy0:APA91bH" + "x" * 140), "an FCM token")
+        self.assertFalse(relay.apns_token(None))
+        self.assertEqual((True, ""), relay.send_push(self.TOKEN, "Move Andrew's Tesla now", "West side of Fountain St", {"parking": "1", "notif_id": "parking-andrews_tesla"}))
+        url, headers, payload = self.posts[0]
+        self.assertEqual(f"https://api.push.apple.com/3/device/{self.TOKEN}", url)
+        self.assertEqual(("bearer jwt-", "com.meticulouscreations.homesafe.HomeSafe", "alert", "parking-andrews_tesla"),
+                         (headers["authorization"][:11], headers["apns-topic"], headers["apns-push-type"], headers["apns-collapse-id"]))
+        self.assertEqual({"title": "Move Andrew's Tesla now", "body": "West side of Fountain St"}, payload["aps"]["alert"])
+        self.assertEqual("1", payload["parking"], "the app's data travels beside aps")
+
+    def test_a_token_xcode_installed_falls_to_the_sandbox_which_is_then_tried_first(self):
+        self.answers["production"] = (400, "BadDeviceToken")
+        self.assertEqual((True, ""), relay.apns_send(self.TOKEN, "t", "b", {}))
+        self.assertEqual(["production", "sandbox"], ["sandbox" if "sandbox" in u else "production" for u, _, _ in self.posts])
+        self.posts.clear()
+        relay.apns_send(self.TOKEN, "t", "b", {})
+        self.assertEqual(1, len(self.posts))
+        self.assertIn("sandbox", self.posts[0][0])
+
+    def test_an_app_apple_says_is_gone_is_forgotten(self):
+        relay.with_db(lambda c: (c.execute("INSERT INTO devices (device_id, token, platform, name) VALUES ('ios1', ?, 'ios', 'iPhone')", (self.TOKEN,)), c.commit()))
+        self.answers["production"] = (410, "Unregistered")
+        self.assertEqual("dropped", relay.deliver(self.TOKEN, "t", "b", {}))
+        self.assertIsNone(relay.with_db(lambda c: c.execute("SELECT 1 FROM devices WHERE device_id='ios1'").fetchone()))
+
+    def test_a_refusal_that_is_no_token_s_fault_keeps_the_phone(self):
+        relay.with_db(lambda c: (c.execute("INSERT INTO devices (device_id, token, platform, name) VALUES ('ios1', ?, 'ios', 'iPhone')", (self.TOKEN,)), c.commit()))
+        self.answers["production"] = (403, "InvalidProviderToken")
+        self.assertEqual("failed", relay.deliver(self.TOKEN, "t", "b", {}))
+        self.assertEqual(1, len(self.posts), "no point trying the sandbox with a bad key")
+        self.assertIsNotNone(relay.with_db(lambda c: c.execute("SELECT 1 FROM devices WHERE device_id='ios1'").fetchone()))
+
+    def test_without_a_key_an_iphone_is_told_it_gets_no_pushes(self):
+        self.assertTrue(relay.can_push(self.TOKEN))
+        self.assertTrue(relay.can_push("cXy0:APA91bH" + "x" * 140))
+        self.assertFalse(relay.can_push(None))
+        relay.APNS_KEY_ID = ""
+        self.assertFalse(relay.can_push(self.TOKEN))
+        self.assertTrue(relay.can_push("cXy0:APA91bH" + "x" * 140), "Android's go through FCM whatever")
+        self.assertEqual((False, "apns not set up (APNS_KEY_ID, APNS_KEY_FILE)"), relay.apns_send(self.TOKEN, "t", "b", {}))
+        self.assertEqual([], self.posts)
+
+    def test_the_provider_token_is_made_anew_only_every_45_minutes(self):
+        self.assertEqual("jwt-1000", relay.apns_jwt(1000.0))
+        self.assertEqual("jwt-1000", relay.apns_jwt(1000.0 + 44 * 60))
+        self.assertEqual("jwt-3700", relay.apns_jwt(3700.0))
+
+    def test_apple_out_of_reach_fails_this_phone_and_the_broadcast_goes_on(self):
+        relay.with_db(lambda c: (c.executemany("INSERT INTO devices (device_id, token, platform, name) VALUES (?,?,?,?)",
+                                               [("ios1", self.TOKEN, "ios", "iPhone"), ("and1", "fcm-token-1", "android", "Pixel")]), c.commit()))
+
+        def unreachable(url, headers, payload):
+            raise TimeoutError("read timed out")
+
+        relay.apns_post = unreachable
+        fcm = []
+        send_push = relay.send_push
+        relay.send_push = lambda token, *a, **k: send_push(token, *a, **k) if relay.apns_token(token) else (fcm.append(token), (True, ""))[1]
+        try:
+            result = relay.broadcast("Front Door", "Person", {}, away=True)
+        finally:
+            relay.send_push = send_push
+        self.assertEqual((1, 1), (result["sent"], result["failed"]), "the Pixel after the iPhone was still pushed to")
+        self.assertEqual(["fcm-token-1"], fcm)
+
+    def test_a_key_that_wont_load_fails_the_push_not_the_relay(self):
+        def broken(now):
+            raise ValueError("Could not deserialize key data")
+
+        relay.apns_sign = broken
+        ok, err = relay.apns_send(self.TOKEN, "t", "b", {})
+        self.assertFalse(ok)
+        self.assertIn("Could not deserialize key data", err)

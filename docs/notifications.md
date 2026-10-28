@@ -177,9 +177,46 @@ UPDATE_NOTIFICATION_ICONS=1 ./gradlew :shared:testAndroidHostTest --tests '*Noti
 
 `scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md) draws the whole set, large and at status-bar size.
 
-On iOS (local notifications only, until APNs lands) there is no icon to choose, but each camera's
-alerts stack in a thread of their own, someone seen while everyone is away is time-sensitive, and
-a summary or more of a visit already announced arrives passively.
+On iOS there is no icon to choose, but each camera's alerts stack in a thread of their own,
+someone seen while everyone is away is time-sensitive, and a summary or more of a visit already
+announced arrives passively.
+
+## iPhone
+
+The relay pushes to an iPhone straight through Apple's push service (APNs), not through Firebase:
+the app registers Apple's own device token (64 hex digits, `AppDelegate.swift` →
+`onApnsToken` in `IosApp.kt`), and the relay signs in to APNs with the household's key
+(`relay.py`, "APNs"). Every push the relay makes reaches an iPhone this way, the same banner
+Android's carry the text of (iOS draws the relay's English `aps.alert`), with the push's data
+beside it, so a tap opens the moment, the door or the page it is about.
+
+Until the key is on the box the relay tells an iPhone it can't push to it (`push: false` in the
+answer to its registration), and the app keeps its own in-app alerts while it runs, as before.
+
+Apple keeps two services, and a token belongs to one: **sandbox** for a build Xcode installs on
+the phone, **production** for TestFlight, ad hoc and App Store builds. The relay tries the one that
+took the token last (production the first time), and the other when Apple says `BadDeviceToken`.
+
+### Setup (once)
+
+1. **A key.** At [developer.apple.com](https://developer.apple.com/account/resources/authkeys/list),
+   Certificates, Identifiers & Profiles → **Keys** → **+**. Name it "HomeSafe relay", tick
+   **Apple Push Notifications service (APNs)**, Configure → Environment **Sandbox & Production**,
+   then Continue and Register. **Download** the `.p8` (Apple offers it once) and note the **Key ID**.
+2. **On the box**, copy the key to `~/surveillance/relay/data/apns-key.p8` and write
+   `~/surveillance/relay/apns.env` (gitignored):
+   ```
+   APNS_KEY_ID=ABC123DEFG
+   ```
+   The team (`APNS_TEAM_ID`, default KSK3H9YSXD) and the bundle id (`APNS_TOPIC`, default
+   `com.meticulouscreations.homesafe.HomeSafe`) only need setting if they ever change.
+3. **Restart the relay** so it reads `apns.env`: `docker compose up -d homesafe-relay`.
+4. **Build the app onto the iPhone from Xcode.** The project now has the Push Notifications
+   entitlement (`iosApp.entitlements`); with automatic signing Xcode turns the capability on for
+   the app's identifier itself. At launch the app gets its token and registers it.
+
+The relay log then says `device registered by …: Apple iPhone (ios …, push=True, …)`, and a test
+push from Settings → Notifications reaches the iPhone.
 
 ## Weather
 

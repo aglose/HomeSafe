@@ -6,3 +6,6 @@ pydantic==2.14.1
 tzdata==2026.5
 Pillow==13.0.0
 paho-mqtt==2.1.0
+httpx[http2]==0.28.1
+h2==4.4.1
+cryptography==50.0.2
