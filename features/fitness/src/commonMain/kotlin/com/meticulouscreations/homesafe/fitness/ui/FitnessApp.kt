@@ -328,6 +328,15 @@ fun FitnessAppContent(
     // Off while the app animates closed ([active] false), so that Back reaches what's beneath.
     val back = rememberPredictiveBack(enabled = active && pages.isNotEmpty()) { pop() }
 
+    // A run asked for opens its page once it is recording: the location may yet be refused, which the runs page says.
+    var startingRun by remember { mutableStateOf(false) }
+    LaunchedEffect(startingRun, recording != null) {
+        if (startingRun && recording != null) {
+            startingRun = false
+            if (pages.lastOrNull() == FitnessPage.Runs) pages += FitnessPage.Recording
+        }
+    }
+
     // Notes handed over from outside (shared into the app) open on the page that reads them.
     LaunchedEffect(state.import.text.isNotBlank()) {
         if (state.import.text.isNotBlank() && pages.lastOrNull() != FitnessPage.Import) pages += FitnessPage.Import
@@ -526,7 +535,7 @@ fun FitnessAppContent(
                         recording = recording,
                         onStartRun = {
                             actions.onStartRun()
-                            pages += FitnessPage.Recording
+                            startingRun = true
                         },
                         onOpenRecording = { pages += FitnessPage.Recording },
                     )

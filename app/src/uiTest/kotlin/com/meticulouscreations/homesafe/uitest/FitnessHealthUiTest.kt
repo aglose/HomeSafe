@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.HealthUiState
 import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
+import com.meticulouscreations.homesafe.fitness.domain.RunsBoard
 import com.meticulouscreations.homesafe.fitness.ui.FitnessActions
 import com.meticulouscreations.homesafe.fitness.ui.FitnessAppContent
 import com.meticulouscreations.homesafe.fitness.ui.FitnessFixtures
@@ -175,9 +176,10 @@ class FitnessHealthUiTest {
     @Test
     fun withOnlyStepsSharedThereIsStillAWayToShareTheRest() = runComposeUiTest(testTimeout = 5.minutes) {
         val calls = Calls()
-        val health = HealthFixtures.connected().let { it.copy(granted = setOf(HealthKind.STEPS), body = it.body.copy(sleep = null, readiness = null, readinessShared = false)) }
+        // No exercise shared, so none of the band's runs (and none recorded on the phone).
+        val health = HealthFixtures.connected().let { it.copy(granted = setOf(HealthKind.STEPS), body = it.body.copy(sleep = null, readiness = null, readinessShared = false), runs = RunsBoard()) }
         show(health, calls)
-        // No exercise, so no door to the runs and none of its buttons.
+        // So no door to the runs and none of its buttons.
         assertNotShown("fitness_runs_door")
         tap("fitness_body_manage")
         assertEquals(1, calls.manages)
@@ -208,12 +210,16 @@ class FitnessHealthUiTest {
     @Test
     fun theDoorOpensTheRunsAndARunOpensItsPage() = runComposeUiTest(testTimeout = 5.minutes) {
         val calls = Calls()
-        show(HealthFixtures.connected(), calls)
+        val health = HealthFixtures.connected()
+        show(health, calls)
         tap("fitness_runs_door")
         assertShown("fitness_runs")
         assertShown("fitness_runs_week")
         assertShown("fitness_runs_weeks")
-        HealthFixtures.records.forEach { assertShown("fitness_run_${it.id}") }
+        health.runs.runs.forEach { assertShown("fitness_run_${it.id}") }
+        // The walk and the lunges the band called runs are there, apart.
+        assertEquals(2, health.runs.notRuns.size)
+        health.runs.notRuns.forEach { assertShown("fitness_not_run_${it.run.id}") }
         tap("fitness_run_run-2")
         assertEquals(listOf("run-2"), calls.opened)
         assertShown("fitness_run")

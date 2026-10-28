@@ -58,6 +58,14 @@ class RunTrackerTest {
     }
 
     @Test
+    fun aJumpThatStaysAWhileAddsNothingGoingOrComingBack() {
+        // Standing still, with the GPS 100 m off for a quarter of a minute: from far enough on, 100 m
+        // is no longer too fast to have run since the last good position, but it is still the jump.
+        val events = (0..30L).map { fix(it, if (it in 1..15) 100.0 else 0.0) }
+        assertEquals(0.0, RunTracker.replay(start, events).meters)
+    }
+
+    @Test
     fun aPauseStopsTheClockAndWhatIsCoveredMeanwhile() {
         val events = steady(3.0, 100) +
             RunEvent(RunEventKind.PAUSE, start + 100_000) +
@@ -99,6 +107,20 @@ class RunTrackerTest {
         assertEquals(listOf(true, true), splits.map { it.whole })
         near(540.0, splits[0].seconds.toDouble(), 6.0)
         near(480.0, splits[1].seconds.toDouble(), 6.0)
+    }
+
+    @Test
+    fun aMileIsTimedWithoutThePauseInIt() {
+        // A 9:00 mile with two minutes stood at a crossing halfway through it.
+        val speed = METERS_PER_MILE / 540
+        val events = steady(speed, 270) +
+            RunEvent(RunEventKind.PAUSE, start + 270_000) +
+            RunEvent(RunEventKind.RESUME, start + 390_000) +
+            steady(speed, 300, from = 390, fromMeters = 270 * speed)
+        val tracker = RunTracker.replay(start, events)
+        val run = Runs.of(tracker.finished("a", start + 690_000, 0))
+        val splits = Runs.splits(run, tracker.track())
+        near(540.0, splits[0].seconds.toDouble(), 6.0)
     }
 
     @Test

@@ -561,6 +561,42 @@ class HealthViewModelTest {
     }
 
     @Test
+    fun aRunRecordedHereKeepsItsOwnDistanceAndGetsTheHeartAsWhatIsSharedChanges() = runHealthTest { h ->
+        h.source.allowed = everything - HealthKind.HEART_RATE
+        h.source.heart = (0 until 1_500 step 10).map { HealthSample(NOW - 3_600 + it, 155.0) }
+        recordRun(h, "app-1", NOW - 3_600, 1_500, 2.5)
+        open(h)
+        h.vm.openRun("app-1")
+        runCurrent()
+        assertEquals(emptyList(), assertNotNull(h.state.detail).heart)
+        // The heart rate is shared while the run is open, and the distance no longer is: the miles are the phone's.
+        h.source.allowed = everything - HealthKind.DISTANCE
+        h.clock.seconds += 120
+        open(h)
+        val detail = assertNotNull(h.state.detail)
+        assertEquals(3, detail.splits.size)
+        assertEquals(150, detail.heart.size)
+    }
+
+    @Test
+    fun aRunRecordedHereStaysOpenWhenTheStoreIsNoLongerShared() = runHealthTest { h ->
+        h.source.allowed = everything
+        h.source.heart = (0 until 1_500 step 10).map { HealthSample(NOW - 3_600 + it, 155.0) }
+        recordRun(h, "app-1", NOW - 3_600, 1_500, 2.5)
+        open(h)
+        h.vm.openRun("app-1")
+        runCurrent()
+        h.source.allowed = emptySet()
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(HealthAccess.OFF, h.state.access)
+        val detail = assertNotNull(h.state.detail)
+        assertEquals("app-1", detail.runId)
+        assertEquals(3, detail.splits.size)
+        assertEquals(emptyList(), detail.heart)
+    }
+
+    @Test
     fun aRunRecordedHereCanBeDeletedButOneReadFromTheStoreCannot() = runHealthTest { h ->
         fill(h.source)
         h.source.allowed = everything

@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.fitness.data
 
+import com.meticulouscreations.homesafe.fitness.data.LiveRun.Session
 import com.meticulouscreations.homesafe.fitness.domain.RecordedRuns
 import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
 import com.meticulouscreations.homesafe.fitness.domain.Recording
@@ -31,31 +32,51 @@ import kotlin.time.Clock
  * middle of loses a few seconds at most. Such a run is finished, where its positions stopped,
  * when the app next starts; one that never got anywhere is thrown away.
  *
+ * The run itself is the process's ([LiveRun.process]), not the app graph's: Android builds the
+ * graph again with the Activity (left with Back and opened again mid-run, say) without stopping
+ * the old one, and the recorder on the new graph must take up the run the old one is still
+ * recording rather than finish it as cut short.
+ *
  * Everything that changes the run happens under one lock, in the order it was asked for.
  */
-@Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
-class RunRecorderImpl(
+class RunRecorderImpl internal constructor(
     private val location: RunLocation,
     private val runs: RecordedRuns,
     private val appScope: CoroutineScope,
     private val clock: Clock,
+    private val live: LiveRun,
 ) : RunRecorder {
+    @Inject
+    constructor(location: RunLocation, runs: RecordedRuns, appScope: CoroutineScope, clock: Clock) : this(location, runs, appScope, clock, LiveRun.process)
+
     override val isSupported: Boolean = location.isSupported
 
-    private val _recording = MutableStateFlow<Recording?>(null)
-    override val recording: StateFlow<Recording?> = _recording.asStateFlow()
+    override val recording: StateFlow<Recording?> = live.recording.asStateFlow()
 
-    private val _problem = MutableStateFlow<RecorderProblem?>(null)
-    override val problem: StateFlow<RecorderProblem?> = _problem.asStateFlow()
+    override val problem: StateFlow<RecorderProblem?> = live.problem.asStateFlow()
 
-    private val lock = Mutex()
-    private var session: Session? = null
+    private val lock get() = live.lock
+    private var session: Session?
+        get() = live.session
+        set(value) {
+            live.session = value
+        }
     private var starting: Job? = null
 
     init {
-        if (isSupported) appScope.launch { lock.withLock { salvage() } }
+        if (isSupported) {
+            appScope.launch {
+                lock.withLock {
+                    // Once a process: by the time a later graph's recorder comes, the run in hand is a live one.
+                    if (!live.salvaged) {
+                        live.salvaged = true
+                        salvage()
+                    }
+                }
+            }
+        }
     }
 
     private fun now(): Long = clock.now().toEpochMilliseconds()
@@ -64,10 +85,10 @@ class RunRecorderImpl(
         if (!isSupported || session != null || starting?.isActive == true) return
         starting = appScope.launch {
             if (!location.hasPermission() && !location.requestPermission()) {
-                _problem.value = RecorderProblem.LOCATION_REFUSED
+                live.problem.value = RecorderProblem.LOCATION_REFUSED
                 return@launch
             }
-            _problem.value = null
+            live.problem.value = null
             lock.withLock {
                 if (session != null) return@withLock
                 val at = now()
@@ -115,7 +136,7 @@ class RunRecorderImpl(
                 } else {
                     runs.delete(current.id)
                 }
-                _recording.value = null
+                live.recording.value = null
             }
         }
     }
@@ -159,7 +180,7 @@ class RunRecorderImpl(
 
     private fun publish(current: Session, at: Long) {
         val shown = current.tracker.recording(current.id, at)
-        _recording.value = shown
+        live.recording.value = shown
         location.notify(shown)
     }
 
@@ -177,15 +198,6 @@ class RunRecorderImpl(
         }
     }
 
-    private class Session(
-        val id: String,
-        val tracker: RunTracker,
-        val utcOffsetSeconds: Int,
-        var lastFlushAt: Long,
-        val pending: MutableList<RunEvent> = ArrayList(),
-        var job: Job? = null,
-    )
-
     private companion object {
         /** How often the screen's time and the GPS's signal are brought up to date when no position has come. */
         const val TICK_MILLIS = 1_000L
@@ -198,5 +210,27 @@ class RunRecorderImpl(
 
         /** A run cut short by the app stopping is kept only if it got this far. */
         const val LEAST_KEPT_METERS = 50.0
+    }
+}
+
+/** The run being recorded, and what the recorder has to say, for as long as the process lasts. */
+internal class LiveRun {
+    val lock = Mutex()
+    var session: Session? = null
+    var salvaged = false
+    val recording = MutableStateFlow<Recording?>(null)
+    val problem = MutableStateFlow<RecorderProblem?>(null)
+
+    class Session(
+        val id: String,
+        val tracker: RunTracker,
+        val utcOffsetSeconds: Int,
+        var lastFlushAt: Long,
+        val pending: MutableList<RunEvent> = ArrayList(),
+        var job: Job? = null,
+    )
+
+    companion object {
+        val process = LiveRun()
     }
 }

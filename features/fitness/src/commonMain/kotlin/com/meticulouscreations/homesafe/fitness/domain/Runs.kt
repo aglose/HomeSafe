@@ -282,7 +282,8 @@ object Runs {
      * [run] mile by mile, from the stretches of distance in [track]. Where a mile mark falls
      * inside a stretch, the moment is taken as that far through it. The first mile is timed from
      * the start of the run and the last part from the end of the last stretch, so standing about
-     * afterwards isn't in it. A mile's heart rate is the mean of the readings inside it.
+     * afterwards isn't in it, and a mile is timed without the [RunTrack.pauses] inside it. A mile's
+     * heart rate is the mean of the readings inside it.
      */
     fun splits(run: Run, track: RunTrack): List<RunSplit> {
         val spans = track.distance.filter { it.meters > 0 && it.endEpochSeconds > it.startEpochSeconds }.sortedBy { it.startEpochSeconds }
@@ -302,7 +303,8 @@ object Runs {
 
         fun split(number: Int, miles: Double, from: Double, to: Double): RunSplit {
             val within = heart.filter { it.epochSeconds >= from && it.epochSeconds < to }
-            return RunSplit(number, miles, (to - from).roundToLong().coerceAtLeast(1), if (within.isEmpty()) null else within.map { it.value }.average().roundToInt())
+            val paused = track.pauses.sumOf { (minOf(to, it.endEpochSeconds.toDouble()) - maxOf(from, it.startEpochSeconds.toDouble())).coerceAtLeast(0.0) }
+            return RunSplit(number, miles, (to - from - paused).roundToLong().coerceAtLeast(1), if (within.isEmpty()) null else within.map { it.value }.average().roundToInt())
         }
 
         val splits = mutableListOf<RunSplit>()

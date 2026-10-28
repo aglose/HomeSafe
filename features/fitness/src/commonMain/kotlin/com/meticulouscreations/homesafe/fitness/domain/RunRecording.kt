@@ -95,11 +95,14 @@ data class Recording(
  * - one less sure than [WORST_ACCURACY_METERS] is passed over;
  * - one closer than about half how sure the two are (and never under [LEAST_STEP_METERS]) is
  *   the GPS wandering about a runner standing still, and waits for the next;
- * - one further than a runner could have gone ([FASTEST_METERS_PER_SECOND]) is a jump, and is
- *   passed over unless nothing better has come for half a minute, when it is started again from.
+ * - one further from the last position in line with the run than a runner could have gone
+ *   ([FASTEST_METERS_PER_SECOND]) is a jump, and so is one nearer where the GPS jumped to than to
+ *   that position: both are passed over unless nothing in line with the run has come for half a
+ *   minute, when the run is started again from there with nothing added for the leap.
  *
  * Nothing counts while paused, and the first position after going on is started from afresh, so
- * a pause to cross a road elsewhere doesn't add a line across it.
+ * a pause to cross a road elsewhere doesn't add a line across it. The pauses are kept, so that a
+ * split isn't timed through one.
  */
 class RunTracker(private val startEpochMillis: Long) {
     var meters: Double = 0.0
@@ -111,6 +114,12 @@ class RunTracker(private val startEpochMillis: Long) {
     private var movingBefore = 0L
     private var resumedAt = startEpochMillis
     private var anchor: GpsFix? = null
+
+    /** The last position in line with the run, counted or not: what a jump is told by. */
+    private var lastSeen: GpsFix? = null
+
+    /** Where the GPS is while a jump is being passed over. */
+    private var jumpedTo: GpsFix? = null
     private var lastGoodAt: Long? = null
     private var latestAt = startEpochMillis
 
@@ -120,6 +129,9 @@ class RunTracker(private val startEpochMillis: Long) {
     private var pendingMeters = 0.0
 
     private val routePoints = ArrayList<RoutePoint>()
+
+    private val pauses = ArrayList<Pause>()
+    private var pausedAt = 0L
 
     /** The steps counted in the last [PACE_WINDOW_MILLIS] or so: when each ended, and how far it was. */
     private val recent = ArrayDeque<Pair<Long, Double>>()
@@ -153,14 +165,18 @@ class RunTracker(private val startEpochMillis: Long) {
             RunEventKind.PAUSE -> if (!paused) {
                 movingBefore += (event.epochMillis - resumedAt).coerceAtLeast(0)
                 paused = true
+                pausedAt = event.epochMillis
                 flush()
                 anchor = null
+                lastSeen = null
+                jumpedTo = null
                 recent.clear()
             }
 
             RunEventKind.RESUME -> if (paused) {
                 paused = false
                 resumedAt = event.epochMillis
+                pauses += Pause(pausedAt / 1_000, event.epochMillis / 1_000)
             }
 
             RunEventKind.FIX -> event.fix?.let(::take)
@@ -172,18 +188,24 @@ class RunTracker(private val startEpochMillis: Long) {
         lastGoodAt = fix.epochMillis
         if (paused) return
         val from = anchor
-        if (from == null) {
+        val seen = lastSeen
+        if (from == null || seen == null) {
             start(fix)
             return
         }
-        val millis = fix.epochMillis - from.epochMillis
+        val millis = fix.epochMillis - seen.epochMillis
         if (millis <= 0) return
-        val step = metersBetween(from, fix)
-        if (step / (millis / 1_000.0) > FASTEST_METERS_PER_SECOND) {
-            // A jump. Started again from if nothing better has come for a while: then it is the last position that was wrong.
-            if (millis >= REANCHOR_MILLIS) start(fix)
+        val jumped = jumpedTo
+        val stillJumped = jumped != null && metersBetween(jumped, fix) < metersBetween(seen, fix)
+        if (stillJumped || metersBetween(seen, fix) / (millis / 1_000.0) > FASTEST_METERS_PER_SECOND) {
+            // A jump, or the GPS still where it jumped to. Started again from if nothing in line with the run has come
+            // for a while: then it is the run's last position that was wrong.
+            if (millis >= REANCHOR_MILLIS) start(fix) else jumpedTo = fix
             return
         }
+        jumpedTo = null
+        lastSeen = fix
+        val step = metersBetween(from, fix)
         if (step < maxOf(LEAST_STEP_METERS, (from.accuracyMeters + fix.accuracyMeters) / 4)) return
         meters += step
         if (pendingMeters == 0.0) pendingFrom = from.epochMillis
@@ -198,6 +220,8 @@ class RunTracker(private val startEpochMillis: Long) {
 
     private fun start(fix: GpsFix) {
         anchor = fix
+        lastSeen = fix
+        jumpedTo = null
         addRoutePoint(fix)
     }
 
@@ -238,7 +262,8 @@ class RunTracker(private val startEpochMillis: Long) {
         RecordedRun(id, startEpochMillis, maxOf(endMillis, startEpochMillis), utcOffsetSeconds, meters, movingMillisAt(endMillis))
 
     /** As a [RunTrack], for the run's own page. */
-    fun track(heart: List<HealthSample> = emptyList()): RunTrack = RunTrack(heart, distance, routePoints.toList())
+    fun track(heart: List<HealthSample> = emptyList()): RunTrack =
+        RunTrack(heart, distance, routePoints.toList(), pauses + listOfNotNull(if (paused) Pause(pausedAt / 1_000, latestAt / 1_000) else null))
 
     companion object {
         /** A position less sure than this (in meters) is no use for measuring a run by. */

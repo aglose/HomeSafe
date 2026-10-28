@@ -304,19 +304,22 @@ class HealthViewModel(
 
     /**
      * The open run's track was read under other permissions than are in force now. What is no
-     * longer shared goes from the page at once, and the track is read again under what is.
+     * longer shared goes from the page at once, and the track is read again under what is. The
+     * distance of a run recorded here is the phone's own, whatever the store shares.
      */
     private fun rereadOpenTrack(open: OpenTrack, granted: Set<HealthKind>) {
+        val run = _uiState.value.runs.run(open.id) ?: return
         val kept = open.track.copy(
             heart = if (HealthKind.HEART_RATE in granted) open.track.heart else emptyList(),
-            distance = if (HealthKind.DISTANCE in granted) open.track.distance else emptyList(),
+            distance = if (run.recorded || HealthKind.DISTANCE in granted) open.track.distance else emptyList(),
         )
         openTrack = OpenTrack(open.id, kept, granted)
         redrawDetail()
-        val record = records[open.id] ?: return
+        val record = records[open.id]
+        if (record == null && !run.recorded) return
         opening?.cancel()
         opening = viewModelScope.launch {
-            val track = attempt { source.track(record) } ?: return@launch
+            val track = if (record != null) attempt { source.track(record) } ?: return@launch else recordedTrack(run, granted)
             val still = openTrack?.takeIf { it.id == open.id } ?: return@launch
             // A route the user handed over when asked isn't in what the store gives unasked.
             openTrack = still.copy(track = track.copy(route = track.route.ifEmpty { still.track.route }))
@@ -342,6 +345,7 @@ class HealthViewModel(
             }
             val access = accessOf(availability, granted)
             if (access != HealthAccess.ON) {
+                val wasOpen = openTrack?.id ?: _uiState.value.detail?.runId
                 records = emptyMap()
                 held = Readings()
                 openTrack = null
@@ -349,6 +353,8 @@ class HealthViewModel(
                     HealthUiState(access = access, refused = it.refused && access == HealthAccess.OFF, canRecord = it.canRecord, locationRefused = it.locationRefused)
                 }
                 rebuildRuns()
+                // A run recorded here is still there to show, from the phone's own positions, without the band's heart.
+                if (wasOpen != null && _uiState.value.runs.run(wasOpen)?.recorded == true) openRun(wasOpen)
                 return@launch
             }
             // Shared, then, before any of it is read, which takes a call to the store a run: the card says it is

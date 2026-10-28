@@ -385,7 +385,8 @@ recorded in the app is a run whatever its pace.
 
 **Start a run** at the head of the runs page records one with the phone's GPS (Android only:
 on iOS the button isn't there). The first time, Android asks for the phone's location ("while
-using the app") and, from Android 13, to show notifications. A run is then:
+using the app") and, from Android 13, to show notifications; the live page opens once that is
+allowed, and the runs page says so where it isn't. A run is then:
 
 - **The live page**: how long it has been moving, large, as a stopwatch; the distance, the pace
   of the last half minute and the average; the route so far; **Pause** and **Resume**, and
@@ -400,15 +401,22 @@ using the app") and, from Android 13, to show notifications. A run is then:
 - **Measured** (`RunTracker`): fused location at its highest accuracy, about once a second. A
   position less sure than 30 m is passed over; a step under about half how sure the two
   positions are (never under 3 m) is the GPS wandering about someone standing still and waits
-  for the next; a step faster than 10 m/s is a jump and is passed over, unless nothing better
-  comes for half a minute. Nothing counts while paused, and the first position after resuming is
-  started from afresh. The distance is kept in stretches of at least five seconds, which is what
-  the splits are cut from.
+  for the next; a step faster than 10 m/s from the last position in line with the run is a jump,
+  and so is any position after it nearer where the GPS jumped to than to that one. A jump is
+  passed over, unless nothing in line with the run comes for half a minute: then the run is
+  started again from there, with nothing added for the leap. Nothing counts while paused, and
+  the first position after resuming is started from afresh. The distance is kept in stretches of
+  at least five seconds, which is what the splits are cut from, and a split is timed without the
+  pauses inside it.
 - **Kept** as what happened (each position, each pause and resume) in a database of its own on
   the phone, `fitness_runs.db` (`FitnessRunsDatabase`), written every ten seconds or so. The
   distance, moving time, splits and route are worked out again from those when the run is
   opened. Positions go nowhere else. A run the app was stopped in the middle of is finished where
   its positions stopped the next time the app starts; one that never got 50 m is thrown away.
+- **One run for the process**: the run being recorded is held for the whole process
+  (`LiveRun`), not by the app graph. Android builds the graph again with the Activity (left
+  with Back and opened again mid-run, say) without stopping the old one, so the recorder on the
+  new graph takes up the run in hand, and runs are finished as cut short only once a process.
 
 A recorded run is in the list with the band's, marked **Recorded on this phone**, and opens onto
 the same page: its route, its splits, and the heart rate through it from Health Connect where

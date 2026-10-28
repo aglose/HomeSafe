@@ -92,12 +92,20 @@ data class RunRecord(
 @Immutable
 data class DistanceSpan(val startEpochSeconds: Long, val endEpochSeconds: Long, val meters: Double)
 
-/** A run moment by moment: its heart rate, the ground covered stretch by stretch, and its route where that can be read. */
+/** A while the runner paused a run recorded here. */
+@Immutable
+data class Pause(val startEpochSeconds: Long, val endEpochSeconds: Long)
+
+/**
+ * A run moment by moment: its heart rate, the ground covered stretch by stretch, and its route
+ * where that can be read. A run recorded here also says when it was paused ([pauses]).
+ */
 @Immutable
 data class RunTrack(
     val heart: List<HealthSample> = emptyList(),
     val distance: List<DistanceSpan> = emptyList(),
     val route: List<RoutePoint> = emptyList(),
+    val pauses: List<Pause> = emptyList(),
 )
 
 /**

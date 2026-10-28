@@ -57,12 +57,12 @@ class RunRecorderImplTest {
         }
     }
 
-    private class Harness(val scope: TestScope, val location: FakeLocation, val dao: InMemoryFitnessRunDao = InMemoryFitnessRunDao()) {
+    private class Harness(val scope: TestScope, val location: FakeLocation, val dao: InMemoryFitnessRunDao = InMemoryFitnessRunDao(), val live: LiveRun = LiveRun()) {
         val clock = object : Clock {
             override fun now(): Instant = Instant.fromEpochMilliseconds(START + scope.currentTime)
         }
         val runs = RecordedRunsImpl(dao)
-        val recorder = RunRecorderImpl(location, runs, scope.backgroundScope, clock)
+        val recorder = RunRecorderImpl(location, runs, scope.backgroundScope, clock, live)
 
         /** A position [meters] north of the start, taken now. */
         fun at(meters: Double) {
@@ -157,6 +157,26 @@ class RunRecorderImplTest {
         runCurrent()
         assertNotNull(h.recorder.recording.value)
         assertNull(h.recorder.problem.value)
+    }
+
+    @Test
+    fun aRecorderBuiltAgainMidRunTakesUpTheRunRatherThanFinishingIt() = runRecorderTest { h ->
+        h.recorder.start()
+        runCurrent()
+        run(h, 60)
+        // The Activity was left and opened again: a new graph, and a new recorder on it, in the same process.
+        val again = Harness(this, h.location, h.dao, h.live)
+        runCurrent()
+        assertEquals(emptyList(), again.runs.runs.first())
+        val going = assertNotNull(again.recorder.recording.value)
+        assertEquals(180.0, going.meters, 1.0)
+        // It is the one run, and the new recorder can finish it.
+        run(h, 40, fromMeters = 180.0)
+        again.recorder.finish()
+        runCurrent()
+        assertNull(h.recorder.recording.value)
+        assertFalse(h.location.following)
+        assertEquals(300.0, again.runs.runs.first().single().meters, 1.0)
     }
 
     @Test
