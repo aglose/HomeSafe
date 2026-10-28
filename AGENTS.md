@@ -112,6 +112,21 @@ values structurally; Compose UI tests may match the English text.
 Before finishing any UI change, grep what you touched for `"` and check every hit against the
 list above.
 
+## The keyboard
+
+The app draws edge to edge, so Android's `adjustResize` moves nothing by itself: the layout has to
+make room for the keyboard. The shell's pages (`ShellScaffold`'s content) and each drawer app's
+pages (the `AnimatedContent` in `FinanceApp`, `WeatherApp`, `FitnessApp`, `AtlasApp`) carry
+`imePadding()`, so they end at the keyboard and the scrolling page brings the focused field up
+above it. The floating navs sit outside that and stay under the keyboard.
+
+- A text field on one of those pages needs nothing more, as long as it is in something that
+  scrolls (or is near the top).
+- A new surface outside them (an overlay over the whole window, a screen drawn before the shell,
+  a `ModalBottomSheet`'s content) applies `imePadding()` itself, as the sign-in form and the
+  add-symbol sheet do. `AlertDialog`s are their own window and the system moves them.
+- Insets consumed above aren't padded twice, so a nested `imePadding()` is harmless.
+
 ## Back navigation
 
 Back is predictive: on Android the screen answers the back swipe while the finger is still

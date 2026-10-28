@@ -118,7 +118,7 @@ internal const val FIBER_TOUCHES = 8
  * The fibres move like something liquid under a finger. Each of [touches] is a mark (see
  * `FiberTouches`): where a finger is it swirls the strands round it and swells them like a drop
  * of water would, settling once it lifts, and where one landed a ring runs out, [splash] as
- * strong. Empty marks are made at a time below zero and do nothing.
+ * strong. Empty marks are made at a time below zero and are skipped.
  */
 internal const val FIBER_SHADER = """
 uniform float2 size;
@@ -136,20 +136,23 @@ half4 main(float2 fragCoord) {
     float stir = 0.0;
     for (int i = 0; i < $FIBER_TOUCHES; i++) {
         float4 m = touches[i];
-        float age = time - m.z;
-        float alive = (m.z >= 0.0 && age >= 0.0) ? 1.0 : 0.0;
-        float held = m.w < 0.0 ? 1.0 : exp(-max(time - m.w, 0.0) * 2.2);
-        float2 d = (at - m.xy) / scale;
-        float r = length(d);
-        float well = exp(-r * r * 9.0) * held * smoothstep(0.0, 0.25, age) * alive;
-        float turn = well * 1.6;
-        d = float2(d.x * cos(turn) - d.y * sin(turn), d.x * sin(turn) + d.y * cos(turn)) * (1.0 - well * 0.3);
-        float front = age * 0.85;
-        float ring = exp(-(r - front) * (r - front) * 90.0) * exp(-age * 1.4) * splash[i] * alive;
-        float wave = sin((r - front) * 42.0) * ring;
-        d += d / max(r, 0.0001) * wave * 0.05;
-        at = m.xy + d * scale;
-        stir += well * 0.6 + ring * (0.35 + 0.65 * max(wave, 0.0));
+        // An empty mark (most of them, most of the time) is passed by: the same for every pixel, so it costs nothing.
+        if (m.z >= 0.0) {
+            float age = time - m.z;
+            float alive = age >= 0.0 ? 1.0 : 0.0;
+            float held = m.w < 0.0 ? 1.0 : exp(-max(time - m.w, 0.0) * 2.2);
+            float2 d = (at - m.xy) / scale;
+            float r = length(d);
+            float well = exp(-r * r * 9.0) * held * smoothstep(0.0, 0.25, age) * alive;
+            float turn = well * 1.6;
+            d = float2(d.x * cos(turn) - d.y * sin(turn), d.x * sin(turn) + d.y * cos(turn)) * (1.0 - well * 0.3);
+            float front = age * 0.85;
+            float ring = exp(-(r - front) * (r - front) * 90.0) * exp(-age * 1.4) * splash[i] * alive;
+            float wave = sin((r - front) * 42.0) * ring;
+            d += d / max(r, 0.0001) * wave * 0.05;
+            at = m.xy + d * scale;
+            stir += well * 0.6 + ring * (0.35 + 0.65 * max(wave, 0.0));
+        }
     }
     float2 uv = at / size;
     float aspect = size.x / max(size.y, 1.0);
