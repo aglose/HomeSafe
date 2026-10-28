@@ -27,7 +27,8 @@ a set counts down at its head as it does on the workout. With a
 heart-rate sensor connected (Android), the workout also shows the [heart rate](#heart-rate) live.
 
 What a band records away from the app (steps, sleep, runs) is read from [Health Connect](#the-body-and-runs)
-(Android), and is the one part of the app that isn't the app's own log.
+(Android), and is the one part of the app that isn't the app's own log. A run can also be
+[recorded in the app](#recording-a-run) with the phone's GPS (Android).
 
 ## The model: a ladder
 
@@ -330,9 +331,9 @@ being nothing to show.
 
 ### Runs
 
-Runs are **not started in this app**. The band records one (or the Google Health app does, with
-the phone's GPS), and it turns up behind the **Runs** door on Today once the band has synced:
-this week's miles and the last run in a line on the door, and behind it:
+A run is [recorded in the app](#recording-a-run) with the phone's GPS, or the band records one
+(or the Google Health app does), and it turns up behind the **Runs** door on Today once the band
+has synced: this week's miles and the last run in a line on the door, and behind it:
 
 - **The runs page**: this week in three numbers (miles, runs, time), the last eight weeks' miles
   as bars (Monday to Sunday, this week's lit), and every run of the last sixteen weeks, the
@@ -361,6 +362,67 @@ read from the app that recorded it, so a second tracker worn on the same run isn
 what that app recorded none of is taken from whichever did. The heart-rate line breaks where the
 band lost the wrist for more than five minutes.
 
+### Not counted as runs
+
+A band decides a run has begun from the wrist alone, and calls a brisk walk or a set of lunges
+with the heart up a run. Health Connect hands those over as runs. The app sets them apart
+(`Runs.notRunReason`), in this order:
+
+| Left out as | When |
+|---|---|
+| **Workout** | More than half of it fell inside a workout logged here |
+| **Workout** | Ten minutes or more that covered under a quarter of a mile |
+| **Walk** | Slower than 15:00 a mile the whole way (an easy jog is 10 to 13, a brisk walk 15 to 17) |
+| **Walk** | Under 130 steps a minute (the slowest jog is about 150) |
+
+A treadmill session's distance is the band's guess from its steps, so it is judged by its steps
+a minute alone; one with neither distance nor steps has nothing to go by and stays a run. What
+was left out is listed under **Not counted as runs** at the foot of the runs page, and still
+opens onto its own page, which says why. It counts toward no miles, no week and no record. A run
+recorded in the app is a run whatever its pace.
+
+### Recording a run
+
+**Start a run** at the head of the runs page records one with the phone's GPS (Android only:
+on iOS the button isn't there). The first time, Android asks for the phone's location ("while
+using the app") and, from Android 13, to show notifications. A run is then:
+
+- **The live page**: how long it has been moving, large, as a stopwatch; the distance, the pace
+  of the last half minute and the average; the route so far; **Pause** and **Resume**, and
+  **Finish run**. **Throw this run away** is only there while it is paused, and takes a second
+  tap. Back leaves the page and the run goes on; the runs page and the door on Today say a run is
+  being recorded and lead back to it.
+- **With the screen off**: a foreground service of the location type keeps the app running,
+  with an ongoing notification of the time (ticking by itself) and the distance. A tap on it
+  brings the app back. Only the location "while using the app" is asked for: a foreground
+  service started from a tap may go on using it with the screen off. Nothing runs once the run
+  is finished.
+- **Measured** (`RunTracker`): fused location at its highest accuracy, about once a second. A
+  position less sure than 30 m is passed over; a step under about half how sure the two
+  positions are (never under 3 m) is the GPS wandering about someone standing still and waits
+  for the next; a step faster than 10 m/s is a jump and is passed over, unless nothing better
+  comes for half a minute. Nothing counts while paused, and the first position after resuming is
+  started from afresh. The distance is kept in stretches of at least five seconds, which is what
+  the splits are cut from.
+- **Kept** as what happened (each position, each pause and resume) in a database of its own on
+  the phone, `fitness_runs.db` (`FitnessRunsDatabase`), written every ten seconds or so. The
+  distance, moving time, splits and route are worked out again from those when the run is
+  opened. Positions go nowhere else. A run the app was stopped in the middle of is finished where
+  its positions stopped the next time the app starts; one that never got 50 m is thrown away.
+
+A recorded run is in the list with the band's, marked **Recorded on this phone**, and opens onto
+the same page: its route, its splits, and the heart rate through it from Health Connect where
+heart rate is shared (a band's, read for the minutes of the run). Where the band recorded the
+same run too (more than half of the shorter of the two spent in the other), the two are one run:
+the distance and the time are the phone's, the heart, calories and steps the band's. A recorded
+run can be deleted from its page, at a second tap; one read from Health Connect is Health
+Connect's, and stays.
+
+The database is apart from the app's main one because that one has as many tables as Room can
+check in one generated method (two more and its `onValidateSchema` is past the JVM's 64 KB a
+method), and because a run is the owner's own record: unlike that database's caches it is never
+thrown away to get past a migration. A change to its tables needs a migration written for it.
+
 ### What it can't do
 
 - **It has never been run against a real Health Connect.** `HealthSource.android.kt` compiles
@@ -368,7 +430,10 @@ band lost the wrist for more than five minutes.
   was: which records Google Health really writes for a Fitbit Air (whether there are stages,
   variability, distance fine enough for splits, routes) is only known once it has been tried on
   the phone. `adb logcat -s HomeSafeHealth` says what was read, without the readings.
-- No live run: no GPS is used by the app and nothing is recorded by it. The live heart rate on a
+- Recording a run has never been tried on a phone outdoors: it is tested against made-up
+  positions. `adb logcat -s HomeSafeRun` says when the GPS is followed, without positions.
+- A run recorded here has no live heart rate and no cadence or climb: the heart comes from the
+  band by way of Health Connect after it syncs. The live heart rate on a
   workout is the Bluetooth sensor's, above.
 - Without the history permission Health Connect only gives the thirty days before the app was
   first let in, and everything since.

@@ -33,7 +33,8 @@ enum class RunTime {
  * A run, as the screens show it. [seconds] is the time spent moving (what it was paused for is
  * left out, when the tracker says). [meters] is 0 when no distance was recorded for it, and then
  * it has no pace. [utcOffsetSeconds] is the offset it was run in, so that its day and its hour
- * stay what they were.
+ * stay what they were. A run [recorded] in this app has its distance and route from the phone's
+ * GPS; its heart and steps, when there are any, are a band's.
  */
 @Immutable
 data class Run(
@@ -50,6 +51,7 @@ data class Run(
     val steps: Long? = null,
     val climbMeters: Double? = null,
     val route: RouteAccess = RouteAccess.NONE,
+    val recorded: Boolean = false,
 ) {
     val miles: Double get() = meters / METERS_PER_MILE
 
@@ -210,14 +212,47 @@ object Runs {
     }
 
     /**
+     * A run recorded in this app, with what a band worn on it measured ([worn], the session the
+     * band recorded at the same time) where there is one: its heart, calories and steps. The
+     * distance and the moving time are the phone's own.
+     */
+    fun of(recorded: RecordedRun, worn: Run? = null): Run = Run(
+        id = recorded.id,
+        startEpochSeconds = recorded.startEpochMillis / 1_000,
+        endEpochSeconds = recorded.endEpochMillis / 1_000,
+        utcOffsetSeconds = recorded.utcOffsetSeconds,
+        meters = recorded.meters,
+        seconds = recorded.movingMillis / 1_000,
+        calories = worn?.calories,
+        averageBpm = worn?.averageBpm,
+        peakBpm = worn?.peakBpm,
+        steps = worn?.steps,
+        route = if (recorded.meters > 0) RouteAccess.READABLE else RouteAccess.NONE,
+        recorded = true,
+    )
+
+    /** Whether [a] and [b] were the same outing: more than half of the shorter of the two was spent in the other. */
+    fun same(a: Run, b: Run): Boolean {
+        val overlap = minOf(a.endEpochSeconds, b.endEpochSeconds) - maxOf(a.startEpochSeconds, b.startEpochSeconds)
+        val shorter = minOf(a.endEpochSeconds - a.startEpochSeconds, b.endEpochSeconds - b.startEpochSeconds)
+        return shorter > 0 && overlap * 2 > shorter
+    }
+
+    /**
      * The runs page's state from the [records] read, on the local day [todayEpochDay]. What
      * wasn't a run ([notRunReason], against the [workouts] logged here) is set apart and counted
-     * nowhere.
+     * nowhere. The runs [recorded] here are runs whatever their pace: a band's session at the
+     * same time is the same run, and only lends it its heart.
      */
-    fun board(records: List<RunRecord>, todayEpochDay: Long, offsetAt: (Long) -> Int, workouts: List<LongRange> = emptyList()): RunsBoard {
-        val sessions = records.filter { it.endEpochSeconds > it.startEpochSeconds }.map { of(it, offsetAt) }.sortedByDescending { it.startEpochSeconds }
+    fun board(records: List<RunRecord>, todayEpochDay: Long, offsetAt: (Long) -> Int, workouts: List<LongRange> = emptyList(), recorded: List<RecordedRun> = emptyList()): RunsBoard {
+        val read = records.filter { it.endEpochSeconds > it.startEpochSeconds }.map { of(it, offsetAt) }
+        val ours = recorded.filter { it.endEpochMillis > it.startEpochMillis }.map { run ->
+            val bare = of(run)
+            of(run, read.firstOrNull { same(it, bare) })
+        }
+        val sessions = read.filter { band -> ours.none { same(it, band) } }.sortedByDescending { it.startEpochSeconds }
         val reasons = sessions.associate { it.id to notRunReason(it, workouts) }
-        val runs = sessions.filter { reasons[it.id] == null }
+        val runs = (ours + sessions.filter { reasons[it.id] == null }).sortedByDescending { it.startEpochSeconds }
         val measured = runs.filter { it.meters > 0 }
         val paced = runs.filter { it.meters >= METERS_PER_MILE && it.paceSeconds != null }
         return RunsBoard(

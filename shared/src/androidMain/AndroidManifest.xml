@@ -43,6 +43,14 @@
          asked for; without it declared the sheet only offers the one route. -->
     <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTES" />
 
+    <!-- Recording a run in the fitness app (RunLocation.android.kt): the GPS, about once a second,
+         while a foreground service of the location type keeps the app running with the screen
+         off. Only the location above is used ("while in use", asked when Start is tapped); the
+         service is what lets it go on with the screen off. Nothing is kept running after the
+         run is finished. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
     <!-- The "Open Tailscale" button on the Home notice (TailscaleApp.android.kt): Android 11+
          hides other apps from this one unless they are named here. -->
     <queries>
@@ -73,6 +81,11 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <service
+            android:name="com.meticulouscreations.homesafe.fitness.data.RunRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <receiver
             android:name="com.meticulouscreations.homesafe.data.GeofenceBroadcastReceiver"

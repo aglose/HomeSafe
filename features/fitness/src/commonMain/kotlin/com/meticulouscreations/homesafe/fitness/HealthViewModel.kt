@@ -12,9 +12,16 @@ import com.meticulouscreations.homesafe.fitness.domain.HealthSample
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
 import com.meticulouscreations.homesafe.fitness.domain.HeartZones
 import com.meticulouscreations.homesafe.fitness.domain.ReadinessScore
+import com.meticulouscreations.homesafe.fitness.domain.RecordedRun
+import com.meticulouscreations.homesafe.fitness.domain.RecordedRuns
+import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
+import com.meticulouscreations.homesafe.fitness.domain.Recording
+import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunDetail
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
+import com.meticulouscreations.homesafe.fitness.domain.RunRecorder
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
+import com.meticulouscreations.homesafe.fitness.domain.RunTracker
 import com.meticulouscreations.homesafe.fitness.domain.Runs
 import com.meticulouscreations.homesafe.fitness.domain.RunsBoard
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
@@ -79,8 +86,15 @@ data class HealthUiState(
     val refused: Boolean = false,
     /** The last read couldn't reach the store; what is shown is from before. */
     val failed: Boolean = false,
+    /** Runs can be recorded here with the phone's GPS. */
+    val canRecord: Boolean = false,
+    /** The user wouldn't let the app know where the phone is, the last time a run was started. */
+    val locationRefused: Boolean = false,
 ) {
     val supported: Boolean get() = access != HealthAccess.UNSUPPORTED
+
+    /** There are runs to show, or a way to record one: the runs door is there. */
+    val runsShown: Boolean get() = runsShared || canRecord || runs.runs.isNotEmpty()
 
     /** Runs can be read at all. */
     val runsShared: Boolean get() = access == HealthAccess.ON && HealthKind.EXERCISE in granted
@@ -112,11 +126,19 @@ data class HealthUiState(
 class HealthViewModel(
     private val source: HealthSource,
     private val repository: FitnessRepository,
+    private val recordedRuns: RecordedRuns,
+    private val recorder: RunRecorder,
     private val clock: Clock,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HealthUiState(access = accessOf(source.availability(), granted = null)))
+    private val _uiState = MutableStateFlow(HealthUiState(access = accessOf(source.availability(), granted = null), canRecord = recorder.isSupported))
     val uiState: StateFlow<HealthUiState> = _uiState.asStateFlow()
+
+    /** The run being recorded here, apart from [uiState] because it changes every second. */
+    val recording: StateFlow<Recording?> = recorder.recording
+
+    /** The runs recorded here, as last read. */
+    private var recorded: List<RecordedRun> = emptyList()
 
     private var reading: Job? = null
     private var opening: Job? = null
@@ -139,9 +161,18 @@ class HealthViewModel(
 
     /** The fitness app or the drawer came on screen, or both left it. */
     fun setActive(active: Boolean) {
-        if (!active || !_uiState.value.supported) return
+        if (!active || (!_uiState.value.supported && !recorder.isSupported)) return
         if (following == null) {
             following = viewModelScope.launch {
+                launch {
+                    recordedRuns.runs.collect {
+                        recorded = it
+                        rebuildRuns()
+                    }
+                }
+                launch {
+                    recorder.problem.collect { problem -> _uiState.update { it.copy(locationRefused = problem == RecorderProblem.LOCATION_REFUSED) } }
+                }
                 launch {
                     repository.heartSettings.collect { settings ->
                         bounds = HeartZones.bounds(settings.profile)
@@ -154,7 +185,27 @@ class HealthViewModel(
                 }
             }
         }
-        refresh()
+        if (_uiState.value.supported) refresh()
+    }
+
+    /** Starts recording a run with the phone's GPS, asking for its location first where it has to. */
+    fun startRun() = recorder.start()
+
+    fun pauseRun() = recorder.pause()
+
+    fun resumeRun() = recorder.resume()
+
+    /** Ends the run being recorded and keeps it. */
+    fun finishRun() = recorder.finish()
+
+    /** Ends the run being recorded and throws it away. */
+    fun discardRun() = recorder.discard()
+
+    /** Takes a run recorded here off the phone for good. A run read from the health store is the store's, and stays. */
+    fun deleteRun(id: String) {
+        if (_uiState.value.runs.run(id)?.recorded != true) return
+        if (openTrack?.id == id || _uiState.value.detail?.runId == id) closeRun()
+        viewModelScope.launch { recordedRuns.delete(id) }
     }
 
     /**
@@ -185,8 +236,9 @@ class HealthViewModel(
     /** Opens a run: its track is read, and [HealthUiState.detail] follows. */
     fun openRun(id: String) {
         if (_uiState.value.detail?.runId == id) return
-        val record = records[id] ?: return
         val run = _uiState.value.runs.run(id) ?: return
+        val record = records[id]
+        if (record == null && !run.recorded) return
         opening?.cancel()
         val granted = _uiState.value.granted
         // The run that was open is no longer the one to keep up to date.
@@ -194,7 +246,7 @@ class HealthViewModel(
         _uiState.update { it.copy(detail = null) }
         opening = viewModelScope.launch {
             // A run whose track can't be read still opens, on its totals alone.
-            val track = attempt { source.track(record) } ?: RunTrack()
+            val track = if (record != null) attempt { source.track(record) } ?: RunTrack() else recordedTrack(run, granted)
             openTrack = OpenTrack(id, track, granted)
             _uiState.update { it.copy(detail = Runs.detail(run, track, bounds)) }
         }
@@ -219,13 +271,29 @@ class HealthViewModel(
         }
     }
 
-    /** The runs page sorted again from what was last read, when the workouts it is held against have changed. */
-    private fun rebuildRuns() {
-        val runs = held.runs ?: return
-        val at = _uiState.value.nowEpochSeconds.takeIf { it > 0 } ?: return
+    /** The runs page from what was last read and what was recorded here, held against the workouts logged here. */
+    private fun board(): RunsBoard {
+        val at = clock.now().epochSeconds
         val offsetAt = { seconds: Long -> localUtcOffsetSeconds(seconds.toDouble()) }
-        val today = (at + offsetAt(at)).floorDiv(SECONDS_PER_DAY)
-        _uiState.update { it.copy(runs = Runs.board(runs, today, offsetAt, workouts)) }
+        return Runs.board(held.runs.orEmpty(), (at + offsetAt(at)).floorDiv(SECONDS_PER_DAY), offsetAt, workouts, recorded)
+    }
+
+    /** The runs page sorted again, when the workouts it is held against or the runs recorded here have changed. */
+    private fun rebuildRuns() {
+        _uiState.update { it.copy(runs = board()) }
+        // A run recorded here may have just been deleted.
+        _uiState.value.detail?.runId?.let { open -> if (_uiState.value.runs.run(open) == null) closeRun() }
+    }
+
+    /** A run recorded here, worked out again from what was recorded, with the heart a band took through it where that is shared. */
+    private suspend fun recordedTrack(run: Run, granted: Set<HealthKind>): RunTrack {
+        val events = attempt { recordedRuns.events(run.id) }.orEmpty()
+        val heart = if (_uiState.value.access == HealthAccess.ON && HealthKind.HEART_RATE in granted) {
+            attempt { source.heartRate(run.startEpochSeconds, run.endEpochSeconds) }.orEmpty()
+        } else {
+            emptyList()
+        }
+        return RunTracker.replay(run.startEpochSeconds * 1_000, events).track(heart)
     }
 
     private fun redrawDetail() {
@@ -277,7 +345,10 @@ class HealthViewModel(
                 records = emptyMap()
                 held = Readings()
                 openTrack = null
-                _uiState.update { HealthUiState(access = access, refused = it.refused && access == HealthAccess.OFF) }
+                _uiState.update {
+                    HealthUiState(access = access, refused = it.refused && access == HealthAccess.OFF, canRecord = it.canRecord, locationRefused = it.locationRefused)
+                }
+                rebuildRuns()
                 return@launch
             }
             // Shared, then, before any of it is read, which takes a call to the store a run: the card says it is
@@ -322,7 +393,7 @@ class HealthViewModel(
                     nowEpochSeconds = at,
                     utcOffsetSeconds = offsetAt(at),
                     body = BodyBoards.build(at, offsetAt, steps, sleep, resting, variability),
-                    runs = Runs.board(runs.orEmpty(), today, offsetAt, workouts),
+                    runs = board(),
                     refused = false,
                     failed = failed,
                 )
@@ -331,7 +402,7 @@ class HealthViewModel(
             val openId = open?.id ?: _uiState.value.detail?.runId
             when {
                 // The open run may have been deleted in the store since.
-                openId != null && records[openId] == null -> closeRun()
+                openId != null && _uiState.value.runs.run(openId) == null -> closeRun()
 
                 open != null && open.granted != granted -> rereadOpenTrack(open, granted)
 

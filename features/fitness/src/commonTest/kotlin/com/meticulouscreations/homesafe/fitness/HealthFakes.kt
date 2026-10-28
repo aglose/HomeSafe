@@ -8,7 +8,11 @@ import com.meticulouscreations.homesafe.fitness.domain.RoutePoint
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
 import com.meticulouscreations.homesafe.fitness.domain.SleepSession
+import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
+import com.meticulouscreations.homesafe.fitness.domain.Recording
+import com.meticulouscreations.homesafe.fitness.domain.RunRecorder
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * A health store for tests: the test says what it holds and what the user has allowed, and
@@ -28,6 +32,7 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
     var variability: List<HealthSample> = emptyList()
     var runRecords: List<RunRecord> = emptyList()
     var tracks: Map<String, RunTrack> = emptyMap()
+    var heart: List<HealthSample> = emptyList()
 
     /** The routes the user hands over when asked, by run. */
     var routes: Map<String, List<RoutePoint>> = emptyMap()
@@ -87,8 +92,38 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
         it.copy(heart = if (HealthKind.HEART_RATE in allowed) it.heart else emptyList(), distance = if (HealthKind.DISTANCE in allowed) it.distance else emptyList())
     }
 
+    override suspend fun heartRate(fromEpochSeconds: Long, toEpochSeconds: Long) =
+        read("heart", HealthKind.HEART_RATE, heart.filter { it.epochSeconds in fromEpochSeconds..toEpochSeconds })
+
     override suspend fun requestRoute(runId: String): List<RoutePoint> {
         reads += "route $runId"
         return routes[runId].orEmpty()
+    }
+}
+
+/** A run recorder for tests: it records nothing, and keeps count of what it was asked. */
+internal class FakeRunRecorder(override val isSupported: Boolean = true) : RunRecorder {
+    override val recording = MutableStateFlow<Recording?>(null)
+    override val problem = MutableStateFlow<RecorderProblem?>(null)
+    val asked = mutableListOf<String>()
+
+    override fun start() {
+        asked += "start"
+    }
+
+    override fun pause() {
+        asked += "pause"
+    }
+
+    override fun resume() {
+        asked += "resume"
+    }
+
+    override fun finish() {
+        asked += "finish"
+    }
+
+    override fun discard() {
+        asked += "discard"
     }
 }

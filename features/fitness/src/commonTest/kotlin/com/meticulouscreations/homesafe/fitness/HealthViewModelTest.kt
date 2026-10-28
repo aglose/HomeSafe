@@ -1,10 +1,13 @@
 package com.meticulouscreations.homesafe.fitness
 
 import com.meticulouscreations.homesafe.data.InMemoryFitnessDao
+import com.meticulouscreations.homesafe.data.InMemoryFitnessRunDao
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.DAY
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
+import com.meticulouscreations.homesafe.fitness.data.RecordedRunsImpl
 import com.meticulouscreations.homesafe.fitness.domain.DistanceSpan
+import com.meticulouscreations.homesafe.fitness.domain.GpsFix
 import com.meticulouscreations.homesafe.fitness.domain.HealthAvailability
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
 import com.meticulouscreations.homesafe.fitness.domain.HealthSample
@@ -12,8 +15,10 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.METERS_PER_MILE
 import com.meticulouscreations.homesafe.fitness.domain.RouteAccess
 import com.meticulouscreations.homesafe.fitness.domain.RoutePoint
+import com.meticulouscreations.homesafe.fitness.domain.RunEvent
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
+import com.meticulouscreations.homesafe.fitness.domain.RunTracker
 import com.meticulouscreations.homesafe.fitness.domain.SleepSession
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.data.MutableClock
@@ -59,7 +64,9 @@ class HealthViewModelTest {
         val source = FakeHealthSource(available)
         val repository = FitnessRepositoryImpl(InMemoryFitnessDao())
         val clock = MutableClock(NOW)
-        val vm = HealthViewModel(source, repository, clock)
+        val recordedRuns = RecordedRunsImpl(InMemoryFitnessRunDao())
+        val recorder = FakeRunRecorder()
+        val vm = HealthViewModel(source, repository, recordedRuns, recorder, clock)
         val state get() = vm.uiState.value
     }
 
@@ -495,6 +502,84 @@ class HealthViewModelTest {
         h.vm.openRun("nobody")
         runCurrent()
         assertNull(h.state.detail)
+    }
+
+    // ---- A run recorded here ------------------------------------------------------------------
+
+    /** Records a run of [miles] due north in [seconds], a position every five seconds, from [startAt] (epoch seconds). */
+    private suspend fun recordRun(h: Harness, id: String, startAt: Long, seconds: Long, miles: Double) {
+        val steps = (seconds / 5).toInt()
+        val metersPerDegree = 111_195.0
+        val events = (0..steps).map { i ->
+            RunEvent.of(GpsFix((startAt + i * 5) * 1_000, 45.0 + miles * METERS_PER_MILE / metersPerDegree * i / steps, -93.0, 5.0))
+        }
+        h.recordedRuns.begin(id, startAt * 1_000, 0)
+        h.recordedRuns.append(id, events)
+        val tracker = RunTracker.replay(startAt * 1_000, events)
+        h.recordedRuns.finish(tracker.finished(id, (startAt + seconds) * 1_000, 0))
+    }
+
+    @Test
+    fun aRunRecordedHereIsShownWithNothingShared() = runHealthTest { h ->
+        h.source.allowed = emptySet()
+        recordRun(h, "app-1", NOW - 3_600, 1_500, 2.5)
+        open(h)
+        assertEquals(HealthAccess.OFF, h.state.access)
+        assertTrue(h.state.canRecord)
+        assertTrue(h.state.runsShown)
+        val run = assertNotNull(h.state.runs.run("app-1"))
+        assertTrue(run.recorded)
+        assertEquals(2.5, run.miles, 0.01)
+    }
+
+    @Test
+    fun theBandsSessionOfARunRecordedHereIsTheSameRunAndLendsItsHeart() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        // The band saw the same run, a little longer at each end, and made it a little shorter.
+        recordRun(h, "app-1", run.startEpochSeconds + 30, 1_740, 3.1)
+        open(h)
+        assertEquals(listOf("app-1"), h.state.runs.runs.map { it.id })
+        val ours = h.state.runs.runs.single()
+        assertEquals(3.1, ours.miles, 0.01)
+        assertEquals(150, ours.averageBpm)
+        assertNull(h.state.runs.run("r1"))
+    }
+
+    @Test
+    fun aRunRecordedHereOpensOntoItsOwnTrackAndTheBandsHeart() = runHealthTest { h ->
+        h.source.allowed = everything
+        h.source.heart = (0 until 1_500 step 10).map { HealthSample(NOW - 3_600 + it, 155.0) }
+        recordRun(h, "app-1", NOW - 3_600, 1_500, 2.5)
+        open(h)
+        h.vm.openRun("app-1")
+        runCurrent()
+        val detail = assertNotNull(h.state.detail)
+        assertEquals(listOf(true, true, false), detail.splits.map { it.whole })
+        assertEquals(150, detail.heart.size)
+        assertTrue(detail.route.size > 100)
+    }
+
+    @Test
+    fun aRunRecordedHereCanBeDeletedButOneReadFromTheStoreCannot() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        recordRun(h, "app-1", NOW - 3 * DAY, 1_500, 2.5)
+        open(h)
+        h.vm.deleteRun("r1")
+        h.vm.deleteRun("app-1")
+        runCurrent()
+        assertEquals(listOf("r1"), h.state.runs.runs.map { it.id })
+    }
+
+    @Test
+    fun startingAndFinishingARunIsTheRecordersToDo() = runHealthTest { h ->
+        h.vm.startRun()
+        h.vm.pauseRun()
+        h.vm.resumeRun()
+        h.vm.finishRun()
+        h.vm.discardRun()
+        assertEquals(listOf("start", "pause", "resume", "finish", "discard"), h.recorder.asked)
     }
 
     @Test

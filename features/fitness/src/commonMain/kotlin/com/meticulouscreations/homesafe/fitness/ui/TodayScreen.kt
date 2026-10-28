@@ -55,6 +55,7 @@ import com.meticulouscreations.homesafe.fitness.RecordEvent
 import com.meticulouscreations.homesafe.fitness.WorkoutHeart
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
+import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.FiberField
 import com.meticulouscreations.homesafe.fitness.ui.shader.FiberTouches
@@ -64,6 +65,10 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_phase_day
 import homesafe.shared.generated.resources.fitness_run_none
 import homesafe.shared.generated.resources.fitness_run_open
+import homesafe.shared.generated.resources.fitness_run_open_recording
+import homesafe.shared.generated.resources.fitness_run_recording_banner
+import homesafe.shared.generated.resources.fitness_run_recording_paused
+import homesafe.shared.generated.resources.fitness_run_row_timed
 import homesafe.shared.generated.resources.fitness_run_title
 import homesafe.shared.generated.resources.fitness_today_add_button
 import homesafe.shared.generated.resources.fitness_today_exercises
@@ -116,6 +121,9 @@ internal fun TodayScreen(
     onConnectHealth: () -> Unit = {},
     onManageHealth: () -> Unit = {},
     onOpenRuns: () -> Unit = {},
+    /** The run being recorded with the phone's GPS, which the runs door then leads straight to ([onOpenRecording]). */
+    recording: Recording? = null,
+    onOpenRecording: () -> Unit = {},
     /** The live heart rate, for the pill that leads to its page; null where there is no sensor to be had. */
     heart: (() -> HeartUiState)? = null,
     onOpenHeart: () -> Unit = {},
@@ -167,8 +175,8 @@ internal fun TodayScreen(
                 Spacer(Modifier.height(10.dp))
                 GhostButton(stringResource(Res.string.fitness_today_add_button), onOpenLifts, Modifier.fillMaxWidth(), icon = Icons.Filled.Add)
             }
-            // Runs come from the band, and are there whether or not anything has been lifted yet.
-            if (health.runsShared) RunsDoor(health, animated, onOpenRuns)
+            // Runs come from the band or the phone, and are there whether or not anything has been lifted yet.
+            if (health.runsShown) RunsDoor(health, animated, recording, if (recording != null) onOpenRecording else onOpenRuns)
             return@Column
         }
 
@@ -202,7 +210,7 @@ internal fun TodayScreen(
             }
         }
 
-        if (health.runsShared) RunsDoor(health, animated, onOpenRuns)
+        if (health.runsShown) RunsDoor(health, animated, recording, if (recording != null) onOpenRecording else onOpenRuns)
 
         // While a workout is open its own heart is on its page; this is for looking back.
         if (lastHeart != null && workout == null) LastHeartCard(lastHeart, state, Modifier.padding(top = 6.dp))
@@ -306,17 +314,20 @@ private fun DayDoor(day: DayCard, state: FitnessUiState, seed: Float, animated: 
     }
 }
 
-/** The way to the runs: this week's miles and the last run in a line, over fibre in the runs' own colours. */
+/**
+ * The way to the runs: this week's miles and the last run in a line, over fibre in the runs' own
+ * colours. While a run is being [recording] it says so in place of the last one, livelier.
+ */
 @Composable
-private fun RunsDoor(health: HealthUiState, animated: Boolean, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+private fun RunsDoor(health: HealthUiState, animated: Boolean, recording: Recording?, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val type = FitnessTheme.type
     DoorCard(
         FitnessTheme.colors.run,
         seed = 0.73f,
-        energy = 0.3f,
+        energy = if (recording != null) 0.8f else 0.3f,
         animated = animated,
         height = 112.dp,
-        onClickLabel = stringResource(Res.string.fitness_run_open),
+        onClickLabel = stringResource(if (recording != null) Res.string.fitness_run_open_recording else Res.string.fitness_run_open),
         onClick = onOpen,
         modifier = modifier.testTag("fitness_runs_door"),
         outline = BodyOutline.RUNS,
@@ -324,7 +335,16 @@ private fun RunsDoor(health: HealthUiState, animated: Boolean, onOpen: () -> Uni
         Column(Modifier.weight(1f)) {
             Text(stringResource(Res.string.fitness_run_title), style = type.hero, color = Color.White, maxLines = 1)
             Text(runWeekLine(health.runs.thisWeek), style = type.label, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(lastRunLine(health) ?: stringResource(Res.string.fitness_run_none), style = type.label, color = Color(0xDDFFFFFF), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val last = if (recording != null) {
+                stringResource(
+                    Res.string.fitness_run_row_timed,
+                    stringResource(if (recording.paused) Res.string.fitness_run_recording_paused else Res.string.fitness_run_recording_banner),
+                    RunFormat.distance(recording.meters).resolve(),
+                )
+            } else {
+                lastRunLine(health) ?: stringResource(Res.string.fitness_run_none)
+            }
+            Text(last, style = type.label, color = Color(0xDDFFFFFF), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
     }

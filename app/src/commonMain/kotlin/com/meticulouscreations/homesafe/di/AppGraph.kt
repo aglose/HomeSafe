@@ -17,6 +17,7 @@ import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
 import com.meticulouscreations.homesafe.data.FinanceSavedDao
 import com.meticulouscreations.homesafe.data.FitnessDao
+import com.meticulouscreations.homesafe.data.FitnessRunDao
 import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
 import com.meticulouscreations.homesafe.data.MAPS_KEYS
 import com.meticulouscreations.homesafe.data.MomentsDao
@@ -35,6 +36,7 @@ import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createDeviceInfo
 import com.meticulouscreations.homesafe.data.createFinanceSavedDao
 import com.meticulouscreations.homesafe.data.createFitnessDao
+import com.meticulouscreations.homesafe.data.createFitnessRunDao
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
 import com.meticulouscreations.homesafe.data.createIdentityCheck
 import com.meticulouscreations.homesafe.data.createMomentsDao
@@ -57,7 +59,9 @@ import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.createFinanceTipLedger
 import com.meticulouscreations.homesafe.fitness.data.createHealthSource
 import com.meticulouscreations.homesafe.fitness.data.createHeartRateLink
+import com.meticulouscreations.homesafe.fitness.data.createRunLocation
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
+import com.meticulouscreations.homesafe.fitness.domain.RunLocation
 import com.meticulouscreations.homesafe.fitness.domain.HeartRateLink
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -216,6 +220,12 @@ interface AppGraph :
     fun provideFitnessDao(platformContext: PlatformContext): FitnessDao =
         createFitnessDao(platformContext)
 
+    /** The runs recorded in the fitness app with the phone's GPS. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideFitnessRunDao(platformContext: PlatformContext): FitnessRunDao =
+        createFitnessRunDao(platformContext)
+
     /** What the finance app last fetched, for opening on without a connection. */
     @SingleIn(AppScope::class)
     @Provides
@@ -312,6 +322,11 @@ interface AppGraph :
     @SingleIn(AppScope::class)
     @Provides
     fun provideHeartRateLink(platformContext: PlatformContext): HeartRateLink = createHeartRateLink(platformContext)
+
+    /** The phone's GPS, which the fitness app records runs with (`RunRecorderImpl`). */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideRunLocation(platformContext: PlatformContext): RunLocation = createRunLocation(platformContext)
 
     /** The device's health store, which the fitness app reads steps, sleep and runs from (`HealthViewModel`). */
     @SingleIn(AppScope::class)

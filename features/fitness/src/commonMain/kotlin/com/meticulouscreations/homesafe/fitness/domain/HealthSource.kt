@@ -141,6 +141,9 @@ interface HealthSource {
 
     suspend fun track(run: RunRecord): RunTrack
 
+    /** Every heart-rate reading in the range, from whichever tracker took it: the heart through a run recorded in this app. */
+    suspend fun heartRate(fromEpochSeconds: Long, toEpochSeconds: Long): List<HealthSample>
+
     /** Asks the user for the route of the run [runId], and waits. Empty when they said no or it has none. */
     suspend fun requestRoute(runId: String): List<RoutePoint>
 }
@@ -166,6 +169,8 @@ internal object UnsupportedHealthSource : HealthSource {
     override suspend fun runs(fromEpochSeconds: Long, toEpochSeconds: Long): List<RunRecord> = emptyList()
 
     override suspend fun track(run: RunRecord) = RunTrack()
+
+    override suspend fun heartRate(fromEpochSeconds: Long, toEpochSeconds: Long): List<HealthSample> = emptyList()
 
     override suspend fun requestRoute(runId: String): List<RoutePoint> = emptyList()
 }

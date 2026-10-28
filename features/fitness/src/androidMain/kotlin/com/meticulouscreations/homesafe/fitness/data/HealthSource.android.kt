@@ -285,6 +285,13 @@ private class HealthConnectSource(private val context: Context, activity: Fragme
         return RunTrack(heart, distance, points(session.exerciseRouteResult))
     }
 
+    override suspend fun heartRate(fromEpochSeconds: Long, toEpochSeconds: Long): List<HealthSample> =
+        readAll(HeartRateRecord::class, fromEpochSeconds, toEpochSeconds).flatMap { it.samples }
+            .filter { it.time.epochSecond in fromEpochSeconds..toEpochSeconds }
+            .map { HealthSample(it.time.epochSecond, it.beatsPerMinute.toDouble()) }
+            .sortedBy { it.epochSeconds }
+            .also { Log.i(TAG, "A recorded run's heart: ${it.size} readings") }
+
     /** A run's records of one kind from the app that recorded the run; from anyone, when that app wrote none. */
     private suspend fun <T : Record> fromRecorder(type: KClass<T>, run: RunRecord, recorder: Set<DataOrigin>): List<T> =
         readAll(type, run.startEpochSeconds, run.endEpochSeconds, recorder).ifEmpty { readAll(type, run.startEpochSeconds, run.endEpochSeconds) }
