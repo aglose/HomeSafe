@@ -152,7 +152,9 @@ class SettingsHomeUiTest {
         onNode(hasText("Known Cars") and hasClickAction()).assertIsDisplayed()
         onNode(hasText("Cameras") and hasText("Detection on for 2 of 3 cameras")).assertIsDisplayed()
         onNode(hasText("Economy commentary") and hasText("Straight talk")).assertIsDisplayed()
-        onNode(hasText("Server") and hasText("Tailscale · 55% storage used · healthy")).assertIsDisplayed()
+        // The rows from Maps down sit below a phone's screen: scrolled to, as a person would.
+        scrollIntoView(onNode(hasText("Maps") and hasText("OpenStreetMap"))).assertIsDisplayed()
+        scrollIntoView(onNode(hasText("Server") and hasText("Tailscale · 55% storage used · healthy"))).assertIsDisplayed()
     }
 
     @Test
