@@ -12,10 +12,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -36,6 +36,9 @@ class BaseMapsTest {
 
     /** Google's Map Tiles API, answering sessions for [GOOD_KEY] and refusing any other key; [sessions] counts what was asked. */
     private var sessions = 0
+
+    /** Sessions Google refused. Updated from the HTTP engine's threads, so waited on as a flow. */
+    private val refused = MutableStateFlow(0)
     private val google = GoogleMapTiles(
         HttpClient(
             MockEngine { request ->
@@ -46,8 +49,10 @@ class BaseMapsTest {
                         respond("""{"session": "session-$sessions", "expiry": "${NOW + 14 * 86_400}", "tileWidth": 512}""", HttpStatusCode.OK, json)
                     }
 
-                    request.url.encodedPath.endsWith("/createSession") ->
+                    request.url.encodedPath.endsWith("/createSession") -> {
+                        refused.value++
                         respond("""{"error": {"code": 403, "message": "Map Tiles API has not been used in project 1"}}""", HttpStatusCode.Forbidden, json)
+                    }
 
                     request.url.encodedPath.endsWith("/viewport") -> respond("""{"copyright": "Map data ©2026 Google"}""", HttpStatusCode.OK, json)
 
@@ -99,9 +104,18 @@ class BaseMapsTest {
         maps.setGoogleKey("not-a-key")
         maps.check()
         assertIs<GoogleMapsStatus.Failed>(maps.settings.first().google)
-        // Past the value from before Google was picked: nothing while Google is asked, then OpenStreetMap once it has said no.
-        val seen = withContext(Dispatchers.Default) { withTimeout(5_000) { maps.current.dropWhile { it != null }.take(2).toList() } }
-        assertEquals(listOf(null, BaseMap.OpenStreetMap), seen)
+        // The map asks Google again for itself, is refused, and settles on OpenStreetMap. (Only what it
+        // settles on is checked: a StateFlow may skip the moment of nothing while it asks.)
+        val drawn = withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                coroutineScope {
+                    val watching = launch { maps.current.collect {} }
+                    refused.first { it >= 2 }
+                    maps.current.first { it != null }.also { watching.cancel() }
+                }
+            }
+        }
+        assertEquals(BaseMap.OpenStreetMap, drawn)
 
         maps.setGoogleKey(null)
         assertEquals(MapSettings(MapProvider.GOOGLE, hasGoogleKey = false, google = GoogleMapsStatus.Unchecked), maps.settings.first(), "forgetting the key clears what was said about it")
