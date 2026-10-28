@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -93,6 +95,7 @@ import com.meticulouscreations.homesafe.fitness.ui.movement.FigureSize
 import com.meticulouscreations.homesafe.fitness.ui.movement.NearestFigureNote
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.rememberKeyboardClearance
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_close
 import homesafe.shared.generated.resources.fitness_exercise_edit
@@ -634,7 +637,10 @@ private fun WorkoutAddCard(
             onPull(board.exercise.id)
             close()
         }
-        FitnessCard {
+        // The matches come in under the field as it is typed in: the whole card comes up above the keyboard, not only the field.
+        var typing by remember { mutableStateOf(false) }
+        val clearance = rememberKeyboardClearance(typing, matches, known)
+        FitnessCard(Modifier.bringIntoViewRequester(clearance)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CardLabel(stringResource(Res.string.fitness_workout_find), Modifier.weight(1f))
                 RoundIconButton(Icons.Filled.Close, stringResource(Res.string.common_close), close, Modifier.testTag("fitness_add_exercise_close"), size = 32.dp, tint = colors.textMuted)
@@ -644,7 +650,7 @@ private fun WorkoutAddCard(
                 query,
                 { query = it },
                 stringResource(Res.string.fitness_workout_find_hint),
-                Modifier.fillMaxWidth().testTag("fitness_add_exercise_name"),
+                Modifier.fillMaxWidth().onFocusChanged { typing = it.isFocused }.testTag("fitness_add_exercise_name"),
                 onDone = { (exact ?: matches.singleOrNull())?.let(pick) },
             )
             matches.forEach { board ->
@@ -732,8 +738,17 @@ internal fun AddExerciseCard(parts: List<BodyPart>, onAdd: (String, BodyPart) ->
         name = ""
         adding = false
     }
-    FitnessCard(modifier, title = stringResource(Res.string.fitness_workout_add)) {
-        FitnessTextField(name, { name = it }, stringResource(Res.string.fitness_workout_add_hint), Modifier.fillMaxWidth().testTag("fitness_add_exercise_name"), onDone = submit)
+    // The shelves and the button under the field come up above the keyboard with it.
+    var typing by remember { mutableStateOf(false) }
+    val clearance = rememberKeyboardClearance(typing)
+    FitnessCard(modifier.bringIntoViewRequester(clearance), title = stringResource(Res.string.fitness_workout_add)) {
+        FitnessTextField(
+            name,
+            { name = it },
+            stringResource(Res.string.fitness_workout_add_hint),
+            Modifier.fillMaxWidth().onFocusChanged { typing = it.isFocused }.testTag("fitness_add_exercise_name"),
+            onDone = submit,
+        )
         if (parts.size > 1) {
             Spacer(Modifier.height(10.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
