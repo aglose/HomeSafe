@@ -5,13 +5,14 @@
 //   ./gradlew :fitness:stabilityDump
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.AddExerciseCard(parts: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.BodyPart>, onAdd: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.AddExerciseCard(parts: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.BodyPart>, onAdd: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, clearAbove: androidx.compose.ui.unit.Dp, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - parts: RUNTIME (requires runtime check)
     - onAdd: STABLE (function type)
     - tint: STABLE (marked @Stable or @Immutable)
+    - clearAbove: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -909,7 +910,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.WeekCard(board: com.meti
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutAddCard(focus: com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus, regulars: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.ExerciseBoard>, boards: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.ExerciseBoard>, listed: kotlin.collections.Set<kotlin.String>, parts: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.BodyPart>, onPull: kotlin.Function1<kotlin.String, kotlin.Unit>, onCreate: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutAddCard(focus: com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus, regulars: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.ExerciseBoard>, boards: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.ExerciseBoard>, listed: kotlin.collections.Set<kotlin.String>, parts: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.BodyPart>, onPull: kotlin.Function1<kotlin.String, kotlin.Unit>, onCreate: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, clearAbove: androidx.compose.ui.unit.Dp, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -921,6 +922,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutAddCard(focus: co
     - onPull: STABLE (function type)
     - onCreate: STABLE (function type)
     - tint: STABLE (marked @Stable or @Immutable)
+    - clearAbove: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable

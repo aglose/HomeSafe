@@ -121,7 +121,10 @@ pages (the `AnimatedContent` in `FinanceApp`, `WeatherApp`, `FitnessApp`, `Atlas
 above it. The floating navs sit outside that and stay under the keyboard.
 
 - A text field on one of those pages needs nothing more, as long as it is in something that
-  scrolls (or is near the top).
+  scrolls (or is near the top). The page scrolls only as far as the field itself, though: where
+  things that go with it sit underneath (a search's matches, the button that submits it), put
+  `rememberKeyboardClearance(typing, …, above = <the page's top padding>)`'s `modifier`
+  (`ui/KeyboardClearance.kt`) on the whole of it, as the fitness workout's find card does.
 - A new surface outside them (an overlay over the whole window, a screen drawn before the shell,
   a `ModalBottomSheet`'s content) applies `imePadding()` itself, as the sign-in form and the
   add-symbol sheet do. `AlertDialog`s are their own window and the system moves them.
