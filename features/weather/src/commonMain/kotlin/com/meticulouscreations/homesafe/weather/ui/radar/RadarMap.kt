@@ -99,6 +99,7 @@ internal fun RadarMap(
     strength: Float = 0.92f,
     animated: Boolean = true,
     showCredit: Boolean = true,
+    minZoom: Double = MapCamera.MIN_ZOOM,
     maxZoom: Double = MapCamera.MAX_ZOOM,
 ) {
     val density = LocalDensity.current.density
@@ -158,14 +159,14 @@ internal fun RadarMap(
                     Modifier
                 } else {
                     Modifier
-                        .pointerInput(state, tilePx, maxZoom) {
+                        .pointerInput(state, tilePx, minZoom, maxZoom) {
                             detectTransformGestures { centroid, pan, zoom, _ ->
                                 state.camera = state.camera
-                                    .zoomed(zoom, centroid.x - size.width / 2f, centroid.y - size.height / 2f, tilePx, maxZoom = maxZoom)
+                                    .zoomed(zoom, centroid.x - size.width / 2f, centroid.y - size.height / 2f, tilePx, minZoom = minZoom, maxZoom = maxZoom)
                                     .panned(pan.x, pan.y, tilePx)
                             }
                         }
-                        .pointerInput(state, tilePx, maxZoom) {
+                        .pointerInput(state, tilePx, minZoom, maxZoom) {
                             detectTapGestures(
                                 onDoubleTap = { at ->
                                     val start = state.camera
@@ -173,7 +174,7 @@ internal fun RadarMap(
                                     val focusY = at.y - size.height / 2f
                                     scope.launch {
                                         animate(0f, 1f, animationSpec = tween(260)) { t, _ ->
-                                            state.camera = start.zoomed(2f.pow(t), focusX, focusY, tilePx, maxZoom = maxZoom)
+                                            state.camera = start.zoomed(2f.pow(t), focusX, focusY, tilePx, minZoom = minZoom, maxZoom = maxZoom)
                                         }
                                     }
                                 },

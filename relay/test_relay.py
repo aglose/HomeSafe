@@ -7959,6 +7959,22 @@ class ParkingTest(_FakeFrigate):
         self.assertEqual((_metres(self.CROSSING, 60, 5), "Elm St"), ((andrew["last"]["lat"], andrew["last"]["lng"]), andrew["street"]), "asleep, it is where it was")
         self.assertEqual((True, False, self.WED_7PM + 7200), (sarah["last"]["moving"], sarah["last"]["home"], sarah["last"]["at"]), "driving, away from home")
 
+    def test_with_no_watched_streets_the_cars_are_still_kept_where_presence_last_heard_them(self):
+        self.config({"tz": self.ZONE, "streets": []})
+        relay._tesla_answers["andrews_tesla"] = (self.WED_7PM + 60, self.fix(-2000, 900, 10, self.WED_7PM, shift="D", speed=30.0))
+        relay._tesla_answers["sarahs_car"] = (self.WED_7PM + 60, {"asleep": True})
+        self.assertEqual([], relay.parking_tick(self.WED_7PM + 120, push=self.push))
+        self.assertEqual([], self.asked, "Tesla isn't asked for it")
+        cars = {c["car"]: c for c in relay.parking_status(self.WED_7PM + 180)["cars"]}
+        self.assertEqual((True, False, self.WED_7PM), (cars["andrews_tesla"]["last"]["moving"], cars["andrews_tesla"]["last"]["home"], cars["andrews_tesla"]["last"]["at"]))
+        self.assertIsNone(cars["andrews_tesla"]["street"])
+        self.assertTrue(cars["sarahs_car"]["asleep"])
+        self.assertIsNone(cars["sarahs_car"]["last"], "asleep since before it was ever seen")
+        # An older fix than the one kept doesn't replace it.
+        relay._tesla_answers["andrews_tesla"] = (self.WED_7PM + 300, self.fix(0, 0, 0, self.WED_7PM - 200))  # fresh when given, but older
+        relay.parking_tick(self.WED_7PM + 360, push=self.push)
+        self.assertEqual(self.WED_7PM, relay.parking_status(self.WED_7PM + 400)["cars"][0]["last"]["at"])
+
     def test_a_car_known_only_by_its_spot_is_last_seen_there(self):
         saved = {"andrews_tesla": {"spot": {**self.fix(60, 5, 270, self.WED_7PM), "since": self.WED_7PM, "street": "Elm St", "side": "north"}}}
         relay.state_set(relay.PARKING_KEY, saved)

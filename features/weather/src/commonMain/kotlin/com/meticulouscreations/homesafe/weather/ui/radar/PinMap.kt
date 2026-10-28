@@ -14,6 +14,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -54,9 +55,9 @@ fun PinMap(
         val height = if (constraints.hasBoundedHeight) constraints.maxHeight.toFloat() else 0f
         val view = { shown: List<MapPin> ->
             shown.firstOrNull { it.key == focus }?.let { MapCamera.at(it.latitude, it.longitude, SPOT_ZOOM) }
-                ?: MapCamera.fitting(shown.map { it.latitude to it.longitude }, width, height, tilePx, SPOT_ZOOM, marginPx)
+                ?: MapCamera.fitting(shown.map { it.latitude to it.longitude }, width, height, tilePx, SPOT_ZOOM, marginPx, minZoom = PIN_MIN_ZOOM)
         }
-        val state = remember { RadarMapState(view(pins) ?: MapCamera.at(0.0, 0.0, MapCamera.MIN_ZOOM)) }
+        val state = remember { RadarMapState(view(pins) ?: MapCamera.at(0.0, 0.0, PIN_MIN_ZOOM)) }
         val currentPins by rememberUpdatedState(pins)
         PinMapContent(state, pins, tiles, focus, animated, tilePx, pin)
         LaunchedEffect(focus, pins.map { it.key }.toSet(), width, height, tilePx) {
@@ -93,7 +94,8 @@ private fun PinMapContent(
     tilePx: Float,
     pin: @Composable (MapPin) -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
+    // The pins are clipped with the map: one panned out of view mustn't draw over the page around it.
+    Box(Modifier.fillMaxSize().clipToBounds()) {
         RadarMap(
             state = state,
             timeline = null,
@@ -102,6 +104,7 @@ private fun PinMapContent(
             modifier = Modifier.fillMaxSize(),
             wholeLoop = false,
             animated = animated,
+            minZoom = PIN_MIN_ZOOM,
             maxZoom = SPOT_MAX_ZOOM,
         )
         // The pin in focus last, so it is drawn over any it sits close to.
@@ -126,6 +129,9 @@ private fun PinMapContent(
         }
     }
 }
+
+/** As far out as [PinMap] goes: the whole world across a phone, for cars a continent apart. */
+private const val PIN_MIN_ZOOM = 0.0
 
 /** How far in from the map's edges [PinMap] keeps the pins when it fits them all. */
 private val PIN_MARGIN = 56.dp

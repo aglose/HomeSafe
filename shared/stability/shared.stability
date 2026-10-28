@@ -3014,7 +3014,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.arrangeActions(onMoveEar
     - onMoveLater: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.bottomNavClearance(): androidx.compose.ui.unit.Dp
+public fun com.meticulouscreations.homesafe.ui.screens.bottomNavClearance(): androidx.compose.ui.unit.Dp
   skippable: false
   restartable: false
   params:

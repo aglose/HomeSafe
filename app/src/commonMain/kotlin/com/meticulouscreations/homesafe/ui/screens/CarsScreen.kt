@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -168,8 +167,8 @@ fun CarsContent(
                 .fillMaxWidth()
                 .heightIn(max = 340.dp)
                 .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                // The last card scrolls clear of the shell's floating nav, as on the other pages under Home.
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp + bottomNavClearance()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Google's map credits itself on the map; OpenStreetMap's contributors are named here.
@@ -236,7 +235,12 @@ private fun CarPin(car: HouseholdCar, selected: Boolean, onClick: () -> Unit) {
                 .fillMaxSize()
                 .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
                 .clip(CircleShape)
-                .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.household_cars_select), onClick = onClick),
+                .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.household_cars_select), onClick = onClick)
+                // The name under it is drawn beside the badge, not in it: a screen reader hears it here.
+                .semantics {
+                    contentDescription = car.name
+                    this.selected = selected
+                },
         ) {
             Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.DirectionsCar, contentDescription = null, modifier = Modifier.size(20.dp)) }
         }

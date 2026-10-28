@@ -414,6 +414,21 @@ class MapMathTest {
     }
 
     @Test
+    fun placesAContinentApartStillFitWhenAllowedOutFarEnough() {
+        // A 412 dp map on a 2.625× screen, as wide as a Pixel's: cars in Honolulu and London.
+        val places = listOf(21.31 to -157.86, 51.51 to -0.13)
+        val tilePx = 256f * 0.62f * 2.625f
+        val camera = MapCamera.fitting(places, 1_082f, 1_400f, tilePx, maxZoom = 17.0, marginPx = 147f, minZoom = 0.0)!!
+        places.forEach { (lat, lng) ->
+            val (dx, dy) = camera.project(lat, lng, tilePx)
+            assertTrue(abs(dx) <= 1_082f / 2 - 147f + 0.5f && abs(dy) <= 1_400f / 2 - 147f + 0.5f, "($dx, $dy) inside the margin")
+        }
+        assertTrue(camera.zoom < MapCamera.MIN_ZOOM, "further out than the radar goes: ${camera.zoom}")
+        val floored = MapCamera.fitting(places, 1_082f, 1_400f, tilePx, maxZoom = 17.0, marginPx = 147f)!!
+        assertTrue(abs(floored.project(21.31, -157.86, tilePx).first) > 1_082f / 2, "the radar's floor would leave one out")
+    }
+
+    @Test
     fun oneOrSamePlacesAreShownAtTheClosestZoom() {
         assertEquals(MapCamera.at(40.0, -89.0, 17.0), MapCamera.fitting(listOf(40.0 to -89.0, 40.0 to -89.0), 400f, 400f, 256f, maxZoom = 17.0))
         assertNull(MapCamera.fitting(emptyList(), 400f, 400f, 256f, maxZoom = 17.0))

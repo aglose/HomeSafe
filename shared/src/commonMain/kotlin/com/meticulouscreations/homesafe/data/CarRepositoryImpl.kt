@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Mirrors the relay's `/parking`. Like [DoorRepositoryImpl], it reads only while [cars] has a
@@ -41,15 +43,23 @@ class CarRepositoryImpl(
     private val _cars = MutableStateFlow<List<HouseholdCar>?>(null)
     override val cars: StateFlow<List<HouseholdCar>?> = _cars.asStateFlow()
 
-    /** The server [cars] came from, null while there are none. */
+    /** The server [cars] came from, null while there are none. Guarded by [state]. */
     private var carsFrom: String? = null
+
+    /**
+     * Guards forgetting the cars and publishing an answer: without it, an answer that passed its
+     * server check could land just after a sign-out cleared the cars, and show the old server's.
+     */
+    private val state = Mutex()
 
     init {
         appScope.launch {
             connectionRepository.currentServerUrl.collect { url ->
-                if (url == null || (carsFrom != null && carsFrom != url)) {
-                    carsFrom = null
-                    _cars.value = null
+                state.withLock {
+                    if (url == null || (carsFrom != null && carsFrom != url)) {
+                        carsFrom = null
+                        _cars.value = null
+                    }
                 }
             }
         }
@@ -75,10 +85,12 @@ class CarRepositoryImpl(
     }
 
     private suspend fun fetch(url: String): Result<List<HouseholdCar>> = relayApi.getCars(url).onSuccess {
-        // A refresh isn't cancelled by a server switch: an answer from the old server is dropped.
-        if (connectionRepository.currentServerUrl.value == url) {
-            carsFrom = url
-            _cars.value = it
+        state.withLock {
+            // A refresh isn't cancelled by a server switch: an answer from the old server is dropped.
+            if (connectionRepository.currentServerUrl.value == url) {
+                carsFrom = url
+                _cars.value = it
+            }
         }
     }
 

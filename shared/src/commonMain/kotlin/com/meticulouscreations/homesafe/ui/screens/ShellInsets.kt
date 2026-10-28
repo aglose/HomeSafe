@@ -110,10 +110,11 @@ internal fun shellTopBarClearance(): Dp {
  * How far a tab's scrolling content must keep clear at the bottom: the floating nav plus the
  * system navigation bar it floats above — or, under a native tab bar, the bar's own inset plus
  * a small gap, and with the nav at the side ([showsNavRail]) only a gap. Read on every
- * composition so a gesture ↔ 3-button nav switch, or a rotation, re-measures.
+ * composition so a gesture ↔ 3-button nav switch, or a rotation, re-measures. Public for the
+ * pages :app draws on a tab (the cars' map).
  */
 @Composable
-internal fun bottomNavClearance(): Dp {
+fun bottomNavClearance(): Dp {
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val chrome = when {
         LocalNativeTabBar.current -> NATIVE_TAB_BAR_GAP
