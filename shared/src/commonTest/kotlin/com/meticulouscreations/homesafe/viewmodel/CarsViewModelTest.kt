@@ -5,9 +5,12 @@ import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.domain.repository.CarRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCarsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshCarsUseCase
+import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.household_cars_load_failed
+import homesafe.shared.generated.resources.household_cars_title
+import homesafe.shared.generated.resources.household_cars_unreachable
+import homesafe.shared.generated.resources.household_cars_unreachable_kept
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,15 +96,41 @@ class CarsViewModelTest {
         val repo = FakeCarRepository()
         val viewModel = viewModel(repo)
         val state = collecting(viewModel)
-        repo.refreshFailure = IllegalStateException("HTTP 502")
+        repo.refreshFailure = IllegalStateException("Request timeout has expired [url=http://relay:8787/parking]")
         viewModel.refresh()
         runCurrent()
         assertEquals(1, repo.refreshes)
         assertTrue(state.value.loaded, "no cars to show, but not still loading either")
-        assertEquals(UiText.of(Res.string.household_cars_load_failed, "HTTP 502"), state.value.error)
+        assertEquals(UiText.of(Res.string.household_cars_unreachable), state.value.error, "the timeout's own text is for the logs")
         repo.refreshFailure = null
         viewModel.refresh()
         runCurrent()
         assertNull(state.value.error)
+    }
+
+    @Test
+    fun aRefreshThatFailsWithCarsOnTheMapSaysTheyAreTheLastAnswer() = runTest(dispatcher) {
+        val repo = FakeCarRepository()
+        val viewModel = viewModel(repo)
+        val state = collecting(viewModel)
+        repo.cars.value = listOf(tesla)
+        repo.refreshFailure = IllegalStateException("HTTP 502")
+        viewModel.refresh()
+        runCurrent()
+        assertEquals(listOf(tesla), state.value.cars)
+        assertEquals(UiText.of(Res.string.household_cars_unreachable_kept), state.value.error)
+    }
+
+    @Test
+    fun aFailureMeantForTheReaderIsShownAsItIs() = runTest(dispatcher) {
+        val repo = FakeCarRepository()
+        val viewModel = viewModel(repo)
+        val state = collecting(viewModel)
+        // Any resource will do: what matters is that the exception's own text is what's shown.
+        val said = UiText.of(Res.string.household_cars_title)
+        repo.refreshFailure = LocalizedException(said, technical = "HTTP 401")
+        viewModel.refresh()
+        runCurrent()
+        assertEquals(said, state.value.error)
     }
 }

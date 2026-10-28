@@ -24,7 +24,8 @@
     <string name="household_cars_asleep">Dormido</string>
     <string name="household_cars_empty">Aún no hay coches. Cuando un Tesla esté vinculado al servidor, aparecerá aquí esté donde esté.</string>
     <string name="household_cars_no_places">El servidor aún no sabe dónde está ningún coche. Cada uno aparece en el mapa en cuanto el servidor sabe dónde está.</string>
-    <string name="household_cars_load_failed">No se pudieron cargar los coches: %1$s</string>
+    <string name="household_cars_unreachable">No se pudo conectar con el servidor para cargar los coches.</string>
+    <string name="household_cars_unreachable_kept">No se pudo conectar con el servidor ahora mismo. El mapa muestra lo último que dijo.</string>
     <string name="household_cars_show_all">Ver todos</string>
     <string name="household_cars_map_description">Mapa de dónde están los coches</string>
     <string name="household_cars_select">Ver en el mapa</string>

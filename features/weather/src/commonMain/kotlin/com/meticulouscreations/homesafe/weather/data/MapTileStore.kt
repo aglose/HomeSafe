@@ -19,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,6 +64,23 @@ interface MapTileSource {
 }
 
 private val OpenStreetMapOnly: StateFlow<BaseMap?> = MutableStateFlow(BaseMap.OpenStreetMap)
+
+/** How often [requestUntilArrived] asks again for the base map's tiles that haven't come. */
+const val BASE_TILE_RETRY_MS = 5_000L
+
+/**
+ * Asks for the base map's [urls] (see [MapTileSource.request]), and asks again every
+ * [BASE_TILE_RETRY_MS] while any of them hasn't arrived: a tile a slow network dropped would
+ * otherwise stay a hole in the map until the view moved. Returns once they are all in; the map
+ * cancels it when the view moves on to other tiles.
+ */
+suspend fun MapTileSource.requestUntilArrived(urls: List<String>, scope: CoroutineScope, keep: Boolean) {
+    while (true) {
+        request(urls, scope, keep)
+        delay(BASE_TILE_RETRY_MS)
+        if (urls.all { image(it) != null }) return
+    }
+}
 
 /**
  * Map and radar tiles, fetched once and kept: decoded pictures in memory for drawing, and the
@@ -118,9 +136,12 @@ class MapTileStore(
     override fun request(urls: Collection<String>, scope: CoroutineScope, keep: Boolean, radar: RadarColorTable?) {
         val now = clock.now().epochSeconds
         if (failedAt.size > MAX_FAILURES_REMEMBERED) failedAt.values.removeAll { now - it >= RETRY_SECONDS }
+        // A base map's tile that failed was dropped by the network, and is wanted again soon; a radar
+        // frame's was most likely not published yet.
+        val wait = if (radar == null) BASE_RETRY_SECONDS else RETRY_SECONDS
         for (url in urls) {
             if (url in images || loading[url]?.isActive == true) continue
-            if (now - (failedAt[url] ?: 0L) < RETRY_SECONDS) continue
+            if (now - (failedAt[url] ?: 0L) < wait) continue
             lateinit var job: Job
             job = scope.launch {
                 try {
@@ -191,5 +212,8 @@ class MapTileStore(
 
         /** A tile that failed (a frame the server hasn't published yet, usually) isn't asked for again straight away. */
         const val RETRY_SECONDS = 45L
+
+        /** A base map's tile that failed, which [requestUntilArrived] asks for again: see [BASE_TILE_RETRY_MS]. */
+        const val BASE_RETRY_SECONDS = 4L
     }
 }
