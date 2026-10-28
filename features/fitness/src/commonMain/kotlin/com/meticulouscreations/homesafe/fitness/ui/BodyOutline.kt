@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
@@ -385,5 +387,7 @@ private const val FIGURE_BOX = 100f
  */
 @Composable
 internal fun BodyOutlineDrawing(outline: BodyOutline, modifier: Modifier = Modifier, alpha: Float = 1f) {
-    Canvas(modifier) { outline.draw(this, alpha) }
+    // Drawn once into a picture of its own and that picture put up after: it sits over fibres that move
+    // every frame, and its halo and seams are a few passes off screen each, too many to draw again each frame.
+    Canvas(modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) { outline.draw(this, alpha) }
 }

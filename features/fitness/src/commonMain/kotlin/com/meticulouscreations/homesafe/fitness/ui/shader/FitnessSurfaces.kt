@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
@@ -85,6 +86,13 @@ private fun rememberShader(source: String): FitnessShader? {
 }
 
 /**
+ * A layer of a surface's own, for whatever reads a [rememberFitnessClock] while drawing: each
+ * tick then draws again only the surface, not everything else in the layer around it (a card's
+ * words and outline, or a whole page that has no layer of its own between it and the surface).
+ */
+private fun Modifier.ownLayer(): Modifier = graphicsLayer {}
+
+/**
  * The forge's glow behind a screen ([FORGE_SHADER]), crossfading to new colours when the phase
  * or the workout changes. [heat] 0–1 is how hard it burns. Where no shader compiles it is a soft
  * glow in the same colours.
@@ -97,7 +105,7 @@ internal fun ForgeBackground(tint: Color, tint2: Color, modifier: Modifier = Mod
     val animatedHeat by animateFloatAsState(heat.coerceIn(0f, 1f), tween(900), label = "forgeHeat")
     val time = rememberFitnessClock(running, frameSeconds = SLOW_FRAME_SECONDS)
     Box(
-        modifier.drawBehind {
+        modifier.ownLayer().drawBehind {
             if (shader != null) {
                 shader.setUniform("size", size.width, size.height)
                 shader.setUniform("time", time.floatValue)
@@ -140,9 +148,9 @@ internal fun FiberField(
     val animatedEnergy by animateFloatAsState(energy.coerceIn(0f, 1f), tween(500), label = "fiberEnergy")
     val time = rememberFitnessClock(running, frameSeconds = FIBER_FRAME_SECONDS)
     Box(
-        modifier.drawBehind {
+        modifier.ownLayer().drawBehind {
             val now = time.floatValue
-            touches?.now = now
+            touches?.tick(now)
             if (shader != null) {
                 shader.setUniform("size", size.width, size.height)
                 shader.setUniform("time", now)
@@ -167,6 +175,9 @@ internal fun FiberField(
     )
 }
 
+/** Long enough for a mark's swirl ([FIBER_SHADER]'s `held`) and ring to have faded to nothing. */
+private const val SETTLED_SECONDS = 4f
+
 private val NO_MARKS = FloatArray(FIBER_TOUCHES * 4) { if (it % 4 >= 2) -1f else 0f }
 private val NO_SPLASH = FloatArray(FIBER_TOUCHES)
 
@@ -186,6 +197,7 @@ internal class FiberTouches {
 
     /** The field's clock as it was last drawn. */
     var now = 0f
+        private set
 
     private var next = 0
     private val fingers = HashMap<Long, Int>()
@@ -209,6 +221,26 @@ internal class FiberTouches {
 
     fun up(pointer: Long) {
         fingers.remove(pointer)?.let { marks[it * 4 + 3] = now }
+    }
+
+    /**
+     * Moves [now] on to the field's clock and empties each mark that has settled: its finger
+     * lifted and its ring run out [SETTLED_SECONDS] ago, or made before the clock last started
+     * over. The shader passes an empty mark by, so a card nobody has touched lately costs no more
+     * than one with no marks at all.
+     */
+    fun tick(time: Float) {
+        now = time
+        for (slot in 0 until FIBER_TOUCHES) {
+            val made = marks[slot * 4 + 2]
+            val lifted = marks[slot * 4 + 3]
+            if (made < 0f || lifted < 0f) continue
+            if (time < made || (time - lifted > SETTLED_SECONDS && time - made > SETTLED_SECONDS)) {
+                marks[slot * 4 + 2] = -1f
+                marks[slot * 4 + 3] = -1f
+                splash[slot] = 0f
+            }
+        }
     }
 
     /** Each place a finger is down now. */
@@ -288,7 +320,7 @@ internal fun PlasmaRing(
 ) {
     val shader = rememberShader(RING_SHADER)
     val time = rememberFitnessClock(running, frameSeconds = SLOW_FRAME_SECONDS)
-    Canvas(modifier) {
+    Canvas(modifier.ownLayer()) {
         val filled = level().coerceIn(0f, 1f)
         if (shader != null) {
             shader.setUniform("size", size.width, size.height)
