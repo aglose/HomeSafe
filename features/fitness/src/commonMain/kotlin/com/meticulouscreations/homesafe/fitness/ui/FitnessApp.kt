@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -359,7 +360,10 @@ fun FitnessAppContent(
             }
             val previous: Any? = if (pages.isEmpty()) null else pages.getOrNull(pages.lastIndex - 1) ?: tab
             // A back swipe scrubs the pop it would make, so it slides the way a pop does.
+            // The pages end at the keyboard while it is up, so the field being typed in scrolls up above
+            // it; the nav stays put, under the keyboard.
             rememberPredictiveBackTransition(target, previous, back, label = "fitnessPage").AnimatedContent(
+                modifier = Modifier.imePadding(),
                 transitionSpec = { fitnessTransition(initialState, targetState, forward = depth[1] > 0 && !back.inProgress) },
             ) { shown ->
                 when (shown) {

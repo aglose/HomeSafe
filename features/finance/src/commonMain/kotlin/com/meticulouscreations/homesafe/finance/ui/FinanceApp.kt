@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -310,7 +311,10 @@ private fun FinanceAppContent(
                     depth[1] = if (details.size > depth[0]) 1 else -1
                     depth[0] = details.size
                 }
+                // The pages end at the keyboard while it is up, so the field being typed in scrolls up above
+                // it; the nav stays put, under the keyboard.
                 rememberPredictiveBackTransition(target, previous, back, label = "financePage").AnimatedContent(
+                    modifier = Modifier.imePadding(),
                     transitionSpec = { financeTransition(initialState, targetState, pop = back.inProgress || depth[1] < 0) },
                     contentKey = { it },
                 ) { page ->

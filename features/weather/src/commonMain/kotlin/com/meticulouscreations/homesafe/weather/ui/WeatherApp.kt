@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -355,7 +356,10 @@ fun WeatherAppContent(
                 depth[1] = if (pages.size > depth[0]) 1 else -1
                 depth[0] = pages.size
             }
+            // The pages end at the keyboard while it is up, so the field being typed in scrolls up above
+            // it; the nav stays put, under the keyboard.
             rememberPredictiveBackTransition(target, previous, back, label = "weatherPage").AnimatedContent(
+                modifier = Modifier.imePadding(),
                 transitionSpec = { weatherTransition(initialState, targetState, pop = back.inProgress || depth[1] < 0) },
                 // Today and Forecast are one pager of places, which stays where it is as they swap inside it.
                 contentKey = { if (it == WeatherTab.TODAY || it == WeatherTab.FORECAST) "places" else it },
