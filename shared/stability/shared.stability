@@ -474,6 +474,15 @@ public fun com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview(c
     - content: STABLE (composable function type)
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.rememberKeyboardClearance(typing: kotlin.Boolean, keys: kotlin.Any?, above: androidx.compose.ui.unit.Dp): com.meticulouscreations.homesafe.ui.KeyboardClearance
+  skippable: false
+  restartable: false
+  params:
+    - typing: STABLE (primitive type)
+    - keys: UNSTABLE (cross-module type without @Stable/@Immutable)
+    - above: STABLE (marked @Stable or @Immutable)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.rememberPredictiveBack(enabled: kotlin.Boolean, onBack: kotlin.Function1<@[ParameterName(name = \): com.meticulouscreations.homesafe.ui.PredictiveBack
   skippable: false
   restartable: false
