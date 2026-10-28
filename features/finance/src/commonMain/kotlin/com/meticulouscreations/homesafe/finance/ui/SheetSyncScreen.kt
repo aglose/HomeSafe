@@ -63,7 +63,6 @@ import homesafe.shared.generated.resources.fin_sheet_sync_status_look
 import homesafe.shared.generated.resources.fin_sheet_sync_status_ok
 import homesafe.shared.generated.resources.fin_sheet_sync_syncing
 import org.jetbrains.compose.resources.stringResource
-import kotlin.time.Clock
 
 /** How the last sync of the budget sheet went, as one of three lights. */
 private enum class SyncLight { OK, LOOK, FAILED }
@@ -90,7 +89,7 @@ private fun SyncLight.color(): Color = when (this) {
 internal fun SheetSyncLine(state: FinanceUiState, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val finance = state.finance ?: return
     val light = lightOf(state)
-    val now = Clock.System.now().epochSeconds
+    val now = LocalFinanceClock.current.now().epochSeconds
     val ago = FinanceFormat.ago(now, finance.fetchedAtEpochSeconds)
     val problems = finance.health.problemCount
     val text = when (light) {
@@ -135,7 +134,7 @@ internal fun SheetSyncScreen(state: FinanceUiState, contentPadding: PaddingValue
     val finance = state.finance
     val health = finance?.health
     val light = lightOf(state)
-    val now = Clock.System.now().epochSeconds
+    val now = LocalFinanceClock.current.now().epochSeconds
     LazyColumn(contentPadding = contentPadding) {
         item(key = "status") {
             FinanceCard(Modifier.padding(top = 12.dp)) {

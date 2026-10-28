@@ -23,7 +23,8 @@ import androidx.compose.ui.unit.dp
  * [phase] is read at draw time only, so the frame clock driving it redraws the snake without
  * recomposing anything. The glyphs and the rain need a clock that doesn't loop every lap, so the
  * shader also gets the uptime — read in the same draw, which [phase] already invalidates every
- * frame; with a fixed [phase] (a test, a preview) the frame simply holds.
+ * frame. When [still] (a preview) it gets [STILL_TIME_SECONDS] instead, so with the fixed [phase]
+ * a preview gives it, every render is the same frame.
  *
  * Where the shader can't be compiled (Android Studio's preview renderer among them) the card
  * gets the plain [outlineRunner] in [color] instead of failing to draw.
@@ -33,12 +34,13 @@ internal actual fun Modifier.loadingRunner(
     phaseOffset: Float,
     cornerRadius: Dp,
     color: Color,
+    still: Boolean,
 ): Modifier {
     val shader = matrixSnakeShader ?: return outlineRunner(phase = phase, phaseOffset = phaseOffset, cornerRadius = cornerRadius, color = color)
-    return matrixSnake(shader, phase, phaseOffset, cornerRadius)
+    return matrixSnake(shader, phase, phaseOffset, cornerRadius, still)
 }
 
-private fun Modifier.matrixSnake(shader: RuntimeShader, phase: () -> Float, phaseOffset: Float, cornerRadius: Dp): Modifier = drawWithCache {
+private fun Modifier.matrixSnake(shader: RuntimeShader, phase: () -> Float, phaseOffset: Float, cornerRadius: Dp, still: Boolean): Modifier = drawWithCache {
     val brush = ShaderBrush(shader)
     val bleed = SNAKE_BLEED.toPx()
     val area = Size(size.width + 2 * bleed, size.height + 2 * bleed)
@@ -50,12 +52,15 @@ private fun Modifier.matrixSnake(shader: RuntimeShader, phase: () -> Float, phas
         shader.setFloatUniform("size", size.width, size.height)
         shader.setFloatUniform("corner", corner)
         shader.setFloatUniform("head", (phase() + phaseOffset) % 1f)
-        shader.setFloatUniform("time", (SystemClock.uptimeMillis() % SNAKE_CLOCK_WRAP_MS) / 1000f)
+        shader.setFloatUniform("time", if (still) STILL_TIME_SECONDS else (SystemClock.uptimeMillis() % SNAKE_CLOCK_WRAP_MS) / 1000f)
         shader.setFloatUniform("density", density)
         shader.setFloatUniform("seed", phaseOffset * 37f)
         drawRect(brush = brush, topLeft = Offset(-bleed, -bleed), size = area)
     }
 }
+
+/** The shader's clock in a preview: a few seconds in, so the rain has fallen into the card. */
+private const val STILL_TIME_SECONDS = 7.3f
 
 /** How far past the card's edges the snake is drawn: its slither, its glyphs' half-width and its glow. */
 private val SNAKE_BLEED = 16.dp

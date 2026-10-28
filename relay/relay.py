@@ -505,16 +505,7 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     visit's `notif_id` and `silent: "1"`: Android replaces that visit's notification without
     alerting again, and iOS collapses it onto the same banner (`apns-collapse-id`), passively.
     """
-    silent = data.get("silent") == "1"
-    aps: dict[str, Any] = {"alert": {"title": title, "body": body}, "thread-id": data.get("camera", "")}
-    if away:
-        aps["interruption-level"] = "time-sensitive"
-    elif silent:
-        aps["interruption-level"] = "passive"
-    headers = {"apns-priority": "10"}
-    collapse_id = data.get("notif_id") or data.get("review_id")
-    if collapse_id:
-        headers["apns-collapse-id"] = collapse_id[:64]
+    headers, aps = apns_parts(title, body, data, away)
     return {
         "message": {
             "token": token,
@@ -525,8 +516,25 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     }
 
 
+def apns_parts(title: str, body: str, data: dict[str, str], away: bool) -> tuple[dict[str, str], dict[str, Any]]:
+    """What an iPhone is sent, by FCM or straight through APNs (see "APNs"): the APNs headers and the `aps` dictionary."""
+    silent = data.get("silent") == "1"
+    aps: dict[str, Any] = {"alert": {"title": title, "body": body}, "thread-id": data.get("camera", "")}
+    if away:
+        aps["interruption-level"] = "time-sensitive"
+    elif silent:
+        aps["interruption-level"] = "passive"
+    headers = {"apns-priority": "10"}
+    collapse_id = data.get("notif_id") or data.get("review_id")
+    if collapse_id:
+        headers["apns-collapse-id"] = collapse_id[:64]
+    return headers, aps
+
+
 def send_push(token: str, title: str, body: str, data: dict[str, str], away: bool = False) -> tuple[bool, str]:
-    """One FCM message; see `push_message` for its shape."""
+    """One FCM message (see `push_message` for its shape), or for an iPhone's own APNs token, one APNs push (see "APNs")."""
+    if apns_token(token):
+        return apns_send(token, title, body, data, away=away)
     message = push_message(token, title, body, data, away=away)
     r = fcm_session().post(f"https://fcm.googleapis.com/v1/projects/{PROJECT}/messages:send", json=message, timeout=15)
     if r.ok:
@@ -537,6 +545,123 @@ def send_push(token: str, title: str, body: str, data: dict[str, str], away: boo
     except Exception:
         code = r.text[:200]
     return False, f"{r.status_code} {code}".strip()
+
+
+# ---------------------------------------------------------------- APNs
+
+# The iPhone app registers Apple's own device token (64 hex digits) rather than an FCM one, and the
+# relay pushes to it straight through Apple's push service, signed in with the household's APNs
+# key: the iOS app needs no Firebase. Setup (docs/notifications.md, "iPhone"): an APNs key from
+# the Apple developer account, its .p8 file on the box at APNS_KEY_FILE and its key id as
+# APNS_KEY_ID (apns.env). Off without them: an iPhone still registers its token, but is told the
+# relay can't push to it (see `register`), so it keeps its own in-app alerts.
+APNS_KEY_FILE = os.environ.get("APNS_KEY_FILE", "/data/apns-key.p8")
+APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "")
+APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "KSK3H9YSXD")
+# The app's bundle id (Config.xcconfig's PRODUCT_BUNDLE_IDENTIFIER with no TEAM_ID suffix).
+APNS_TOPIC = os.environ.get("APNS_TOPIC", "com.meticulouscreations.homesafe.HomeSafe")
+APNS_HOSTS = {"production": "https://api.push.apple.com", "sandbox": "https://api.sandbox.push.apple.com"}
+# Apple wants a provider token under an hour old, and made anew no more than every 20 minutes.
+APNS_TOKEN_SECONDS = 45 * 60
+# Which of APNS_HOSTS took each token last, by its first 16 digits (see `apns_send`).
+APNS_ENV_KEY = "apns_env"
+_apns: dict[str, Any] = {"jwt": None, "at": 0.0, "client": None}
+_apns_lock = threading.Lock()
+
+
+def apns_token(token: str | None) -> bool:
+    """Whether a push token is an iPhone's own APNs token (FCM's are longer, and not all hex)."""
+    return bool(token) and re.fullmatch(r"[0-9a-f]{64}", token) is not None
+
+
+def apns_on() -> bool:
+    return bool(APNS_KEY_ID) and os.path.exists(APNS_KEY_FILE)
+
+
+def can_push(token: str | None) -> bool:
+    """Whether the relay can push to a token a phone registered: FCM's always, an iPhone's once APNs is set up."""
+    return bool(token) and (apns_on() if apns_token(token) else True)
+
+
+def b64url(raw: bytes) -> str:
+    import base64
+
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def apns_sign(now: float) -> str:
+    """A provider token: the ES256 JWT APNs takes, signed with the APNs key."""
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, utils
+
+    with open(APNS_KEY_FILE, "rb") as f:
+        key = serialization.load_pem_private_key(f.read(), password=None)
+    signing_input = (b64url(json.dumps({"alg": "ES256", "kid": APNS_KEY_ID}).encode()) + "."
+                     + b64url(json.dumps({"iss": APNS_TEAM_ID, "iat": int(now)}).encode()))
+    r, s = utils.decode_dss_signature(key.sign(signing_input.encode(), ec.ECDSA(hashes.SHA256())))
+    return signing_input + "." + b64url(r.to_bytes(32, "big") + s.to_bytes(32, "big"))
+
+
+def apns_jwt(now: float | None = None) -> str:
+    """The provider token, made anew every APNS_TOKEN_SECONDS."""
+    now = time.time() if now is None else now
+    with _apns_lock:
+        if not _apns["jwt"] or now - _apns["at"] >= APNS_TOKEN_SECONDS:
+            _apns["jwt"], _apns["at"] = apns_sign(now), now
+        return _apns["jwt"]
+
+
+def apns_post(url: str, headers: dict[str, str], payload: dict[str, Any]) -> tuple[int, str]:
+    """One POST to APNs, which only speaks HTTP/2: Apple's status and its `reason`."""
+    import httpx
+
+    with _apns_lock:
+        if _apns["client"] is None:
+            _apns["client"] = httpx.Client(http2=True, timeout=15)
+        client = _apns["client"]
+    r = client.post(url, headers=headers, json=payload)
+    if r.status_code == 200:
+        return 200, ""
+    try:
+        return r.status_code, str(r.json().get("reason") or "")
+    except Exception:
+        return r.status_code, r.text[:200]
+
+
+def apns_send(token: str, title: str, body: str, data: dict[str, str], away: bool = False) -> tuple[bool, str]:
+    """
+    One push straight to an iPhone. The app's data travels beside `aps`, as FCM's does in `data`.
+    Apple runs two services, production (App Store, TestFlight and ad hoc builds) and sandbox
+    (builds Xcode installs), and a token belongs to one: the one that last took it is tried first,
+    the other when Apple says BadDeviceToken. Apple saying the app is gone (410) answers
+    "UNREGISTERED", as FCM's does, so `deliver` forgets the token.
+    """
+    if not apns_on():
+        return False, "apns not set up (APNS_KEY_ID, APNS_KEY_FILE)"
+    headers, aps = apns_parts(title, body, data, away)
+    payload = {**{k: v for k, v in data.items() if k != "aps"}, "aps": aps}
+    envs = state_get(APNS_ENV_KEY) or {}
+    first = envs.get(token[:16], "production")
+    status, reason = 0, ""
+    for env in (first, "sandbox" if first == "production" else "production"):
+        # A key that won't load, or Apple out of reach, is this phone's push failing, not the
+        # rest of the broadcast's: the phones after it in `broadcast` are still pushed to.
+        try:
+            headers["authorization"] = f"bearer {apns_jwt()}"
+            headers.update({"apns-topic": APNS_TOPIC, "apns-push-type": "alert"})
+            status, reason = apns_post(f"{APNS_HOSTS[env]}/3/device/{token}", headers, payload)
+        except Exception as e:
+            return False, f"apns: {type(e).__name__}: {e}"[:300]
+        if status == 200:
+            if envs.get(token[:16]) != env:
+                envs[token[:16]] = env
+                state_set(APNS_ENV_KEY, envs)
+            return True, ""
+        if status == 410:
+            return False, f"410 UNREGISTERED {reason}".strip()
+        if reason != "BadDeviceToken":
+            break
+    return False, f"{status} {reason}".strip()
 
 
 def local_minute(now: float, tz: str | None, utc_offset: int | None) -> int | None:
@@ -4753,7 +4878,9 @@ def register(device: Device, request: Request) -> dict[str, Any]:
         device.quiet_familiar, device.quiet_start, device.quiet_end, device.tz, device.only_away,
         tracked or not_tracked_reason(device.platform, device.build, device.emulator, device.hardware_id) or "taken",
     )
-    return {"ok": True, "device_id": device_id, "secret": secret}
+    # Whether the relay can push to the token it was given: an iPhone's needs APNs set up, and one
+    # told no keeps its own in-app alerts (DeviceRegistrar). Older apps read only the secret.
+    return {"ok": True, "device_id": device_id, "secret": secret, "push": can_push(device.token)}
 
 
 @app.delete("/devices/{ident}")

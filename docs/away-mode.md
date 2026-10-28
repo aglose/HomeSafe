@@ -258,10 +258,9 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
 
 ## Not done
 
-- **iOS push.** The iPhone now has an identity, a presence row, a vote and a geofence, but no
-  push token: escalated *pushes* don't reach it. It still gets the in-app
-  (`DetectionAlertService`) escalation while the app runs. APNs key → Firebase, and an FCM token
-  from the Swift side, are the remaining pieces; the relay already builds an `apns` payload.
+- **iOS push** is done: the relay pushes to the iPhone straight through APNs once its key is on
+  the box (see [notifications.md](notifications.md#iphone)). Until then the iPhone keeps the
+  in-app (`DetectionAlertService`) escalation while the app runs.
 - **Dwell and radius are constants** (10 min, 150 m). Per-household tuning would be a relay
   `state` entry like `home`.
 - **Relay-side snooze / "I'm back" from the notification** — not built.

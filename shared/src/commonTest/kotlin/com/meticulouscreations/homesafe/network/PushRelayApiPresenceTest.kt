@@ -69,6 +69,19 @@ class PushRelayApiPresenceTest {
     }
 
     @Test
+    fun theRelaySaysWhetherItCanPushToTheToken() = runTest {
+        val registration = DeviceRegistration(deviceId = "dev-ios", token = "a1".repeat(32), platform = "ios", name = "Apple iPhone", build = "release")
+        val (noApns, _) = api("""{"ok":true,"device_id":"dev-ios","secret":"s3cret","push":false}""")
+        assertEquals(false, noApns.registerDevice("http://frigate:8971", registration).getOrThrow().push, "no APNs key on the relay yet")
+        val (apns, _) = api("""{"ok":true,"device_id":"dev-ios","secret":"s3cret","push":true}""")
+        assertEquals(true, apns.registerDevice("http://frigate:8971", registration).getOrThrow().push)
+        val (older, _) = api("""{"ok":true,"device_id":"dev-ios","secret":"s3cret"}""")
+        assertEquals(false, older.registerDevice("http://frigate:8971", registration).getOrThrow().push, "a relay too old to say can't push to an iPhone")
+        val android = DeviceRegistration(deviceId = "dev-1", token = "fcm-tok", platform = "android", name = "Pixel 10", build = "release")
+        assertEquals(true, older.registerDevice("http://frigate:8971", android).getOrThrow().push, "but it can to Android, as always")
+    }
+
+    @Test
     fun registrationSaysWhichPhoneThisIsAndWhetherItIsAnEmulator() = runTest {
         val (api, seen) = api("""{"ok":true,"device_id":"dev-1","secret":"s3cret"}""")
         val registration = DeviceRegistration(

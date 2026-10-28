@@ -274,6 +274,11 @@ A kind switched off in Health Connect is gone from the screens the next time it 
 run's heart rate included. A kind that is still shared but couldn't be read just then keeps what
 it last showed, and the card says it may be behind.
 
+Until Health Connect has said what is shared (each time the app is opened afresh) the card reads
+"Reading Health Connect…", and it goes on saying so once something is shared and the readings are on their way:
+it offers **Connect Health Connect** only when Health Connect has said nothing is. A Health
+Connect that can't say what is shared just then leaves the card as it was.
+
 On Android 13 Health Connect is an app from the Play Store, and the card offers to get it; from
 14 it is part of the system. The page Health Connect links to for "why does this app want my
 data" is `HealthRationaleActivity`, which Android requires before it will show the sheet at all.

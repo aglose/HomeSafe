@@ -25,11 +25,10 @@ import homesafe.shared.generated.resources.fin_bank_error_relay_outdated
 import homesafe.shared.generated.resources.fin_bank_error_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_linking_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_notice_linked_named
-import kotlin.time.Clock
 
 /** Made-up institutions for the bank sync previews: a bank, a brokerage, and a lender that wants its sign-in again. */
 internal object BankSyncFixtures {
-    private val now = Clock.System.now().epochSeconds
+    private const val NOW = FinanceFixtures.NOW
 
     private fun account(id: String, name: String, mask: String?, type: BankAccountType, subtype: String, balance: Double, apr: Double? = null, holdings: Int = 0) =
         BankAccount(id, key = name, name = name, mask = mask, type = type, subtype = subtype, balance = balance, currency = "USD", apr = apr, holdings = holdings)
@@ -37,7 +36,7 @@ internal object BankSyncFixtures {
     private val feed = BankFeed(
         configured = true,
         url = "https://docs.google.com/spreadsheets/d/example/edit",
-        writtenAtEpochSeconds = now - 3 * 3_600,
+        writtenAtEpochSeconds = NOW - 3 * 3_600,
         error = null,
         message = null,
         serviceAccount = "relay@example.iam.gserviceaccount.com",
@@ -51,7 +50,7 @@ internal object BankSyncFixtures {
             BankInstitution(
                 id = "chase",
                 name = "Chase",
-                syncedAtEpochSeconds = now - 3 * 3_600,
+                syncedAtEpochSeconds = NOW - 3 * 3_600,
                 error = null,
                 errorMessage = null,
                 needsRelink = false,
@@ -64,7 +63,7 @@ internal object BankSyncFixtures {
             BankInstitution(
                 id = "fidelity",
                 name = "Fidelity",
-                syncedAtEpochSeconds = now - 3 * 3_600,
+                syncedAtEpochSeconds = NOW - 3 * 3_600,
                 error = null,
                 errorMessage = null,
                 needsRelink = false,
@@ -77,16 +76,16 @@ internal object BankSyncFixtures {
             BankInstitution(
                 id = "nelnet",
                 name = "Nelnet",
-                syncedAtEpochSeconds = now - 4 * 86_400,
+                syncedAtEpochSeconds = NOW - 4 * 86_400,
                 error = "ITEM_LOGIN_REQUIRED",
                 errorMessage = null,
                 needsRelink = true,
                 accounts = listOf(account("loan", "Student Loan", "5521", BankAccountType.LOAN, "student", 14_820.00, apr = 3.08)),
             ),
         ),
-        syncedAtEpochSeconds = now - 3 * 3_600,
+        syncedAtEpochSeconds = NOW - 3 * 3_600,
         syncing = false,
-        nextSyncAtEpochSeconds = now + 21 * 3_600,
+        nextSyncAtEpochSeconds = NOW + 21 * 3_600,
         feed = feed,
     )
 
@@ -99,7 +98,7 @@ internal object BankSyncFixtures {
     val filled = linked.copy(
         fill = SheetFill(
             configured = true,
-            checkedAtEpochSeconds = now - 3 * 3_600,
+            checkedAtEpochSeconds = NOW - 3 * 3_600,
             serviceAccount = "relay@example.iam.gserviceaccount.com",
             lines = listOf(
                 line("Roth IRA", listOf("Fidelity Roth IRA 7788"), SheetFillStatus.WRITTEN, "K10", 96_340.12),
@@ -112,7 +111,7 @@ internal object BankSyncFixtures {
             writes = listOf(
                 SheetWrite(
                     id = 12,
-                    atEpochSeconds = now - 3 * 3_600,
+                    atEpochSeconds = NOW - 3 * 3_600,
                     undoneAtEpochSeconds = null,
                     undoneBy = null,
                     changes = listOf(
@@ -122,8 +121,8 @@ internal object BankSyncFixtures {
                 ),
                 SheetWrite(
                     id = 11,
-                    atEpochSeconds = now - 27 * 3_600,
-                    undoneAtEpochSeconds = now - 26 * 3_600,
+                    atEpochSeconds = NOW - 27 * 3_600,
+                    undoneAtEpochSeconds = NOW - 26 * 3_600,
                     undoneBy = "alex",
                     changes = listOf(
                         SheetChange("Credit cards", "Home", "F39", before = 0.0, after = -1_284.17, restored = true),
@@ -209,7 +208,7 @@ private fun FinanceBankSyncLinkingPreview() {
         BankSyncUiState(
             bank = BankSyncFixtures.unshared,
             loading = false,
-            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", Clock.System.now().epochSeconds + 1_800, opened = true),
+            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", FinanceFixtures.NOW + 1_800, opened = true),
             notice = BankNotice(UiText.of(Res.string.fin_bank_notice_linked_named, "Chase".asUiText())),
         ),
     )
@@ -240,7 +239,7 @@ private fun FinanceBankSyncLinkingTailscaleOffPreview() {
         BankSyncUiState(
             bank = BankSyncFixtures.linked,
             loading = false,
-            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", Clock.System.now().epochSeconds + 1_800, opened = true),
+            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", FinanceFixtures.NOW + 1_800, opened = true),
             notice = BankNotice(UiText.of(Res.string.fin_bank_linking_tailscale_off), isError = true),
         ),
     )

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -40,6 +41,12 @@ import androidx.compose.ui.unit.dp
 /** One lap of the outline runner. */
 private const val LOADING_PHASE_PERIOD_MS = 2400
 
+/**
+ * Where the runner holds in a @Preview, where nothing should animate: partway along each
+ * outline, so the drawing shows it. Fixed, so every render of a preview is the same image.
+ */
+private const val STILL_PHASE = 0.35f
+
 /** Corner radius shared with the real camera cards, so the outline sits on the card it stands for. */
 val SkeletonCardCornerRadius: Dp = 20.dp
 
@@ -50,15 +57,21 @@ val SkeletonCardCornerRadius: Dp = 20.dp
  *
  * Read it only inside a draw lambda: the value changes every frame, and a read in composition
  * would recompose the reader at the frame rate for nothing.
+ *
+ * In inspection mode (a @Preview) it holds at [STILL_PHASE] instead of following the frame clock,
+ * which there is the wall clock, so the preview draws the same frame every time.
  */
 @Composable
 fun rememberLoadingPhase(): State<Float> {
-    val phase = remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            withFrameNanos { nanos: Long ->
-                val millis = nanos / 1_000_000L
-                phase.floatValue = (millis % LOADING_PHASE_PERIOD_MS) / LOADING_PHASE_PERIOD_MS.toFloat()
+    val still = LocalInspectionMode.current
+    val phase = remember { mutableFloatStateOf(if (still) STILL_PHASE else 0f) }
+    if (!still) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                withFrameNanos { nanos: Long ->
+                    val millis = nanos / 1_000_000L
+                    phase.floatValue = (millis % LOADING_PHASE_PERIOD_MS) / LOADING_PHASE_PERIOD_MS.toFloat()
+                }
             }
         }
     }
@@ -86,6 +99,7 @@ fun SkeletonCameraCard(
                 phaseOffset = phaseOffset,
                 cornerRadius = SkeletonCardCornerRadius,
                 color = MaterialTheme.colorScheme.primary,
+                still = LocalInspectionMode.current,
             )
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f))
@@ -102,12 +116,15 @@ fun SkeletonCameraCard(
  * green, white-hot at the head, slithering along the outline over faint digital rain inside the
  * card. Its palette is the Matrix's own, so [color] goes unused there. The other platforms draw
  * [outlineRunner] in [color].
+ *
+ * [still] (a @Preview) holds whatever else moves the drawing, besides [phase], at a fixed moment.
  */
 internal expect fun Modifier.loadingRunner(
     phase: () -> Float,
     phaseOffset: Float,
     cornerRadius: Dp,
     color: Color,
+    still: Boolean,
 ): Modifier
 
 /** How much of the perimeter the runner covers, head to the end of its tail. */

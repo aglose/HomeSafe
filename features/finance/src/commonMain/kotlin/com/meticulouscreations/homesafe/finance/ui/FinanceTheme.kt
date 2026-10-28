@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.finance.domain.ChartStyle
 import com.meticulouscreations.homesafe.finance.domain.Signal
+import kotlin.time.Clock
 
 /**
  * The finance app's own palette: Robinhood's dark mode — true black, one neon green for money
@@ -79,6 +80,13 @@ class FinanceTypography(family: FontFamily) {
 }
 
 val LocalFinanceTypography = staticCompositionLocalOf { FinanceTypography(FontFamily.Default) }
+
+/**
+ * The clock the finance screens read "now" from: for "3 h ago" and "in 12 days", whether the
+ * market is open, which vests are behind. The system's in the app; [FinanceStage] gives previews a
+ * fixed moment, so every render of a preview is the same image.
+ */
+val LocalFinanceClock = staticCompositionLocalOf<Clock> { Clock.System }
 
 /** How every chart is lit, drawn and felt, as chosen on the chart settings page. */
 val LocalChartStyle = staticCompositionLocalOf { ChartStyle.DEFAULT }

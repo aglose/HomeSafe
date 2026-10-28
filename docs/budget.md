@@ -136,7 +136,8 @@ Under **Limits and cards → Alerts** (and in Settings → Notifications) are fo
 - On Android they arrive on a **Budget** notification channel of their own, at an ordinary
   importance, worded on the phone from the amounts in the push. Turning that channel off in the
   phone's settings silences them on that phone. A tap opens Finance on the Budget tab.
-- **iPhones don't get them yet**: the relay has no way to push to one until APNs is set up.
+- An iPhone gets them through APNs (see [notifications.md](notifications.md#iphone)), as the relay's
+  English banner.
 - Spending shows up when the bank passes it on, which can be hours after the purchase, so the
   "over" notification can come after the fact.
 - Every Android phone in the household should have a build with the Budget channel before a

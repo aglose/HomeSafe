@@ -81,7 +81,6 @@ import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
-import kotlin.time.Clock
 
 /** A part of the household's sheet that has a page of its own, opened from a row of the Wallet's "Your money". */
 internal enum class WalletTopic(val title: StringResource) {
@@ -206,7 +205,7 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
         }
 
         WalletTopic.VESTING_TAXES -> {
-            val now = Clock.System.now().epochSeconds
+            val now = LocalFinanceClock.current.now().epochSeconds
             val next = finance.vesting.filter { (it.epochSeconds ?: 0) >= now }.minByOrNull { it.epochSeconds ?: Long.MAX_VALUE }
             val year = finance.taxYears.lastOrNull()
             TopicRowLayout(

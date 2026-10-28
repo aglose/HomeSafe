@@ -42,6 +42,12 @@ enum class HealthAccess {
     /** There is one for this device, and it has to be installed or updated first. */
     MISSING,
 
+    /**
+     * It is there, and it hasn't been asked yet what the app may read: how every view model
+     * starts. Not [OFF], which would offer to connect an app that may well be connected.
+     */
+    CHECKING,
+
     /** It is there, and the app hasn't been allowed to read anything from it. */
     OFF,
 
@@ -108,7 +114,7 @@ class HealthViewModel(
     private val clock: Clock,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HealthUiState(access = accessOf(source.availability(), emptySet())))
+    private val _uiState = MutableStateFlow(HealthUiState(access = accessOf(source.availability(), granted = null)))
     val uiState: StateFlow<HealthUiState> = _uiState.asStateFlow()
 
     private var reading: Job? = null
@@ -237,7 +243,16 @@ class HealthViewModel(
         if (!force && lastReadAt != 0L && at - lastReadAt < FRESH_SECONDS) return
         reading = viewModelScope.launch {
             val availability = source.availability()
-            val granted = if (availability == HealthAvailability.AVAILABLE) attempt { source.granted() }.orEmpty() else emptySet()
+            val granted = if (availability == HealthAvailability.AVAILABLE) {
+                attempt { source.granted() } ?: run {
+                    // The store couldn't say what is allowed. That isn't being told nothing is: what is shown stands,
+                    // still checking on a first look, and is asked again the next time the app comes on screen.
+                    _uiState.update { it.copy(failed = true) }
+                    return@launch
+                }
+            } else {
+                emptySet()
+            }
             val access = accessOf(availability, granted)
             if (access != HealthAccess.ON) {
                 records = emptyMap()
@@ -246,6 +261,10 @@ class HealthViewModel(
                 _uiState.update { HealthUiState(access = access, refused = it.refused && access == HealthAccess.OFF) }
                 return@launch
             }
+            // Shared, then, before any of it is read, which takes a call to the store a run: the card says it is
+            // reading rather than offering to connect. What is shared is set with what was read, so nothing that
+            // goes by it (the runs door) shows ahead of its readings.
+            if (_uiState.value.access != HealthAccess.ON) _uiState.update { it.copy(access = HealthAccess.ON, refused = false) }
             val offsetAt = { seconds: Long -> localUtcOffsetSeconds(seconds.toDouble()) }
             val today = (at + offsetAt(at)).floorDiv(SECONDS_PER_DAY)
             var failed = false
@@ -326,9 +345,11 @@ class HealthViewModel(
         /** How far back runs are read: the weeks the runs page adds up, and as far again to scroll through. */
         const val RUN_DAYS = Runs.WEEKS * 7L * 2
 
-        fun accessOf(availability: HealthAvailability, granted: Set<HealthKind>): HealthAccess = when {
+        /** [granted] is null when the store hasn't been asked yet. */
+        fun accessOf(availability: HealthAvailability, granted: Set<HealthKind>?): HealthAccess = when {
             availability == HealthAvailability.UNSUPPORTED -> HealthAccess.UNSUPPORTED
             availability == HealthAvailability.MISSING -> HealthAccess.MISSING
+            granted == null -> HealthAccess.CHECKING
             granted.isEmpty() -> HealthAccess.OFF
             else -> HealthAccess.ON
         }

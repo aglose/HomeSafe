@@ -167,7 +167,6 @@ import homesafe.shared.generated.resources.fin_sheet_setup_open_cloud
 import homesafe.shared.generated.resources.finance_date_month_day_year
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
-import kotlin.time.Clock
 
 /**
  * The way in to bank sync, on the sheet sync page: the balances the sheet's cells look up can be
@@ -243,7 +242,7 @@ internal fun BankSyncScreen(
     var choosing by rememberSaveable { mutableStateOf(false) }
     var confirmingUnlink by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmingUndo by rememberSaveable { mutableStateOf<Long?>(null) }
-    val now = Clock.System.now().epochSeconds
+    val now = LocalFinanceClock.current.now().epochSeconds
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.testTag("finance_bank_sync")) {
         when {
             bank == null && state.loading -> item(key = "loading") { LoadingCard() }

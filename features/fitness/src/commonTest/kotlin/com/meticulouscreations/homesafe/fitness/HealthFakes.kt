@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.fitness.domain.RoutePoint
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
 import com.meticulouscreations.homesafe.fitness.domain.SleepSession
+import kotlinx.coroutines.CompletableDeferred
 
 /**
  * A health store for tests: the test says what it holds and what the user has allowed, and
@@ -34,6 +35,12 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
     /** Kinds the store can't be read for just now. */
     var failing: Set<HealthKind> = emptySet()
 
+    /** The store can't say what is allowed just now. */
+    var grantsFailing = false
+
+    /** When set, reading runs waits on it: a store slow to add up a run's totals. */
+    var runsHeld: CompletableDeferred<Unit>? = null
+
     /** Every read asked for, in order, by what it was of. */
     val reads = mutableListOf<String>()
 
@@ -46,7 +53,10 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
 
     override fun availability() = available
 
-    override suspend fun granted(): Set<HealthKind> = allowed
+    override suspend fun granted(): Set<HealthKind> {
+        check(!grantsFailing) { "the store is away" }
+        return allowed
+    }
 
     override suspend fun request(): Set<HealthKind> {
         asked++
@@ -67,8 +77,10 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
 
     override suspend fun heartRateVariability(fromEpochSeconds: Long, toEpochSeconds: Long) = read("variability", HealthKind.HEART_RATE_VARIABILITY, variability)
 
-    override suspend fun runs(fromEpochSeconds: Long, toEpochSeconds: Long) =
-        read("runs", HealthKind.EXERCISE, runRecords.filter { it.startEpochSeconds in fromEpochSeconds..toEpochSeconds })
+    override suspend fun runs(fromEpochSeconds: Long, toEpochSeconds: Long): List<RunRecord> {
+        runsHeld?.await()
+        return read("runs", HealthKind.EXERCISE, runRecords.filter { it.startEpochSeconds in fromEpochSeconds..toEpochSeconds })
+    }
 
     /** As the real store does: the heart rate and the distance of a track only where each is allowed. */
     override suspend fun track(run: RunRecord): RunTrack = read("track ${run.id}", HealthKind.EXERCISE, tracks[run.id] ?: RunTrack()).let {
