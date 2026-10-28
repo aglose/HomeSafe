@@ -19,6 +19,7 @@ import com.meticulouscreations.homesafe.fitness.domain.Runs
 import com.meticulouscreations.homesafe.fitness.domain.RunsBoard
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.SleepSession
+import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.ZoneBounds
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import dev.zacsweers.metro.AppScope
@@ -124,6 +125,9 @@ class HealthViewModel(
     private var records: Map<String, RunRecord> = emptyMap()
     private var bounds: ZoneBounds? = null
 
+    /** When each workout logged here began and ended: a session the band called a run inside one was that workout. */
+    private var workouts: List<LongRange> = emptyList()
+
     /** What the store last gave, kind by kind, to fall back on when it can't be reached. */
     private var held = Readings()
 
@@ -138,9 +142,15 @@ class HealthViewModel(
         if (!active || !_uiState.value.supported) return
         if (following == null) {
             following = viewModelScope.launch {
-                repository.heartSettings.collect { settings ->
-                    bounds = HeartZones.bounds(settings.profile)
-                    redrawDetail()
+                launch {
+                    repository.heartSettings.collect { settings ->
+                        bounds = HeartZones.bounds(settings.profile)
+                        redrawDetail()
+                    }
+                }
+                repository.workouts.collect { logged ->
+                    workouts = workoutSpans(logged, clock.now().epochSeconds)
+                    rebuildRuns()
                 }
             }
         }
@@ -207,6 +217,15 @@ class HealthViewModel(
             openTrack = open.copy(track = open.track.copy(route = route))
             redrawDetail()
         }
+    }
+
+    /** The runs page sorted again from what was last read, when the workouts it is held against have changed. */
+    private fun rebuildRuns() {
+        val runs = held.runs ?: return
+        val at = _uiState.value.nowEpochSeconds.takeIf { it > 0 } ?: return
+        val offsetAt = { seconds: Long -> localUtcOffsetSeconds(seconds.toDouble()) }
+        val today = (at + offsetAt(at)).floorDiv(SECONDS_PER_DAY)
+        _uiState.update { it.copy(runs = Runs.board(runs, today, offsetAt, workouts)) }
     }
 
     private fun redrawDetail() {
@@ -303,7 +322,7 @@ class HealthViewModel(
                     nowEpochSeconds = at,
                     utcOffsetSeconds = offsetAt(at),
                     body = BodyBoards.build(at, offsetAt, steps, sleep, resting, variability),
-                    runs = Runs.board(runs.orEmpty(), today, offsetAt),
+                    runs = Runs.board(runs.orEmpty(), today, offsetAt, workouts),
                     refused = false,
                     failed = failed,
                 )
@@ -344,6 +363,15 @@ class HealthViewModel(
 
         /** How far back runs are read: the weeks the runs page adds up, and as far again to scroll through. */
         const val RUN_DAYS = Runs.WEEKS * 7L * 2
+
+        /**
+         * When each dated workout in [logged] ran. One still open is taken to run until now, or for
+         * [Workout.STALE_AFTER_SECONDS] at most if it was walked away from.
+         */
+        fun workoutSpans(logged: List<Workout>, nowEpochSeconds: Long): List<LongRange> = logged.filter { it.startedAtEpochSeconds > 0 }.map {
+            val end = it.finishedAtEpochSeconds ?: minOf(nowEpochSeconds, it.startedAtEpochSeconds + Workout.STALE_AFTER_SECONDS)
+            it.startedAtEpochSeconds..maxOf(end, it.startedAtEpochSeconds)
+        }
 
         /** [granted] is null when the store hasn't been asked yet. */
         fun accessOf(availability: HealthAvailability, granted: Set<HealthKind>?): HealthAccess = when {

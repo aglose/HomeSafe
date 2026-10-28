@@ -81,6 +81,9 @@ object HealthFixtures {
         Outing(24, 6, 30, 3.12, 571, 149),
         Outing(31, 16, 15, 2.50, 602, 144),
         Outing(40, 7, 0, 4.00, 585, 147),
+        // What the band called runs that weren't: a walk at lunch, and forty minutes of lunges.
+        Outing(2, 12, 15, 1.60, 1_110, 104),
+        Outing(4, 18, 30, 0.12, 20_000, 128),
     )
 
     val records: List<RunRecord> = outings.mapIndexed { index, outing ->
@@ -138,7 +141,7 @@ object HealthFixtures {
      * run's page has its track.
      */
     fun connected(lastNightMinutes: Int? = 432, variability: Double? = 49.0, resting: Double? = 53.0, opened: String? = null): HealthUiState {
-        val board = Runs.board(records, today) { 0 }
+        val board = Runs.board(records, today, offsetAt = { 0 })
         return HealthUiState(
             access = HealthAccess.ON,
             granted = HealthKind.entries.toSet(),

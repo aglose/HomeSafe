@@ -54,6 +54,8 @@ import com.meticulouscreations.homesafe.fitness.HealthUiState
 import com.meticulouscreations.homesafe.fitness.domain.FEET_PER_METER
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
 import com.meticulouscreations.homesafe.fitness.domain.METERS_PER_MILE
+import com.meticulouscreations.homesafe.fitness.domain.NotRun
+import com.meticulouscreations.homesafe.fitness.domain.NotRunReason
 import com.meticulouscreations.homesafe.fitness.domain.RouteAccess
 import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunDetail
@@ -85,14 +87,21 @@ import homesafe.shared.generated.resources.fitness_run_name_midday
 import homesafe.shared.generated.resources.fitness_run_name_morning
 import homesafe.shared.generated.resources.fitness_run_name_night
 import homesafe.shared.generated.resources.fitness_run_none
+import homesafe.shared.generated.resources.fitness_run_not_run_walk
+import homesafe.shared.generated.resources.fitness_run_not_run_workout
+import homesafe.shared.generated.resources.fitness_run_not_runs_note
+import homesafe.shared.generated.resources.fitness_run_not_runs_title
 import homesafe.shared.generated.resources.fitness_run_not_shared
 import homesafe.shared.generated.resources.fitness_run_open_run
 import homesafe.shared.generated.resources.fitness_run_pace
 import homesafe.shared.generated.resources.fitness_run_reading
+import homesafe.shared.generated.resources.fitness_run_reason_walk
+import homesafe.shared.generated.resources.fitness_run_reason_workout
 import homesafe.shared.generated.resources.fitness_run_route
 import homesafe.shared.generated.resources.fitness_run_route_ask
 import homesafe.shared.generated.resources.fitness_run_route_described
 import homesafe.shared.generated.resources.fitness_run_row_stats
+import homesafe.shared.generated.resources.fitness_run_row_timed
 import homesafe.shared.generated.resources.fitness_run_source
 import homesafe.shared.generated.resources.fitness_run_split_mile
 import homesafe.shared.generated.resources.fitness_run_splits
@@ -219,6 +228,11 @@ internal fun RunsScreen(health: HealthUiState, padding: PaddingValues, onOpenRun
             CardLabel(stringResource(Res.string.fitness_run_all), Modifier.padding(top = 6.dp))
             board.runs.forEach { run -> RunCard(run, longest = run.id == board.longestId, fastest = run.id == board.fastestId, onOpen = { onOpenRun(run.id) }) }
         }
+        if (board.notRuns.isNotEmpty()) {
+            CardLabel(stringResource(Res.string.fitness_run_not_runs_title), Modifier.padding(top = 6.dp))
+            Text(stringResource(Res.string.fitness_run_not_runs_note), style = type.label, color = colors.textFaint)
+            board.notRuns.forEach { left -> NotRunCard(left, onOpen = { onOpenRun(left.run.id) }) }
+        }
         Text(stringResource(Res.string.fitness_run_source), style = type.label, color = colors.textFaint, modifier = Modifier.padding(top = 6.dp))
         ManageButton(onManage)
     }
@@ -318,6 +332,51 @@ private fun RunCard(run: Run, longest: Boolean, fastest: Boolean, onOpen: () -> 
     }
 }
 
+/** What a session left out as no run was, in a word. */
+private fun reasonName(reason: NotRunReason): StringResource = when (reason) {
+    NotRunReason.WALK -> Res.string.fitness_run_reason_walk
+    NotRunReason.WORKOUT -> Res.string.fitness_run_reason_workout
+}
+
+/** A session the band called a run that wasn't one: dimmer than a run, with what it looks to have been in place of a name. */
+@Composable
+private fun NotRunCard(left: NotRun, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = FitnessTheme.colors
+    val type = FitnessTheme.type
+    val run = left.run
+    val name = stringResource(reasonName(left.reason))
+    val day = FitnessFormat.day(run.epochDay).resolve()
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(FitnessCardShape)
+            .border(1.dp, colors.hairline, FitnessCardShape)
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fitness_run_open_run, name, day), onClick = onOpen)
+            .testTag("fitness_not_run_${run.id}")
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.fitness_history_when, day, FitnessFormat.timeOfDay(run.startEpochSeconds, run.utcOffsetSeconds).resolve()),
+                style = type.label,
+                color = colors.textFaint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // A workout's pace over the few yards it moved means nothing.
+            val line = if (left.reason == NotRunReason.WORKOUT && run.meters > 0) {
+                stringResource(Res.string.fitness_run_row_timed, RunFormat.distance(run.meters).resolve(), RunFormat.clock(run.seconds))
+            } else {
+                runLine(run)
+            }
+            Text(line, style = type.body, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(name, style = type.label, color = colors.textMuted, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textFaint, modifier = Modifier.padding(start = 4.dp).size(20.dp))
+    }
+}
+
 /** What marks a run out: the longest there is, the quickest, or that it was run indoors. Nothing drawn for a run that is none of them. */
 @Composable
 private fun RunBadges(run: Run, longest: Boolean, fastest: Boolean, modifier: Modifier = Modifier) {
@@ -380,6 +439,19 @@ internal fun RunScreen(
                 modifier = Modifier.padding(top = 4.dp),
             )
             RunBadges(run, longest = run.id == board.longestId, fastest = run.id == board.fastestId, Modifier.padding(top = 6.dp))
+            board.notRuns.firstOrNull { it.run.id == run.id }?.let { left ->
+                Text(
+                    stringResource(
+                        when (left.reason) {
+                            NotRunReason.WALK -> Res.string.fitness_run_not_run_walk
+                            NotRunReason.WORKOUT -> Res.string.fitness_run_not_run_workout
+                        },
+                    ),
+                    style = type.body,
+                    color = colors.textMuted,
+                    modifier = Modifier.padding(top = 6.dp).testTag("fitness_run_not_counted"),
+                )
+            }
         }
 
         FitnessCard(Modifier.testTag("fitness_run_stats")) {

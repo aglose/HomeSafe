@@ -53,10 +53,21 @@
     <string name="fitness_run_all">Every run</string>
     <!-- A run in the list: %1$s how far, %2$s its pace, %3$s how long it took -->
     <string name="fitness_run_row_stats">%1$s · %2$s · %3$s</string>
+    <!-- A session with no pace worth showing: %1$s how far, %2$s how long it took -->
+    <string name="fitness_run_row_timed">%1$s · %2$s</string>
     <string name="fitness_run_badge_longest">Longest</string>
     <string name="fitness_run_badge_fastest">Fastest pace</string>
     <!-- For a screen reader, a run to open: %1$s its name, %2$s its day -->
     <string name="fitness_run_open_run">Open %1$s, %2$s</string>
+    <!-- Sessions the band recorded as runs that the app doesn't count: their pace, steps or a workout logged at the time say they were something else -->
+    <string name="fitness_run_not_runs_title">Not counted as runs</string>
+    <string name="fitness_run_not_runs_note">Your band called these runs, but they look like something else, so they aren't in your miles.</string>
+    <!-- What a session left out looks to have been, in a word -->
+    <string name="fitness_run_reason_walk">Walk</string>
+    <string name="fitness_run_reason_workout">Workout</string>
+    <!-- On the page of a session left out, under its name -->
+    <string name="fitness_run_not_run_walk">Not counted as a run: it was walking pace the whole way.</string>
+    <string name="fitness_run_not_run_workout">Not counted as a run: it covered hardly any ground, or happened during a workout.</string>
     <string name="fitness_run_source">Runs are recorded by your band or the Google Health app, and read from Health Connect.</string>
 
     <!-- One run -->
