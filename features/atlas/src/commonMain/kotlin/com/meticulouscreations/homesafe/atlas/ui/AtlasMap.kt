@@ -65,7 +65,10 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.meticulouscreations.homesafe.atlas.AtlasPaths
 import com.meticulouscreations.homesafe.atlas.domain.Move
 import com.meticulouscreations.homesafe.atlas.domain.Track
@@ -387,19 +390,25 @@ fun AtlasMap(
 
     // Ask for the tiles in view whenever the view moves on to others. A glide asks for those where
     // it will land, not for every level it passes through on the way.
-    LaunchedEffect(state, tiles, tilePx, baseMap) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(state, tiles, tilePx, baseMap, lifecycleOwner) {
         val map = baseMap ?: return@LaunchedEffect
-        snapshotFlow {
-            val camera = state.destination ?: state.camera
-            val count = 1 shl camera.level
-            listOf(camera.level, floor(camera.centerX * count * 2).toInt(), floor(camera.centerY * count * 2).toInt(), viewport.width, viewport.height)
-        }.collectLatest {
-            val width = viewport.width.toFloat()
-            val height = viewport.height.toFloat()
-            if (width <= 0f || height <= 0f) return@collectLatest
-            val camera = state.destination ?: state.camera
-            // Asked again while any is missing: one a slow network dropped would stay a hole until the view moved.
-            tiles.requestUntilArrived(camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }, scope, keep = map.keep)
+        // Only while the app is on screen: in the background, retrying tiles nobody sees would only
+        // use the battery and the data. Downloads go in this scope too, so leaving cancels them.
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            val started = this
+            snapshotFlow {
+                val camera = state.destination ?: state.camera
+                val count = 1 shl camera.level
+                listOf(camera.level, floor(camera.centerX * count * 2).toInt(), floor(camera.centerY * count * 2).toInt(), viewport.width, viewport.height)
+            }.collectLatest {
+                val width = viewport.width.toFloat()
+                val height = viewport.height.toFloat()
+                if (width <= 0f || height <= 0f) return@collectLatest
+                val camera = state.destination ?: state.camera
+                // Asked again while any is missing: one a slow network dropped would stay a hole until the view moved.
+                tiles.requestUntilArrived(camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }, started, keep = map.keep)
+            }
         }
     }
 

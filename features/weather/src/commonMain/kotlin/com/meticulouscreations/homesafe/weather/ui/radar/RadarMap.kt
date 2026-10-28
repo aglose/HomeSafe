@@ -35,7 +35,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.meticulouscreations.homesafe.maps.BaseMap
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.data.RadarDecoder
@@ -120,37 +123,43 @@ internal fun RadarMap(
     }
 
     // Ask for what's in view whenever the view moves on to other tiles, or the loop does.
-    LaunchedEffect(state, tiles, timeline, tilePx, wholeLoop, baseMap) {
-        snapshotFlow {
-            val camera = state.camera
-            val count = 1 shl camera.level
-            // Half-tile steps: often enough to stay ahead of a drag, not every pixel of one.
-            listOf(camera.level, floor(camera.centerX * count * 2).toInt(), floor(camera.centerY * count * 2).toInt(), viewport.width, viewport.height, framePosition().roundToInt())
-        }.collectLatest { key ->
-            val camera = state.camera
-            val width = viewport.width.toFloat()
-            val height = viewport.height.toFloat()
-            if (width <= 0f || height <= 0f) return@collectLatest
-            val map = baseMap
-            val base = if (map == null) emptyList() else camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }
-            val frames = timeline?.frames
-            if (frames != null && wholeLoop && frames.isNotEmpty()) {
-                // The loop is only smooth if every frame's tiles can be in memory at once.
-                val perFrame = camera.tiles(width, height, tilePx, radarLevel(camera, frames.first())).size
-                tiles.reserve(base.size + perFrame * frames.size)
-            }
-            if (map != null) tiles.request(base, scope, keep = map.keep)
-            if (frames != null) {
-                val current = key.last()
-                // The frame on screen first, then outward from it in both directions.
-                frames.indices.sortedBy { abs(it - current) }.take(if (wholeLoop) frames.size else 1).forEach { i ->
-                    val frame = frames[i]
-                    val urls = camera.tiles(width, height, tilePx, radarLevel(camera, frame)).map { frame.url(it.z, it.x, it.y) }
-                    tiles.request(urls, scope, keep = false, radar = RadarDecoder.tableFor(timeline.source, frame.forecast))
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(state, tiles, timeline, tilePx, wholeLoop, baseMap, lifecycleOwner) {
+        // Only while the app is on screen: in the background, retrying tiles nobody sees would only
+        // use the battery and the data. Downloads go in this scope too, so leaving cancels them.
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            val started = this
+            snapshotFlow {
+                val camera = state.camera
+                val count = 1 shl camera.level
+                // Half-tile steps: often enough to stay ahead of a drag, not every pixel of one.
+                listOf(camera.level, floor(camera.centerX * count * 2).toInt(), floor(camera.centerY * count * 2).toInt(), viewport.width, viewport.height, framePosition().roundToInt())
+            }.collectLatest { key ->
+                val camera = state.camera
+                val width = viewport.width.toFloat()
+                val height = viewport.height.toFloat()
+                if (width <= 0f || height <= 0f) return@collectLatest
+                val map = baseMap
+                val base = if (map == null) emptyList() else camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }
+                val frames = timeline?.frames
+                if (frames != null && wholeLoop && frames.isNotEmpty()) {
+                    // The loop is only smooth if every frame's tiles can be in memory at once.
+                    val perFrame = camera.tiles(width, height, tilePx, radarLevel(camera, frames.first())).size
+                    tiles.reserve(base.size + perFrame * frames.size)
                 }
+                if (map != null) tiles.request(base, started, keep = map.keep)
+                if (frames != null) {
+                    val current = key.last()
+                    // The frame on screen first, then outward from it in both directions.
+                    frames.indices.sortedBy { abs(it - current) }.take(if (wholeLoop) frames.size else 1).forEach { i ->
+                        val frame = frames[i]
+                        val urls = camera.tiles(width, height, tilePx, radarLevel(camera, frame)).map { frame.url(it.z, it.x, it.y) }
+                        tiles.request(urls, started, keep = false, radar = RadarDecoder.tableFor(timeline.source, frame.forecast))
+                    }
+                }
+                // Then keeps after any of the map's tiles the network dropped, until the view moves on.
+                if (map != null) tiles.requestUntilArrived(base, started, keep = map.keep)
             }
-            // Then keeps after any of the map's tiles the network dropped, until the view moves on.
-            if (map != null) tiles.requestUntilArrived(base, scope, keep = map.keep)
         }
     }
 
