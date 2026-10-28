@@ -332,7 +332,7 @@ object AlertNotificationPoster {
      */
     private fun openIntent(context: Context, notification: AlertNotification): PendingIntent? {
         val launch = context.appLaunchIntent() ?: return null
-        val uri = notification.target?.toUri() ?: notification.door?.toUri()
+        val uri = notification.target?.toUri() ?: notification.door?.toUri() ?: notification.parkingMap?.toUri()
         val intent = uri?.let { Intent(Intent.ACTION_VIEW, it.toUri()).setComponent(launch.component) } ?: launch
         return PendingIntent.getActivity(context, notification.id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }

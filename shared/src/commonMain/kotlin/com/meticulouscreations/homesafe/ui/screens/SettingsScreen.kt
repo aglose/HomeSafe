@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DoorFront
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Public
@@ -72,6 +73,7 @@ import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
+import com.meticulouscreations.homesafe.maps.MapProvider
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -88,6 +90,7 @@ import homesafe.shared.generated.resources.doors_settings_summary
 import homesafe.shared.generated.resources.doors_title
 import homesafe.shared.generated.resources.finance_drawer_settings_title
 import homesafe.shared.generated.resources.fitness_figure_settings_title
+import homesafe.shared.generated.resources.maps_settings_title
 import homesafe.shared.generated.resources.presence_allow_location
 import homesafe.shared.generated.resources.presence_allow_location_always
 import homesafe.shared.generated.resources.presence_allow_location_settings
@@ -233,6 +236,8 @@ fun SettingsTabContent(
         onFinanceDrawerItems = viewModel::setFinanceDrawerItems,
         onFigureStyle = viewModel::setFigureStyle,
         onAppIcon = viewModel::setAppIcon,
+        onMapProvider = viewModel::setMapProvider,
+        onGoogleMapsKey = viewModel::setGoogleMapsKey,
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
@@ -244,13 +249,13 @@ fun SettingsTabContent(
 }
 
 /** The rows of the main Settings page that open out in place rather than onto a page of their own. */
-internal enum class SettingsFold { CAMERAS, ECONOMY, FINANCE_DRAWER, FIGURES, APP_ICON }
+internal enum class SettingsFold { CAMERAS, ECONOMY, FINANCE_DRAWER, FIGURES, MAPS, APP_ICON }
 
 /**
  * The Settings tab's page, from a [SettingsUiState]. Three groups of rows: every app's
  * notifications and away mode, each a page of its own; teaching the server faces and cars; then the cameras'
  * detection switches, how Finance talks about the economy, what its card in the drawer shows, how
- * Fitness draws its exercises and the app's home-screen icon — a few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
+ * Fitness draws its exercises, whose map the maps are drawn on and the app's home-screen icon — a few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
  * is that section in brief (see SettingsSummaries.kt), so most visits end on this page.
  *
  * One fold is open at a time, so the page never grows back into the long list it replaced;
@@ -272,6 +277,8 @@ internal fun SettingsHome(
     onFigureStyle: (FigureStyle) -> Unit,
     onAppIcon: (AppIcon) -> Unit,
     modifier: Modifier = Modifier,
+    onMapProvider: (MapProvider) -> Unit = {},
+    onGoogleMapsKey: (String?) -> Unit = {},
     onOpenDoors: (() -> Unit)? = null,
     initialFold: SettingsFold? = null,
 ) {
@@ -350,6 +357,17 @@ internal fun SettingsHome(
                 onToggle = { openFold = SettingsFold.FIGURES.takeIf { it != openFold } },
             ) {
                 FigureStyleOptions(style = state.figureStyle, onStyle = onFigureStyle)
+            }
+            SettingsRowDivider()
+            SettingsExpandableRow(
+                icon = Icons.Filled.Map,
+                title = stringResource(Res.string.maps_settings_title),
+                summary = stringResource(state.maps.provider.label),
+                expanded = openFold == SettingsFold.MAPS,
+                onToggle = { openFold = SettingsFold.MAPS.takeIf { it != openFold } },
+                modifier = Modifier.testTag("settings_maps"),
+            ) {
+                MapProviderOptions(settings = state.maps, onProvider = onMapProvider, onGoogleKey = onGoogleMapsKey)
             }
             SettingsRowDivider()
             if (state.appIconsSupported) {

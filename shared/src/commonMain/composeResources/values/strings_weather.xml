@@ -298,5 +298,5 @@
     <string name="weather_settings_still_sky">Hold the sky still</string>
     <string name="weather_settings_still_sky_body">One picture of the weather in place of moving cloud, rain and snow</string>
     <string name="weather_settings_about">Where this comes from</string>
-    <string name="weather_settings_about_body">Forecasts, air quality and city search: Open-Meteo.com (CC BY 4.0), from national weather services' models and GeoNames. Warnings and place names in the US: the National Weather Service. Radar over the US: NOAA's MRMS and HRRR, served by the Iowa Environmental Mesonet; elsewhere, RainViewer. Map: © OpenStreetMap contributors. The sun, the moon and the sky itself are worked out on this device.</string>
+    <string name="weather_settings_about_body">Forecasts, air quality and city search: Open-Meteo.com (CC BY 4.0), from national weather services' models and GeoNames. Warnings and place names in the US: the National Weather Service. Radar over the US: NOAA's MRMS and HRRR, served by the Iowa Environmental Mesonet; elsewhere, RainViewer. Map: © OpenStreetMap contributors, or Google Maps when picked in Settings. The sun, the moon and the sky itself are worked out on this device.</string>
 </resources>

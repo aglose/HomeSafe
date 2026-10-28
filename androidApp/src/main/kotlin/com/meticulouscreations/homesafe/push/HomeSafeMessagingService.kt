@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlert
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import kotlinx.coroutines.runBlocking
 import java.util.Date
@@ -154,6 +155,7 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
             body = body,
             silent = message.data["silent"] == "1",
             parking = true,
+            parkingMap = ParkingDeepLink.from { message.data[it] },
         )
         AlertNotificationPoster.ensureChannels(this)
         runBlocking { AlertNotificationPoster.show(applicationContext, notification) }

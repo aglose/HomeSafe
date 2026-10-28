@@ -424,6 +424,9 @@ private fun AnswerCard(state: AssistantUiState, actions: AssistantPanelActions, 
                 if (!state.hasKey) {
                     Text(stringResource(Res.string.assistant_key_hint), style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
                 }
+                // Why the key can't be saved yet (signed out, waiting to be let in), or why saving or
+                // forgetting it failed: shown with a key in hand too, or a failed Forget would say nothing.
+                state.keyNote?.let { Text(it.resolve(), style = MaterialTheme.typography.bodySmall, color = colors.error) }
                 state.turns.forEachIndexed { index, turn ->
                     Turn(turn, writing = state.working && index == state.turns.lastIndex, activity = state.activity?.let { stringResource(it) }, time = time)
                 }

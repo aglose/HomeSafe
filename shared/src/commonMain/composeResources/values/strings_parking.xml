@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The map a parking notification opens: where a household car is parked and when it must move
+  (docs/parking.md). The notification's own words are Android resources, in androidMain's
+  strings.xml. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="parking_map_title_due">Move %1$s by %2$s</string>
+    <string name="parking_map_title_now">Move %1$s now</string>
+    <string name="parking_map_when_other_day">%1$s %2$s</string>
+    <string name="parking_map_place_north">North side of %1$s</string>
+    <string name="parking_map_place_east">East side of %1$s</string>
+    <string name="parking_map_place_south">South side of %1$s</string>
+    <string name="parking_map_place_west">West side of %1$s</string>
+    <plurals name="parking_map_limit_hours">
+        <item quantity="one">%1$d-hour parking</item>
+        <item quantity="other">%1$d-hour parking</item>
+    </plurals>
+    <plurals name="parking_map_limit_minutes">
+        <item quantity="one">%1$d-minute parking</item>
+        <item quantity="other">%1$d-minute parking</item>
+    </plurals>
+    <string name="parking_map_no_parking">No parking %1$s–%2$s</string>
+    <string name="parking_map_directions">Directions</string>
+    <string name="parking_map_description">Map of where %1$s is parked</string>
+</resources>

@@ -31,6 +31,7 @@ import com.meticulouscreations.homesafe.domain.model.UptimeCheck
 import com.meticulouscreations.homesafe.domain.model.UptimeDevice
 import com.meticulouscreations.homesafe.domain.model.UptimeOutage
 import com.meticulouscreations.homesafe.domain.model.UptimeState
+import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
@@ -407,6 +408,49 @@ class PushRelayApi(private val httpClient: HttpClient) {
         }
         if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayDoors>().toDomain()
+    }
+
+    /**
+     * The household key vault as the signed-in user's phones see it (docs/key-vault.md): every
+     * value sealed on a phone. A user action's session cookie. Null from a relay too old to have one.
+     */
+    suspend fun getVault(serverUrl: String): Result<RelayVault?> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/vault"))
+        if (response.status == HttpStatusCode.NotFound) return@runCatching null
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayVault>()
+    }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Sets the signed-in user's key pair, its private half sealed with their login, in place of
+     * [replaces] (the public key this phone last saw, or null for none). Fails with
+     * [VaultConflictException] when another phone has set one since.
+     */
+    suspend fun putVaultMember(serverUrl: String, public: String, sealedPrivate: String, replaces: String?): Result<RelayVault> =
+        vaultCall { httpClient.put(relayUrl(serverUrl, "/vault/me")) { json(RelayVaultMemberBody(public, sealedPrivate, replaces)) } }
+
+    /** Gives [member] the household key, sealed to their public key. */
+    suspend fun putVaultGrant(serverUrl: String, member: String, grant: RelayVaultGrantBody): Result<RelayVault> =
+        vaultCall { httpClient.put(relayUrl(serverUrl, "/vault/grants/$member")) { json(grant) } }
+
+    /** Starts a new household key, granted to the signed-in user; only while nobody holds the old one. */
+    suspend fun startVaultHousehold(serverUrl: String, grant: RelayVaultGrantBody): Result<RelayVault> =
+        vaultCall { httpClient.post(relayUrl(serverUrl, "/vault/household")) { json(grant) } }
+
+    /** Sets sealed secrets by name, or removes the ones given as null. */
+    suspend fun putVaultSecrets(serverUrl: String, household: String, secrets: Map<String, String?>): Result<RelayVault> =
+        vaultCall { httpClient.put(relayUrl(serverUrl, "/vault/secrets")) { json(RelayVaultSecretsBody(household, secrets)) } }
+
+    private suspend fun vaultCall(call: suspend () -> HttpResponse): Result<RelayVault> = runCatching {
+        val response = call()
+        if (response.status == HttpStatusCode.Conflict) throw VaultConflictException(relayRefused(response.status))
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayVault>()
+    }.onFailure { if (it is CancellationException) throw it }
+
+    private inline fun <reified T> HttpRequestBuilder.json(body: T) {
+        contentType(ContentType.Application.Json)
+        setBody(body)
     }
 
     /** The relay answered [status] instead of success; the message keeps the status for callers that look for a 401 or 403. */
@@ -839,3 +883,36 @@ private fun JsonElement.stairs(): PlanStairs? = when (this) {
 
 @Serializable
 internal data class RelayDoorEvent(val door: String, val open: Boolean, val at: Double, val pushed: String? = null)
+
+/** The vault as `GET /vault` answers it (relay.py, "vault"). Every string but the names is sealed or a public key. */
+@Serializable
+data class RelayVault(
+    val user: String = "",
+    val household: String? = null,
+    val me: RelayVaultMe? = null,
+    val members: List<RelayVaultMember> = emptyList(),
+    val secrets: Map<String, String> = emptyMap(),
+)
+
+/** The signed-in user's own key pair, its private half sealed with their login, and their copy of the household key if they have one. */
+@Serializable
+data class RelayVaultMe(val public: String, val private: String, val grant: RelayVaultGrant? = null)
+
+@Serializable
+data class RelayVaultMember(val user: String, val public: String, val granted: Boolean = false)
+
+@Serializable
+data class RelayVaultGrant(val ephemeral: String, val box: String)
+
+@Serializable
+internal data class RelayVaultMemberBody(val public: String, val private: String, val replaces: String?)
+
+/** The household key sealed to [recipient], the public key it is for: the relay refuses it once that key pair has been replaced. */
+@Serializable
+data class RelayVaultGrantBody(val household: String, val recipient: String, val ephemeral: String, val box: String)
+
+/** The vault changed under this phone (another phone set a key pair, or someone's was replaced): look again and redo. */
+class VaultConflictException(refused: FrigateResponseException) : LocalizedException(refused.text, refused.message, refused)
+
+@Serializable
+internal data class RelayVaultSecretsBody(val household: String, val secrets: Map<String, String?>)

@@ -53,7 +53,8 @@ Tiles, in three layers (`weather/ui/radar/RadarMap.kt`):
   turns them over: lightness inverted, hue turned back, most of the colour taken out and the rest
   cooled, so there is a dark quiet map for the radar to sit on. Tiles are kept in the database
   (500 of them at most) so the map isn't downloaded again each time, which is also what
-  OpenStreetMap asks of an app.
+  OpenStreetMap asks of an app. With Google Maps picked in Settings the tiles are Google's
+  instead, held in memory only (see [maps.md](maps.md)).
 - **The radar** arrives as pictures in each provider's own colours, and one loop mixes three
   providers' tables. `RadarDecoder` looks every pixel up in the table it came from
   (`RadarPalettes`, the published tables) and rewrites the tile as *strength*: a grey for how hard
@@ -79,7 +80,7 @@ services are asked directly, by a client of their own that never carries Frigate
 | Warnings and the name of where you are, in the US | [National Weather Service](https://www.weather.gov/documentation/services-web-api) | Public domain. Elsewhere there are no warnings and the place is "My location" |
 | Radar over the contiguous US | NOAA MRMS (the past two hours, every ten minutes) and the HRRR model's forecast of it (the next two, every fifteen), as tiles from the [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu) | Public domain |
 | Radar elsewhere | [RainViewer](https://www.rainviewer.com/api.html) | The past two hours, coarser (zoom 7), no forecast |
-| Map | © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors | The app identifies itself and caches tiles, per the tile usage policy |
+| Map | © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, or Google Maps when picked in Settings ([maps.md](maps.md)) | The app identifies itself and caches OpenStreetMap's tiles, per the tile usage policy |
 | Sun, moon, twilight, golden hour | Worked out on the device | `Astronomy`: Meeus's low-precision formulas |
 
 A forecast is kept for ten minutes in memory and its last copy stays in the database, so the app

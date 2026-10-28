@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vault_signed_out">Inicia sesión en el servidor para usar las claves del hogar: se guardan allí, selladas con tu inicio de sesión.</string>
+    <string name="vault_opening">Abriendo las claves del hogar…</string>
+    <string name="vault_unsupported">El relé del servidor es demasiado antiguo para guardar claves. Actualízalo para usar una.</string>
+    <string name="vault_waiting">Alguien que ya usa las claves del hogar tiene que abrir la app una vez para dejar entrar a tu inicio de sesión.</string>
+    <string name="vault_failed">No se pudieron abrir las claves del hogar: %1$s</string>
+    <string name="vault_not_open">Las claves del hogar no están abiertas.</string>
+    <string name="vault_key_saved">Hay una clave guardada para el hogar, sellada con el inicio de sesión de cada persona.</string>
+</resources>

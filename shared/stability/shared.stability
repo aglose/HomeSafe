@@ -52,7 +52,7 @@ private fun com.meticulouscreations.homesafe.ui.assistant.AnswerCard(state: com.
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.assistant.AssistantFrame(origin: androidx.compose.ui.geometry.Rect, morph: kotlin.Function0<kotlin.Float>, time: kotlin.Function0<kotlin.Float>, working: kotlin.Boolean, panel: @[Composable] androidx.compose.runtime.internal.ComposableFunction3<androidx.compose.ui.Modifier, androidx.compose.ui.Modifier, kotlin.Function0<kotlin.Float>, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.assistant.AssistantFrame(origin: androidx.compose.ui.geometry.Rect, morph: kotlin.Function0<kotlin.Float>, time: kotlin.Function0<kotlin.Float>, working: kotlin.Boolean, panel: @[Composable] androidx.compose.runtime.internal.ComposableFunction3<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -187,7 +187,7 @@ private fun com.meticulouscreations.homesafe.ui.assistant.Turn(turn: com.meticul
   params:
     - turn: STABLE (marked @Stable or @Immutable)
     - writing: STABLE (primitive type)
-    - activity: STABLE (String is immutable)
+    - activity: STABLE (class with no mutable properties)
     - time: STABLE (function type)
 
 @Composable
@@ -1567,6 +1567,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.GlancePreviewFrame(conte
     - content: STABLE (composable function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.GoogleKeyRows(settings: com.meticulouscreations.homesafe.maps.MapSettings, onGoogleKey: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - settings: STABLE (marked @Stable or @Immutable)
+    - onGoogleKey: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Header(cameraName: kotlin.String, refreshing: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -1872,6 +1880,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.LoadingRow(text: kotlin.
   restartable: true
   params:
     - text: STABLE (String is immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.MapProviderOptions(settings: com.meticulouscreations.homesafe.maps.MapSettings, onProvider: kotlin.Function1<com.meticulouscreations.homesafe.maps.MapProvider, kotlin.Unit>, onGoogleKey: kotlin.Function1<kotlin.String?, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - settings: STABLE (marked @Stable or @Immutable)
+    - onProvider: STABLE (function type)
+    - onGoogleKey: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, clipsOpen: kotlin.Boolean, player: com.meticulouscreations.homesafe.ui.screens.ClipPlayerState, isDownloading: kotlin.Boolean, downloadSucceeded: kotlin.Boolean, downloadErrorMessage: com.meticulouscreations.homesafe.text.UiText?, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onToggleClips: kotlin.Function0<kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onClipEnd: kotlin.Function0<kotlin.Unit>, onClipPauseToggle: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onNotAPerson: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, markingNotAPersonId: kotlin.String?): kotlin.Unit
@@ -2473,7 +2491,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsGroup(modifier:
     - content: STABLE (composable function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenNotifications: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, onFinanceDrawerItems: kotlin.Function1<kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>, kotlin.Unit>, onFigureStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, onAppIcon: kotlin.Function1<com.meticulouscreations.homesafe.appicon.AppIcon, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onOpenDoors: kotlin.Function0<kotlin.Unit>?, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenNotifications: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, onFinanceDrawerItems: kotlin.Function1<kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>, kotlin.Unit>, onFigureStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, onAppIcon: kotlin.Function1<com.meticulouscreations.homesafe.appicon.AppIcon, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onMapProvider: kotlin.Function1<com.meticulouscreations.homesafe.maps.MapProvider, kotlin.Unit>, onGoogleMapsKey: kotlin.Function1<kotlin.String?, kotlin.Unit>, onOpenDoors: kotlin.Function0<kotlin.Unit>?, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2491,6 +2509,8 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com
     - onFigureStyle: STABLE (function type)
     - onAppIcon: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onMapProvider: STABLE (function type)
+    - onGoogleMapsKey: STABLE (function type)
     - onOpenDoors: STABLE (function type)
     - initialFold: STABLE (class with no mutable properties)
 

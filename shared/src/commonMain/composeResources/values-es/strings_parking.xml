@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="parking_map_title_due">Mueve %1$s antes de %2$s</string>
+    <string name="parking_map_title_now">Mueve %1$s ahora</string>
+    <string name="parking_map_when_other_day">%1$s %2$s</string>
+    <string name="parking_map_place_north">Lado norte de %1$s</string>
+    <string name="parking_map_place_east">Lado este de %1$s</string>
+    <string name="parking_map_place_south">Lado sur de %1$s</string>
+    <string name="parking_map_place_west">Lado oeste de %1$s</string>
+    <plurals name="parking_map_limit_hours">
+        <item quantity="one">Aparcamiento de %1$d hora</item>
+        <item quantity="other">Aparcamiento de %1$d horas</item>
+    </plurals>
+    <plurals name="parking_map_limit_minutes">
+        <item quantity="one">Aparcamiento de %1$d minuto</item>
+        <item quantity="other">Aparcamiento de %1$d minutos</item>
+    </plurals>
+    <string name="parking_map_no_parking">Prohibido aparcar %1$s–%2$s</string>
+    <string name="parking_map_directions">Cómo llegar</string>
+    <string name="parking_map_description">Mapa de dónde está aparcado %1$s</string>
+</resources>

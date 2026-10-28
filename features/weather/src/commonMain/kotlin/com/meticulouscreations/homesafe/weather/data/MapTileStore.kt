@@ -5,6 +5,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.meticulouscreations.homesafe.data.MapTileEntity
 import com.meticulouscreations.homesafe.data.WeatherDao
 import com.meticulouscreations.homesafe.finance.data.suspendRunCatching
+import com.meticulouscreations.homesafe.maps.BaseMap
+import com.meticulouscreations.homesafe.maps.BaseMaps
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -47,6 +49,12 @@ interface MapTileSource {
      */
     fun request(urls: Collection<String>, scope: CoroutineScope, keep: Boolean, radar: RadarColorTable? = null)
 
+    /** Which map the base tiles come from (see [BaseMaps]): null while that is still being worked out, when there is nothing to draw yet. */
+    val baseMap: StateFlow<BaseMap?> get() = OpenStreetMapOnly
+
+    /** The copyright line Google's [map] must show over a view (see [BaseMaps.copyright]); null when there is none to give. */
+    suspend fun copyright(map: BaseMap.Google, zoom: Int, north: Double, south: Double, east: Double, west: Double): String? = null
+
     /** Says how many tiles the map on screen draws from (the base map and every frame of the loop), so that many are held at once. */
     fun reserve(count: Int) = Unit
 
@@ -54,11 +62,14 @@ interface MapTileSource {
     fun trim() = Unit
 }
 
+private val OpenStreetMapOnly: StateFlow<BaseMap?> = MutableStateFlow(BaseMap.OpenStreetMap)
+
 /**
  * Map and radar tiles, fetched once and kept: decoded pictures in memory for drawing, and the
  * base map's bytes in the database so the map isn't downloaded again every time it is opened
- * (OpenStreetMap asks that of anything using its tiles). Radar tiles are not kept on disk: each
- * is one moment's picture, and stale within the hour.
+ * (OpenStreetMap asks that of anything using its tiles; Google's, which may not be kept, are
+ * only held in memory: see [BaseMap.keep]). Radar tiles are not kept on disk: each is one
+ * moment's picture, and stale within the hour.
  *
  * Used from the main thread only: [image] is read while drawing, and [request] is called from
  * the screen's own scope. Only the download and the decode leave it.
@@ -69,6 +80,7 @@ class MapTileStore(
     @Named(WEATHER_CLIENT) private val httpClient: HttpClient,
     private val dao: WeatherDao,
     private val clock: Clock,
+    private val baseMaps: BaseMaps,
 ) : MapTileSource {
     private val images = LinkedHashMap<String, ImageBitmap>()
     private val loading = HashMap<String, Job>()
@@ -78,6 +90,11 @@ class MapTileStore(
     private val _arrivals = MutableStateFlow(0)
 
     override val arrivals: StateFlow<Int> = _arrivals.asStateFlow()
+
+    override val baseMap: StateFlow<BaseMap?> get() = baseMaps.current
+
+    override suspend fun copyright(map: BaseMap.Google, zoom: Int, north: Double, south: Double, east: Double, west: Double): String? =
+        baseMaps.copyright(map, zoom, north, south, east, west)
 
     override fun image(url: String): ImageBitmap? {
         val image = images.remove(url) ?: return null
@@ -135,6 +152,8 @@ class MapTileStore(
         val bytes = try {
             downloads.withPermit {
                 val response = httpClient.get(url)
+                // Google refusing its tiles (a revoked key, no quota left) moves the maps off it.
+                if (!response.status.isSuccess()) baseMaps.tilesRefused(url, response.status.value)
                 if (response.status.isSuccess()) response.bodyAsBytes() else null
             }
         } catch (e: CancellationException) {

@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -17,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -34,6 +36,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.maps.BaseMap
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.data.RadarDecoder
 import com.meticulouscreations.homesafe.weather.domain.MapCamera
@@ -53,9 +56,6 @@ import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-/** OpenStreetMap's standard tiles: free to use with attribution and a cache, which [MapTileSource] keeps. */
-fun baseTileUrl(z: Int, x: Int, y: Int): String = "https://tile.openstreetmap.org/$z/$x/$y.png"
-
 /** How wide a 256-pixel tile is drawn, in dp: a little under its nominal size, which keeps the map's lettering from going soft on a dense screen. */
 const val MAP_TILE_DP = 256f * 0.62f
 
@@ -63,12 +63,16 @@ const val MAP_TILE_DP = 256f * 0.62f
 @Stable
 internal class RadarMapState(camera: MapCamera) {
     var camera by mutableStateOf(camera)
+
+    /** Google's copyright line for the view, while the base map is Google's (see [followCopyright]). */
+    var copyright by mutableStateOf<String?>(null)
 }
 
 /**
  * A map with the radar on it, drawn from tiles in three layers:
  *
- * 1. the base map, turned to night by [MAP_NIGHT_SHADER];
+ * 1. the base map (OpenStreetMap's or Google's, as [MapTileSource.baseMap] says), turned to
+ *    night by [MAP_NIGHT_SHADER];
  * 2. the radar loop's frame at [position] (a whole number is a frame; anything between is the
  *    one fading into the next), coloured and smoothed by [RADAR_SHADER];
  * 3. a mark where the place is, pulsing.
@@ -76,7 +80,8 @@ internal class RadarMapState(camera: MapCamera) {
  * Drag to pan, pinch or double-tap to zoom, unless [interactive] is off (the small map on the
  * Today tab). Tiles are asked of [tiles] as the view moves; with [wholeLoop] every frame is
  * fetched for the area in view, nearest first, so the loop plays without stalling, and without
- * it only the frame on show is.
+ * it only the frame on show is. A Google map wears its credit in a corner unless [showCredit] is
+ * off, for a screen that credits it in a line of its own (from [RadarMapState.copyright]).
  *
  * [position] is read while drawing, so playing the loop redraws and never recomposes.
  */
@@ -93,6 +98,8 @@ internal fun RadarMap(
     wholeLoop: Boolean = true,
     strength: Float = 0.92f,
     animated: Boolean = true,
+    showCredit: Boolean = true,
+    maxZoom: Double = MapCamera.MAX_ZOOM,
 ) {
     val density = LocalDensity.current.density
     val tilePx = MAP_TILE_DP * density
@@ -100,13 +107,18 @@ internal fun RadarMap(
     val night = remember(shaded) { if (shaded) weatherShaderOrNull(MAP_NIGHT_SHADER) else null }
     val radar = remember(shaded) { if (shaded) weatherShaderOrNull(RADAR_SHADER) else null }
     val arrivals by tiles.arrivals.collectAsStateWithLifecycle()
+    val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
     val clock = rememberWeatherShaderClock(running = animated)
     val scope = rememberCoroutineScope()
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val framePosition by rememberUpdatedState(position)
 
+    LaunchedEffect(state, tiles, baseMap, viewport, tilePx) {
+        tiles.followCopyright(baseMap, { state.camera }, viewport, tilePx) { state.copyright = it }
+    }
+
     // Ask for what's in view whenever the view moves on to other tiles, or the loop does.
-    LaunchedEffect(state, tiles, timeline, tilePx, wholeLoop) {
+    LaunchedEffect(state, tiles, timeline, tilePx, wholeLoop, baseMap) {
         snapshotFlow {
             val camera = state.camera
             val count = 1 shl camera.level
@@ -117,14 +129,15 @@ internal fun RadarMap(
             val width = viewport.width.toFloat()
             val height = viewport.height.toFloat()
             if (width <= 0f || height <= 0f) return@collectLatest
-            val base = camera.tiles(width, height, tilePx, camera.level).map { baseTileUrl(it.z, it.x, it.y) }
+            val map = baseMap
+            val base = if (map == null) emptyList() else camera.tiles(width, height, tilePx, camera.level).map { map.url(it.z, it.x, it.y) }
             val frames = timeline?.frames
             if (frames != null && wholeLoop && frames.isNotEmpty()) {
                 // The loop is only smooth if every frame's tiles can be in memory at once.
                 val perFrame = camera.tiles(width, height, tilePx, radarLevel(camera, frames.first())).size
                 tiles.reserve(base.size + perFrame * frames.size)
             }
-            tiles.request(base, scope, keep = true)
+            if (map != null) tiles.request(base, scope, keep = map.keep)
             if (frames == null) return@collectLatest
             val current = key.last()
             // The frame on screen first, then outward from it in both directions.
@@ -145,14 +158,14 @@ internal fun RadarMap(
                     Modifier
                 } else {
                     Modifier
-                        .pointerInput(state, tilePx) {
+                        .pointerInput(state, tilePx, maxZoom) {
                             detectTransformGestures { centroid, pan, zoom, _ ->
                                 state.camera = state.camera
-                                    .zoomed(zoom, centroid.x - size.width / 2f, centroid.y - size.height / 2f, tilePx)
+                                    .zoomed(zoom, centroid.x - size.width / 2f, centroid.y - size.height / 2f, tilePx, maxZoom = maxZoom)
                                     .panned(pan.x, pan.y, tilePx)
                             }
                         }
-                        .pointerInput(state, tilePx) {
+                        .pointerInput(state, tilePx, maxZoom) {
                             detectTapGestures(
                                 onDoubleTap = { at ->
                                     val start = state.camera
@@ -160,7 +173,7 @@ internal fun RadarMap(
                                     val focusY = at.y - size.height / 2f
                                     scope.launch {
                                         animate(0f, 1f, animationSpec = tween(260)) { t, _ ->
-                                            state.camera = start.zoomed(2f.pow(t), focusX, focusY, tilePx)
+                                            state.camera = start.zoomed(2f.pow(t), focusX, focusY, tilePx, maxZoom = maxZoom)
                                         }
                                     }
                                 },
@@ -182,8 +195,9 @@ internal fun RadarMap(
             // The map's own colour for open land, so a tile still on its way is a gap in the detail, not a hole.
             drawRect(Color(0xFFF2EFE9))
             val camera = state.camera
+            val map = baseMap ?: return@Canvas
             camera.tiles(size.width, size.height, tilePx, camera.level).forEach { tile ->
-                drawTile(tiles, tile, ::baseTileUrl, ancestors = 4, quality = FilterQuality.Medium)
+                drawTile(tiles, tile, map::url, ancestors = 4, quality = FilterQuality.Medium)
             }
         }
 
@@ -244,8 +258,38 @@ internal fun RadarMap(
                 drawCircle(Color(0xFF2F8BFF), radius = 4.dp.toPx(), center = center)
             }
         }
+
+        if (showCredit && baseMap is BaseMap.Google) {
+            MapCreditLabel(mapCredit(baseMap, state.copyright), Modifier.align(Alignment.BottomStart).padding(6.dp))
+        }
     }
 }
+
+/**
+ * A street map of one spot with a mark on it, for a screen outside the weather app (where a car
+ * is parked): the radar map with no radar, on whichever base map is picked in Settings, close
+ * enough in to read the street, and as close again as a finger takes it.
+ */
+@Composable
+fun SpotMap(latitude: Double, longitude: Double, tiles: MapTileSource, modifier: Modifier = Modifier, zoom: Double = SPOT_ZOOM, animated: Boolean = true) {
+    val state = remember(latitude, longitude) { RadarMapState(MapCamera.at(latitude, longitude, zoom)) }
+    RadarMap(
+        state = state,
+        timeline = null,
+        position = { 0f },
+        tiles = tiles,
+        modifier = modifier,
+        markerLatitude = latitude,
+        markerLongitude = longitude,
+        wholeLoop = false,
+        animated = animated,
+        maxZoom = SPOT_MAX_ZOOM,
+    )
+}
+
+/** A street and the houses either side: close enough to tell one side of it from the other. */
+const val SPOT_ZOOM = 17.0
+private const val SPOT_MAX_ZOOM = 19.0
 
 /** The tile level a frame is drawn from: one out from the map's (radar is coarser than a map and wants fewer, larger tiles), and no finer than the frame has. */
 internal fun radarLevel(camera: MapCamera, frame: RadarFrame): Int = (camera.level - 1).coerceIn(2, frame.maxZoom)

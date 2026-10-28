@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Whose map the app's maps are drawn on: the choice in Settings, Google's key and how it is
+  getting on, and the credit a Google map shows. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="maps_settings_title">Maps</string>
+    <string name="maps_settings_caption">Which map the weather radar, the Atlas and a parked car's street are drawn on.</string>
+    <string name="maps_provider_osm">OpenStreetMap</string>
+    <string name="maps_provider_osm_blurb">Free, made by volunteers. Kept on this phone once seen, so a map you've opened draws again without the internet.</string>
+    <string name="maps_provider_google">Google Maps</string>
+    <string name="maps_provider_google_blurb">Google's map, with its labels and colours. Needs a Google Maps Platform API key of your own, which Google bills past the free tiles each month.</string>
+    <string name="maps_google_key_label">Google Maps API key</string>
+    <string name="maps_google_key_save">Save key</string>
+    <string name="maps_google_key_forget">Forget key</string>
+    <string name="maps_google_key_help">Make a key in the Google Cloud console with the Map Tiles API enabled, and restrict it to that API. It is kept on the server, sealed with each person's login, and shared with the household.</string>
+    <string name="maps_google_status_no_key">No key yet: the maps stay on OpenStreetMap until there is one.</string>
+    <string name="maps_google_status_unchecked">Google will be asked for its map when one is next opened.</string>
+    <string name="maps_google_status_checking">Asking Google for its map…</string>
+    <string name="maps_google_status_working">Google Maps is drawing the maps.</string>
+    <string name="maps_google_status_failed">%1$s The maps use OpenStreetMap meanwhile.</string>
+    <string name="maps_google_rejected">Google refused the key (HTTP %1$d). Check that the Map Tiles API is enabled for it.</string>
+    <string name="maps_google_unreachable">Couldn't reach Google.</string>
+    <string name="maps_credit_google">Google Maps · %1$s</string>
+</resources>

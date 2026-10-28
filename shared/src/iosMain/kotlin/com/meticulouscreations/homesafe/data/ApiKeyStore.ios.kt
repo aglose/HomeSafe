@@ -1,4 +1,4 @@
-package com.meticulouscreations.homesafe.assistant
+package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.PlatformContext
 import kotlinx.cinterop.BetaInteropApi
@@ -39,21 +39,20 @@ import platform.Security.kSecMatchLimitOne
 import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
 
-private const val SERVICE_NAME = "com.meticulouscreations.homesafe.assistant"
-private const val ACCOUNT_NAME = "anthropic_api_key"
-private const val DEFAULTS_PREFIX = "assistant_"
-
 /**
  * The API key in the Keychain, readable once the phone has been unlocked after starting and never
  * copied to another device; the preferences in the standard user defaults. The key asks for no
- * Face ID: the assistant is opened far too often for that.
+ * Face ID: a key is used far too often for that (every message, every map tile).
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-private object KeychainAssistantStore : AssistantStore {
+private class KeychainApiKeyStore(name: ApiKeyStoreName) : ApiKeyStore {
+    private val serviceName = "com.meticulouscreations.homesafe.${name.name}"
+    private val accountName = name.account
+    private val defaultsPrefix = "${name.name}_"
 
     override fun apiKey(): String? {
-        val service = CFBridgingRetain(SERVICE_NAME)
-        val account = CFBridgingRetain(ACCOUNT_NAME)
+        val service = CFBridgingRetain(serviceName)
+        val account = CFBridgingRetain(accountName)
         try {
             val query = buildQuery(
                 kSecClass to kSecClassGenericPassword,
@@ -76,8 +75,8 @@ private object KeychainAssistantStore : AssistantStore {
     override fun saveApiKey(key: String?) {
         deleteKey()
         if (key == null) return
-        val service = CFBridgingRetain(SERVICE_NAME)
-        val account = CFBridgingRetain(ACCOUNT_NAME)
+        val service = CFBridgingRetain(serviceName)
+        val account = CFBridgingRetain(accountName)
         val data = CFBridgingRetain(key.toNSData())
         try {
             SecItemAdd(
@@ -97,16 +96,16 @@ private object KeychainAssistantStore : AssistantStore {
         }
     }
 
-    override fun string(name: String): String? = NSUserDefaults.standardUserDefaults.stringForKey(DEFAULTS_PREFIX + name)
+    override fun string(name: String): String? = NSUserDefaults.standardUserDefaults.stringForKey(defaultsPrefix + name)
 
     override fun saveString(name: String, value: String?) {
         val defaults = NSUserDefaults.standardUserDefaults
-        if (value == null) defaults.removeObjectForKey(DEFAULTS_PREFIX + name) else defaults.setObject(value, DEFAULTS_PREFIX + name)
+        if (value == null) defaults.removeObjectForKey(defaultsPrefix + name) else defaults.setObject(value, defaultsPrefix + name)
     }
 
     private fun deleteKey() {
-        val service = CFBridgingRetain(SERVICE_NAME)
-        val account = CFBridgingRetain(ACCOUNT_NAME)
+        val service = CFBridgingRetain(serviceName)
+        val account = CFBridgingRetain(accountName)
         try {
             SecItemDelete(
                 buildQuery(
@@ -134,4 +133,4 @@ private object KeychainAssistantStore : AssistantStore {
     private fun NSData.toKotlinString(): String? = NSString.create(this, NSUTF8StringEncoding) as String?
 }
 
-actual fun createAssistantStore(platformContext: PlatformContext): AssistantStore = KeychainAssistantStore
+actual fun createApiKeyStore(platformContext: PlatformContext, name: ApiKeyStoreName): ApiKeyStore = KeychainApiKeyStore(name)

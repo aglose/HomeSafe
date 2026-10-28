@@ -49,8 +49,12 @@ import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
+import com.meticulouscreations.homesafe.maps.BaseMaps
+import com.meticulouscreations.homesafe.maps.MapProvider
+import com.meticulouscreations.homesafe.maps.MapSettings
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
+import com.meticulouscreations.homesafe.vault.HouseholdKeys
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePreferences
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import dev.zacsweers.metro.AppScope
@@ -126,6 +130,8 @@ data class SettingsUiState(
     val appIconsSupported: Boolean = false,
     /** The home-screen icon in use. */
     val appIcon: AppIcon = AppIcon.DEFAULT,
+    /** Whose map the app's maps are drawn on, and how Google's is getting on when it's picked. */
+    val maps: MapSettings = MapSettings(),
     /** Which of the weather app's notifications are wanted. They share this phone's one notification permission with the cameras'. */
     val weatherNotices: WeatherNoticeSettings = WeatherNoticeSettings(),
     /** The budget's alert switches, read from the relay each time the Notifications page is opened. */
@@ -237,6 +243,8 @@ class SettingsViewModel(
     private val budgetAlertPreferences: BudgetAlertPreferences,
     private val notificationMute: NotificationMute,
     private val appIcons: AppIconSwitcher,
+    private val baseMaps: BaseMaps,
+    private val householdKeys: HouseholdKeys,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
@@ -305,6 +313,7 @@ class SettingsViewModel(
             notificationsMuted = apps.muted,
         )
     }
+        .combine(baseMaps.settings) { state, maps -> state.copy(maps = maps) }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
@@ -319,6 +328,10 @@ class SettingsViewModel(
     init {
         refreshNotificationPermission()
         refreshClassifiers()
+        // Someone may have saved a key, or let this login in, since the vault last looked.
+        householdKeys.refresh()
+        // So the Maps row can say whether Google's key works without a map being opened first.
+        viewModelScope.launch { baseMaps.check() }
     }
 
     /** Re-reads the OS permission — called on every resume, since the user may have changed it in system settings. */
@@ -398,6 +411,16 @@ class SettingsViewModel(
 
     fun setFigureStyle(style: FigureStyle) {
         viewModelScope.launch { fitnessPreferences.setFigureStyle(style) }
+    }
+
+    fun setMapProvider(provider: MapProvider) {
+        baseMaps.setProvider(provider)
+        viewModelScope.launch { baseMaps.check() }
+    }
+
+    /** Seals the Google Maps key into the household's vault ([key] blank or null forgets it) and asks Google about it at once. */
+    fun setGoogleMapsKey(key: String?) {
+        viewModelScope.launch { if (baseMaps.setGoogleKey(key).isSuccess) baseMaps.check() }
     }
 
     /**

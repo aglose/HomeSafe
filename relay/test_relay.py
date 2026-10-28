@@ -7924,6 +7924,8 @@ class ParkingTest(_FakeFrigate):
                          self.tick(self.WED_7PM + 3600))
         data = self.pushes[-1][3]
         self.assertEqual(("1", "parking-andrews_tesla", "north", "Elm St"), (data["parking"], data["notif_id"], data["parking_side"], data["parking_street"]))
+        spot = self.where["VIN_A"]
+        self.assertEqual((f"{spot['lat']:.5f}", f"{spot['lng']:.5f}", "270"), (data["parking_lat"], data["parking_lng"], data["parking_heading"]), "where, for the phone's map")
         self.assertEqual([], self.tick(self.WED_7PM + 3700), "once")
         self.where["VIN_A"] = {"asleep": True}
         self.assertEqual([("due", "Move Andrew's Tesla by 8:00 AM", "North side of Elm St · Street sweeping", ["pixel"])],
@@ -8031,6 +8033,99 @@ class ParkingTest(_FakeFrigate):
         relay._tesla_answers["andrews_tesla"] = (self.WED_7PM + 20 * 3600 - 900, relay._tesla_answers["andrews_tesla"][1])
         self.assertEqual([], relay.parking_tick(self.WED_7PM + 20 * 3600, push=self.push), "a day ahead now, but asked first, and it had gone")
         self.assertEqual([], self.pushes)
+
+
+class VaultTest(_ScratchDb):
+    """The household key vault: only sealed blobs go in, and only a member holding the household key can grant it or change the secrets."""
+
+    NAMES = _ScratchDb.NAMES + ("require_frigate_session",)
+
+    def setUp(self):
+        super().setUp()
+        self.user = "andrew"
+        relay.require_frigate_session = lambda request: self.user
+
+    def as_(self, user):
+        self.user = user
+        return self
+
+    def member(self, public="pubA", private="sealedA", replaces=None):
+        return relay.put_vault_member(types.SimpleNamespace(public=public, private=private, replaces=replaces), None)
+
+    def start(self, household="h1", recipient="pubA"):
+        return relay.start_vault_household(types.SimpleNamespace(household=household, recipient=recipient, ephemeral="e", box="dek-for-me"), None)
+
+    def test_a_first_member_starts_the_household_and_stores_sealed_secrets(self):
+        view = self.member()
+        self.assertEqual({"public": "pubA", "private": "sealedA", "grant": None}, view["me"])
+        view = self.start()
+        self.assertEqual({"ephemeral": "e", "box": "dek-for-me"}, view["me"]["grant"])
+        view = relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"google_maps": "box1", "anthropic": "box2"}), None)
+        self.assertEqual({"google_maps": "box1", "anthropic": "box2"}, view["secrets"])
+        view = relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"anthropic": None}), None)
+        self.assertEqual({"google_maps": "box1"}, view["secrets"], "null removes")
+
+    def test_a_new_member_waits_until_someone_inside_grants_them(self):
+        self.member()
+        self.start()
+        relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"google_maps": "box1"}), None)
+        view = self.as_("sarah").member("pubS", "sealedS")
+        self.assertIsNone(view["me"]["grant"])
+        self.assertEqual([("andrew", True), ("sarah", False)], [(m["user"], m["granted"]) for m in view["members"]])
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"google_maps": "mine"}), None)
+        self.assertEqual(409, refused.exception.status_code, "no household key, no writing")
+        with self.assertRaises(relay.HTTPException):
+            self.start("h2", recipient="pubS")
+        self.as_("andrew")
+        relay.put_vault_grant("sarah", types.SimpleNamespace(household="h1", recipient="pubS", ephemeral="e2", box="dek-for-sarah"), None)
+        view = self.as_("sarah") and relay.get_vault(None)
+        self.assertEqual({"ephemeral": "e2", "box": "dek-for-sarah"}, view["me"]["grant"])
+        self.assertEqual({"google_maps": "box1"}, view["secrets"])
+
+    def test_a_new_password_drops_the_grant_and_an_empty_household_starts_again(self):
+        self.member()
+        self.start()
+        relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"anthropic": "box"}), None)
+        view = self.member("pubA2", "sealedA2", replaces="pubA")
+        self.assertIsNone(view["me"]["grant"], "the grant was sealed to the old key pair")
+        with self.assertRaises(relay.HTTPException):
+            relay.put_vault_grant("andrew", types.SimpleNamespace(household="h1", recipient="pubA2", ephemeral="e", box="b"), None)
+        view = self.start("h2", recipient="pubA2")
+        self.assertEqual("h2", view["household"])
+        self.assertEqual({}, view["secrets"], "the old secrets can't be opened any more")
+
+    def test_nothing_but_sealed_blobs_is_accepted(self):
+        with self.assertRaises(relay.HTTPException):
+            self.member(public="")
+        self.member()
+        self.start()
+        with self.assertRaises(relay.HTTPException):
+            relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"Bad Name": "box"}), None)
+        with self.assertRaises(relay.HTTPException):
+            relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"anthropic": "x" * (relay.VAULT_BLOB_MAX + 1)}), None)
+
+    def test_a_second_phone_signing_in_at_once_looks_again_instead_of_replacing_the_first(self):
+        self.member()
+        self.start()
+        relay.put_vault_secrets(types.SimpleNamespace(household="h1", secrets={"anthropic": "box"}), None)
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.member("pubA-other-phone", "sealedA-other", replaces=None)
+        self.assertEqual(409, refused.exception.status_code, "it saw no key pair, but the first phone has set one since")
+        view = relay.get_vault(None)
+        self.assertEqual("pubA", view["me"]["public"])
+        self.assertIsNotNone(view["me"]["grant"], "the first phone keeps its grant")
+        self.assertEqual({"anthropic": "box"}, view["secrets"])
+
+    def test_a_grant_sealed_to_a_key_pair_since_replaced_is_refused(self):
+        self.member()
+        self.start()
+        self.as_("sarah").member("pubS", "sealedS")
+        self.as_("sarah").member("pubS2", "sealedS2", replaces="pubS")
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.as_("andrew") and relay.put_vault_grant("sarah", types.SimpleNamespace(household="h1", recipient="pubS", ephemeral="e", box="b"), None)
+        self.assertEqual(409, refused.exception.status_code)
+        self.assertFalse(relay.get_vault(None)["members"][1]["granted"])
 
 
 class ApnsTest(unittest.TestCase):

@@ -4,6 +4,9 @@ import com.meticulouscreations.homesafe.Platform
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.appicon.AppIconSwitcher
 import com.meticulouscreations.homesafe.appicon.createAppIconSwitcher
+import com.meticulouscreations.homesafe.data.ASSISTANT_KEYS
+import com.meticulouscreations.homesafe.data.ApiKeyStore
+import com.meticulouscreations.homesafe.data.ApiKeyStoreName
 import com.meticulouscreations.homesafe.data.AtlasDao
 import com.meticulouscreations.homesafe.data.BackgroundDoors
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
@@ -15,12 +18,14 @@ import com.meticulouscreations.homesafe.data.DeviceRegistrar
 import com.meticulouscreations.homesafe.data.FinanceSavedDao
 import com.meticulouscreations.homesafe.data.FitnessDao
 import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
+import com.meticulouscreations.homesafe.data.MAPS_KEYS
 import com.meticulouscreations.homesafe.data.MomentsDao
 import com.meticulouscreations.homesafe.data.PushedAlertActions
 import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.WeatherDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
+import com.meticulouscreations.homesafe.data.createApiKeyStore
 import com.meticulouscreations.homesafe.data.createAtlasDao
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createCameraDao
@@ -77,6 +82,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
+import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
@@ -253,6 +259,18 @@ interface AppGraph :
     @SingleIn(AppScope::class)
     @Provides
     fun provideAppIconSwitcher(platformContext: PlatformContext): AppIconSwitcher = createAppIconSwitcher(platformContext)
+
+    /** The assistant's Anthropic key, sealed by the platform. */
+    @Named(ASSISTANT_KEYS)
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideAssistantKeys(platformContext: PlatformContext): ApiKeyStore = createApiKeyStore(platformContext, ApiKeyStoreName.ASSISTANT)
+
+    /** The maps' Google key and provider choice, sealed by the platform (see `BaseMaps`). */
+    @Named(MAPS_KEYS)
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideMapsKeys(platformContext: PlatformContext): ApiKeyStore = createApiKeyStore(platformContext, ApiKeyStoreName.MAPS)
 
     @SingleIn(AppScope::class)
     @Provides

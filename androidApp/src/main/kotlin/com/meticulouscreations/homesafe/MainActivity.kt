@@ -4,13 +4,13 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.activity.SystemBarStyle
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.meticulouscreations.homesafe.appicon.AppShortcuts
 import com.meticulouscreations.homesafe.di.AppGraph
@@ -22,6 +22,8 @@ import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
@@ -112,6 +114,8 @@ class MainActivity : FragmentActivity() {
         WeatherDeepLink.fromUri(intent.dataString)?.let { return WeatherDeepLinks.open(it) }
         // A door notification's tap: the Doors page (`homesafe://doors`).
         DoorDeepLink.fromUri(intent.dataString)?.let { return DoorDeepLinks.open(it) }
+        // A parking notification's tap: the map of where the car is (`homesafe://parking`).
+        ParkingDeepLink.fromUri(intent.dataString)?.let { return ParkingDeepLinks.open(it) }
         // A budget notification's tap asks for the finance app instead (`homesafe://finance`).
         intent.dataString?.let(FinanceDeepLink::fromUri)?.let { return FinanceDeepLinks.open(it) }
         val link = intent.dataString?.let(MomentDeepLink::fromUri)

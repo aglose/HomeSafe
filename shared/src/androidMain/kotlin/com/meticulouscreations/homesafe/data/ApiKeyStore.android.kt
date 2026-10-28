@@ -1,4 +1,4 @@
-package com.meticulouscreations.homesafe.assistant
+package com.meticulouscreations.homesafe.data
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
@@ -15,10 +15,11 @@ import javax.crypto.spec.GCMParameterSpec
  * The preferences in a small file of their own, and the API key in it only as ciphertext: sealed
  * with an AES key that lives in the Android Keystore and never leaves it, so the file alone
  * (a backup, say) doesn't give the key away. Unlike the saved sign-in, using it asks for no
- * fingerprint: the assistant is opened far too often for that.
+ * fingerprint: a key is used far too often for that (every message, every map tile).
  */
-private class KeystoreAssistantStore(context: Context) : AssistantStore {
-    private val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+private class KeystoreApiKeyStore(context: Context, name: ApiKeyStoreName) : ApiKeyStore {
+    private val preferences = context.getSharedPreferences(name.name, Context.MODE_PRIVATE)
+    private val keyAlias = "homesafe_${name.name}_key"
 
     override fun apiKey(): String? = runCatching {
         val sealed = preferences.getString(PREF_KEY, null) ?: return null
@@ -48,10 +49,10 @@ private class KeystoreAssistantStore(context: Context) : AssistantStore {
 
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE).apply {
             init(
-                KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                KeyGenParameterSpec.Builder(keyAlias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                     .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .setKeySize(256)
@@ -61,14 +62,12 @@ private class KeystoreAssistantStore(context: Context) : AssistantStore {
     }
 }
 
-private const val PREFS_NAME = "assistant"
 private const val PREF_KEY = "api_key"
 private const val PREF_IV = "api_key_iv"
 private const val PREF_PREFIX = "pref_"
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-private const val KEY_ALIAS = "homesafe_assistant_key"
 private const val TRANSFORMATION = "AES/GCM/NoPadding"
 private const val GCM_TAG_BITS = 128
 
-actual fun createAssistantStore(platformContext: PlatformContext): AssistantStore =
-    KeystoreAssistantStore(platformContext.context.applicationContext)
+actual fun createApiKeyStore(platformContext: PlatformContext, name: ApiKeyStoreName): ApiKeyStore =
+    KeystoreApiKeyStore(platformContext.context.applicationContext, name)

@@ -7,7 +7,7 @@
 <resources>
     <string name="assistant_input_placeholder">Ask about this screen</string>
     <string name="assistant_key_placeholder">Paste your Anthropic API key</string>
-    <string name="assistant_key_hint">Claude needs your own API key, from console.anthropic.com. It stays on this phone.</string>
+    <string name="assistant_key_hint">Claude needs your own API key, from console.anthropic.com. It is kept on your server, sealed with each person's login, and shared with the household.</string>
     <string name="assistant_key_save">Save the key</string>
     <string name="assistant_send">Send</string>
     <string name="assistant_stop">Stop</string>

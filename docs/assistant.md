@@ -69,11 +69,13 @@ history rather than edited out.
 
 ## The key
 
-The assistant uses the person's own Anthropic API key, pasted into the box the first time it is
-opened. It never leaves the phone except to Anthropic. On Android it is sealed with an AES key held
-in the Android Keystore; on iOS it is in the Keychain (this device only). "Forget the API key" in
-the model menu removes it. Calls go through their own HTTP client, so Frigate's session cookies
-never ride along.
+The assistant uses the household's own Anthropic API key, pasted into the box the first time it is
+opened. It is kept in the household's key vault on the server, sealed so that only a phone signed in
+with a household member's Frigate login can open it ([key-vault.md](key-vault.md)), and held in
+memory only while the app runs: it is never written to the phone. "Forget the API key" in the model
+menu removes it for everyone. A key an older build kept on the phone is moved into the vault, and
+off the phone, the first time the vault opens. Calls go through their own HTTP client, so Frigate's
+session cookies never ride along.
 
 ## The look
 

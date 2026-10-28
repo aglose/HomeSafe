@@ -5,7 +5,11 @@ import com.meticulouscreations.homesafe.atlas.domain.AtlasRepository
 import com.meticulouscreations.homesafe.atlas.domain.AtlasSyncState
 import com.meticulouscreations.homesafe.atlas.domain.Track
 import com.meticulouscreations.homesafe.atlas.ui.AtlasFixtures
+import com.meticulouscreations.homesafe.data.InMemoryApiKeyStore
 import com.meticulouscreations.homesafe.data.InMemoryWeatherDao
+import com.meticulouscreations.homesafe.maps.BaseMaps
+import com.meticulouscreations.homesafe.maps.GoogleMapTiles
+import com.meticulouscreations.homesafe.vault.InMemoryHouseholdKeys
 import com.meticulouscreations.homesafe.weather.data.FakeWeb
 import com.meticulouscreations.homesafe.weather.data.MapTileStore
 import com.meticulouscreations.homesafe.weather.data.MutableClock
@@ -64,7 +68,7 @@ class AtlasViewModelTest {
     // The analysis on the test's own dispatcher: on Dispatchers.Default it could finish after a
     // test had reset Main, and its way back crashed the next test.
     private fun viewModel(repository: AtlasRepository) =
-        AtlasViewModel(repository, clock, MapTileStore(FakeWeb().client, InMemoryWeatherDao(), clock), analysisDispatcher = dispatcher)
+        AtlasViewModel(repository, clock, MapTileStore(FakeWeb().client, InMemoryWeatherDao(), clock, BaseMaps(InMemoryApiKeyStore(), InMemoryHouseholdKeys(), GoogleMapTiles(FakeWeb().client), clock)), analysisDispatcher = dispatcher)
 
     /** The history is worked out on another thread: steps the main one until [done], for a few seconds at most. */
     private suspend fun TestScope.until(done: () -> Boolean) {

@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.weather
 
 import com.meticulouscreations.homesafe.data.DeviceIdentityStore
+import com.meticulouscreations.homesafe.data.InMemoryApiKeyStore
 import com.meticulouscreations.homesafe.data.InMemorySettingsDao
 import com.meticulouscreations.homesafe.data.InMemoryWeatherDao
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
@@ -8,9 +9,12 @@ import com.meticulouscreations.homesafe.domain.platform.GeoPoint
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.maps.BaseMaps
+import com.meticulouscreations.homesafe.maps.GoogleMapTiles
 import com.meticulouscreations.homesafe.text.KeyedTextLoader
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.vault.InMemoryHouseholdKeys
 import com.meticulouscreations.homesafe.weather.WeatherData.at
 import com.meticulouscreations.homesafe.weather.data.FakeAlertNotifier
 import com.meticulouscreations.homesafe.weather.data.FakeGeofence
@@ -93,7 +97,7 @@ class WeatherViewModelTest {
         val clock = MutableClock(now)
         val locator = WeatherLocator(fence, identity, repository, preferences)
         val alertCheck = WeatherAlertCheck(repository, locator, places, preferences, WeatherNoticeLedgerImpl(dao), notifier, scheduler, KeyedTextLoader, clock, scope.backgroundScope, NotificationMute.Never)
-        val tiles = MapTileStore(FakeWeb().client, dao, clock)
+        val tiles = MapTileStore(FakeWeb().client, dao, clock, BaseMaps(InMemoryApiKeyStore(), InMemoryHouseholdKeys(), GoogleMapTiles(FakeWeb().client), clock))
 
         private val made = mutableListOf<WeatherViewModel>()
 
