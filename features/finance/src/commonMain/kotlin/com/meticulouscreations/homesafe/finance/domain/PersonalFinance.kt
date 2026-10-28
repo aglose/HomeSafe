@@ -191,6 +191,10 @@ data class PersonalFinance(
     val health: SheetHealth = SheetHealth.Unchecked,
     /** When each balance was last updated, by its [SheetCell.id]; from the relay, which keeps the times the sheet doesn't. */
     val balanceAges: Map<String, BalanceAge> = emptyMap(),
+    /** The [SheetCell.id]s of the balances the relay's bank sync writes into the sheet every morning. */
+    val bankFilled: Set<String> = emptySet(),
+    /** Accounts the sheet has at zero: off the Wallet, but a balance can be typed into them. */
+    val zeroAccounts: List<Account> = emptyList(),
 ) {
     /** Everything owed but the mortgage (see [Debt.isMortgage]): what net worth subtracts. */
     val consumerDebt: Double get() = debts.filterNot { it.isMortgage }.sumOf { it.balance }

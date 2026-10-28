@@ -700,6 +700,42 @@ class PersonalFinanceParserTest {
     }
 
     @Test
+    fun anOverdrawnAccountIsTypedSignedAsItIsNotTurnedIntoADebt() {
+        val read = PersonalFinanceParser.parse("Budget", 0L, listOf(sheetGrid("Home", homeCells + ("J10" to -120.0), homeMerges)))
+        val cell = assertNotNull(read.accounts.single { it.name == "Checking Account".asUiText() && it.owner == Owner.Person("Alex") }.cell)
+        assertEquals(false, cell.negative)
+        assertEquals(200.0, cell.toSheet(200.0), "money back in the account is written as money, not owed")
+    }
+
+    @Test
+    fun anAccountAtZeroIsOffTheWalletButCanStillBeTypedInto() {
+        val read = PersonalFinanceParser.parse("Budget", 0L, listOf(sheetGrid("Home", homeCells + ("K8" to 0.0), homeMerges)))
+        assertTrue(read.accounts.none { it.name == "Family 529".asUiText() && it.owner == Owner.Person("Sam") })
+        val zero = read.zeroAccounts.single()
+        assertEquals(SheetCell("Home", "Family 529", row = 7, right = 2, value = 0.0), zero.cell)
+        assertTrue(typedBalances(read).any { it.cell == zero.cell })
+    }
+
+    @Test
+    fun aNumberInAMergedCellIsTypedIntoTheMergesFirstCell() {
+        val read = PersonalFinanceParser.parse("Budget", 0L, listOf(sheetGrid("Home", homeCells, homeMerges + "K41:L41")))
+        assertEquals(2, read.home?.valueCell?.right, "K41, where the sheet keeps the value, not L41")
+    }
+
+    @Test
+    fun whatTheBankSyncWritesIsTheRelaysLinesNowNotWhoLastUpdatedIt() {
+        val roth = finance.accounts.first { it.name == "Roth IRA".asUiText() }.cell!!
+        val cash = finance.accounts.single { it.name == UiText.of(Res.string.fin_data_account_cash) }.cell!!
+        // The Roth IRA was last written by the bank, but its line has been paused since; the cash line was only just added.
+        val read = finance.copy(balanceAges = mapOf(roth.id to BalanceAge(10, null, fromBank = true)), bankFilled = setOf(cash.id))
+        val typed = typedBalances(read).associateBy { it.cell.id }
+        assertEquals(false, typed.getValue(roth.id).fromBank)
+        assertEquals(true, typed.getValue(cash.id).fromBank)
+        val workbook = RelayWorkbook(filled = listOf(RelayFilledBalance("Home", "Cash", 2)))
+        assertEquals(setOf(cash.id), workbook.bankFilled())
+    }
+
+    @Test
     fun aBalanceIsKnownByTheIdTheRelayKeepsItsAgeUnder() {
         assertEquals("Home|student loans (apr 3.08%, ~5 years left)|2", SheetCell.idOf(" Home", "Student  Loans (APR 3.08%, ~5 years LEFT) ", 2))
         val ages = RelayWorkbook(updates = listOf(RelayBalanceAge("Home", "Roth  IRA", 2, 99.0, "sam", "app"), RelayBalanceAge("Home", "Cash", 2, 50.0, null, "bank"))).balanceAges()

@@ -203,6 +203,7 @@ class FinanceRepositoryImpl(
             charts = charts,
             health = finance.health.copy(charts = charts.map { ChartHealth(it.title, it.tab, it.issue) }),
             balanceAges = workbook.balanceAges(),
+            bankFilled = workbook.bankFilled(),
         )
     }
 

@@ -581,7 +581,7 @@ private fun typedAge(cell: SheetCell?, finance: PersonalFinance, now: Long): Pai
     if (cell == null || cell.calculated) return null
     val age = finance.balanceAges[cell.id]
     val freshness = BalanceFreshness.of(age, now)
-    val color = if (freshness.wantsUpdate && age?.fromBank != true) freshness.color() else FinanceTheme.colors.textSecondary
+    val color = if (freshness.wantsUpdate && cell.id !in finance.bankFilled) freshness.color() else FinanceTheme.colors.textSecondary
     return balanceAgeText(age, now).resolve() to color
 }
 

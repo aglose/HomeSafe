@@ -3339,17 +3339,18 @@ class FinanceSheetRoute(unittest.TestCase):
 
     def setUp(self):
         self.response = types.SimpleNamespace(headers={})
-        self.saved = (relay.FINANCE_SHEET_ID, relay.require_finance_user, relay.finance_google, dict(relay._finance_cache), relay.typed_updates)
+        self.saved = (relay.FINANCE_SHEET_ID, relay.require_finance_user, relay.finance_google, dict(relay._finance_cache), relay.typed_updates, relay.typed_filled)
         relay.FINANCE_SHEET_ID = "sheet123"
         relay.require_finance_user = lambda request: "alex"
         relay.typed_updates = lambda: []
+        relay.typed_filled = lambda: []
         relay._finance_cache.update(at=0.0, body=None, failed_at=0.0, failure=None)
         self.sheets = _FakeSheets((200, self.META), (200, self.VALUES))
         relay.finance_google = lambda: self.sheets
         relay._finance_google["account"] = "relay@example.iam.gserviceaccount.com"
 
     def tearDown(self):
-        relay.FINANCE_SHEET_ID, relay.require_finance_user, relay.finance_google, cache, relay.typed_updates = self.saved
+        relay.FINANCE_SHEET_ID, relay.require_finance_user, relay.finance_google, cache, relay.typed_updates, relay.typed_filled = self.saved
         relay._finance_cache.clear()
         relay._finance_cache.update(cache)
 
@@ -4607,8 +4608,8 @@ class TypedBalanceTest(_SheetFillSheet):
         relay._finance_cache.update(self.saved_cache)
         super().tearDown()
 
-    def typed(self, label="Roth IRA", right=3, value=52000.0, expected=50000.0, row=None, tab="Home", now=None):
-        body = types.SimpleNamespace(tab=tab, label=label, right=right, row=row, expected=expected, value=value)
+    def typed(self, label="Roth IRA", right=3, value=52000.0, expected=50000.0, tab="Home", now=None):
+        body = types.SimpleNamespace(tab=tab, label=label, right=right, expected=expected, value=value)
         return relay.typed_write(body, "alex", self.T if now is None else now)
 
     def refused(self, **kwargs):
@@ -4638,8 +4639,10 @@ class TypedBalanceTest(_SheetFillSheet):
         self.assertEqual({"Home|roth ira|3": (50000.0, self.T + 60, "alex", "app")}, self.ages())
 
     def test_a_cell_changed_since_the_app_read_it_is_not_written_over(self):
+        relay._finance_cache["at"] = self.T
         self.assertEqual((409, "changed"), self.refused(expected=49000.0))
         self.assertEqual({}, self.ages())
+        self.assertEqual(0.0, relay._finance_cache["at"], "the app's read straight after gets what the cell holds now")
 
     def test_a_formula_words_or_a_missing_label_are_refused(self):
         self.assertEqual((409, "not_a_number"), self.refused(label="Total", right=2, expected=None))
@@ -4652,12 +4655,10 @@ class TypedBalanceTest(_SheetFillSheet):
         self.typed(right=2, expected=None, value=1000.0)
         self.assertEqual(1000.0, self.sheet.cell("C2"))
 
-    def test_a_label_there_twice_is_the_one_on_the_row_the_app_read(self):
+    def test_a_label_there_twice_is_not_guessed_between(self):
+        # An undo finds the cell by its label again, and couldn't tell the two apart either.
         self.sheet.tabs["Home"].append(["Roth IRA", "", "", 7])
         self.assertEqual((409, "ambiguous"), self.refused())
-        self.assertEqual((409, "ambiguous"), self.refused(row=4))
-        self.typed(row=7, expected=7.0, value=8.0)
-        self.assertEqual((50000, 8.0), (self.sheet.cell("D2"), self.sheet.cell("D8")))
 
     def test_a_balance_the_bank_fills_in_is_not_typed_over_unless_its_line_is_paused(self):
         self.lines(self.LINES)
@@ -4683,16 +4684,29 @@ class TypedBalanceTest(_SheetFillSheet):
         self.assertEqual({}, self.ages(), "a balance never typed before has no age again")
         self.assertEqual(set(), relay.fill_paused())
 
-    def test_the_sheet_fill_dates_the_balances_it_writes_or_finds_already_there(self):
+    def test_the_sheet_fill_dates_the_balances_it_writes_or_finds_already_there_by_their_banks_last_read(self):
         self.lines(self.LINES)
-        relay.fill_sheet(self.T)
-        relay.fill_sheet(self.T + 86400)
+        relay.fill_sheet(self.T + 60)
         ages = self.ages()
-        self.assertEqual((51000.0, self.T + 86400, None, "bank"), ages["Home|roth ira|3"])
+        self.assertEqual((51000.0, self.T, None, "bank"), ages["Home|roth ira|3"], "as old as Plaid's read, not the write")
         self.assertEqual({"Home|roth ira|3", "Home|checking|2", "Home|credit cards|1"}, set(ages))
+        # A morning Plaid couldn't read the bank: the kept balance is still there, but no younger.
+        relay.fill_sheet(self.T + 86400)
+        self.assertEqual(self.T, self.ages()["Home|roth ira|3"][1])
+
+    def test_the_balances_the_sheet_fill_keeps_are_those_of_its_lines_not_paused(self):
+        self.lines(self.LINES)
+        relay.state_set(relay.FILL_PAUSED_KEY, ["Home|checking|2"])
+        self.assertEqual([("Home", "Roth IRA", 3), ("Home", "credit cards", 1)], [(f["tab"], f["label"], f["right"]) for f in relay.typed_filled()])
+
+    def test_a_typed_write_is_undone_on_a_relay_without_plaid(self):
+        relay.PLAID_CLIENT_ID = ""
+        self.typed()
+        relay.post_bank_fill_undo(self.writes()[0]["id"], object(), self.response)
+        self.assertEqual(50000, self.sheet.cell("D2"))
 
     def test_the_route_answers_with_the_cell_written(self):
-        body = types.SimpleNamespace(tab="Home", label="roth  ira", right=3, row=None, expected=50000, value=50500.5)
+        body = types.SimpleNamespace(tab="Home", label="roth  ira", right=3, expected=50000, value=50500.5)
         answer = relay.put_finance_sheet_value(body, object(), self.response)
         self.assertEqual(("D2", 50500.5, "alex"), (answer["cell"], answer["value"], answer["by"]))
         self.assertEqual("private, no-store", self.response.headers["Cache-Control"])
@@ -4702,7 +4716,7 @@ class TypedBalanceTest(_SheetFillSheet):
         relay._bank_lock.acquire()
         try:
             with self.assertRaises(relay.HTTPException) as caught:
-                relay.put_finance_sheet_value(types.SimpleNamespace(tab="Home", label="Roth IRA", right=3, row=None, expected=50000, value=1), object(), self.response)
+                relay.put_finance_sheet_value(types.SimpleNamespace(tab="Home", label="Roth IRA", right=3, expected=50000, value=1), object(), self.response)
             self.assertEqual("busy", caught.exception.detail["error"])
         finally:
             relay._bank_lock.release()

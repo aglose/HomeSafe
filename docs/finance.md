@@ -142,19 +142,22 @@ What is listed: every account (in "Brokerage Accounts" and "Checking/Savings", a
 line), every debt and the home's value, wherever the cell holds a number typed in. A cell with a
 formula (a total, or a lookup in the bank feed) is left out, since it follows other cells; so is
 the home's equity, which the sheet works out. Balances the bank sync writes into the sheet each
-morning are listed apart, under **Filled in by the bank**, with when they were last synced.
+morning (the sheet fill's lines that aren't paused) are listed apart, under **Filled in by the
+bank**, dated by when Plaid last read their accounts. An account at zero stays on the list, so
+it can be typed into when it holds money again.
 
 How it's kept safe (`PUT /finance/sheet/value`, relay.py, "typed balances"):
 
 - The cell is found by its row's label and how many columns right of it the number sits, the
-  way the sheet fill finds it, never by an address. A label in the tab twice is the one on the row
-  the app read.
+  way the sheet fill finds it, never by an address. A label in its tab twice isn't guessed
+  between: rename one of the two to type into it.
 - The cell must still hold the number the app showed. Edited in the sheet since, the write is
   refused and the app reads the sheet again, so the editor shows the number there now.
 - Only a typed number or an empty cell is written over, never a formula or words, and never a
   cell the bank sync fills in (unless its line is paused).
 - Each write is listed with the sheet fill's under **What was changed** on the Bank sync page,
-  marked as typed in the app, and **Undo** there puts the old number back.
+  marked as typed in the app, and **Undo** there puts the old number back. That page and its undo
+  work without Plaid set up, for a household that only types balances in.
 
 Google keeps no time per cell, so the relay keeps the ages itself (`sheet_values` in `relay.db`):
 when a balance was typed or confirmed in the app, and when the sheet fill wrote it or found it

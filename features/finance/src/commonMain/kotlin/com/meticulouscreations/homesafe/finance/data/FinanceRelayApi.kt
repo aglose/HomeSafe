@@ -78,7 +78,7 @@ class FinanceRelayApi(private val httpClient: HttpClient) {
     suspend fun setValue(serverUrl: String, cell: SheetCell, value: Double): Result<BalanceAge> = suspendRunCatching {
         val response = httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/sheet/value")) {
             contentType(ContentType.Application.Json)
-            setBody(RelaySheetValue(cell.tab, cell.label, cell.right, cell.row, cell.value, cell.toSheet(value)))
+            setBody(RelaySheetValue(cell.tab, cell.label, cell.right, cell.value, cell.toSheet(value)))
             // The relay waits for a sync under way, then reads the tab and writes to it before answering.
             timeout { requestTimeoutMillis = 60_000 }
         }
@@ -158,6 +158,8 @@ data class RelayWorkbook(
     val charts: List<RelayChart> = emptyList(),
     /** When each balance was last known to be right; absent from a relay older than typed balances. */
     val updates: List<RelayBalanceAge> = emptyList(),
+    /** The balances the bank sync writes into the sheet every morning. */
+    val filled: List<RelayFilledBalance> = emptyList(),
 ) {
     fun grids(): List<SheetGrid> = sheets.map { it.toGrid() }
 
@@ -165,6 +167,9 @@ data class RelayWorkbook(
     fun balanceAges(): Map<String, BalanceAge> = updates.associate { u ->
         SheetCell.idOf(u.tab, u.label, u.right) to BalanceAge(u.at.toLong(), u.by, fromBank = u.source == "bank")
     }
+
+    /** [filled] by each balance's [SheetCell.id]. */
+    fun bankFilled(): Set<String> = filled.mapTo(HashSet()) { SheetCell.idOf(it.tab, it.label, it.right) }
 }
 
 @Serializable
@@ -204,8 +209,12 @@ data class RelayBalanceAge(
     val source: String = "app",
 )
 
+/** A balance the bank sync writes into the sheet: a line of its sheet fill that isn't paused. */
 @Serializable
-internal data class RelaySheetValue(val tab: String, val label: String, val right: Int, val row: Int, val expected: Double?, val value: Double)
+data class RelayFilledBalance(val tab: String, val label: String, val right: Int = 1)
+
+@Serializable
+internal data class RelaySheetValue(val tab: String, val label: String, val right: Int, val expected: Double?, val value: Double)
 
 @Serializable
 internal data class RelaySheetValueWritten(val at: Double, val by: String? = null)

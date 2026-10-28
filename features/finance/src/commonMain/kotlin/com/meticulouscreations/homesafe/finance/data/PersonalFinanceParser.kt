@@ -64,7 +64,9 @@ object PersonalFinanceParser {
         val oldHouse = sheets.firstOrNull { it.contains("Sold Price") }
 
         val people = home?.let(::people).orEmpty()
-        val accounts = home?.let { accounts(it, people.map { p -> p.second }) }.orEmpty() + home?.let(::cashAccounts).orEmpty()
+        // An account at zero is left off the Wallet, but kept to type a balance into (see `typedBalances`).
+        val (accounts, zeroAccounts) = (home?.let { accounts(it, people.map { p -> p.second }) }.orEmpty() + home?.let(::cashAccounts).orEmpty())
+            .partition { it.balance != 0.0 }
         val notes = mutableListOf<ParseNote>()
         val finance = PersonalFinance(
             title = title,
@@ -77,6 +79,7 @@ object PersonalFinanceParser {
             netMonthly = home?.valueOf("Net Monthly Profit"),
             expenses = home?.let(::expenses).orEmpty(),
             accounts = accounts + listOfNotNull(home?.let(::homeEquityAccount)),
+            zeroAccounts = zeroAccounts,
             investmentsTotal = home?.let(::grandTotal),
             totalAssets = home?.let { g -> totalAssetsCell(g)?.let { (r, c) -> g.numberRightOf(r, c) } },
             emergencyTarget = home?.findStartingWith("Emergency")?.let { (r, c) -> home.numberRightOf(r, c) }?.let(::abs),
@@ -191,10 +194,10 @@ object PersonalFinanceParser {
             val first = personColumns.first().first
             val merge = grid.mergeAt(r, first)
             if (merge != null && merge.endColumn > personColumns.last().first) {
-                grid.number(r, first)?.takeIf { it != 0.0 }?.let { out += Account(label, Owner.Joint, it, categorise(label), cellOf(grid, r, c, first, label)) }
+                grid.number(r, first)?.let { out += Account(label, Owner.Joint, it, categorise(label), cellOf(grid, r, c, first, label)) }
             } else {
                 personColumns.forEach { (col, name) ->
-                    grid.number(r, col)?.takeIf { it != 0.0 }?.let { out += Account(label, Owner.Person(name), it, categorise(label), cellOf(grid, r, c, col, label)) }
+                    grid.number(r, col)?.let { out += Account(label, Owner.Person(name), it, categorise(label), cellOf(grid, r, c, col, label)) }
                 }
             }
         }
@@ -216,14 +219,14 @@ object PersonalFinanceParser {
         val out = mutableListOf<Account>()
         grid.findLabel("Checking/Savings")?.let { (r0, c) ->
             forEachRowBelow(grid, r0, c, maxBlank = 1) { r, label ->
-                grid.numberCellRightOf(r, c)?.takeIf { it.second != 0.0 }?.let { (col, balance) ->
+                grid.numberCellRightOf(r, c)?.let { (col, balance) ->
                     val name = if (label.equals("combined", true)) UiText.of(Res.string.fin_data_account_checking_savings) else UiText.verbatim(label)
                     out += Account(name, Owner.Joint, balance, AccountCategory.CASH, cellOf(grid, r, c, col, label))
                 }
             }
         }
         grid.findLabel("Cash")?.let { (r, c) ->
-            grid.numberCellRightOf(r, c)?.takeIf { it.second != 0.0 }?.let { (col, balance) ->
+            grid.numberCellRightOf(r, c)?.let { (col, balance) ->
                 out += Account(UiText.of(Res.string.fin_data_account_cash), Owner.Joint, balance, AccountCategory.CASH, cellOf(grid, r, c, col, grid.text(r, c).orEmpty()))
             }
         }
@@ -294,7 +297,7 @@ object PersonalFinanceParser {
         forEachRowBelow(grid, headerRow, c) { r, label ->
             val (name, apr, note) = splitDebtLabel(label)
             val merge = grid.mergeAt(r, columns.first().first)
-            fun cell(col: Int) = cellOf(grid, r, c, col, label, negative)
+            fun cell(col: Int) = cellOf(grid, r, c, col, label, debtsNegative = negative)
             if (merge != null && merge.endColumn > columns.last().first) {
                 grid.number(r, columns.first().first)?.let { out += Debt(name, Owner.Joint, abs(it), apr, note, cell(columns.first().first)) }
             } else {
@@ -662,9 +665,11 @@ object PersonalFinanceParser {
     /**
      * Where a balance is: [label]'s row [row] in [labelColumn], the number in [column]. A cell
      * holding a formula, or a number typed as words ("$1,200"), is calculated as far as typing a
-     * new number goes: the relay only writes over a typed number.
+     * new number goes: the relay only writes over a typed number. [debtsNegative] is for a debt:
+     * whether the sheet keeps its debts below zero; anything else (an overdrawn account) is typed
+     * signed as it is.
      */
-    private fun cellOf(grid: SheetGrid, row: Int, labelColumn: Int, column: Int, label: String, negative: Boolean = false): SheetCell {
+    private fun cellOf(grid: SheetGrid, row: Int, labelColumn: Int, column: Int, label: String, debtsNegative: Boolean? = null): SheetCell {
         val value = grid.number(row, column)
         return SheetCell(
             tab = grid.title,
@@ -673,8 +678,12 @@ object PersonalFinanceParser {
             right = column - labelColumn,
             value = value,
             calculated = grid.isFormula(row, column) || grid.value(row, column) is CellValue.Text,
-            // An empty cell or a zero says nothing of how the sheet signs it; [negative] does.
-            negative = if (value == null || value == 0.0) negative else value < 0,
+            // An empty cell or a zero says nothing of how the sheet signs a debt; how it signs the rest does.
+            negative = when {
+                debtsNegative == null -> false
+                value == null || value == 0.0 -> debtsNegative
+                else -> value < 0
+            },
         )
     }
 

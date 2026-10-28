@@ -239,7 +239,9 @@ internal fun BalanceEditor(balance: TypedBalance, save: BalanceSave?, now: Long,
     // Started again when the sheet turns out to hold another number (it changed since it was read).
     var text by rememberSaveable(balance.cell.id, balance.balance) { mutableStateOf(FinanceFormat.plainDecimal(balance.balance)) }
     val amount = parseAmount(text)
-    val valid = amount != null && amount >= 0
+    // An account can be overdrawn; what's owed and what the home is worth can't go below zero.
+    val signed = balance.kind == TypedBalanceKind.ACCOUNT
+    val valid = amount != null && (amount >= 0 || signed)
     val unchanged = amount != null && abs(amount - balance.balance) < 0.005
     val saving = save?.saving == true
     AlertDialog(
@@ -268,6 +270,7 @@ internal fun BalanceEditor(balance: TypedBalance, save: BalanceSave?, now: Long,
                     error = !valid,
                     testTag = "finance_balance_amount",
                     prefix = "$",
+                    allowNegative = signed,
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(stringResource(Res.string.fin_balance_editor_where, balance.cell.label, balance.cell.tab), style = type.micro, color = colors.textTertiary)
@@ -363,7 +366,7 @@ internal val typedBalanceFinance: PersonalFinance = FinanceFixtures.finance.let 
         put(debts[3].cell!!.id, BalanceAge(FinanceFixtures.NOW - 20 * day, "alex", fromBank = false))
         put(home!!.valueCell!!.id, BalanceAge(FinanceFixtures.NOW - 70 * day, "alex", fromBank = false))
     }
-    f.copy(accounts = accounts, debts = debts, home = home, balanceAges = ages)
+    f.copy(accounts = accounts, debts = debts, home = home, balanceAges = ages, bankFilled = setOf(accounts[7].cell!!.id, accounts[8].cell!!.id, debts[0].cell!!.id))
 }
 
 @Preview(widthDp = 412, heightDp = 1500)

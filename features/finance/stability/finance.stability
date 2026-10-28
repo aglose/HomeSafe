@@ -977,7 +977,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.NodePanel(id: kotlin.Str
     - onFollow: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.NumberField(label: kotlin.String, value: kotlin.String, onChange: kotlin.Function1<kotlin.String, kotlin.Unit>, error: kotlin.Boolean, testTag: kotlin.String, prefix: kotlin.String?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.NumberField(label: kotlin.String, value: kotlin.String, onChange: kotlin.Function1<kotlin.String, kotlin.Unit>, error: kotlin.Boolean, testTag: kotlin.String, prefix: kotlin.String?, allowNegative: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -987,6 +987,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.NumberField(label: kotl
     - error: STABLE (primitive type)
     - testTag: STABLE (String is immutable)
     - prefix: STABLE (class with no mutable properties)
+    - allowNegative: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.OneLineText(text: kotlin.String, style: androidx.compose.ui.text.TextStyle, color: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit

@@ -7603,7 +7603,7 @@ def get_finance_sheet(request: Request, response: Response, refresh: bool = Fals
     response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     require_finance_user(request)
     # The workbook may be a minute old; when its balances were last updated never is.
-    return {**finance_sheet(refresh), "updates": typed_updates()}
+    return {**finance_sheet(refresh), "updates": typed_updates(), "filled": typed_filled()}
 
 
 def finance_sheet(refresh: bool) -> dict[str, Any]:
@@ -8599,8 +8599,11 @@ def fill_sheet(now: float) -> None:
         for p in plan:
             if p["status"] == "change":
                 p["status"], p["before"] = "written", p["value"]
-        # Each line written, or found already holding its number, is as of this read of the bank.
-        typed_seen([p for p in plan if p["status"] in ("written", "same")], now, None, "bank")
+        # Each line written, or found already holding its number, is as old as the oldest read of
+        # its accounts: an institution Plaid couldn't read keeps its last balance, not a new age.
+        read_at = {a["key"]: a["updated"] for institution in bank_institutions() for a in institution["accounts"]}
+        typed_seen([{**p, "at": min(read_at[key] for key in p["accounts"])} for p in plan
+                    if p["status"] in ("written", "same") and all(read_at.get(key) for key in p["accounts"])], now, None, "bank")
         state_set(FILL_KEY, {"at": now, "error": None, "message": None, "lines": plan})
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, dict) else {}
@@ -8883,8 +8886,12 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
 
 @app.post("/finance/bank/fill/writes/{write_id}/undo")
 def post_bank_fill_undo(write_id: int, request: Request, response: Response) -> dict[str, Any]:
-    """Undoes one write to the budget sheet's cells and pauses its lines (see `fill_undo`)."""
-    user = require_bank(request, response)
+    """
+    Undoes one write to the budget sheet's cells and pauses its lines (see `fill_undo`). Needs no
+    Plaid: a balance typed in the app is a write too (see "typed balances").
+    """
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
     if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
         raise bank_busy()
     try:
@@ -8945,12 +8952,11 @@ TYPED_MAX = 1e12
 
 class SheetValue(BaseModel):
     # The balance's row: its tab, the words in its label cell, and how many columns to the right of
-    # the label the number sits (as a line of the sheet fill names one).
+    # the label the number sits (as a line of the sheet fill names one). A label in the tab twice
+    # isn't guessed between: an undo finds the cell by its label again, and couldn't.
     tab: str
     label: str
     right: int = 1
-    # Where the app found the label, 0-based: which row is meant when the label is in the tab twice.
-    row: int | None = None
     # What the app showed; the write is refused when the cell holds anything else. None for an empty cell.
     expected: float | None = None
     value: float
@@ -8962,14 +8968,14 @@ def typed_id(tab: str, label: str, right: int) -> str:
 
 
 def typed_seen(entries: list[dict[str, Any]], now: float, by: str | None, source: str) -> None:
-    """Marks each balance (its `tab`, `label`, `right` and `value`) as right as of `now`."""
+    """Marks each balance (its `tab`, `label`, `right` and `value`) as right as of its own `at`, or `now`."""
     if not entries:
         return
 
     def keep(c: sqlite3.Connection) -> None:
         c.executemany(
             "INSERT OR REPLACE INTO sheet_values (cell, tab, label, right, value, at, by, source) VALUES (?,?,?,?,?,?,?,?)",
-            [(typed_id(e["tab"], e["label"], e["right"]), e["tab"], e["label"], e["right"], e["value"], now, by, source) for e in entries],
+            [(typed_id(e["tab"], e["label"], e["right"]), e["tab"], e["label"], e["right"], e["value"], e.get("at", now), by, source) for e in entries],
         )
         c.commit()
 
@@ -9001,16 +9007,10 @@ def typed_updates() -> list[dict[str, Any]]:
             for cell, tab, label, right, value, at, by, source in rows]
 
 
-def typed_find(rows: list[list[Any]], label: str, row: int | None) -> tuple[int, int] | str:
-    """Where `label` is, like `fill_find`, but a label in the tab more than once is the one on `row`, if one is."""
-    wanted = fill_text(label)
-    found = [(r, c) for r, cells in enumerate(rows) for c, value in enumerate(cells) if isinstance(value, str) and fill_text(value) == wanted]
-    if len(found) == 1:
-        return found[0]
-    if not found:
-        return "no_label"
-    on_row = [f for f in found if f[0] == row]
-    return on_row[0] if len(on_row) == 1 else "ambiguous"
+def typed_filled() -> list[dict[str, Any]]:
+    """The balances the sheet fill writes every morning: its lines that aren't paused. A typed number there would be written over."""
+    paused = fill_paused()
+    return [{"tab": line["tab"], "label": line["label"], "right": line["right"]} for line in fill_lines()[0] if line["id"] not in paused]
 
 
 def typed_write(body: SheetValue, user: str, now: float) -> dict[str, Any]:
@@ -9034,7 +9034,7 @@ def typed_write(body: SheetValue, user: str, now: float) -> dict[str, Any]:
     rows = fill_read(session, [tab])[tab]
     if rows is None:
         raise HTTPException(404, {"error": "no_tab", "message": f"The budget sheet has no tab {tab}"})
-    found = typed_find(rows, label, body.row)
+    found = fill_find(rows, label)
     if isinstance(found, str):
         raise HTTPException(404 if found == "no_label" else 409, {"error": found, "message": f"The label {label} is not in {tab} once"})
     row, column = found[0], found[1] + body.right
@@ -9043,6 +9043,8 @@ def typed_write(body: SheetValue, user: str, now: float) -> dict[str, Any]:
     if not writable:
         raise HTTPException(409, {"error": "not_a_number", "message": f"{tab}!{cell} holds a formula or words, not a typed number"})
     if not fill_same(before, body.expected):
+        # The app reads the sheet again to show what the cell holds now: not the minute-old copy.
+        _finance_cache["at"] = 0.0
         raise HTTPException(409, {"error": "changed", "message": "The sheet has changed since it was read", "value": before})
     value = round(body.value, 2)
     written = not fill_same(before, value)

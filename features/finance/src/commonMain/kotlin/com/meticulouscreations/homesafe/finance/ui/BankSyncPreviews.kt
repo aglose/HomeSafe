@@ -227,6 +227,13 @@ private fun FinanceBankSyncSetupPreview() {
     BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.empty.copy(configured = false), loading = false))
 }
 
+@Preview(name = "Bank sync · not set up, a balance typed in the app", widthDp = 412, heightDp = 640)
+@Composable
+private fun FinanceBankSyncSetupTypedPreview() {
+    val typed = BankSyncFixtures.filled.fill.writes.filter { w -> w.changes.any { it.typedBy != null } }
+    BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.empty.copy(configured = false, fill = BankSyncFixtures.empty.fill.copy(writes = typed)), loading = false))
+}
+
 @Preview(name = "Bank sync · relay too old", widthDp = 412, heightDp = 420)
 @Composable
 private fun FinanceBankSyncProblemPreview() {

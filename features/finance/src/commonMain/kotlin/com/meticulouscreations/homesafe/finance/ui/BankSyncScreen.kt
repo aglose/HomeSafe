@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -250,8 +251,12 @@ internal fun BankSyncScreen(
 
             bank == null -> item(key = "problem") { ProblemCard(state.problem, state.problemText, onRetry) }
 
-            !bank.configured -> item(key = "setup") {
-                MessageCard(stringResource(Res.string.fin_bank_setup_title), stringResource(Res.string.fin_bank_setup_body), onRetry)
+            !bank.configured -> {
+                item(key = "setup") {
+                    MessageCard(stringResource(Res.string.fin_bank_setup_title), stringResource(Res.string.fin_bank_setup_body), onRetry)
+                }
+                // Without Plaid there is no sheet fill, but balances typed in the app are writes too, and can be undone.
+                if (bank.fill.writes.isNotEmpty()) writeItems(bank.fill.writes, state, now, onUndo = { confirmingUndo = it })
             }
 
             else -> {
@@ -319,14 +324,7 @@ internal fun BankSyncScreen(
                     if (fill.lines.isNotEmpty()) {
                         item(key = "fill-lines") { FillLinesCard(fill, changing = state.changingLine, enabled = !state.acting, onPauseLine = onPauseLine) }
                     }
-                    item(key = "fill-writes-h") {
-                        SectionHeader(stringResource(Res.string.fin_bank_fill_writes_title), subtitle = stringResource(Res.string.fin_bank_fill_writes_subtitle))
-                    }
-                    if (fill.writes.isEmpty()) item(key = "fill-writes-none") { FinePrint(stringResource(Res.string.fin_bank_fill_writes_none)) }
-                    items(fill.writes, key = { "w-${it.id}" }) { write ->
-                        // While anything else is being changed an undo would be dropped, so it isn't offered.
-                        WriteCard(write, now, undoing = state.undoing == write.id, enabled = !state.acting, onUndo = { confirmingUndo = write.id })
-                    }
+                    writeItems(fill.writes, state, now, onUndo = { confirmingUndo = it })
                     item(key = "fill-how") { FinePrint(stringResource(Res.string.fin_bank_fill_how)) }
                 }
                 item(key = "feed-h") {
@@ -839,6 +837,18 @@ private fun WriteCard(write: SheetWrite, now: Long, undoing: Boolean, enabled: B
                 }
             }
         }
+    }
+}
+
+/** "What was changed": each write to the budget sheet's cells, newest first, with its undo. */
+private fun LazyListScope.writeItems(writes: List<SheetWrite>, state: BankSyncUiState, now: Long, onUndo: (Long) -> Unit) {
+    item(key = "fill-writes-h") {
+        SectionHeader(stringResource(Res.string.fin_bank_fill_writes_title), subtitle = stringResource(Res.string.fin_bank_fill_writes_subtitle))
+    }
+    if (writes.isEmpty()) item(key = "fill-writes-none") { FinePrint(stringResource(Res.string.fin_bank_fill_writes_none)) }
+    items(writes, key = { "w-${it.id}" }) { write ->
+        // While anything else is being changed an undo would be dropped, so it isn't offered.
+        WriteCard(write, now, undoing = state.undoing == write.id, enabled = !state.acting, onUndo = { onUndo(write.id) })
     }
 }
 

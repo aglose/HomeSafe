@@ -10,8 +10,8 @@ import kotlin.math.abs
 /**
  * Where a balance sits in the budget sheet, the way the relay finds it again: the words in its
  * row's label cell, and how many columns to the right of that label the number is (as a line of
- * the relay's sheet fill names a cell). [row] is where the label was read, which tells two rows
- * with the same label apart. [value] is the number the cell held, signed as the sheet keeps it;
+ * the relay's sheet fill names a cell). [row] is where the label was read; a label that is in
+ * its tab twice can't be typed into (the relay won't guess which is meant). [value] is the number the cell held, signed as the sheet keeps it;
  * [calculated] when the cell is a formula (a total, or a lookup in the bank feed) rather than a
  * typed number. [negative] when the sheet keeps this balance below zero (some sheets keep what's
  * owed that way), so a number typed for it is written with that sign.
@@ -83,7 +83,9 @@ enum class TypedBalanceKind { ACCOUNT, DEBT, HOME_VALUE }
  * A balance typed into the budget sheet rather than worked out there: an account, a debt, or
  * what the home is worth. These are the numbers someone has to look up and copy over now and
  * then, and the app can type in for them (see [FinanceRepository.updateBalance]). [balance] is
- * as the app shows it: what's held, or what's owed (positive).
+ * as the app shows it: what's held, or what's owed (positive). [fromBank] when the bank sync
+ * writes it every morning (a line of its sheet fill that isn't paused), so a number typed in the
+ * app would be written over; that is what the relay does now, whoever last updated it.
  */
 @Immutable
 data class TypedBalance(
@@ -93,10 +95,8 @@ data class TypedBalance(
     val balance: Double,
     val cell: SheetCell,
     val age: BalanceAge?,
+    val fromBank: Boolean = false,
 ) {
-    /** The bank sync writes it each morning: a number typed in the app would be written over. */
-    val fromBank: Boolean get() = age?.fromBank == true
-
     fun freshness(nowEpochSeconds: Long): BalanceFreshness = BalanceFreshness.of(age, nowEpochSeconds)
 }
 
@@ -106,16 +106,12 @@ data class TypedBalance(
  */
 fun typedBalances(finance: PersonalFinance): List<TypedBalance> {
     val ages = finance.balanceAges
-    val accounts = finance.accounts.mapNotNull { a ->
-        a.cell?.takeUnless { it.calculated }?.let { TypedBalance(a.name, a.owner, TypedBalanceKind.ACCOUNT, a.balance, it, ages[it.id]) }
-    }
-    val debts = finance.debts.mapNotNull { d ->
-        d.cell?.takeUnless { it.calculated }?.let { TypedBalance(UiText.verbatim(d.name), d.owner, TypedBalanceKind.DEBT, d.balance, it, ages[it.id]) }
-    }
-    val home = finance.home?.let { h ->
-        val value = h.value ?: return@let null
-        h.valueCell?.takeUnless { it.calculated }?.let { TypedBalance(UiText.of(Res.string.fin_data_home_value), null, TypedBalanceKind.HOME_VALUE, value, it, ages[it.id]) }
-    }
+    fun typed(name: UiText, owner: Owner?, kind: TypedBalanceKind, balance: Double, cell: SheetCell?) =
+        cell?.takeUnless { it.calculated }?.let { TypedBalance(name, owner, kind, balance, it, ages[it.id], fromBank = it.id in finance.bankFilled) }
+    // Those at zero too: emptied once, they may hold money again, and only the app can say so.
+    val accounts = (finance.accounts + finance.zeroAccounts).mapNotNull { a -> typed(a.name, a.owner, TypedBalanceKind.ACCOUNT, a.balance, a.cell) }
+    val debts = finance.debts.mapNotNull { d -> typed(UiText.verbatim(d.name), d.owner, TypedBalanceKind.DEBT, d.balance, d.cell) }
+    val home = finance.home?.let { h -> h.value?.let { typed(UiText.of(Res.string.fin_data_home_value), null, TypedBalanceKind.HOME_VALUE, it, h.valueCell) } }
     // One cell can be read twice (a joint row the parser saw from two sides): it is one balance.
     return (accounts + debts + listOfNotNull(home)).distinctBy { it.cell.id }.sortedBy { it.age?.atEpochSeconds ?: Long.MIN_VALUE }
 }

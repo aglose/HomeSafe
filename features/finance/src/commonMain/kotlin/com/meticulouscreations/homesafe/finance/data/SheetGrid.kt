@@ -107,12 +107,12 @@ class SheetGrid(
     /** The first number in [row] to the right of [column], looking at most [maxColumns] across. */
     fun numberRightOf(row: Int, column: Int, maxColumns: Int = 4): Double? = numberCellRightOf(row, column, maxColumns)?.second
 
-    /** [numberRightOf], with the column the number is in. */
+    /** [numberRightOf], with the column the number is in: a merge's first, where the sheet keeps its value. */
     fun numberCellRightOf(row: Int, column: Int, maxColumns: Int = 4): Pair<Int, Double>? {
         val merge = mergeAt(row, column)
         val from = (merge?.endColumn ?: (column + 1))
         for (c in from until from + maxColumns) {
-            number(row, c)?.let { return c to it }
+            number(row, c)?.let { return anchorColumn(row, c) to it }
         }
         return null
     }
@@ -123,11 +123,14 @@ class SheetGrid(
      */
     fun lastNumberRightOf(row: Int, column: Int, maxColumns: Int = 3): Double? = lastNumberCellRightOf(row, column, maxColumns)?.second
 
-    /** [lastNumberRightOf], with the column the number is in. */
+    /** [lastNumberRightOf], with the column the number is in: a merge's first, where the sheet keeps its value. */
     fun lastNumberCellRightOf(row: Int, column: Int, maxColumns: Int = 3): Pair<Int, Double>? {
         val from = mergeAt(row, column)?.endColumn ?: (column + 1)
-        return (from until from + maxColumns).reversed().firstNotNullOfOrNull { c -> number(row, c)?.let { c to it } }
+        return (from until from + maxColumns).reversed().firstNotNullOfOrNull { c -> number(row, c)?.let { anchorColumn(row, c) to it } }
     }
+
+    /** The column of the cell holding [column]'s value in [row]: a merge's first column, or [column] itself. */
+    private fun anchorColumn(row: Int, column: Int): Int = mergeAt(row, column)?.startColumn ?: column
 
     /** [label]'s value: the number to its right, if the label is anywhere in the grid. */
     fun valueOf(label: String, rowsFrom: Int = 0, rowsTo: Int = rowCount, columns: IntRange? = null, maxColumns: Int = 4): Double? =
