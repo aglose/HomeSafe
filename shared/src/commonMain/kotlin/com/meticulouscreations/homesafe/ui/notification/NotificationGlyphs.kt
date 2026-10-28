@@ -161,6 +161,7 @@ enum class NotificationGlyph(val resourceName: String, val layers: List<GlyphLay
     DONE("ic_notification_done", listOf(line("M5,12.5l4.5,4.5l9.5,-10", width = 2.4f))),
 
     // ---- The fitness app ------------------------------------------------------------------------
+
     /** A run being recorded: a route wandering from its start to where the runner is now. */
     RUN("ic_notification_run", listOf(line("M5.5,18.5c4,0 3.5,-6.5 7,-6.5s3,-6.5 6,-6.5", accent = true), fill(dot(5.5f, 18.5f, 2.2f) + dot(18.5f, 5.5f, 2.2f)))),
 }
