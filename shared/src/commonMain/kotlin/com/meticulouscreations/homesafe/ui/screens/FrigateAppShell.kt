@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -757,7 +758,9 @@ internal fun ShellScaffold(
                 .drawerPull(drawerPull.takeUnless { contentObscured || contentCovered || immersive })
                 .then(if (underOverlay) Modifier.clearAndSetSemantics {} else Modifier),
         ) {
-            Box(Modifier.fillMaxSize().padding(start = railClearance)) {
+            // Ends at the keyboard while it is up, so the scrolling page beneath brings the field
+            // being typed in up above it. The bars stay where they are, under the keyboard.
+            Box(Modifier.fillMaxSize().padding(start = railClearance).imePadding()) {
                 // Back is the overlay's while one is up, even where the shell shows through it.
                 if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { BackScope(enabled = !contentObscured) { content() } }
             }
