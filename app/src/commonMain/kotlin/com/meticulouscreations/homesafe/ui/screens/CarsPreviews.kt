@@ -69,3 +69,13 @@ private fun CarsMapSpanishPreview() = CarsPreviewFrame(CarsUiState(cars = listOf
 @Preview(name = "Cars map, no cars", widthDp = 412, heightDp = 892)
 @Composable
 private fun CarsMapEmptyPreview() = CarsPreviewFrame(CarsUiState(loaded = true, nowEpochSeconds = NOW))
+
+@Preview(name = "Cars map, nowhere yet", widthDp = 412, heightDp = 892)
+@Composable
+private fun CarsMapNowherePreview() = CarsPreviewFrame(
+    CarsUiState(
+        cars = listOf(curb.copy(lastSeen = null, parked = null), home.copy(lastSeen = null, asleep = false)),
+        loaded = true,
+        nowEpochSeconds = NOW,
+    ),
+)

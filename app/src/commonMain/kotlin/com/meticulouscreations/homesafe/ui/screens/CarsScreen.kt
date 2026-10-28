@@ -74,6 +74,7 @@ import homesafe.shared.generated.resources.household_cars_empty
 import homesafe.shared.generated.resources.household_cars_map_description
 import homesafe.shared.generated.resources.household_cars_move_by
 import homesafe.shared.generated.resources.household_cars_move_now
+import homesafe.shared.generated.resources.household_cars_no_places
 import homesafe.shared.generated.resources.household_cars_select
 import homesafe.shared.generated.resources.household_cars_show_all
 import homesafe.shared.generated.resources.household_cars_title
@@ -152,9 +153,10 @@ fun CarsContent(
                 }
             } else if (!state.loaded) {
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
-            } else if (state.cars.isEmpty()) {
+            } else {
+                // No cars, or cars the server has no place for yet (it hasn't heard from Tesla since it started).
                 Text(
-                    stringResource(Res.string.household_cars_empty),
+                    stringResource(if (state.cars.isEmpty()) Res.string.household_cars_empty else Res.string.household_cars_no_places),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
