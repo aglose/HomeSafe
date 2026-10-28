@@ -2,7 +2,6 @@ package com.meticulouscreations.homesafe.domain.usecase
 
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.Flow
@@ -49,16 +48,4 @@ class ObserveRecentCameraMomentsUseCase(private val momentsRepository: MomentsRe
 class ObserveCameraMomentsBetweenUseCase(private val momentsRepository: MomentsRepository) {
     operator fun invoke(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> =
         momentsRepository.observeMomentsBetween(cameraName, afterEpochSeconds, beforeEpochSeconds)
-}
-
-/** See [MomentsRepository.observeStationaryObjects]: the vehicles parked in view of any camera right now. */
-@Inject
-class ObserveStationaryObjectsUseCase(private val momentsRepository: MomentsRepository) {
-    operator fun invoke(): Flow<List<StationaryObject>> = momentsRepository.observeStationaryObjects()
-}
-
-/** See [MomentsRepository.refreshStationaryObjects]: the in-view strip's poll, now rather than at its next turn. */
-@Inject
-class RefreshStationaryObjectsUseCase(private val momentsRepository: MomentsRepository) {
-    operator fun invoke() = momentsRepository.refreshStationaryObjects()
 }

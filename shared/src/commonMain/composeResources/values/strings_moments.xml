@@ -91,11 +91,7 @@
     <string name="moments_date_short">%1$s %2$d</string>
 
     <!-- The home screen's cards for vehicles parked in view. %1$s is a clock time, possibly with a day. -->
-    <string name="moments_in_view_since">since %1$s</string>
-    <string name="moments_in_view_last_seen">last seen %1$s</string>
     <!-- A clock time on an earlier day: "6:12 PM yesterday", "6:12 PM Sep 14". -->
-    <string name="moments_clock_yesterday">%1$s yesterday</string>
-    <string name="moments_clock_on_day">%1$s %2$s</string>
 
     <!-- The feed's filters. -->
     <string name="moments_category_all">All events</string>

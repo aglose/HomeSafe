@@ -282,7 +282,7 @@ internal fun locationLabel(cameraDisplayName: String, zones: List<String>): UiTe
     return UiText.Joined(listOf(camera, UiText.Joined(places, UiText.of(Res.string.common_list_separator))), UiText.of(Res.string.common_dot_separator))
 }
 
-/** "8:42 AM" — shared with the home screen's in-view strip, which times its cards the same way. */
+/** "8:42 AM". */
 @OptIn(ExperimentalTime::class)
 internal fun clockLabel(epochSeconds: Double, timeZone: TimeZone): String {
     val local = Instant.fromEpochSeconds(epochSeconds.toLong()).toLocalDateTime(timeZone)

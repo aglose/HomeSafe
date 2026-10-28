@@ -7,7 +7,6 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SeenBox
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
@@ -106,7 +105,6 @@ internal class FakeNamingMoments : MomentsRepository {
     override fun nameCar(eventId: String, subLabel: String) {
         named += eventId to subLabel
     }
-    override fun refreshStationaryObjects() = Unit
     override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
     override fun observeError(): Flow<UiText?> = fail("unused")
     override fun observePaging(): Flow<MomentsPaging> = fail("unused")
@@ -116,7 +114,6 @@ internal class FakeNamingMoments : MomentsRepository {
     override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
     override suspend fun readRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double) = fail("unused")
     override fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
-    override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
     override suspend fun refresh() = fail("unused")
     override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")
     override suspend fun getClipDownloadUrl(eventId: String): RecordingStream = fail("unused")

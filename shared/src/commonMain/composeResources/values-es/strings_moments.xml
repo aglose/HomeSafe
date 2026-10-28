@@ -80,10 +80,6 @@
     <string name="moments_month_dec">dic</string>
     <string name="moments_date_short">%2$d %1$s</string>
 
-    <string name="moments_in_view_since">desde %1$s</string>
-    <string name="moments_in_view_last_seen">visto por última vez: %1$s</string>
-    <string name="moments_clock_yesterday">ayer, %1$s</string>
-    <string name="moments_clock_on_day">%2$s, %1$s</string>
 
     <string name="moments_category_all">Todos los eventos</string>
     <string name="moments_category_people">Personas</string>

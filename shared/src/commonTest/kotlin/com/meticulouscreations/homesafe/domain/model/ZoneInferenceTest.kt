@@ -126,14 +126,13 @@ class ZoneInferenceTest {
     @Test
     fun namedCarTrackedSinceItDroveInIsPlacedWhereItParkedNotAlongTheRoadItTook() {
         // 2026-10-05, 270 minutes into one event: up the street, then down to the garage, where its
-        // bottom-centre rests just above the driveway's outline. The strip read "Street".
+        // bottom-centre rests just above the driveway's outline. It read "Street".
         val andrew = TrackedCars.andrewParked
         val readAt = TrackedCars.ANDREW_ARRIVED + TrackedCars.ANDREW_READ_AT
 
         val placed = assertNotNull(andrew.inZones(frontYardNow, readAt), "parked, so the name keeps it though no zone wanted it")
         assertEquals(emptyList(), placed.zones, "it crossed the street to get there, but it is not on the street")
-        val card = listOf(placed).stationaryObjects(nowEpochSeconds = readAt).single().present(today)
-        assertEquals("Front Yard", card.placeLabel)
+        assertEquals(MomentTexts.location("Front Yard"), placed.present(today).locationLabel)
 
         // Sarah's car the same day did stop on the street, and says so.
         val sarah = assertNotNull(TrackedCars.sarahParked.inZones(frontYardNow, TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT))

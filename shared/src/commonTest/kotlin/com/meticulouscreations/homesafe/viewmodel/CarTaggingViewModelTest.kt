@@ -4,14 +4,10 @@ import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.EventFrame
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
-import com.meticulouscreations.homesafe.domain.model.MomentsPaging
-import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SeenBox
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
-import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraFrameUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
@@ -27,7 +23,6 @@ import homesafe.shared.generated.resources.cars_tagged
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -126,34 +121,13 @@ class CarTaggingViewModelTest {
         override suspend fun getEventFrame(eventId: String): Result<EventFrame> = fail("unused")
     }
 
-    private class FakeMoments : MomentsRepository {
-        var nudges = 0
-        override fun refreshStationaryObjects() {
-            nudges++
-        }
-        override fun nameCar(eventId: String, subLabel: String) = fail("unused")
-        override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
-        override fun observeError(): Flow<UiText?> = fail("unused")
-        override fun observePaging(): Flow<MomentsPaging> = fail("unused")
-        override suspend fun loadOlder() = fail("unused")
-        override fun showBefore(epochSeconds: Double?) = fail("unused")
-        override fun showCamera(cameraName: String?) = fail("unused")
-        override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
-        override suspend fun readRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double) = fail("unused")
-        override fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
-        override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
-        override suspend fun refresh() = fail("unused")
-        override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")
-        override suspend fun getClipDownloadUrl(eventId: String): RecordingStream = fail("unused")
-    }
-
-    private fun viewModel(classifiers: ClassifierRepository, moments: MomentsRepository = FakeMoments()) = CarTaggingViewModel(
+    private fun viewModel(classifiers: ClassifierRepository) = CarTaggingViewModel(
         cameraName = "hikvision_1",
         getClassifierModelsUseCase = GetClassifierModelsUseCase(classifiers),
         getClassifierDatasetUseCase = GetClassifierDatasetUseCase(classifiers),
         getCameraFrameUseCase = GetCameraFrameUseCase(classifiers),
         getTrackedObjectsUseCase = GetTrackedObjectsUseCase(classifiers),
-        tagCarUseCase = TagCarUseCase(classifiers, moments),
+        tagCarUseCase = TagCarUseCase(classifiers),
     ).also { it.open(launch = 1L) }
 
     @Test
@@ -266,8 +240,7 @@ class CarTaggingViewModelTest {
     @Test
     fun taggingATrackedCarTrainsItAndNamesIt() = runTest(dispatcher) {
         val repo = FakeClassifiers(tracked = listOf(tesla, unnamed), jpeg = frame)
-        val moments = FakeMoments()
-        val vm = viewModel(repo, moments)
+        val vm = viewModel(repo)
         advanceUntilIdle()
 
         vm.tapAt(0.5, 0.6)
@@ -277,7 +250,6 @@ class CarTaggingViewModelTest {
         assertEquals(listOf(Triple("known_cars", "sarahs_car", unnamed.box!!)), repo.examples)
         assertEquals<List<Pair<String, String?>>>(listOf(unnamed.eventId to "sarahs_car"), repo.names)
         assertEquals(1, repo.trained)
-        assertEquals(1, moments.nudges, "the in-view strip looks again straight away")
         val state = vm.uiState.value
         assertNull(state.selection)
         assertFalse(state.noticeIsError)
@@ -292,8 +264,7 @@ class CarTaggingViewModelTest {
     @Test
     fun aCarFrigateIsNotTrackingOnlyTeachesTheModel() = runTest(dispatcher) {
         val repo = FakeClassifiers(tracked = listOf(tesla), jpeg = frame)
-        val moments = FakeMoments()
-        val vm = viewModel(repo, moments)
+        val vm = viewModel(repo)
         advanceUntilIdle()
 
         vm.drawBox(box(0.7, 0.1, 0.2, 0.15))
@@ -304,7 +275,6 @@ class CarTaggingViewModelTest {
         assertEquals(1, repo.examples.size)
         assertTrue(repo.names.isEmpty())
         assertEquals(1, repo.trained)
-        assertEquals(0, moments.nudges)
         assertEquals(
             UiText.of(Res.string.cars_tagged, "Sarah's Car", UiText.of(Res.string.cars_sighting_untracked), UiText.of(Res.string.cars_retraining)),
             vm.uiState.value.notice,
