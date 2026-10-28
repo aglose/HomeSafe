@@ -39,7 +39,10 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.meticulouscreations.homesafe.domain.model.CarFix
+import com.meticulouscreations.homesafe.domain.model.CurbSpot
 import com.meticulouscreations.homesafe.domain.model.Door
+import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.doorGlance
@@ -56,19 +59,22 @@ import homesafe.shared.generated.resources.doors_home_open
 import homesafe.shared.generated.resources.home_glance_all_doors_closed
 import homesafe.shared.generated.resources.home_glance_doors_closed
 import homesafe.shared.generated.resources.home_glance_open_in_view
+import homesafe.shared.generated.resources.household_cars_open
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * What's going on around the house, at the top of Home, as two rows of pills: the cars parked in
+ * What's going on around the house, at the top of Home, as rows of pills: the cars parked in
  * view (each one's picture, name and where it is), then the doors (a pill per door that needs a
  * look — open, offline, or not heard from yet — and one counting the doors that are simply
- * closed). Either row is left out when it has nothing in it. No headings: the pills say what
+ * closed), then the household's Teslas (each one's name and where it is: the street it is
+ * parked on, home, driving or away). A row is left out when it has nothing in it. No headings: the pills say what
  * they are, so the cameras start as high up the screen as they can. Each row scrolls sideways
  * when there's more than fits.
  *
  * The details live a tap away: a car opens the In View page ([onOpenInView]: its arrival, last
- * sighting and the way to check and tag the cars), a door the Doors page ([onOpenDoors]).
+ * sighting and the way to check and tag the cars), a door the Doors page ([onOpenDoors]), a
+ * Tesla the cars' map ([onOpenCars]).
  */
 @Composable
 internal fun HomeGlanceRows(
@@ -77,11 +83,34 @@ internal fun HomeGlanceRows(
     onOpenInView: () -> Unit,
     onOpenDoors: () -> Unit,
     modifier: Modifier = Modifier,
+    cars: List<HouseholdCar> = emptyList(),
+    onOpenCars: () -> Unit = {},
 ) {
     // The pills are laid out 48dp tall around a 40dp shape, so the rows already sit 8dp apart.
     Column(modifier = modifier.fillMaxWidth()) {
         if (inView.isNotEmpty()) InViewPills(inView, onOpenInView)
         if (doors.isNotEmpty()) DoorPills(doors, onOpenDoors)
+        if (cars.isNotEmpty()) CarPills(cars, onOpenCars)
+    }
+}
+
+@Composable
+private fun CarPills(cars: List<HouseholdCar>, onOpenCars: () -> Unit) {
+    val openCars = stringResource(Res.string.household_cars_open)
+    PillRow {
+        cars.forEach { car ->
+            // A car with somewhere to be gone by stands out, as an open door does.
+            val due = car.parked?.moveByEpochSeconds != null
+            GlancePill(
+                label = car.name,
+                detail = carWhereabouts(car),
+                onClick = onOpenCars,
+                onClickLabel = openCars,
+                container = if (due) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                content = if (due) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                leading = { PillIcon(Icons.Filled.DirectionsCar) },
+            )
+        }
     }
 }
 
@@ -245,6 +274,7 @@ private fun HomeGlanceRowsPreview() {
             doors = listOf(Door("0x01", "Back door", open = true), Door("0x02", "Front door", open = false), Door("0x03", "Garage door", open = false)),
             onOpenInView = {},
             onOpenDoors = {},
+            cars = previewGlanceTeslas,
         )
     }
 }
@@ -292,4 +322,22 @@ private val previewGlanceCar = InViewItem(
     ),
     presentation = StationaryObjectPresentation(title = "Sarah's Tesla".asUiText(), placeLabel = "Driveway", sinceLabel = null, lastSeenLabel = null),
     thumbnailUrl = null,
+)
+
+/** One Tesla at the curb with a sign coming up, one at home. */
+private val previewGlanceTeslas = listOf(
+    HouseholdCar(
+        id = "andrews_tesla",
+        name = "Andrew's Tesla",
+        lastSeen = CarFix(37.77004, -122.25732, 270f, 1_789_405_000, moving = false, home = true),
+        parked = CurbSpot(37.77004, -122.25732, "Elm St", side = null, sinceEpochSeconds = 1_789_400_000, moveByEpochSeconds = 1_789_430_000, note = "Street sweeping", limitMinutes = null, fromEpochSeconds = null, untilEpochSeconds = null),
+        asleep = true,
+    ),
+    HouseholdCar(
+        id = "sarahs_car",
+        name = "Sarah's Tesla",
+        lastSeen = CarFix(37.77020, -122.25800, 90f, 1_789_408_000, moving = false, home = true),
+        parked = null,
+        asleep = false,
+    ),
 )

@@ -20,8 +20,10 @@ import com.meticulouscreations.homesafe.ui.assistant.AssistantHost
 import com.meticulouscreations.homesafe.ui.assistant.AssistantRoot
 import com.meticulouscreations.homesafe.ui.components.LastSeenStillFetcher
 import com.meticulouscreations.homesafe.ui.components.warmUpLivePlayback
+import com.meticulouscreations.homesafe.ui.screens.CarsScreen
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
+import com.meticulouscreations.homesafe.ui.screens.LocalCarsPage
 import com.meticulouscreations.homesafe.ui.screens.LocalShellApps
 import com.meticulouscreations.homesafe.ui.screens.RootCrossfade
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
@@ -133,6 +135,7 @@ internal fun AppChrome(appGraph: AppGraph, assistant: AssistantHost? = null, con
     CompositionLocalProvider(
         LocalMetroViewModelFactory provides appGraph.metroViewModelFactory,
         LocalShellApps provides shellApps,
+        LocalCarsPage provides carsPage,
     ) {
         FrigateTheme {
             AssistantRoot(modifier = Modifier.background(MaterialTheme.colorScheme.background), host = assistant ?: remember { AssistantHost() }) {
@@ -144,3 +147,6 @@ internal fun AppChrome(appGraph: AppGraph, assistant: AssistantHost? = null, con
 
 /** The drawer and its apps, for the shell in :shared to draw (see LocalShellApps). One instance, so the local never changes. */
 private val shellApps: @Composable (ShellNavigation, TopLevelRoute) -> Unit = { nav, tab -> ShellApps(nav, tab) }
+
+/** The cars' map, for Home's back stack in :shared to draw (see LocalCarsPage). One instance, like [shellApps]. */
+private val carsPage: @Composable (onBack: () -> Unit) -> Unit = { onBack -> CarsScreen(onBack) }

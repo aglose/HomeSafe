@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.Door
+import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.VideoFit
@@ -21,6 +22,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCarsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
@@ -28,6 +30,7 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshCarsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
@@ -140,6 +143,8 @@ class HomeViewModel(
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     observeDoorsUseCase: ObserveDoorsUseCase,
     private val refreshDoorsUseCase: RefreshDoorsUseCase,
+    observeCarsUseCase: ObserveCarsUseCase,
+    private val refreshCarsUseCase: RefreshCarsUseCase,
     observeStationaryObjectsUseCase: ObserveStationaryObjectsUseCase,
     private val setAwayUseCase: SetAwayUseCase,
     private val reconnectToServerUseCase: ReconnectToServerUseCase,
@@ -203,6 +208,15 @@ class HomeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
+     * The household's Teslas, for the pills that open the cars' map: each one's name and where it
+     * is. Empty without any (or from a relay from before them), and the row is then not drawn.
+     * Collecting it keeps them read while the Home tab is up.
+     */
+    val cars: StateFlow<List<HouseholdCar>> = observeCarsUseCase()
+        .map { it.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
      * The page's pull to refresh. Every camera without moving video is told to reconnect now
      * rather than when its back-off says ([reconnectRequests]), and everything the page reads is
      * asked for again: the route, the session and the camera list ([ReconnectToServerUseCase]),
@@ -226,6 +240,7 @@ class HomeViewModel(
                 launch { refreshHouseholdPresenceUseCase() }
                 launch { refreshNestCamerasUseCase() }
                 launch { refreshDoorsUseCase() }
+                launch { refreshCarsUseCase() }
                 refreshStationaryObjectsUseCase()
             }
         }

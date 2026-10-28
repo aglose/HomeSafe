@@ -7937,6 +7937,35 @@ class ParkingTest(_FakeFrigate):
         self.assertEqual("1", self.pushes[-1][3]["silent"])
         self.assertEqual([], self.tick(self.WED_7PM + 14 * 3600))
 
+    def test_the_status_says_where_each_car_was_last_seen_wherever_that_is(self):
+        self.where = {"VIN_A": self.fix(60, 5, 270, self.WED_7PM + 3600), "VIN_S": self.fix(-40, 25, 90, self.WED_7PM + 3600)}
+        self.tick(self.WED_7PM + 3600)
+        cars = {c["car"]: c for c in relay.parking_status(self.WED_7PM + 3700)["cars"]}
+        andrew, sarah = cars["andrews_tesla"], cars["sarahs_car"]
+        self.assertEqual(("Elm St", "north"), (andrew["street"], andrew["side"]))
+        self.assertEqual(("Street sweeping", andrew["move_by"], andrew["move_by"] + 3 * 3600),
+                         (andrew["rule"]["note"], andrew["window"]["from"], andrew["window"]["until"]), "Thursday 8 to 11")
+        self.assertEqual((self.where["VIN_A"]["lat"], self.where["VIN_A"]["lng"], 270, False, True),
+                         tuple(andrew["last"][k] for k in ("lat", "lng", "heading", "moving", "home")), "out front: at the curb, and home")
+        self.assertIsNone(sarah["street"], "in the driveway, on no watched street")
+        self.assertEqual((True, False), (sarah["last"]["home"], sarah["last"]["moving"]))
+        self.assertEqual((False, False), (andrew["asleep"], sarah["asleep"]))
+
+        self.where = {"VIN_A": {"asleep": True}, "VIN_S": self.fix(-2000, 900, 10, self.WED_7PM + 7200, shift="D", speed=30.0)}
+        self.tick(self.WED_7PM + 7200)
+        cars = {c["car"]: c for c in relay.parking_status(self.WED_7PM + 7300)["cars"]}
+        andrew, sarah = cars["andrews_tesla"], cars["sarahs_car"]
+        self.assertTrue(andrew["asleep"])
+        self.assertEqual((_metres(self.CROSSING, 60, 5), "Elm St"), ((andrew["last"]["lat"], andrew["last"]["lng"]), andrew["street"]), "asleep, it is where it was")
+        self.assertEqual((True, False, self.WED_7PM + 7200), (sarah["last"]["moving"], sarah["last"]["home"], sarah["last"]["at"]), "driving, away from home")
+
+    def test_a_car_known_only_by_its_spot_is_last_seen_there(self):
+        saved = {"andrews_tesla": {"spot": {**self.fix(60, 5, 270, self.WED_7PM), "since": self.WED_7PM, "street": "Elm St", "side": "north"}}}
+        relay.state_set(relay.PARKING_KEY, saved)
+        andrew = relay.parking_status(self.WED_7PM + 60)["cars"][0]
+        self.assertEqual((self.WED_7PM, False, True), (andrew["last"]["at"], andrew["last"]["moving"], andrew["last"]["home"]))
+        self.assertIsNone(relay.parking_status(self.WED_7PM + 60)["cars"][1]["last"], "never seen")
+
     def test_a_car_gone_before_the_reminder_is_not_reminded_about(self):
         self.where["VIN_A"] = self.fix(60, 5, 270, self.WED_7PM + 3600)
         self.tick(self.WED_7PM + 3600)

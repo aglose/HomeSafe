@@ -289,7 +289,7 @@ fun SpotMap(latitude: Double, longitude: Double, tiles: MapTileSource, modifier:
 
 /** A street and the houses either side: close enough to tell one side of it from the other. */
 const val SPOT_ZOOM = 17.0
-private const val SPOT_MAX_ZOOM = 19.0
+internal const val SPOT_MAX_ZOOM = 19.0
 
 /** The tile level a frame is drawn from: one out from the map's (radar is coarser than a map and wants fewer, larger tiles), and no finer than the frame has. */
 internal fun radarLevel(camera: MapCamera, frame: RadarFrame): Int = (camera.level - 1).coerceIn(2, frame.maxZoom)

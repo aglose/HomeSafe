@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The household's Teslas: the pills on Home and the cars' map they open, each car where it was
+  last seen and what the sign says where one is parked (docs/parking.md). See AGENTS.md,
+  "Strings and localization".
+-->
+<resources>
+    <string name="household_cars_title">Cars</string>
+    <string name="household_cars_open">Show the cars on a map</string>
+    <string name="household_cars_where_home">Home</string>
+    <string name="household_cars_where_driving">Driving</string>
+    <string name="household_cars_where_away">Away</string>
+    <string name="household_cars_where_unknown">Not seen yet</string>
+    <string name="household_cars_move_by">Move by %1$s</string>
+    <string name="household_cars_move_now">Move it now</string>
+    <string name="household_cars_seen_just_now">Seen just now</string>
+    <plurals name="household_cars_seen_minutes">
+        <item quantity="one">Seen %1$d min ago</item>
+        <item quantity="other">Seen %1$d min ago</item>
+    </plurals>
+    <plurals name="household_cars_seen_hours">
+        <item quantity="one">Seen %1$d hour ago</item>
+        <item quantity="other">Seen %1$d hours ago</item>
+    </plurals>
+    <plurals name="household_cars_seen_days">
+        <item quantity="one">Seen %1$d day ago</item>
+        <item quantity="other">Seen %1$d days ago</item>
+    </plurals>
+    <string name="household_cars_asleep">Asleep</string>
+    <string name="household_cars_empty">No cars yet. Once a Tesla is linked to the server, it shows here wherever it is.</string>
+    <string name="household_cars_load_failed">Couldn't load the cars: %1$s</string>
+    <string name="household_cars_show_all">Show all</string>
+    <string name="household_cars_map_description">Map of where the cars are</string>
+    <string name="household_cars_select">Show on the map</string>
+</resources>

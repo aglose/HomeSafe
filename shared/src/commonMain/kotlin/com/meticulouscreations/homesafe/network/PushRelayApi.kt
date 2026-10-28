@@ -1,8 +1,10 @@
 package com.meticulouscreations.homesafe.network
 
 import com.meticulouscreations.homesafe.domain.model.CarCheck
+import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.CarProfile
 import com.meticulouscreations.homesafe.domain.model.CarProfiles
+import com.meticulouscreations.homesafe.domain.model.CurbSpot
 import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.DoorEvent
@@ -14,8 +16,10 @@ import com.meticulouscreations.homesafe.domain.model.DoorSpot
 import com.meticulouscreations.homesafe.domain.model.DoorsSnapshot
 import com.meticulouscreations.homesafe.domain.model.FloorPlan
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
+import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.NotTrackedReason
+import com.meticulouscreations.homesafe.domain.model.ParkingAlert
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
@@ -299,6 +303,18 @@ class PushRelayApi(private val httpClient: HttpClient) {
         // hand back: as a failure it would be shown as an error over the read that replaced it.
         if (it is CancellationException) throw it
     }
+
+    /**
+     * The household's Teslas: where each was last seen, and its spot at a watched street's curb
+     * (the relay's `/parking`). The relay answers from what it already knows, without asking
+     * Tesla. None from a relay that predates parking (404), or that has no Teslas linked.
+     */
+    suspend fun getCars(serverUrl: String): Result<List<HouseholdCar>> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/parking"))
+        if (response.status == HttpStatusCode.NotFound) return@runCatching emptyList()
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayParking>().cars.mapNotNull { it.toDomain() }
+    }.onFailure { if (it is CancellationException) throw it }
 
     /**
      * The door sensors and their openings and closings over the last [days] (the relay's
@@ -916,3 +932,71 @@ class VaultConflictException(refused: FrigateResponseException) : LocalizedExcep
 
 @Serializable
 internal data class RelayVaultSecretsBody(val household: String, val secrets: Map<String, String?>)
+
+/** The relay's `GET /parking` body. */
+@Serializable
+internal data class RelayParking(val cars: List<RelayParkedCar> = emptyList())
+
+@Serializable
+internal data class RelayParkedCar(
+    val car: String = "",
+    val name: String? = null,
+    val street: String? = null,
+    val side: String? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
+    val since: Double? = null,
+    @SerialName("move_by") val moveBy: Double? = null,
+    val rule: RelayParkingRule? = null,
+    val window: RelayParkingWindow? = null,
+    val last: RelayCarFix? = null,
+    val asleep: Boolean = false,
+) {
+    fun toDomain(): HouseholdCar? {
+        if (car.isBlank()) return null
+        val limit = rule?.minutes?.takeIf { rule.kind == "limit" && it > 0 }?.toInt()
+        return HouseholdCar(
+            id = car,
+            name = name?.takeIf { it.isNotBlank() } ?: car,
+            lastSeen = last?.toDomain(),
+            parked = if (street != null && lat != null && lng != null) {
+                CurbSpot(
+                    latitude = lat,
+                    longitude = lng,
+                    street = street,
+                    side = ParkingAlert.Side.entries.firstOrNull { it.name.equals(side, ignoreCase = true) },
+                    sinceEpochSeconds = since?.toLong(),
+                    moveByEpochSeconds = moveBy?.toLong(),
+                    note = rule?.note?.takeIf { it.isNotBlank() },
+                    limitMinutes = limit,
+                    fromEpochSeconds = window?.from?.toLong()?.takeIf { limit == null },
+                    untilEpochSeconds = window?.until?.toLong()?.takeIf { limit == null },
+                )
+            } else {
+                null
+            },
+            asleep = asleep,
+        )
+    }
+}
+
+@Serializable
+internal data class RelayParkingRule(val kind: String? = null, val minutes: Double? = null, val note: String? = null)
+
+@Serializable
+internal data class RelayParkingWindow(val from: Double? = null, val until: Double? = null)
+
+@Serializable
+internal data class RelayCarFix(
+    val lat: Double? = null,
+    val lng: Double? = null,
+    val heading: Double? = null,
+    val at: Double? = null,
+    val moving: Boolean = false,
+    val home: Boolean? = null,
+) {
+    fun toDomain(): CarFix? {
+        if (lat == null || lng == null || lat !in -90.0..90.0 || lng !in -180.0..180.0) return null
+        return CarFix(lat, lng, heading?.toFloat(), at?.toLong() ?: 0L, moving, home)
+    }
+}

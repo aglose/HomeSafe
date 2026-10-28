@@ -1,7 +1,9 @@
 package com.meticulouscreations.homesafe.network
 
 import com.meticulouscreations.homesafe.domain.model.CarCheck
+import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.CarProfile
+import com.meticulouscreations.homesafe.domain.model.ParkingAlert
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -87,5 +89,51 @@ class PushRelayApiCarsTest {
         assertNull(old.getCarChecks("http://frigate:5000", listOf("1790636195.070977-unrrq2")).getOrThrow(), "no such route: an older relay")
         val (down, _) = api(HttpStatusCode.BadGateway, "")
         assertTrue(down.getCarChecks("http://frigate:5000", listOf("1790636195.070977-unrrq2")).isFailure, "a relay that couldn't say this time")
+    }
+
+    @Test
+    fun eachTeslaComesWithWhereItWasLastSeenAndItsSpotAtACurb() = runTest {
+        val (api, seen) = api(
+            respondWith = """{"streets":[],"cars":[
+                {"car":"andrews_tesla","name":"Andrew's Tesla","street":"Elm St","side":"north","lat":37.77004,"lng":-122.25732,"heading":270,
+                 "since":1793851200.5,"move_by":1793890800,"rule":{"kind":"no_parking","days":["thu"],"start":"08:00","end":"11:00","note":"Street sweeping"},
+                 "window":{"from":1793890800,"until":1793901600},
+                 "last":{"lat":37.77004,"lng":-122.25732,"heading":270,"at":1793851200,"moving":false,"home":true},"asleep":true},
+                {"car":"sarahs_car","name":"Sarah's Tesla","street":null,"side":null,"lat":null,"lng":null,"since":null,"move_by":null,"rule":null,"window":null,
+                 "last":{"lat":37.78,"lng":-122.27,"heading":10,"at":1793854800,"moving":true,"home":false},"asleep":false},
+                {"car":"new_car","name":"New Car","last":null,"asleep":false}]}""",
+        )
+        val cars = api.getCars("http://100.99.163.71:5000").getOrThrow()
+        assertEquals("http://100.99.163.71:8787/parking", seen.urls.single())
+        val (andrew, sarah, new) = cars
+        val spot = andrew.parked!!
+        assertEquals(listOf("Elm St", "Street sweeping"), listOf(spot.street, spot.note))
+        assertEquals(ParkingAlert.Side.NORTH, spot.side)
+        assertEquals(listOf(1_793_851_200L, 1_793_890_800L, 1_793_890_800L, 1_793_901_600L), listOf(spot.sinceEpochSeconds, spot.moveByEpochSeconds, spot.fromEpochSeconds, spot.untilEpochSeconds))
+        assertNull(spot.limitMinutes)
+        assertTrue(andrew.asleep)
+        assertEquals(CarFix(37.78, -122.27, 10f, 1_793_854_800, moving = true, home = false), sarah.lastSeen)
+        assertNull(sarah.parked)
+        assertEquals(37.78, sarah.latitude)
+        assertNull(new.lastSeen)
+        assertNull(new.latitude, "never seen: no pin")
+    }
+
+    @Test
+    fun aTimeLimitIsMinutesNotAWindow() = runTest {
+        val (api, _) = api(
+            respondWith = """{"cars":[{"car":"andrews_tesla","name":"Andrew's Tesla","street":"Oak St","side":null,"lat":1.0,"lng":2.0,
+                "move_by":1793890800,"rule":{"kind":"limit","minutes":120},"window":{"from":1793880000,"until":1793916000}}]}""",
+        )
+        val spot = api.getCars("http://frigate:5000").getOrThrow().single().parked!!
+        assertEquals(120, spot.limitMinutes)
+        assertNull(spot.fromEpochSeconds)
+        assertNull(spot.side)
+    }
+
+    @Test
+    fun aRelayFromBeforeParkingHasNoCars() = runTest {
+        val (api, _) = api(HttpStatusCode.NotFound, respondWith = """{"detail":"Not Found"}""")
+        assertEquals(emptyList(), api.getCars("http://frigate:5000").getOrThrow())
     }
 }

@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -396,5 +397,26 @@ class MapMathTest {
         val row = tiles.filter { it.y == 3 }
         assertTrue(row.size > 8)
         assertTrue(row.all { it.x in 0..7 })
+    }
+
+    @Test
+    fun fittingShowsEveryPlaceInsideTheMargin() {
+        val places = listOf(40.0001 to -89.0006, 40.0004 to -89.0001, 40.0030 to -88.9970)
+        val camera = MapCamera.fitting(places, 1_000f, 800f, 256f, maxZoom = 22.0, marginPx = 50f)!!
+        places.forEach { (lat, lng) ->
+            val (dx, dy) = camera.project(lat, lng, 256f)
+            assertTrue(abs(dx) <= 450.5f && abs(dy) <= 350.5f, "($dx, $dy) inside")
+        }
+        // As far in as they allow: at least one of them on the margin's edge.
+        val reach = places.maxOf { (lat, lng) -> camera.project(lat, lng, 256f).let { maxOf(abs(it.first) / 450f, abs(it.second) / 350f) } }
+        assertEquals(1f, reach, 0.01f)
+        assertEquals(17.0, MapCamera.fitting(places, 1_000f, 800f, 256f, maxZoom = 17.0, marginPx = 50f)!!.zoom, "no closer than asked")
+    }
+
+    @Test
+    fun oneOrSamePlacesAreShownAtTheClosestZoom() {
+        assertEquals(MapCamera.at(40.0, -89.0, 17.0), MapCamera.fitting(listOf(40.0 to -89.0, 40.0 to -89.0), 400f, 400f, 256f, maxZoom = 17.0))
+        assertNull(MapCamera.fitting(emptyList(), 400f, 400f, 256f, maxZoom = 17.0))
+        assertNull(MapCamera.fitting(listOf(40.0 to -89.0), 0f, 0f, 256f, maxZoom = 17.0), "not laid out yet")
     }
 }

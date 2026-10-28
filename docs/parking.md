@@ -51,6 +51,28 @@ channel, wearing the car; on iOS it is the relay's banner.
   about a metre) and `parking_heading`, and `GET /parking` gives each car's `lat`, `lng` and
   `heading`. A push from before these were sent opens the app as before, with no map.
 
+## The cars' map
+
+Home has a row of pills, one per Tesla, with where each is: the street it is parked on, Home,
+Driving or Away. A car with a deadline at the curb is drawn in the accent colour. A tap opens the
+cars' map (`CarsScreen` in `:app`, reached through `LocalCarsPage` from Home's back stack in
+`:shared`): every car on a street map, fitted to show them all, with a card per car underneath
+saying where it is, what the sign says and by when to move, how long ago Tesla saw it, and
+whether it is asleep. A tap on a card or a pin flies the map to that car.
+
+It reads `GET /parking` on each visit and every two minutes while Home or the map is up
+(`CarRepositoryImpl`). That answers from what the relay already has and never asks Tesla, so the
+map is as fresh as car presence's half-hourly checks. For that, each car's entry carries, beside
+its curb spot:
+
+- `last`: where Tesla last saw it, wherever that was (`lat`, `lng`, `heading`, `at`, `moving`),
+  and `home`, whether that is within the household's home radius (null with no home set). The
+  relay keeps it with the car's parking state, so it survives a restart; a relay from before it
+  answers with the curb spot alone, and an asleep car keeps the last fix it gave.
+- `asleep`: Tesla said so the last time it was asked.
+- `window`: the deadline's window (`from`, `until`), so the phone can word "No parking 8–11 AM"
+  on its own clock and in its own language.
+
 ## The signs: `parking.json`
 
 The signs are written down on the box in `~/surveillance/relay/data/parking.json` (`/data/parking.json`

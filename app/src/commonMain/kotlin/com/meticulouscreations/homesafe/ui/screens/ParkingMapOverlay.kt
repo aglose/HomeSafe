@@ -139,8 +139,8 @@ fun ParkingMapCard(alert: ParkingAlert, tiles: MapTileSource, onClose: () -> Uni
                 Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 Column(Modifier.weight(1f)) {
                     Text(parkingTitle(alert), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                    Text(parkingPlace(alert), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    parkingReason(alert)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Text(parkingPlace(alert.street, alert.side), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    parkingReason(alert.note, alert.limitMinutes, alert.fromEpochSeconds, alert.untilEpochSeconds)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
             val description = stringResource(Res.string.parking_map_description, alert.carName)
@@ -177,31 +177,37 @@ fun ParkingMapCard(alert: ParkingAlert, tiles: MapTileSource, onClose: () -> Uni
 private fun parkingTitle(alert: ParkingAlert): String {
     val by = alert.byEpochSeconds
     if (alert.event == ParkingAlert.Event.NOW || by == null) return stringResource(Res.string.parking_map_title_now, alert.carName)
-    val now = Clock.System.now().epochSeconds
-    val offset = utcOffset(by)
-    val clock = WeatherFormat.clock(by, offset).resolve()
-    val sameDay = WeatherFormat.weekdayIndex(by, offset) == WeatherFormat.weekdayIndex(now, utcOffset(now)) && by - now < 86_400
-    val time = if (sameDay) clock else stringResource(Res.string.parking_map_when_other_day, stringResource(WeatherFormat.weekday(by, offset)), clock)
-    return stringResource(Res.string.parking_map_title_due, alert.carName, time)
+    return stringResource(Res.string.parking_map_title_due, alert.carName, parkingWhen(by))
 }
 
+/** When a car must be gone by, on this phone's clock: "8:00 AM" when that is today, else "Thu 8:00 AM". */
 @Composable
-private fun parkingPlace(alert: ParkingAlert): String = when (alert.side) {
-    ParkingAlert.Side.NORTH -> stringResource(Res.string.parking_map_place_north, alert.street)
-    ParkingAlert.Side.EAST -> stringResource(Res.string.parking_map_place_east, alert.street)
-    ParkingAlert.Side.SOUTH -> stringResource(Res.string.parking_map_place_south, alert.street)
-    ParkingAlert.Side.WEST -> stringResource(Res.string.parking_map_place_west, alert.street)
-    null -> alert.street
+internal fun parkingWhen(byEpochSeconds: Long, nowEpochSeconds: Long = Clock.System.now().epochSeconds): String {
+    val offset = utcOffset(byEpochSeconds)
+    val clock = WeatherFormat.clock(byEpochSeconds, offset).resolve()
+    val sameDay = WeatherFormat.weekdayIndex(byEpochSeconds, offset) == WeatherFormat.weekdayIndex(nowEpochSeconds, utcOffset(nowEpochSeconds)) &&
+        byEpochSeconds - nowEpochSeconds < 86_400
+    return if (sameDay) clock else stringResource(Res.string.parking_map_when_other_day, stringResource(WeatherFormat.weekday(byEpochSeconds, offset)), clock)
 }
 
-/** What the sign says: the household's own words for it, else the limit or the no-parking window. */
+/** "North side of Elm St", or the street alone when the relay couldn't tell the side. */
 @Composable
-private fun parkingReason(alert: ParkingAlert): String? {
-    val limit = alert.limitMinutes
-    val from = alert.fromEpochSeconds
-    val until = alert.untilEpochSeconds
+internal fun parkingPlace(street: String, side: ParkingAlert.Side?): String = when (side) {
+    ParkingAlert.Side.NORTH -> stringResource(Res.string.parking_map_place_north, street)
+    ParkingAlert.Side.EAST -> stringResource(Res.string.parking_map_place_east, street)
+    ParkingAlert.Side.SOUTH -> stringResource(Res.string.parking_map_place_south, street)
+    ParkingAlert.Side.WEST -> stringResource(Res.string.parking_map_place_west, street)
+    null -> street
+}
+
+/** What the sign says: the household's own words for it ([note]), else the time limit or the no-parking window. */
+@Composable
+internal fun parkingReason(note: String?, limitMinutes: Int?, fromEpochSeconds: Long?, untilEpochSeconds: Long?): String? {
+    val limit = limitMinutes
+    val from = fromEpochSeconds
+    val until = untilEpochSeconds
     return when {
-        alert.note != null -> alert.note
+        note != null -> note
 
         limit != null && limit % 60 == 0 -> pluralStringResource(Res.plurals.parking_map_limit_hours, limit / 60, limit / 60)
 

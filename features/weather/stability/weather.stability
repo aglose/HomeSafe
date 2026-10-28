@@ -657,6 +657,31 @@ public fun com.meticulouscreations.homesafe.weather.ui.radar.MapCreditLabel(text
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+public fun com.meticulouscreations.homesafe.weather.ui.radar.PinMap(pins: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapPin>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, focus: kotlin.String?, animated: kotlin.Boolean, pin: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<com.meticulouscreations.homesafe.weather.ui.radar.MapPin, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - pins: RUNTIME (requires runtime check)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - focus: STABLE (class with no mutable properties)
+    - animated: STABLE (primitive type)
+    - pin: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.weather.ui.radar.PinMapContent(state: com.meticulouscreations.homesafe.weather.ui.radar.RadarMapState, pins: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapPin>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, focus: kotlin.String?, animated: kotlin.Boolean, tilePx: kotlin.Float, pin: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<com.meticulouscreations.homesafe.weather.ui.radar.MapPin, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - pins: RUNTIME (requires runtime check)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - focus: STABLE (class with no mutable properties)
+    - animated: STABLE (primitive type)
+    - tilePx: STABLE (primitive type)
+    - pin: STABLE (composable function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.weather.ui.radar.RadarLegend(modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
