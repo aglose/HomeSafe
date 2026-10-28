@@ -1301,8 +1301,6 @@ private fun CameraOverflowMenu(
                     onEditDetectionZones()
                 },
             )
-            // Also the way in when the home page's "In view now" strip is empty: a car it missed
-            // leaves no strip to open this from.
             DropdownMenuItem(
                 text = { Text(text = stringResource(Res.string.camera_menu_tag_cars), style = MaterialTheme.typography.labelLarge) },
                 leadingIcon = { Icon(imageVector = Icons.Filled.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },

@@ -20,8 +20,8 @@ class CarTag(
 
 /** What came of a [CarTag] beyond the example itself, which is always saved when the tag succeeds. */
 data class CarTagOutcome(
-    /** Frigate now calls the tracked car [CarTag.category], so the in-view strip does too. False when nothing was tracked there, or naming it failed. */
-    val namedInView: Boolean,
+    /** Frigate now calls the tracked car [CarTag.category]. False when nothing was tracked there, or naming it failed. */
+    val namedTrackedCar: Boolean,
     /** A retrain is running with the new example; false when Frigate turned it down (one already running, or too few categories). */
     val trainingStarted: Boolean,
 )
@@ -47,6 +47,6 @@ class TagCarUseCase(
         val named = tag.trackedEventId?.let { classifierRepository.nameTrackedObject(it, subLabel).isSuccess } ?: false
         val trained = classifierRepository.train(tag.modelName).isSuccess
         if (named) momentsRepository.refreshStationaryObjects()
-        return Result.success(CarTagOutcome(namedInView = named, trainingStarted = trained))
+        return Result.success(CarTagOutcome(namedTrackedCar = named, trainingStarted = trained))
     }
 }

@@ -11,12 +11,9 @@ import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
-import com.meticulouscreations.homesafe.domain.model.StationaryObject
-import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.model.camerasWithNest
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
-import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStillUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
@@ -28,13 +25,11 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshCarsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
-import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveCameraOrderUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraHiddenUseCase
@@ -60,10 +55,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
 
 /**
  * A camera plus what its grid card needs to play it. [streamUrl] and [posterUrl] are null while
@@ -115,18 +106,6 @@ internal fun arrangedCameras(cameras: List<Camera>, layouts: Map<String, CameraL
     return cameras.sortedWith(compareBy(nullsLast()) { camera: Camera -> rank(camera) })
 }
 
-/**
- * One parked vehicle on the "In view now" strip: what it is, how its card reads, and the crop of
- * its most recent sighting. [thumbnailUrl] is null only while disconnected.
- */
-@Immutable
-data class InViewItem(
-    val subject: StationaryObject,
-    val presentation: StationaryObjectPresentation,
-    val thumbnailUrl: String?,
-)
-
-@OptIn(ExperimentalTime::class)
 @Inject
 @ViewModelKey
 @ContributesIntoMap(AppScope::class)
@@ -139,23 +118,19 @@ class HomeViewModel(
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
     private val getLiveStillUrlUseCase: GetLiveStillUrlUseCase,
-    private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     observeDoorsUseCase: ObserveDoorsUseCase,
     private val refreshDoorsUseCase: RefreshDoorsUseCase,
     observeCarsUseCase: ObserveCarsUseCase,
     private val refreshCarsUseCase: RefreshCarsUseCase,
-    observeStationaryObjectsUseCase: ObserveStationaryObjectsUseCase,
     private val setAwayUseCase: SetAwayUseCase,
     private val reconnectToServerUseCase: ReconnectToServerUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
-    private val refreshStationaryObjectsUseCase: RefreshStationaryObjectsUseCase,
     private val refreshNestCamerasUseCase: RefreshNestCamerasUseCase,
     observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
     private val saveCameraOrderUseCase: SaveCameraOrderUseCase,
     private val setCameraOrientationUseCase: SetCameraOrientationUseCase,
     private val setCameraHiddenUseCase: SetCameraHiddenUseCase,
-    private val clock: Clock,
 ) : ViewModel() {
 
     private val _refreshing = MutableStateFlow(false)
@@ -175,23 +150,6 @@ class HomeViewModel(
      * composed later can tell an old request from a new one.
      */
     val reconnectRequests: StateFlow<Int> = _reconnectRequests.asStateFlow()
-
-    /**
-     * The household's cars standing in view of a camera right now — "Sarah's Tesla · Driveway ·
-     * since 8:12 AM" — so opening the app answers whether a car is home without reading the feed
-     * for it. Opens on what the device last knew and is corrected by the first poll, so it reads
-     * the same whether the server has answered yet or not. Empty while signed out, and empty when
-     * none of them is parked anywhere: the strip is then not drawn at all rather than announcing
-     * that the driveway is empty.
-     *
-     * Collecting it is what starts the poll behind it, so it runs only while the Home tab is up.
-     */
-    val inView: StateFlow<List<InViewItem>> = combine(
-        observeStationaryObjectsUseCase(),
-        observeCurrentServerUrlUseCase(),
-    ) { subjects, serverUrl ->
-        inViewItems(subjects, serverUrl, clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date, getEventThumbnailUrlUseCase)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Away mode banner: true while the relay says nobody is home. Collecting it keeps presence polled. */
     val everyoneAway: StateFlow<Boolean> = observeHouseholdPresenceUseCase()
@@ -233,7 +191,7 @@ class HomeViewModel(
         _refreshing.value = true
         _reconnectRequests.update { it + 1 }
         val work = viewModelScope.launch {
-            // The route first: presence and the strip's poll both read the address in use when
+            // The route first: presence and the doors' and cars' polls read the address in use when
             // they start, and after leaving the house that is a dead LAN address until this moves it.
             reconnectToServerUseCase()
             coroutineScope {
@@ -241,7 +199,6 @@ class HomeViewModel(
                 launch { refreshNestCamerasUseCase() }
                 launch { refreshDoorsUseCase() }
                 launch { refreshCarsUseCase() }
-                refreshStationaryObjectsUseCase()
             }
         }
         refreshWork = work
