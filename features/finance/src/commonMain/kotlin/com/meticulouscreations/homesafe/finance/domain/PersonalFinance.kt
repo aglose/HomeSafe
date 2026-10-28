@@ -35,11 +35,14 @@ enum class AccountCategory(val label: StringResource) {
     HOME(Res.string.fin_data_category_home),
 }
 
-/** An account; [name] is the sheet's own label for it, or the app's words for one it adds (the home's equity). */
+/**
+ * An account; [name] is the sheet's own label for it, or the app's words for one it adds (the
+ * home's equity). [cell] is where its balance is in the sheet, for one read from a cell of its own.
+ */
 @Immutable
-data class Account(val name: UiText, val owner: Owner, val balance: Double, val category: AccountCategory) {
+data class Account(val name: UiText, val owner: Owner, val balance: Double, val category: AccountCategory, val cell: SheetCell? = null) {
     /** An account named as the sheet names it. */
-    constructor(name: String, owner: Owner, balance: Double, category: AccountCategory) : this(name.asUiText(), owner, balance, category)
+    constructor(name: String, owner: Owner, balance: Double, category: AccountCategory, cell: SheetCell? = null) : this(name.asUiText(), owner, balance, category, cell)
 }
 
 @Immutable
@@ -48,9 +51,9 @@ data class ExpenseLine(val name: String, val monthly: Double)
 @Immutable
 data class IncomeLine(val person: String, val monthly: Double)
 
-/** A debt; [balance] is what's owed, positive. [apr] as a percentage when the label gives one. */
+/** A debt; [balance] is what's owed, positive. [apr] as a percentage when the label gives one. [cell] is where the balance is in the sheet. */
 @Immutable
-data class Debt(val name: String, val owner: Owner, val balance: Double, val apr: Double?, val note: String?) {
+data class Debt(val name: String, val owner: Owner, val balance: Double, val apr: Double?, val note: String?, val cell: SheetCell? = null) {
     /**
      * The house's loan. The sheet counts the house as the equity built in it rather than its full
      * value, so the mortgage against that full value stays out of net worth (as the sheet's own
@@ -90,6 +93,8 @@ data class HomeEquity(
     val valueAdded: Double?,
     val estimatedAssetValue: Double?,
     val improvements: List<ExpenseLine>,
+    /** Where [value] is in the sheet: what the home is worth is typed, and looked up now and then. */
+    val valueCell: SheetCell? = null,
 )
 
 @Immutable
@@ -184,6 +189,8 @@ data class PersonalFinance(
     val charts: List<SheetChart> = emptyList(),
     /** How this read of the sheet went, part by part (see [SheetHealth]). */
     val health: SheetHealth = SheetHealth.Unchecked,
+    /** When each balance was last updated, by its [SheetCell.id]; from the relay, which keeps the times the sheet doesn't. */
+    val balanceAges: Map<String, BalanceAge> = emptyMap(),
 ) {
     /** Everything owed but the mortgage (see [Debt.isMortgage]): what net worth subtracts. */
     val consumerDebt: Double get() = debts.filterNot { it.isMortgage }.sumOf { it.balance }

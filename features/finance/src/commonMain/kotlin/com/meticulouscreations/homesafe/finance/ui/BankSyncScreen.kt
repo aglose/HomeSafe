@@ -92,6 +92,7 @@ import homesafe.shared.generated.resources.fin_bank_fill_bad_file_unreadable
 import homesafe.shared.generated.resources.fin_bank_fill_change
 import homesafe.shared.generated.resources.fin_bank_fill_change_from_empty
 import homesafe.shared.generated.resources.fin_bank_fill_change_left
+import homesafe.shared.generated.resources.fin_bank_fill_change_typed
 import homesafe.shared.generated.resources.fin_bank_fill_checked
 import homesafe.shared.generated.resources.fin_bank_fill_failed
 import homesafe.shared.generated.resources.fin_bank_fill_failed_plain
@@ -824,6 +825,9 @@ private fun WriteCard(write: SheetWrite, now: Long, undoing: Boolean, enabled: B
                         style = FinanceTheme.type.label,
                         color = colors.textSecondary,
                     )
+                    change.typedBy?.let { who ->
+                        Text(stringResource(Res.string.fin_bank_fill_change_typed, who), style = FinanceTheme.type.micro, color = colors.textTertiary)
+                    }
                     if (change.restored == false) {
                         Text(stringResource(Res.string.fin_bank_fill_change_left), style = FinanceTheme.type.micro, color = colors.watch)
                     }

@@ -110,6 +110,13 @@ internal object BankSyncFixtures {
             ),
             writes = listOf(
                 SheetWrite(
+                    id = 13,
+                    atEpochSeconds = NOW - 40 * 60,
+                    undoneAtEpochSeconds = null,
+                    undoneBy = null,
+                    changes = listOf(SheetChange("Pension", "Home", "J14", before = 61_250.0, after = 62_480.0, restored = null, typedBy = "sam")),
+                ),
+                SheetWrite(
                     id = 12,
                     atEpochSeconds = NOW - 3 * 3_600,
                     undoneAtEpochSeconds = null,

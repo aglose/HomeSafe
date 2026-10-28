@@ -17,9 +17,15 @@ data class MergedRange(val startRow: Int, val endRow: Int, val startColumn: Int,
 /**
  * One tab of the workbook. The Sheets API puts a merged block's value in its top-left cell only,
  * so [value] reads every cell of a merge as that value — which is how the budget marks a joint
- * account: one amount merged across both people's columns.
+ * account: one amount merged across both people's columns. [formulas] are the cells that hold a
+ * formula, as (row, column), when the relay could say; null when it couldn't.
  */
-class SheetGrid(val title: String, private val rows: List<List<CellValue>>, private val merges: List<MergedRange>) {
+class SheetGrid(
+    val title: String,
+    private val rows: List<List<CellValue>>,
+    private val merges: List<MergedRange>,
+    formulas: Collection<Pair<Int, Int>>? = null,
+) {
     val rowCount: Int get() = rows.size
 
     fun columnCount(row: Int): Int = rows.getOrNull(row)?.size ?: 0
@@ -32,7 +38,16 @@ class SheetGrid(val title: String, private val rows: List<List<CellValue>>, priv
         }
     }
 
+    private val formulaCells: Set<Long>? = formulas?.mapTo(HashSet()) { (r, c) -> key(r, c) }
+
     private fun key(row: Int, column: Int): Long = (row.toLong() shl 32) or column.toLong()
+
+    /** Whether the cell (a merge's top-left, for one inside a merge) is worked out by a formula; false when that isn't known. */
+    fun isFormula(row: Int, column: Int): Boolean {
+        val cells = formulaCells ?: return false
+        val merge = mergeAt(row, column)
+        return key(merge?.startRow ?: row, merge?.startColumn ?: column) in cells
+    }
 
     fun mergeAt(row: Int, column: Int): MergedRange? = mergeIndex[key(row, column)]
 
@@ -90,11 +105,14 @@ class SheetGrid(val title: String, private val rows: List<List<CellValue>>, priv
     }
 
     /** The first number in [row] to the right of [column], looking at most [maxColumns] across. */
-    fun numberRightOf(row: Int, column: Int, maxColumns: Int = 4): Double? {
+    fun numberRightOf(row: Int, column: Int, maxColumns: Int = 4): Double? = numberCellRightOf(row, column, maxColumns)?.second
+
+    /** [numberRightOf], with the column the number is in. */
+    fun numberCellRightOf(row: Int, column: Int, maxColumns: Int = 4): Pair<Int, Double>? {
         val merge = mergeAt(row, column)
         val from = (merge?.endColumn ?: (column + 1))
         for (c in from until from + maxColumns) {
-            number(row, c)?.let { return it }
+            number(row, c)?.let { return c to it }
         }
         return null
     }
@@ -103,9 +121,12 @@ class SheetGrid(val title: String, private val rows: List<List<CellValue>>, priv
      * The last number in [row] within [maxColumns] right of [column], for blocks that put a
      * percentage beside each amount ("Cash Deposit | 25.00% | $250,000").
      */
-    fun lastNumberRightOf(row: Int, column: Int, maxColumns: Int = 3): Double? {
+    fun lastNumberRightOf(row: Int, column: Int, maxColumns: Int = 3): Double? = lastNumberCellRightOf(row, column, maxColumns)?.second
+
+    /** [lastNumberRightOf], with the column the number is in. */
+    fun lastNumberCellRightOf(row: Int, column: Int, maxColumns: Int = 3): Pair<Int, Double>? {
         val from = mergeAt(row, column)?.endColumn ?: (column + 1)
-        return (from until from + maxColumns).reversed().firstNotNullOfOrNull { number(row, it) }
+        return (from until from + maxColumns).reversed().firstNotNullOfOrNull { c -> number(row, c)?.let { c to it } }
     }
 
     /** [label]'s value: the number to its right, if the label is anywhere in the grid. */

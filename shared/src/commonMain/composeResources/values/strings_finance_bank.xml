@@ -146,6 +146,7 @@
     <!-- The cell was empty before; %1$s is the amount written. -->
     <string name="fin_bank_fill_change_from_empty">Empty → %1$s</string>
     <string name="fin_bank_fill_change_left">Left as it is: the cell had been changed since.</string>
+    <string name="fin_bank_fill_change_typed">Typed in the app by %1$s</string>
     <string name="fin_bank_fill_undoing">Undoing…</string>
     <!-- %1$s is how long ago ("3 min ago"); %2$s is the username of who undid it. -->
     <string name="fin_bank_fill_undone">Undone %1$s</string>

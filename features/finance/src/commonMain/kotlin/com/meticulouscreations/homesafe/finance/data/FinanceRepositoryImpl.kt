@@ -1,6 +1,9 @@
 package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.finance.domain.BalanceAge
+import com.meticulouscreations.homesafe.finance.domain.BalanceProblem
+import com.meticulouscreations.homesafe.finance.domain.BalanceUpdateException
 import com.meticulouscreations.homesafe.finance.domain.ChartHealth
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
@@ -15,6 +18,7 @@ import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.finance.domain.Transform
+import com.meticulouscreations.homesafe.finance.domain.TypedBalance
 import com.meticulouscreations.homesafe.network.isTransportFailure
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
@@ -178,12 +182,28 @@ class FinanceRepositoryImpl(
         }
     }
 
+    override suspend fun updateBalance(balance: TypedBalance, amount: Double): Result<BalanceAge> {
+        // A change needs the server: it is the one that writes the sheet.
+        val serverUrl = connectionRepository.currentServerUrl.value
+        if (serverUrl == null || !access.online.value) {
+            return Result.failure(BalanceUpdateException(BalanceProblem.NOT_CONNECTED, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected"))
+        }
+        return relay.setValue(serverUrl, balance.cell, amount).onSuccess {
+            // The sheet in memory has the old number: the next read goes to the relay for the new one.
+            sheetLock.withLock { sheet = null }
+        }
+    }
+
     // Dozens of passes over a thousand-row grid: off the main thread.
     private suspend fun parse(workbook: RelayWorkbook): PersonalFinance = withContext(Dispatchers.Default) {
         val grids = workbook.grids()
         val finance = PersonalFinanceParser.parse(workbook.title, workbook.fetchedAt.toLong(), grids, workbook.url)
         val charts = SheetChartReader.read(workbook.charts, grids, workbook.url)
-        finance.copy(charts = charts, health = finance.health.copy(charts = charts.map { ChartHealth(it.title, it.tab, it.issue) }))
+        finance.copy(
+            charts = charts,
+            health = finance.health.copy(charts = charts.map { ChartHealth(it.title, it.tab, it.issue) }),
+            balanceAges = workbook.balanceAges(),
+        )
     }
 
     /** The sheet as the device kept it, parsed afresh the first time it is wanted. Its own `fetchedAt` says how old it is. */

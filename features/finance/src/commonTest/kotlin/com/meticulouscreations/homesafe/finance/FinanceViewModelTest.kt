@@ -2,6 +2,9 @@ package com.meticulouscreations.homesafe.finance
 
 import com.meticulouscreations.homesafe.finance.data.InMemoryFinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.PersonalFinanceParser
+import com.meticulouscreations.homesafe.finance.domain.BalanceAge
+import com.meticulouscreations.homesafe.finance.domain.BalanceProblem
+import com.meticulouscreations.homesafe.finance.domain.BalanceUpdateException
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
@@ -12,17 +15,25 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
+import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.PriceHistory
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Series
+import com.meticulouscreations.homesafe.finance.domain.SheetCell
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.finance.domain.TypedBalance
+import com.meticulouscreations.homesafe.finance.domain.TypedBalanceKind
 import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
 import com.meticulouscreations.homesafe.finance.domain.WatchlistRepository
+import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_balance_error_calculated
+import homesafe.shared.generated.resources.fin_balance_error_changed
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -136,6 +147,15 @@ class FinanceViewModelTest {
             slowSheet?.let { return it.await() }
             return sheet()
         }
+
+        /** Every balance typed in, and what the relay answers each. */
+        val typed = mutableListOf<Pair<TypedBalance, Double>>()
+        var typedAnswer: () -> Result<BalanceAge> = { Result.success(BalanceAge(1_790_000_000, "alex", fromBank = false)) }
+
+        override suspend fun updateBalance(balance: TypedBalance, amount: Double): Result<BalanceAge> {
+            typed += balance to amount
+            return typedAnswer()
+        }
     }
 
     /** The device's own watchlist, in memory. */
@@ -156,6 +176,62 @@ class FinanceViewModelTest {
     private fun sheetNaming(vararg tickers: String) = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList()).copy(watchlist = tickers.toList())
 
     private fun history(price: Double) = PriceHistory("^GSPC", ChartRange.DAY, Series.of(listOf(1L to price, 2L to price)), null, 0)
+
+    private val roth = TypedBalance(
+        "Roth IRA".asUiText(),
+        Owner.Person("Alex"),
+        TypedBalanceKind.ACCOUNT,
+        50_000.0,
+        SheetCell("Home", "Roth IRA", 4, 2, 50_000.0),
+        age = null,
+    )
+
+    @Test
+    fun aTypedBalanceIsSentThenTheSheetIsReadAgainBeforeItIsDone() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        repo.sheet = { Result.success(sheetNaming()) }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.updateBalance(roth, 52_000.0)
+        assertEquals(BalanceSave(roth.cell.id), vm.uiState.value.balanceSave, "saving until the relay answers")
+        runCurrent()
+        assertEquals(listOf(roth to 52_000.0), repo.typed)
+        assertEquals(1, repo.sheetCalls, "the sheet is read again for the new number")
+        assertEquals(BalanceSave(roth.cell.id, saving = false, done = true), vm.uiState.value.balanceSave)
+        vm.clearBalanceSave()
+        assertNull(vm.uiState.value.balanceSave)
+    }
+
+    @Test
+    fun aRefusedBalanceSaysWhyAndASheetChangedSinceIsReadAgain() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        repo.sheet = { Result.success(sheetNaming()) }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        val calculated = UiText.of(Res.string.fin_balance_error_calculated)
+        repo.typedAnswer = { Result.failure(BalanceUpdateException(BalanceProblem.CALCULATED, calculated)) }
+        vm.updateBalance(roth, 1.0)
+        runCurrent()
+        assertEquals(BalanceSave(roth.cell.id, saving = false, error = calculated), vm.uiState.value.balanceSave)
+        assertEquals(0, repo.sheetCalls)
+
+        val changed = UiText.of(Res.string.fin_balance_error_changed)
+        repo.typedAnswer = { Result.failure(BalanceUpdateException(BalanceProblem.CHANGED, changed)) }
+        vm.updateBalance(roth, 1.0)
+        runCurrent()
+        assertEquals(changed, vm.uiState.value.balanceSave?.error)
+        assertEquals(1, repo.sheetCalls, "the editor is shown what the sheet holds now")
+    }
+
+    @Test
+    fun aSecondSaveWhileOneIsUnderWayIsIgnored() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.updateBalance(roth, 1.0)
+        vm.updateBalance(roth, 2.0)
+        vm.clearBalanceSave()
+        assertEquals(true, vm.uiState.value.balanceSave?.saving, "closing the editor doesn't forget a save under way")
+        runCurrent()
+        assertEquals(listOf(roth to 1.0), repo.typed)
+    }
 
     @Test
     fun theDrawersTeaserLoadsQuotesAndTheSheetButNotTheEconomy() = runTest(dispatcher) {

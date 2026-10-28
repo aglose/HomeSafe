@@ -1,10 +1,13 @@
 package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
+import com.meticulouscreations.homesafe.finance.domain.BalanceAge
 import com.meticulouscreations.homesafe.finance.domain.Contribution
 import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.SectionStatus
+import com.meticulouscreations.homesafe.finance.domain.SheetCell
 import com.meticulouscreations.homesafe.finance.domain.SheetSection
+import com.meticulouscreations.homesafe.finance.domain.typedBalances
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
@@ -59,12 +62,12 @@ class PersonalFinanceParserTest {
     }
 
     /** Builds a [SheetGrid] from a sparse map of 1-based A1 refs ("B6") to cell values. */
-    private fun sheetGrid(title: String, cells: Map<String, Any>, merges: List<String> = emptyList()): SheetGrid {
+    private fun sheetGrid(title: String, cells: Map<String, Any>, merges: List<String> = emptyList(), formulas: List<String>? = null): SheetGrid {
         val byCell = cells.entries.associate { (ref, value) -> a1(ref) to cellValueOf(value) }
         val maxRow = byCell.keys.maxOf { it.first }
         val maxCol = byCell.keys.maxOf { it.second }
         val rows = (0..maxRow).map { r -> (0..maxCol).map { c -> byCell[r to c] ?: CellValue.Empty } }
-        return SheetGrid(title, rows, merges.map(::mergeRef))
+        return SheetGrid(title, rows, merges.map(::mergeRef), formulas?.map(::a1))
     }
 
     // ---- The "Home" tab ------------------------------------------------------------------------
@@ -552,7 +555,11 @@ class PersonalFinanceParserTest {
     fun blankRowsInsideTheBlocksAndTheHistoryAreSkippedNotTakenAsTheirEnd() {
         // Three blank rows inside the accounts, expenses and vesting blocks, side by side in the same rows.
         val gapped = parseWith(homeWithRows(at = 7, n = 3))
-        assertEquals(finance.accounts, gapped.accounts)
+
+        // The same accounts, each cell found by its label on the row it moved to.
+        fun rowless(f: com.meticulouscreations.homesafe.finance.domain.PersonalFinance) = f.accounts.map { it.copy(cell = it.cell?.copy(row = 0)) }
+        assertEquals(rowless(finance), rowless(gapped))
+        assertEquals(finance.accounts.single { it.name == "Family 529".asUiText() }.cell!!.row + 3, gapped.accounts.single { it.name == "Family 529".asUiText() }.cell!!.row)
         assertEquals(finance.expenses, gapped.expenses)
         assertEquals(finance.vesting, gapped.vesting)
         // A blank row in the middle of the history.
@@ -650,6 +657,54 @@ class PersonalFinanceParserTest {
         assertEquals(AccountCategory.CASH, PersonalFinanceParser.categorise("Checking Account"))
         assertEquals(AccountCategory.CASH, PersonalFinanceParser.categorise("Savings Account"))
         assertEquals(AccountCategory.INVESTING, PersonalFinanceParser.categorise("Joint brokerage"))
+    }
+
+    // ---- Where each balance is ------------------------------------------------------------------
+
+    @Test
+    fun eachAccountKnowsItsLabelAndHowFarRightOfItItsNumberIs() {
+        val roth = finance.accounts.filter { it.name == "Roth IRA".asUiText() }.associateBy { it.owner }
+        assertEquals(SheetCell("Home", "Roth IRA", row = 6, right = 1, value = 18470.0), roth[Owner.Person("Alex")]?.cell)
+        assertEquals(SheetCell("Home", "Roth IRA", row = 6, right = 2, value = 13920.0), roth[Owner.Person("Sam")]?.cell)
+        assertEquals(1, finance.accounts.single { it.name == "Joint brokerage".asUiText() }.cell?.right, "a joint amount is in its merge's first column")
+        assertEquals(SheetCell("Home", "Combined", row = 19, right = 1, value = 8640.0), finance.accounts.single { it.name == UiText.of(Res.string.fin_data_account_checking_savings) }.cell)
+        assertEquals(SheetCell("Home", "Cash", row = 34, right = 2, value = 94200.0), finance.accounts.single { it.name == UiText.of(Res.string.fin_data_account_cash) }.cell)
+        assertNull(finance.accounts.single { it.category == AccountCategory.HOME }.cell, "the home's equity is worked out, not typed")
+        assertEquals(SheetCell("Home", "Value at Sale", row = 40, right = 2, value = 1382600.0), finance.home?.valueCell)
+    }
+
+    @Test
+    fun aDebtIsTypedTheWayTheSheetSignsItsDebtsEvenAtZero() {
+        val loan = assertNotNull(finance.debts.single { it.name == "Student Loans" }.cell)
+        assertEquals("Student Loans (APR 3.08%, ~5 years left)", loan.label, "the whole label, as the sheet has it")
+        assertEquals(2, loan.right)
+        assertEquals(-5000.0, loan.toSheet(5000.0))
+        val cards = assertNotNull(finance.debts.single { it.name == "Credit Cards" }.cell)
+        assertEquals(1, cards.right)
+        assertTrue(cards.negative, "paid off, but the sheet keeps what's owed below zero")
+        assertEquals(240.0, finance.accounts.first().cell!!.toSheet(240.0))
+    }
+
+    @Test
+    fun aFormulaOrANumberTypedAsWordsIsNotATypedBalance() {
+        val cells = homeCells + ("J8" to "$4,310")
+        val read = PersonalFinanceParser.parse("Budget", 0L, listOf(sheetGrid("Home", cells, homeMerges, formulas = listOf("J7", "J6"))))
+        val roth = read.accounts.filter { it.name == "Roth IRA".asUiText() }.associateBy { it.owner }
+        assertEquals(true, roth[Owner.Person("Alex")]?.cell?.calculated)
+        assertEquals(false, roth[Owner.Person("Sam")]?.cell?.calculated)
+        assertEquals(true, read.accounts.single { it.name == "Joint brokerage".asUiText() }.cell?.calculated, "a formula in a merge is the merge's")
+        assertEquals(true, read.accounts.single { it.name == "Family 529".asUiText() }.cell?.calculated)
+        val typed = typedBalances(read.copy(balanceAges = mapOf(roth.getValue(Owner.Person("Sam")).cell!!.id to BalanceAge(10, "sam", fromBank = false))))
+        assertTrue(typed.none { it.cell.calculated })
+        assertEquals("Home|roth ira|2", typed.last().cell.id, "oldest first, those never updated leading")
+    }
+
+    @Test
+    fun aBalanceIsKnownByTheIdTheRelayKeepsItsAgeUnder() {
+        assertEquals("Home|student loans (apr 3.08%, ~5 years left)|2", SheetCell.idOf(" Home", "Student  Loans (APR 3.08%, ~5 years LEFT) ", 2))
+        val ages = RelayWorkbook(updates = listOf(RelayBalanceAge("Home", "Roth  IRA", 2, 99.0, "sam", "app"), RelayBalanceAge("Home", "Cash", 2, 50.0, null, "bank"))).balanceAges()
+        assertEquals(BalanceAge(99, "sam", fromBank = false), ages["Home|roth ira|2"])
+        assertEquals(true, ages["Home|cash|2"]?.fromBank)
     }
 
     @Test

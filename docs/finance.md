@@ -122,6 +122,47 @@ links each bank, brokerage and lender through Plaid; the relay then reads every 
 morning and writes it to a feed the sheet's cells look up, or types it into the cells you list. Each
 write to a cell is shown there with what it changed, and can be undone. See [bank-sync.md](bank-sync.md).
 
+### Balances typed by hand
+
+Some balances no linked bank reports: a small 401(k) record keeper, a pension, an HSA at a payroll
+provider, what the house is worth. They stay typed in the sheet, and someone logs in now and then
+and copies the number over. **Finance → Wallet → Typed balances** (or **Update balances**) lists
+every one of them with how long ago it was last updated:
+
+- green within a month, amber after a month, red after two months, and amber with "No update
+  recorded" for one never updated from the app;
+- the Wallet's card says how many want updating and how old the oldest is, and each account and
+  debt row on the Accounts and Debt pages says its age too.
+
+Tapping a balance opens it with the sheet's number filled in. Type the new one and **Save**: the
+relay writes it into that cell of the budget sheet and the app reads the sheet again. Saved
+unchanged, the button says **Still right**, which marks it as checked without writing anything.
+
+What is listed: every account (in "Brokerage Accounts" and "Checking/Savings", and the lone "Cash"
+line), every debt and the home's value, wherever the cell holds a number typed in. A cell with a
+formula (a total, or a lookup in the bank feed) is left out, since it follows other cells; so is
+the home's equity, which the sheet works out. Balances the bank sync writes into the sheet each
+morning are listed apart, under **Filled in by the bank**, with when they were last synced.
+
+How it's kept safe (`PUT /finance/sheet/value`, relay.py, "typed balances"):
+
+- The cell is found by its row's label and how many columns right of it the number sits, the
+  way the sheet fill finds it, never by an address. A label in the tab twice is the one on the row
+  the app read.
+- The cell must still hold the number the app showed. Edited in the sheet since, the write is
+  refused and the app reads the sheet again, so the editor shows the number there now.
+- Only a typed number or an empty cell is written over, never a formula or words, and never a
+  cell the bank sync fills in (unless its line is paused).
+- Each write is listed with the sheet fill's under **What was changed** on the Bank sync page,
+  marked as typed in the app, and **Undo** there puts the old number back.
+
+Google keeps no time per cell, so the relay keeps the ages itself (`sheet_values` in `relay.db`):
+when a balance was typed or confirmed in the app, and when the sheet fill wrote it or found it
+already right. An edit made straight in the sheet isn't seen, so a balance typed there still
+shows its last age from the app. The budget sheet must be shared with the service account as an
+**Editor** for the write (as for the sheet fill, [bank-sync.md](bank-sync.md)); with only Viewer
+access the app says so.
+
 Only the server's **Frigate admin** accounts can read it. A viewer account, say a sitter's, gets
 "Not for this account". To let a household member whose Frigate login is a viewer in too, add
 their username to `FINANCE_USERS` (comma-separated) in `finance.env`. Admins keep access either
@@ -222,6 +263,8 @@ the sign-in screen, which opens the same drawer (see "Before sign-in" in the REA
 - `finance/ui`: the screens, and components built for them:
   - `LineChart`: Robinhood scrubbing with haptic ticks, a morph between any two datasets, a
     draw-on reveal, danger zones and reference lines.
+  - `TypedBalancesScreen`: the balances typed by hand, their ages and the editor that types a new
+    one in (`typedBalances` in `domain/TypedBalances.kt` picks them out of the sheet).
   - `RollingNumber`: odometer digits.
   - `DonutChart`, `BarChart`, and `GroupedBarChart` (several series side by side or stacked, for the sheet's charts).
   - Two runtime shaders, AGSL on Android and the same source as Skia effects elsewhere: the drifting

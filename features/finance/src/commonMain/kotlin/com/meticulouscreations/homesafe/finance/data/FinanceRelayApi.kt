@@ -1,5 +1,9 @@
 package com.meticulouscreations.homesafe.finance.data
 
+import com.meticulouscreations.homesafe.finance.domain.BalanceAge
+import com.meticulouscreations.homesafe.finance.domain.BalanceProblem
+import com.meticulouscreations.homesafe.finance.domain.BalanceUpdateException
+import com.meticulouscreations.homesafe.finance.domain.SheetCell
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.network.PushRelayApi
@@ -7,6 +11,13 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_balance_error_bank_filled
+import homesafe.shared.generated.resources.fin_balance_error_busy
+import homesafe.shared.generated.resources.fin_balance_error_calculated
+import homesafe.shared.generated.resources.fin_balance_error_changed
+import homesafe.shared.generated.resources.fin_balance_error_not_found
+import homesafe.shared.generated.resources.fin_balance_error_not_shared
+import homesafe.shared.generated.resources.fin_balance_error_relay_outdated
 import homesafe.shared.generated.resources.fin_data_error_relay_answered
 import homesafe.shared.generated.resources.fin_data_error_relay_outdated
 import io.ktor.client.HttpClient
@@ -14,8 +25,12 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -55,6 +70,23 @@ class FinanceRelayApi(private val httpClient: HttpClient) {
         }
     }
 
+    /**
+     * Types [value] into the budget sheet's [cell] (`PUT /finance/sheet/value`), signed the way the
+     * sheet keeps it; the cell must still hold [SheetCell.value]. The same number as it holds
+     * writes nothing and marks the balance as still right. Answers when that was, and by whom.
+     */
+    suspend fun setValue(serverUrl: String, cell: SheetCell, value: Double): Result<BalanceAge> = suspendRunCatching {
+        val response = httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/sheet/value")) {
+            contentType(ContentType.Application.Json)
+            setBody(RelaySheetValue(cell.tab, cell.label, cell.right, cell.row, cell.value, cell.toSheet(value)))
+            // The relay waits for a sync under way, then reads the tab and writes to it before answering.
+            timeout { requestTimeoutMillis = 60_000 }
+        }
+        if (!response.status.isSuccess()) throw balanceProblemFrom(response.status, response.bodyAsText())
+        val written = response.body<RelaySheetValueWritten>()
+        BalanceAge(written.at.toLong(), written.by, fromBank = false)
+    }
+
     internal companion object {
         private val json = Json { ignoreUnknownKeys = true }
 
@@ -83,6 +115,36 @@ class FinanceRelayApi(private val httpClient: HttpClient) {
                 activationUrl = field("activation_url"),
             )
         }
+
+        /**
+         * Why the relay wouldn't type a balance in, in the app's own words for the reasons it
+         * knows. FastAPI's own 404 (no `detail` object) is a relay from before typed balances.
+         */
+        fun balanceProblemFrom(status: HttpStatusCode, body: String): BalanceUpdateException {
+            val detail = runCatching { json.parseToJsonElement(body).jsonObject["detail"] as? JsonObject }.getOrNull()
+            val error = (detail?.get("error") as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val message = (detail?.get("message") as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val technical = listOfNotNull("HTTP ${status.value}", error, message).joinToString(": ")
+            val (problem, text) = when {
+                detail == null && status == HttpStatusCode.NotFound -> BalanceProblem.RELAY_OUTDATED to UiText.of(Res.string.fin_balance_error_relay_outdated)
+
+                error == "changed" -> BalanceProblem.CHANGED to UiText.of(Res.string.fin_balance_error_changed)
+
+                error == "not_a_number" -> BalanceProblem.CALCULATED to UiText.of(Res.string.fin_balance_error_calculated)
+
+                error == "bank_filled" -> BalanceProblem.BANK_FILLED to UiText.of(Res.string.fin_balance_error_bank_filled)
+
+                error == "no_label" || error == "ambiguous" || error == "no_tab" -> BalanceProblem.NOT_FOUND to UiText.of(Res.string.fin_balance_error_not_found)
+
+                error == "not_shared" -> BalanceProblem.NOT_SHARED to UiText.of(Res.string.fin_balance_error_not_shared)
+
+                error == "busy" -> BalanceProblem.BUSY to UiText.of(Res.string.fin_balance_error_busy)
+
+                // Signed out, or anything else: the relay's own explanation, as written.
+                else -> BalanceProblem.OTHER to (message?.asUiText() ?: UiText.of(Res.string.fin_data_error_relay_answered, status.toString()))
+            }
+            return BalanceUpdateException(problem, text, technical)
+        }
     }
 }
 
@@ -94,8 +156,15 @@ data class RelayWorkbook(
     val sheets: List<RelaySheet> = emptyList(),
     /** The workbook's embedded charts; absent from a relay older than them. */
     val charts: List<RelayChart> = emptyList(),
+    /** When each balance was last known to be right; absent from a relay older than typed balances. */
+    val updates: List<RelayBalanceAge> = emptyList(),
 ) {
     fun grids(): List<SheetGrid> = sheets.map { it.toGrid() }
+
+    /** [updates] by each balance's [SheetCell.id]. */
+    fun balanceAges(): Map<String, BalanceAge> = updates.associate { u ->
+        SheetCell.idOf(u.tab, u.label, u.right) to BalanceAge(u.at.toLong(), u.by, fromBank = u.source == "bank")
+    }
 }
 
 @Serializable
@@ -103,11 +172,14 @@ data class RelaySheet(
     val title: String,
     val values: List<List<JsonElement>> = emptyList(),
     val merges: List<RelayMerge> = emptyList(),
+    /** The cells holding a formula, as [row, column]; absent when the relay couldn't read them, or is older than them. */
+    val formulas: List<List<Int>>? = null,
 ) {
     fun toGrid(): SheetGrid = SheetGrid(
         title = title,
         rows = values.map { row -> row.map(::cellOf) },
         merges = merges.map { MergedRange(it.startRow, it.endRow, it.startColumn, it.endColumn) },
+        formulas = formulas?.mapNotNull { cell -> if (cell.size == 2) cell[0] to cell[1] else null },
     )
 
     private fun cellOf(element: JsonElement): CellValue {
@@ -120,6 +192,23 @@ data class RelaySheet(
         }
     }
 }
+
+/** When a balance was last known to be right: typed in the app (`source` "app") or by the bank sync ("bank"). */
+@Serializable
+data class RelayBalanceAge(
+    val tab: String,
+    val label: String,
+    val right: Int = 1,
+    val at: Double,
+    val by: String? = null,
+    val source: String = "app",
+)
+
+@Serializable
+internal data class RelaySheetValue(val tab: String, val label: String, val right: Int, val row: Int, val expected: Double?, val value: Double)
+
+@Serializable
+internal data class RelaySheetValueWritten(val at: Double, val by: String? = null)
 
 /** A merge, as the Sheets API's GridRange: 0-based, end-exclusive. */
 @Serializable

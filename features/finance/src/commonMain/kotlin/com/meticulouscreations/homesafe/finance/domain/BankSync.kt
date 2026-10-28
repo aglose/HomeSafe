@@ -181,7 +181,16 @@ data class SheetFillLine(
 /** What one write did to one cell. [before] is null for a cell that was empty. [restored] once the write was undone: whether this cell was put back. */
 @Immutable
 @Serializable
-data class SheetChange(val label: String, val tab: String, val cell: String?, val before: Double?, val after: Double?, val restored: Boolean?)
+data class SheetChange(
+    val label: String,
+    val tab: String,
+    val cell: String?,
+    val before: Double?,
+    val after: Double?,
+    val restored: Boolean?,
+    /** Who typed it in the app, for a balance typed there rather than read from a bank (see `TypedBalance`). */
+    val typedBy: String? = null,
+)
 
 /** One time the relay wrote balances into the budget sheet's cells, and everything it changed. */
 @Immutable

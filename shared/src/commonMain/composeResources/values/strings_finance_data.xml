@@ -61,6 +61,7 @@
     <string name="fin_data_account_checking_savings">Checking &amp; savings</string>
     <string name="fin_data_account_cash">Cash</string>
     <string name="fin_data_account_home_equity">Home equity</string>
+    <string name="fin_data_home_value">Home value</string>
 
     <!-- The parts of the budget sheet the app reads, and what it looks for to find each. -->
     <string name="fin_data_section_income">Income</string>
