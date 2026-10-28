@@ -44,5 +44,4 @@ class HomeJourneyTest {
         home.awaitList()
         awaitText("No cameras found on this server.")
     }
-
 }
