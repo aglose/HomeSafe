@@ -77,13 +77,16 @@ import homesafe.shared.generated.resources.fin_data_note_history_undated
 import homesafe.shared.generated.resources.finance_markets_watchlist_title
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.sin
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Made-up data for the finance screens' previews: a deterministic random walk for every price
  * and reading, and an invented household. Nothing here is anyone's real money.
  */
 object FinanceFixtures {
-    private const val NOW = 1_790_800_000L
+    /** The previews' "now" (Sep 30, 2026, 20:26 UTC), the moment [FinanceStage]'s clock stands at. */
+    const val NOW = 1_790_800_000L
     private const val DAY = Series.DAY_SECONDS
 
     /** A repeatable walk of [n] points ending at [end], [step] seconds apart. */
@@ -320,10 +323,19 @@ object FinanceFixtures {
 @Composable
 fun FinanceStage(content: @Composable () -> Unit) {
     FrigateTheme {
-        CompositionLocalProvider(LocalFinancePalette provides FinancePalette(), LocalFinanceTypography provides FinanceTypography(albertSansFontFamily())) {
+        CompositionLocalProvider(
+            LocalFinancePalette provides FinancePalette(),
+            LocalFinanceTypography provides FinanceTypography(albertSansFontFamily()),
+            LocalFinanceClock provides PreviewClock,
+        ) {
             Box(Modifier.fillMaxSize().background(FinancePalette().background)) { content() }
         }
     }
+}
+
+/** Stopped at [FinanceFixtures.NOW]. */
+private object PreviewClock : Clock {
+    override fun now(): Instant = Instant.fromEpochSeconds(FinanceFixtures.NOW)
 }
 
 internal val previewPadding = PaddingValues(top = 24.dp, bottom = 24.dp)

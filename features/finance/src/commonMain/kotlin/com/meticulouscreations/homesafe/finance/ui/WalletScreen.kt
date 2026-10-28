@@ -162,7 +162,6 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
-import kotlin.time.Clock
 
 /**
  * What the Wallet's big chart plots. There's no net-worth line: the sheet's history counted a
@@ -920,7 +919,7 @@ private fun SliderRow(label: String, value: String) {
 @Composable
 internal fun VestingBlock(finance: PersonalFinance) {
     val colors = FinanceTheme.colors
-    val now = Clock.System.now().epochSeconds
+    val now = LocalFinanceClock.current.now().epochSeconds
     Column(Modifier.padding(horizontal = PageGutter)) {
         finance.vesting.sortedBy { it.epochSeconds ?: Long.MAX_VALUE }.forEachIndexed { i, v ->
             val past = v.epochSeconds != null && v.epochSeconds < now
@@ -1030,7 +1029,7 @@ internal fun WalletSkeleton() {
 @Composable
 internal fun SourceFooter(finance: PersonalFinance) {
     val uriHandler = LocalUriHandler.current
-    val now = Clock.System.now().epochSeconds
+    val now = LocalFinanceClock.current.now().epochSeconds
     Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 20.dp)) {
         Text(
             stringResource(Res.string.finance_wallet_synced_from, finance.title, FinanceFormat.relativeDays(now, finance.fetchedAtEpochSeconds).resolve()),
