@@ -92,11 +92,11 @@ import com.meticulouscreations.homesafe.fitness.WorkoutSession
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
-import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
+import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground

@@ -104,9 +104,9 @@ import homesafe.shared.generated.resources.fitness_run_not_shared_recording
 import homesafe.shared.generated.resources.fitness_run_open_run
 import homesafe.shared.generated.resources.fitness_run_pace
 import homesafe.shared.generated.resources.fitness_run_reading
-import homesafe.shared.generated.resources.fitness_run_recorded
 import homesafe.shared.generated.resources.fitness_run_reason_walk
 import homesafe.shared.generated.resources.fitness_run_reason_workout
+import homesafe.shared.generated.resources.fitness_run_recorded
 import homesafe.shared.generated.resources.fitness_run_route
 import homesafe.shared.generated.resources.fitness_run_route_ask
 import homesafe.shared.generated.resources.fitness_run_route_described

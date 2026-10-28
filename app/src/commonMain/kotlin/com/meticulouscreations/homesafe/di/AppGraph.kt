@@ -61,8 +61,8 @@ import com.meticulouscreations.homesafe.fitness.data.createHealthSource
 import com.meticulouscreations.homesafe.fitness.data.createHeartRateLink
 import com.meticulouscreations.homesafe.fitness.data.createRunLocation
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
-import com.meticulouscreations.homesafe.fitness.domain.RunLocation
 import com.meticulouscreations.homesafe.fitness.domain.HeartRateLink
+import com.meticulouscreations.homesafe.fitness.domain.RunLocation
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.LocalNetworkAccess
