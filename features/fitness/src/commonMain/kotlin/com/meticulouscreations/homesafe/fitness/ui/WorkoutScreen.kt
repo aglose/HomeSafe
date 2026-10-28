@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -77,6 +76,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.ActiveWorkout
 import com.meticulouscreations.homesafe.fitness.ExerciseBoard
@@ -307,6 +307,7 @@ internal fun WorkoutScreen(
                     pull(Exercise.idFor(part, name.trim()))
                 },
                 tint = tints.first,
+                clearAbove = padding.calculateTopPadding(),
             )
         }
         item(key = "finish") {
@@ -592,6 +593,8 @@ private fun rememberRestSeconds(rest: RestTimer, fallbackNowMillis: Long): Float
  * shelf ([boards]; those [listed] already are only opened), where a name nothing is called yet
  * can be made a new exercise on any of [parts], the shelf the name suggests picked to begin with.
  * Whatever is added ([onPull], [onCreate]) joins the list open, ready for its first set.
+ * [clearAbove] is how far the bar over the top of the page reaches into it, for bringing the
+ * search up above the keyboard (see rememberKeyboardClearance).
  */
 @Composable
 private fun WorkoutAddCard(
@@ -603,6 +606,7 @@ private fun WorkoutAddCard(
     onPull: (String) -> Unit,
     onCreate: (String, BodyPart) -> Unit,
     tint: Color,
+    clearAbove: Dp,
     modifier: Modifier = Modifier,
 ) {
     val colors = FitnessTheme.colors
@@ -639,8 +643,8 @@ private fun WorkoutAddCard(
         }
         // The matches come in under the field as it is typed in: the whole card comes up above the keyboard, not only the field.
         var typing by remember { mutableStateOf(false) }
-        val clearance = rememberKeyboardClearance(typing, matches, known)
-        FitnessCard(Modifier.bringIntoViewRequester(clearance)) {
+        val clearance = rememberKeyboardClearance(typing, matches, known, above = clearAbove)
+        FitnessCard(clearance.modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CardLabel(stringResource(Res.string.fitness_workout_find), Modifier.weight(1f))
                 RoundIconButton(Icons.Filled.Close, stringResource(Res.string.common_close), close, Modifier.testTag("fitness_add_exercise_close"), size = 32.dp, tint = colors.textMuted)
@@ -721,9 +725,12 @@ private fun PullChip(name: String, onClick: () -> Unit, tint: Color, modifier: M
 /** How many of the exercises a search finds are listed: enough to pick from, few enough to leave the keyboard room. */
 private const val MAX_MATCHES = 5
 
-/** A new exercise: its name and which shelf it goes on. Everything else is guessed from the name. */
+/**
+ * A new exercise: its name and which shelf it goes on. Everything else is guessed from the name.
+ * [clearAbove] is how far the bar over the top of the page reaches into it (see rememberKeyboardClearance).
+ */
 @Composable
-internal fun AddExerciseCard(parts: List<BodyPart>, onAdd: (String, BodyPart) -> Unit, tint: Color, modifier: Modifier = Modifier) {
+internal fun AddExerciseCard(parts: List<BodyPart>, onAdd: (String, BodyPart) -> Unit, tint: Color, clearAbove: Dp, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors
     var adding by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
@@ -740,8 +747,8 @@ internal fun AddExerciseCard(parts: List<BodyPart>, onAdd: (String, BodyPart) ->
     }
     // The shelves and the button under the field come up above the keyboard with it.
     var typing by remember { mutableStateOf(false) }
-    val clearance = rememberKeyboardClearance(typing)
-    FitnessCard(modifier.bringIntoViewRequester(clearance), title = stringResource(Res.string.fitness_workout_add)) {
+    val clearance = rememberKeyboardClearance(typing, above = clearAbove)
+    FitnessCard(modifier.then(clearance.modifier), title = stringResource(Res.string.fitness_workout_add)) {
         FitnessTextField(
             name,
             { name = it },

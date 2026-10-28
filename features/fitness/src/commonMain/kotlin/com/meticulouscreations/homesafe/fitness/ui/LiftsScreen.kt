@@ -168,7 +168,7 @@ internal fun LiftsScreen(
         }
         item(key = "add") {
             Spacer(Modifier.height(8.dp))
-            AddExerciseCard(shelf?.let { name -> BodyPart.entries.filter { it.name == name } } ?: BodyPart.entries, onAddExercise, colors.ember)
+            AddExerciseCard(shelf?.let { name -> BodyPart.entries.filter { it.name == name } } ?: BodyPart.entries, onAddExercise, colors.ember, clearAbove = padding.calculateTopPadding())
         }
         item(key = "import") {
             GhostButton(stringResource(Res.string.fitness_lifts_import), onOpenImport, Modifier.fillMaxWidth().testTag("fitness_lifts_import"), icon = Icons.AutoMirrored.Filled.NoteAdd, tint = colors.textMuted)
