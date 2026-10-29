@@ -35,6 +35,7 @@ dependencies {
     implementation(libs.navigationevent.compose)
     implementation(libs.androidx.lifecycle.runtimeCompose)
     implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.jna)
     // FFmpeg's and JavaCPP's native libraries for this OS (the Java halves come with :shared).
     runtimeOnly(variantOf(libs.ffmpeg) { classifier(bytedecoPlatform) })
     runtimeOnly(variantOf(libs.javacpp) { classifier(bytedecoPlatform) })
@@ -56,7 +57,22 @@ val buildOwnerCheck by tasks.registering(Exec::class) {
     commandLine("xcrun", "swiftc", "-O", "-target", "${if (arm) "arm64" else "x86_64"}-apple-macos12", source.asFile.path, "-o", output.path)
     doFirst { output.parentFile.mkdirs() }
 }
-tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildOwnerCheck) }
+// The Mac's own notifications (macos/Notifications.swift), a library MacNotifications.kt loads into
+// the app; without it the menu-bar icon shows them, and a click can't say which one it was.
+val buildNotifications by tasks.registering(Exec::class) {
+    val onMac = isMac
+    val source = layout.projectDirectory.file("macos/Notifications.swift")
+    val output = appResources.get().file("$skikoTarget/libHomeSafeNotifications.dylib").asFile
+    onlyIf { onMac }
+    inputs.file(source)
+    outputs.file(output)
+    commandLine(
+        "xcrun", "swiftc", "-O", "-emit-library", "-module-name", "HomeSafeNotifications",
+        "-target", "${if (arm) "arm64" else "x86_64"}-apple-macos12", source.asFile.path, "-o", output.path,
+    )
+    doFirst { output.parentFile.mkdirs() }
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildOwnerCheck, buildNotifications) }
 // jpackage copies the app's resources without their executable bit, so the helper is marked
 // runnable again in the app image (which packageDmg packs as it is).
 tasks.matching { it.name == "createDistributable" }.configureEach {

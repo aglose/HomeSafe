@@ -37,15 +37,26 @@ fun main() {
     System.setProperty("apple.laf.useScreenMenuBar", "true")
     System.setProperty("apple.awt.enableTemplateImages", "true")
 
+    // Early, so a click on a notification that started the app is heard (macOS asks once to allow them).
+    MacNotifications.start()
+
     val graph = DesktopApp.graph
     // The weather's check while the app is open; the switch in the weather app turns it on and off.
     DesktopWeatherRefresh.register { graph.weatherAlertCheck }
 
     application {
         var windowVisible by remember { mutableStateOf(true) }
-        val showWindow = { windowVisible = true }
+        val windowState = rememberSavedWindowState()
+        // Up and in front: from the Dock, the menu-bar icon or a notification, whether it was
+        // closed (HomeSafe still running) or minimised.
+        val showWindow = {
+            windowVisible = true
+            windowState.isMinimized = false
+            bringAppToFront()
+        }
 
         LaunchedEffect(Unit) {
+            MacNotifications.onOpen = showWindow
             installMacHandlers(
                 onReopen = showWindow,
                 onSettings = {
@@ -58,17 +69,30 @@ fun main() {
 
         HomeSafeTray(
             graph = graph,
+            windowUp = windowVisible && !windowState.isMinimized,
             onOpen = showWindow,
+            onMinimize = { windowState.isMinimized = true },
             onQuit = ::exitApplication,
         )
 
         HomeSafeWindow(
             graph = graph,
+            state = windowState,
             visible = windowVisible,
             // Away from a Mac, with no menu-bar icon to come back from, closing the window quits.
             onCloseRequest = { if (trayAvailable()) windowVisible = false else exitApplication() },
             onQuit = ::exitApplication,
         )
+    }
+}
+
+/**
+ * HomeSafe in front of the other apps. A menu-bar icon's menu doesn't make its app the active one,
+ * so a window brought back from there would open behind whatever is in front.
+ */
+private fun bringAppToFront() {
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_REQUEST_FOREGROUND)) {
+        Desktop.getDesktop().requestForeground(true)
     }
 }
 

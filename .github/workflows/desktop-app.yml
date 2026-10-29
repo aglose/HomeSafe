@@ -40,8 +40,9 @@ jobs:
       - name: ./gradlew :desktopApp:packageDmg
         run: ./gradlew :desktopApp:packageDmg -PdesktopBuild=${{ github.run_number }} --stacktrace
 
-      # What the .dmg holds, and that the Touch ID helper made it in (the app works without it,
-      # but has no Touch ID or saved sign-in then).
+      # What the .dmg holds, and that the Touch ID helper and the notifications library made it in
+      # (the app works without them, but has no Touch ID or saved sign-in, and its notifications
+      # can't say which was clicked).
       - name: Check the app
         run: |
           dmg="$(ls desktopApp/build/compose/binaries/main/dmg/*.dmg)"
@@ -50,6 +51,7 @@ jobs:
           app="$mount/HomeSafe.app"
           test -x "$app/Contents/MacOS/HomeSafe"
           test -x "$app/Contents/app/resources/HomeSafe" || { echo "::error::The Touch ID helper is missing from the app"; exit 1; }
+          test -f "$app/Contents/app/resources/libHomeSafeNotifications.dylib" || { echo "::error::The notifications library is missing from the app"; exit 1; }
           codesign --verify --deep --verbose=2 "$app" || echo "::warning::The app's signature doesn't verify; macOS will refuse to open it until it is allowed (docs/desktop.md)."
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
           hdiutil detach "$mount"
