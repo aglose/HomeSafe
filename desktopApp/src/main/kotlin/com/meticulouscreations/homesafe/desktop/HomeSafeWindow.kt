@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -34,7 +35,6 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.DirectNavigationEventInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import com.meticulouscreations.homesafe.App
@@ -70,7 +70,7 @@ fun ApplicationScope.HomeSafeWindow(graph: AppGraph, visible: Boolean, onCloseRe
     val state = rememberSavedWindowState()
     val zoom = rememberUiZoom()
     val back = remember { DirectNavigationEventInput() }
-    val appIcon by DesktopAppIcon.icon.collectAsStateWithLifecycle()
+    val appIcon by DesktopAppIcon.icon.collectAsState()
     val icon = rememberMacIconPainter(painterResource(appIcon.preview))
     DockIcon(icon)
 

@@ -6,11 +6,15 @@ actions, with `testTag` only where text or content descriptions can't pick a nod
 
 | Layer | Where | What it drives | Runs on |
 |---|---|---|---|
-| Unit | each module's `src/commonTest` (`shared`, `features/*`) | View models, repositories, parsers, pure UI logic | Android host, iOS simulator, emulator |
-| Screen UI | `shared/src/uiTest`; `app/src/uiTest` for the drawer's apps | One stateless composable from fixtures (`HomeFeed`, `MomentsFeed`, `AlertsSection`, …) | iOS simulator, emulator |
-| Integration journeys | `app/src/integrationTest` | The whole app — `App()` on a real `AppGraph` — signed in over HTTP to a fake Frigate | Emulator |
+| Unit | each module's `src/commonTest` (`shared`, `features/*`) | View models, repositories, parsers, pure UI logic | Android host, iOS simulator, emulator, JVM (desktop) |
+| Screen UI | `shared/src/uiTest`; `app/src/uiTest` for the drawer's apps | One stateless composable from fixtures (`HomeFeed`, `MomentsFeed`, `AlertsSection`, …) | iOS simulator, emulator; `app/src/uiTest` on the JVM too |
+| Integration journeys | `app/src/integrationTest` | The whole app — `App()` on a real `AppGraph` — signed in over HTTP to a fake Frigate | Emulator, JVM (desktop) |
 | End to end | `androidApp/src/androidTest` | The installed app's real `MainActivity`: intents, system back, relaunch | Emulator |
 | Android CLI journeys | `androidApp/src/journeysTest` | Natural-language journeys an agent runs on a device through the Android CLI | Emulator (opt-in) |
+
+On the JVM (`./gradlew desktopTest`, CI's **Desktop app** workflow) the journeys walk a phone's layout
+(`JourneyWindow.PHONE`) unless they ask for a laptop's (`JourneyWindow.DESKTOP`), and leave a picture of every step
+under `app/build/journeys/`; see [desktop.md](desktop.md).
 
 Alongside these, previews and screenshots show what a change looks like rather than asserting on it:
 the Layoutlib screenshot tests in `:androidApp` and the before/after gallery in each pull request. See [ui-previews.md](ui-previews.md).

@@ -22,7 +22,7 @@ no-argument `@Preview` composables that draw the stateless composable from fixtu
 
 ## 2. Render and look
 
-The app is Android and iOS only, so previews are drawn by Layoutlib (Compose Preview Screenshot Testing),
+Previews are drawn by Layoutlib (Compose Preview Screenshot Testing),
 as Android draws them. Iterate with the preview server, which keeps Layoutlib loaded: it takes comma-separated
 words matched against each preview's module, function and name, and prints the PNGs it drew.
 
@@ -40,8 +40,9 @@ scripts/preview --all                              # everything, before you fini
   do that), fall back to `scripts/render-ui-previews.sh build/ui-previews/local --only <words>`, ~15 s a round,
   and say so. It's also what CI runs.
 - **Layoutlib draws one frame.** Animations show their first frame, and nothing is clicked or scrolled.
-- **Whole-app flows** have no screenshots any more (they came from the JVM journeys); the journeys run on CI's
-  emulator, and a failing one prints the screen's semantics tree.
+- **Whole-app flows** are drawn by the JVM journeys (`./gradlew :app:desktopTest --tests '*JourneyTest*'`): every
+  step leaves a PNG under `app/build/journeys/<journey>/`. `DesktopLayoutJourneyTest` and `DesktopAppLayoutTest` draw
+  the app at a laptop's size, beside the sidebar. On CI's emulator a failing journey prints the semantics tree.
 - **It can't resolve plugins** (for example a sandbox that blocks `dl.google.com`): commit, push the branch, then
   run the fetch script below. The **UI previews** workflow draws everything on CI.
 

@@ -46,13 +46,15 @@ dependencies {
 // app then has no saved sign-in or Touch ID unlock, and says nothing of either.
 val appResources = layout.buildDirectory.dir("appResources")
 val buildOwnerCheck by tasks.registering(Exec::class) {
-    onlyIf { isMac }
+    // Plain values, not the script's own: the configuration cache can't keep a task that refers back to the script.
+    val onMac = isMac
     val source = layout.projectDirectory.file("macos/OwnerCheck.swift")
-    val output = appResources.map { it.file("$skikoTarget/HomeSafe") }
+    val output = appResources.get().file("$skikoTarget/HomeSafe").asFile
+    onlyIf { onMac }
     inputs.file(source)
     outputs.file(output)
-    commandLine("xcrun", "swiftc", "-O", "-target", "${if (arm) "arm64" else "x86_64"}-apple-macos12", source.asFile.path, "-o", output.get().asFile.path)
-    doFirst { output.get().asFile.parentFile.mkdirs() }
+    commandLine("xcrun", "swiftc", "-O", "-target", "${if (arm) "arm64" else "x86_64"}-apple-macos12", source.asFile.path, "-o", output.path)
+    doFirst { output.parentFile.mkdirs() }
 }
 tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildOwnerCheck) }
 

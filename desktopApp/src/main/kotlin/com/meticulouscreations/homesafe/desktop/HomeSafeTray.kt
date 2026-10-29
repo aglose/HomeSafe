@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.desktop
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,7 +19,6 @@ import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.Notification
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.rememberTrayState
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.data.createNotificationMute
 import com.meticulouscreations.homesafe.desktop.DesktopNotice
 import com.meticulouscreations.homesafe.desktop.DesktopNotifications
@@ -48,7 +48,7 @@ fun ApplicationScope.HomeSafeTray(graph: AppGraph, onOpen: () -> Unit, onQuit: (
     var latest by remember { mutableStateOf<DesktopNotice?>(null) }
     // The one switch the whole app reads (the desktop's is a single object, kept in the preferences).
     val mute = remember(graph) { createNotificationMute(graph.platformContext) }
-    val muted by mute.muted.collectAsStateWithLifecycle()
+    val muted by mute.muted.collectAsState()
 
     LaunchedEffect(state) {
         DesktopNotifications.notices.collect { notice ->

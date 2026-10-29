@@ -102,6 +102,14 @@ internal class DesktopVideoEngine(val key: String?) {
 
     @Volatile private var running = false
 
+    /**
+     * Which decode thread is the engine's: each new one takes the next number, and one that finds
+     * it has moved on stops. A thread can be stuck in a network read for [READ_TIMEOUT_US], or asleep
+     * in a reconnect's back-off, when a new source arrives; rather than wait for it, a new thread
+     * takes over at once and the old one bows out when it next looks.
+     */
+    @Volatile private var session = 0
+
     /** A picture the decode thread made that the UI thread hasn't published yet; replaced, not queued, when it falls behind. */
     private val pending = AtomicReference<Image?>(null)
 
@@ -122,7 +130,7 @@ internal class DesktopVideoEngine(val key: String?) {
         coldStartGeneration++
         stalled = false
         positionMs = (next as? VideoSource.Recording)?.startPositionMs ?: 0L
-        if (playWhenReady) ensureRunning()
+        if (playWhenReady || running) restart()
     }
 
     fun setPlayWhenReady(play: Boolean) {
@@ -143,7 +151,7 @@ internal class DesktopVideoEngine(val key: String?) {
     fun reconnect() {
         loadGeneration++
         coldStartGeneration++
-        ensureRunning()
+        restart()
     }
 
     /** Marks the engine [stalled] once a playing stream has gone [STALL_NANOS] without a picture; the binders' poll asks. */
@@ -166,6 +174,7 @@ internal class DesktopVideoEngine(val key: String?) {
     /** Stops decoding, keeping the last picture to show the moment something binds again. */
     fun halt() {
         running = false
+        session++
         thread?.interrupt()
         thread = null
         stalled = false
@@ -181,38 +190,53 @@ internal class DesktopVideoEngine(val key: String?) {
 
     private fun ensureRunning() {
         if (running && thread?.isAlive == true) return
+        restart()
+    }
+
+    /** A new decode thread for what is to play now, in place of any that was running ([session]). */
+    private fun restart() {
         if (source == null) return
+        val mine = ++session
         running = true
-        thread = Thread({ decodeLoop() }, "HomeSafe video ${key ?: "private"}").apply {
+        thread?.interrupt()
+        thread = Thread({ decodeLoop(mine) }, "HomeSafe video ${key ?: "private"}").apply {
             isDaemon = true
             start()
         }
     }
 
-    private fun decodeLoop() {
+    private fun isCurrent(mine: Int) = running && session == mine
+
+    private fun decodeLoop(mine: Int) {
         var failures = 0
-        while (running) {
+        while (isCurrent(mine)) {
             val playing = source ?: break
             val generation = loadGeneration
-            val outcome = runCatching { play(playing, generation) }
-            if (!running) break
+            val outcome = runCatching { play(playing, generation, mine) }
+            if (!isCurrent(mine)) break
             if (loadGeneration != generation) {
                 failures = 0
                 continue
             }
             if (playing is VideoSource.Recording) {
-                ui.launch { if (outcome.isSuccess) ended++ else failed++ }
+                ui.launch {
+                    if (session != mine) return@launch
+                    if (outcome.isSuccess) ended++ else failed++
+                }
                 running = false
                 break
             }
             // Live: whatever happened, join again, backing off while it keeps failing.
             failures++
             ui.launch {
+                if (session != mine) return@launch
                 coldStartGeneration++
                 stalled = false
             }
+            // In short steps, so a thread that has been replaced doesn't sleep out the whole back-off.
+            val wakeAt = System.nanoTime() + LivePlaybackPolicy.retryDelayMs(failures) * 1_000_000
             try {
-                Thread.sleep(LivePlaybackPolicy.retryDelayMs(failures))
+                while (isCurrent(mine) && System.nanoTime() < wakeAt) Thread.sleep(BACKOFF_STEP_MS)
             } catch (_: InterruptedException) {
                 break
             }
@@ -220,7 +244,7 @@ internal class DesktopVideoEngine(val key: String?) {
     }
 
     /** Plays [playing] until it ends (normal return), fails (throws), or is replaced or stopped. */
-    private fun play(playing: VideoSource, generation: Int) {
+    private fun play(playing: VideoSource, generation: Int, mine: Int) {
         quietLogs
         val grabber = FFmpegFrameGrabber(playing.url).apply {
             pixelFormat = avutil.AV_PIX_FMT_BGRA
@@ -260,7 +284,7 @@ internal class DesktopVideoEngine(val key: String?) {
             var clockOriginUs = Long.MIN_VALUE
             var clockOriginNanos = 0L
             var lastPositionReport = 0L
-            while (running && loadGeneration == generation) {
+            while (isCurrent(mine) && loadGeneration == generation) {
                 seekToMs?.let { target ->
                     seekToMs = null
                     grabber.setTimestamp(target * 1000, true)
@@ -381,6 +405,9 @@ internal class DesktopVideoEngine(val key: String?) {
         const val MAX_LAG_US = 1_000_000L
 
         const val PAUSED_POLL_MS = 50L
+
+        /** How often a reconnect's back-off looks to see whether it has been replaced. */
+        const val BACKOFF_STEP_MS = 100L
 
         /** A live picture that hasn't moved for this long is buffering, not live. */
         const val STALL_NANOS = 1_500_000_000L

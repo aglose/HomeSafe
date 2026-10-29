@@ -36,8 +36,10 @@ func confirm(_ reason: String) {
     }
     done.wait()
     if outcome.0 { return }
-    let laError = outcome.1 as? LAError
-    let cancelled = [LAError.userCancel, LAError.appCancel, LAError.systemCancel].contains(laError?.code)
+    var cancelled = false
+    if let code = (outcome.1 as? LAError)?.code {
+        cancelled = code == .userCancel || code == .appCancel || code == .systemCancel
+    }
     fail(outcome.1?.localizedDescription ?? "", code: cancelled ? 2 : 1)
 }
 
@@ -47,9 +49,9 @@ let query: [String: Any] = [
     kSecAttrAccount as String: account,
 ]
 
-let arguments = CommandLine.arguments.dropFirst()
-let reason = arguments.dropFirst().first ?? "HomeSafe"
-switch arguments.first {
+let arguments = Array(CommandLine.arguments.dropFirst())
+let reason = arguments.count > 1 ? arguments[1] : "HomeSafe"
+switch arguments.first ?? "" {
 case "can":
     let context = LAContext()
     var error: NSError?
@@ -70,7 +72,7 @@ case "save":
     item[kSecValueData as String] = secret
     item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     let status = SecItemAdd(item as CFDictionary, nil)
-    if status != errSecSuccess { fail(SecCopyErrorMessageString(status, nil) as String? ?? "\(status)") }
+    if status != errSecSuccess { fail((SecCopyErrorMessageString(status, nil) as String?) ?? "\(status)") }
 case "read":
     confirm(reason)
     var read = query
@@ -79,7 +81,7 @@ case "read":
     var result: CFTypeRef?
     let status = SecItemCopyMatching(read as CFDictionary, &result)
     guard status == errSecSuccess, let data = result as? Data else {
-        fail(SecCopyErrorMessageString(status, nil) as String? ?? "\(status)")
+        fail((SecCopyErrorMessageString(status, nil) as String?) ?? "\(status)")
     }
     FileHandle.standardOutput.write(data)
 case "exists":
