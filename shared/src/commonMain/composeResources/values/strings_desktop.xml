@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The desktop app: its window, the Mac's menu bar and the menu-bar icon. -->
+    <string name="desktop_app_name">HomeSafe</string>
+    <string name="desktop_menu_file">File</string>
+    <string name="desktop_menu_view">View</string>
+    <string name="desktop_menu_go">Go</string>
+    <string name="desktop_menu_window">Window</string>
+    <string name="desktop_close_window">Close Window</string>
+    <string name="desktop_show_sidebar">Show Sidebar</string>
+    <string name="desktop_hide_sidebar">Hide Sidebar</string>
+    <string name="desktop_enter_full_screen">Enter Full Screen</string>
+    <string name="desktop_exit_full_screen">Exit Full Screen</string>
+    <string name="desktop_actual_size">Actual Size</string>
+    <string name="desktop_zoom_in">Zoom In</string>
+    <string name="desktop_zoom_out">Zoom Out</string>
+    <string name="desktop_back">Back</string>
+    <string name="desktop_minimize">Minimize</string>
+    <string name="desktop_zoom_window">Zoom</string>
+    <string name="desktop_tray_open">Open HomeSafe</string>
+    <string name="desktop_tray_mute">Mute Notifications</string>
+    <string name="desktop_tray_last_alert">Show Latest Alert</string>
+    <string name="desktop_quit">Quit HomeSafe</string>
+    <string name="desktop_settings">Settings…</string>
+</resources>

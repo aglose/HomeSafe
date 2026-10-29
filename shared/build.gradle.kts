@@ -25,6 +25,8 @@ kotlin {
     // The iOS framework is :app's, which builds on this module and the features.
     iosArm64()
     iosSimulatorArm64()
+    // The Mac app (:desktopApp): the same Compose UI on the JVM, drawn with Skia as on iOS.
+    jvm("desktop")
 
     android {
         namespace = "com.meticulouscreations.homesafe.shared"
@@ -109,10 +111,10 @@ kotlin {
             // Steps, sleep and runs from the band, by way of Google Health (HealthSource.android.kt).
             implementation(libs.androidx.health.connect)
         }
-        // Code that draws with Skia directly (the timeline's liquid-glass lens) is iOS's, since
-        // Android has AGSL instead. It is compiled into each iOS target rather than into iosMain,
-        // whose metadata compilation doesn't see the Skia API.
-        listOf("iosArm64Main", "iosSimulatorArm64Main").forEach { name ->
+        // Code that draws with Skia directly (the timeline's liquid-glass lens) is iOS's and the
+        // desktop's, since Android has AGSL instead. It is compiled into each Skia target rather
+        // than into a shared source set, whose metadata compilation doesn't see the Skia API.
+        listOf("iosArm64Main", "iosSimulatorArm64Main", "desktopMain").forEach { name ->
             getByName(name).kotlin.srcDir("src/skiaMain/kotlin")
         }
 
@@ -142,6 +144,17 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.sqlite.bundled)
             implementation(libs.ktor.client.darwin)
+        }
+        getByName("desktopMain").dependencies {
+            api(libs.compose.desktop)
+            // Dispatchers.Main is the AWT event thread.
+            api(libs.kotlinx.coroutinesSwing)
+            implementation(libs.sqlite.bundled)
+            implementation(libs.ktor.client.okhttp)
+            // FFmpeg's Java API; the native libraries for the OS the app is packaged for are
+            // :desktopApp's to add. JavaCV itself is added below, without what it drags in.
+            implementation(libs.javacpp)
+            implementation(libs.ffmpeg)
         }
     }
 }
@@ -261,6 +274,10 @@ dependencies {
     add("kspAndroid", libs.room.compiler)
     add("kspIosArm64", libs.room.compiler)
     add("kspIosSimulatorArm64", libs.room.compiler)
+    add("kspDesktop", libs.room.compiler)
+
+    // JavaCV's frame grabber alone: its POM brings OpenCV, Tesseract, JavaFX and a dozen others.
+    add("desktopMainImplementation", libs.javacv.get().toString()) { (this as ExternalModuleDependency).isTransitive = false }
 }
 
 // Lint's model and analysis tasks for the Android host-test source set read KSP's generated

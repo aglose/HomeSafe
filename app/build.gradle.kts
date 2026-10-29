@@ -36,6 +36,9 @@ kotlin {
         }
     }
 
+    // The Mac app (:desktopApp): the same Compose UI on the JVM, drawn with Skia as on iOS.
+    jvm("desktop")
+
     android {
         namespace = "com.meticulouscreations.homesafe.app"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -97,7 +100,7 @@ kotlin {
             // The Tracer the graph's binding spans are written with (see TracingBindings.android.kt).
             implementation(libs.androidx.tracing)
         }
-        listOf("iosArm64Main", "iosSimulatorArm64Main").forEach { name ->
+        listOf("iosArm64Main", "iosSimulatorArm64Main", "desktopMain").forEach { name ->
             getByName(name).kotlin.srcDir("src/skiaMain/kotlin")
         }
 
@@ -108,10 +111,31 @@ kotlin {
         // because adding one by hand switches off KGP's default hierarchy.
         getByName("iosSimulatorArm64Test").kotlin.srcDir("src/uiTest/kotlin")
         getByName("androidDeviceTest").kotlin.srcDir("src/uiTest/kotlin")
+        getByName("desktopTest").kotlin.srcDir("src/uiTest/kotlin")
 
         // Whole-app journeys: App() on a real AppGraph, signed in over HTTP to the fake Frigate in
-        // :fake-frigate (a JVM server, hence Android only, no iOS).
+        // :fake-frigate (a JVM server, hence Android and the desktop, no iOS).
         getByName("androidDeviceTest").kotlin.srcDir("src/integrationTest/kotlin")
+        getByName("desktopTest").kotlin.srcDir("src/integrationTest/kotlin")
+        getByName("desktopTest").dependencies {
+            implementation(project(":fake-frigate"))
+            // FFmpeg's natives, which the players load (and the fake has no video for, so they only try).
+            runtimeOnly(libs.ffmpeg.get().toString() + ":" + bytedecoHostPlatform())
+            runtimeOnly(libs.javacpp.get().toString() + ":" + bytedecoHostPlatform())
+            implementation(libs.compose.uiTestJunit4)
+            implementation(libs.kotlin.testJunit)
+            // Skia for the machine the tests run on, which the library modules leave to the app.
+            implementation(
+                "org.jetbrains.compose.desktop:desktop-jvm-" + System.getProperty("os.name").lowercase().let { os ->
+                    val arm = System.getProperty("os.arch").let { it == "aarch64" || it == "arm64" }
+                    when {
+                        "mac" in os -> if (arm) "macos-arm64" else "macos-x64"
+                        "win" in os -> "windows-x64"
+                        else -> if (arm) "linux-arm64" else "linux-x64"
+                    }
+                } + ":" + libs.versions.composeMultiplatform.get(),
+            )
+        }
 
         getByName("androidDeviceTest").dependencies {
             // Merges an androidx.activity.ComponentActivity entry into the test APK's manifest.
@@ -122,6 +146,31 @@ kotlin {
             // InstrumentationRegistry, for the context the journeys build the app graph with.
             implementation(libs.androidx.testExt.junit)
         }
+    }
+}
+
+/** FFmpeg's name for the machine the build runs on: the desktop tests load its natives for this one. */
+fun bytedecoHostPlatform(): String {
+    val os = System.getProperty("os.name").lowercase()
+    val arm = System.getProperty("os.arch").let { it == "aarch64" || it == "arm64" }
+    return when {
+        "mac" in os -> if (arm) "macosx-arm64" else "macosx-x86_64"
+        "win" in os -> "windows-x86_64"
+        else -> if (arm) "linux-arm64" else "linux-x86_64"
+    }
+}
+
+// The desktop's tests keep their database and preferences apart from a real install's, fresh each run.
+tasks.matching { it.name == "desktopTest" }.configureEach {
+    (this as Test).apply {
+        val scratch = layout.buildDirectory.dir("desktop-test-data").get().asFile
+        doFirst { scratch.deleteRecursively() }
+        systemProperty("homesafe.dataDir", scratch.absolutePath)
+        systemProperty("homesafe.preferencesNode", "com/meticulouscreations/homesafe-tests")
+        // Where the journeys put what was on screen at each step (saveJourneyScreen).
+        systemProperty("homesafe.journeyScreens", layout.buildDirectory.dir("journeys").get().asFile.absolutePath)
+        // A screen, real or virtual, isn't needed: the tests draw offscreen.
+        systemProperty("java.awt.headless", "true")
     }
 }
 

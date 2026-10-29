@@ -33,6 +33,7 @@ plugins {
 
 include(":androidApp")
 include(":app")
+include(":desktopApp")
 include(":baselineprofile")
 include(":fake-frigate")
 include(":shared")
