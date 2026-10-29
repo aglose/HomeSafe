@@ -43,6 +43,8 @@ coil = "3.6.3"
 # The desktop's video: FFmpeg, through JavaCV's frame grabber, for go2rtc's HLS and Frigate's
 # recordings (DesktopVideoEngine.kt). The two move together: javacv x.y.z wants ffmpeg *-x.y.z.
 javacv = "1.5.14"
+# The Mac app calls its notifications library (desktopApp/macos/Notifications.swift) through it.
+jna = "5.17.0"
 ffmpeg = "8.1.2-1.5.14"
 
 benchmark = "1.6.0-alpha01"
@@ -123,6 +125,7 @@ media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", versio
 stream-webrtc-android = { module = "io.getstream:stream-webrtc-android", version.ref = "stream-webrtc" }
 javacv = { module = "org.bytedeco:javacv", version.ref = "javacv" }
 javacpp = { module = "org.bytedeco:javacpp", version.ref = "javacv" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 ffmpeg = { module = "org.bytedeco:ffmpeg", version.ref = "ffmpeg" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }

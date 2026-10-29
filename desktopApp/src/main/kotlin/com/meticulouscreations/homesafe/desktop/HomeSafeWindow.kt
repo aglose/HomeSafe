@@ -66,8 +66,7 @@ import java.awt.Taskbar
 @Suppress("ktlint:compose:modifier-missing-check")
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ApplicationScope.HomeSafeWindow(graph: AppGraph, visible: Boolean, onCloseRequest: () -> Unit, onQuit: () -> Unit) {
-    val state = rememberSavedWindowState()
+fun ApplicationScope.HomeSafeWindow(graph: AppGraph, state: WindowState, visible: Boolean, onCloseRequest: () -> Unit, onQuit: () -> Unit) {
     val zoom = rememberUiZoom()
     val back = remember { DirectNavigationEventInput() }
     val appIcon by DesktopAppIcon.icon.collectAsState()
@@ -94,7 +93,7 @@ fun ApplicationScope.HomeSafeWindow(graph: AppGraph, visible: Boolean, onCloseRe
             zoom = zoom,
             onBack = back::backCompleted,
             onCloseWindow = onCloseRequest,
-            onMinimize = { window.isMinimized = true },
+            onMinimize = { state.isMinimized = true },
             onQuit = onQuit,
         )
         val density = LocalDensity.current
@@ -135,7 +134,7 @@ private fun BackInput(input: DirectNavigationEventInput) {
 
 /** The window's size, place and full-screen state as last left, kept in the preferences. */
 @Composable
-private fun rememberSavedWindowState(): WindowState {
+fun rememberSavedWindowState(): WindowState {
     val preferences = remember { DesktopStorage.preferences("window") }
     val state = remember {
         val width = preferences.getFloat("width", DEFAULT_WIDTH)
