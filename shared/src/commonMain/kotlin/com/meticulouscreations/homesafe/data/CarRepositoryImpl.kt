@@ -1,6 +1,8 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
+import com.meticulouscreations.homesafe.domain.model.ParkingSnapshot
+import com.meticulouscreations.homesafe.domain.model.ParkingStreet
 import com.meticulouscreations.homesafe.domain.repository.CarRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.PushRelayApi
@@ -43,6 +45,9 @@ class CarRepositoryImpl(
     private val _cars = MutableStateFlow<List<HouseholdCar>?>(null)
     override val cars: StateFlow<List<HouseholdCar>?> = _cars.asStateFlow()
 
+    private val _streets = MutableStateFlow<List<ParkingStreet>>(emptyList())
+    override val streets: StateFlow<List<ParkingStreet>> = _streets.asStateFlow()
+
     /** The server [cars] came from, null while there are none. Guarded by [state]. */
     private var carsFrom: String? = null
 
@@ -59,6 +64,7 @@ class CarRepositoryImpl(
                     if (url == null || (carsFrom != null && carsFrom != url)) {
                         carsFrom = null
                         _cars.value = null
+                        _streets.value = emptyList()
                     }
                 }
             }
@@ -84,12 +90,13 @@ class CarRepositoryImpl(
         return fetch(url).map { }
     }
 
-    private suspend fun fetch(url: String): Result<List<HouseholdCar>> = relayApi.getCars(url).onSuccess {
+    private suspend fun fetch(url: String): Result<ParkingSnapshot> = relayApi.getParking(url).onSuccess {
         state.withLock {
             // A refresh isn't cancelled by a server switch: an answer from the old server is dropped.
             if (connectionRepository.currentServerUrl.value == url) {
                 carsFrom = url
-                _cars.value = it
+                _cars.value = it.cars
+                _streets.value = it.streets
             }
         }
     }

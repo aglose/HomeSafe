@@ -128,9 +128,17 @@ docker exec homesafe-relay python relay.py parking-check
 ```
 
 This prints the streets as the relay found them (how many points each, which side the house is
-on) and, after asking Tesla once per car, where each car is by them: street, side, how the side
-was told (`heading` or `position`) and the rules that apply. It pushes nothing. `GET /parking`
-answers the same for a signed-in phone, without asking Tesla.
+on, and each curb's signs with when they next hold) and, after asking Tesla once per car, where
+each car is by them: street, side, how the side was told (`heading` or `position`) and the rules
+that apply. It pushes nothing. `GET /parking` answers the same for a signed-in phone, without
+asking Tesla, with each street's line as well.
+
+In the app, **Parking rules** on the cars' map draws each watched curb along its street, coloured
+by how soon its signs next hold (red: on now or within a day; amber: this week), with a label
+saying which side it is and when. Under the cars, a card per curb spells out every sign as the
+file has it ("Street sweeping · 1st & 3rd Thu of the month, 8:00 AM–11:00 AM") and its next
+time, so the file can be checked against the signs on the street. A deadline a week or more off
+carries its date ("Move by Thu, Nov 5, 8:00 AM"), so it can't be read as this week's.
 
 The log says `parking: parked on the north side of Central Ave since …` when a car is found at a
 curb, and `parking: Move … -> 1 of 1 phones` for each push.

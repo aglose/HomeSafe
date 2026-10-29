@@ -20,6 +20,10 @@ import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.NotTrackedReason
 import com.meticulouscreations.homesafe.domain.model.ParkingAlert
+import com.meticulouscreations.homesafe.domain.model.ParkingCurb
+import com.meticulouscreations.homesafe.domain.model.ParkingRule
+import com.meticulouscreations.homesafe.domain.model.ParkingSnapshot
+import com.meticulouscreations.homesafe.domain.model.ParkingStreet
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PlanDoor
 import com.meticulouscreations.homesafe.domain.model.PlanFloor
@@ -69,6 +73,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -309,11 +314,18 @@ class PushRelayApi(private val httpClient: HttpClient) {
      * (the relay's `/parking`). The relay answers from what it already knows, without asking
      * Tesla. None from a relay that predates parking (404), or that has no Teslas linked.
      */
-    suspend fun getCars(serverUrl: String): Result<List<HouseholdCar>> = runCatching {
+    suspend fun getCars(serverUrl: String): Result<List<HouseholdCar>> = getParking(serverUrl).map { it.cars }
+
+    /**
+     * [getCars], with the watched streets' signs along each curb, for the cars' map to draw. No
+     * streets from a relay without a `parking.json`, or from before it sent them.
+     */
+    suspend fun getParking(serverUrl: String): Result<ParkingSnapshot> = runCatching {
         val response = httpClient.get(relayUrl(serverUrl, "/parking"))
-        if (response.status == HttpStatusCode.NotFound) return@runCatching emptyList()
+        if (response.status == HttpStatusCode.NotFound) return@runCatching ParkingSnapshot(emptyList(), emptyList())
         if (!response.status.isSuccess()) throw relayRefused(response.status)
-        response.body<RelayParking>().cars.mapNotNull { it.toDomain() }
+        val body = response.body<RelayParking>()
+        ParkingSnapshot(body.cars.mapNotNull { it.toDomain() }, body.streets.mapNotNull { it.toDomain() })
     }.onFailure { if (it is CancellationException) throw it }
 
     /**
@@ -935,7 +947,84 @@ internal data class RelayVaultSecretsBody(val household: String, val secrets: Ma
 
 /** The relay's `GET /parking` body. */
 @Serializable
-internal data class RelayParking(val cars: List<RelayParkedCar> = emptyList())
+internal data class RelayParking(val cars: List<RelayParkedCar> = emptyList(), val streets: List<RelayParkingStreet> = emptyList())
+
+/** A stretch of a watched street and its curbs' signs, as `parking_signs` in relay.py sends it. */
+@Serializable
+internal data class RelayParkingStreet(
+    val street: String = "",
+    val line: List<List<Double>> = emptyList(),
+    @SerialName("width_m") val widthMetres: Double? = null,
+    val sides: List<RelayParkingCurb> = emptyList(),
+) {
+    fun toDomain(): ParkingStreet? {
+        val points = line.mapNotNull { p ->
+            val (lat, lng) = (p.getOrNull(0) ?: return@mapNotNull null) to (p.getOrNull(1) ?: return@mapNotNull null)
+            ParkingStreet.Point(lat, lng).takeIf { lat in -90.0..90.0 && lng in -180.0..180.0 }
+        }
+        if (points.size < 2) return null
+        return ParkingStreet(street, points, widthMetres?.takeIf { it > 0 } ?: ParkingStreet.WIDTH_METRES, sides.map { it.toDomain() })
+    }
+}
+
+@Serializable
+internal data class RelayParkingCurb(val side: String? = null, val offset: String? = null, val rules: List<RelayParkingSign> = emptyList()) {
+    fun toDomain() = ParkingCurb(
+        side = ParkingAlert.Side.entries.firstOrNull { it.name.equals(side, ignoreCase = true) },
+        left = offset == "left",
+        rules = rules.map { it.toDomain() },
+    )
+}
+
+/**
+ * One rule as the household wrote it in `parking.json`, with what the relay worked out about it.
+ * Read loosely, a field at a time: the file is typed by hand, and one odd value mustn't lose the
+ * whole answer.
+ */
+@Serializable
+internal data class RelayParkingSign(
+    val kind: String? = null,
+    val minutes: JsonElement? = null,
+    val days: List<JsonElement> = emptyList(),
+    val weeks: List<JsonElement> = emptyList(),
+    val months: List<JsonElement> = emptyList(),
+    val start: JsonElement? = null,
+    val end: JsonElement? = null,
+    val note: JsonElement? = null,
+    val permit: JsonElement? = null,
+    val lifted: Boolean = false,
+    val next: RelayParkingWindow? = null,
+) {
+    fun toDomain() = ParkingRule(
+        limitMinutes = minutes?.number()?.toInt()?.takeIf { kind == "limit" && it > 0 },
+        days = days.mapNotNull { day -> DAY_WORDS.indexOf(day.text()?.lowercase()?.take(3)).takeIf { it >= 0 } }.distinct().sorted(),
+        weeks = weeks.mapNotNull { it.number()?.toInt()?.takeIf { week -> week in 1..5 || week == -1 } }.distinct().sortedBy { if (it == -1) 6 else it },
+        months = months.mapNotNull { it.number()?.toInt()?.takeIf { month -> month in 1..12 } }.distinct().sorted(),
+        startMinutes = start.clockMinutes() ?: 0,
+        endMinutes = end.clockMinutes() ?: 1440,
+        note = note?.text()?.takeIf { it.isNotBlank() },
+        permit = permit?.text()?.takeIf { it.isNotBlank() },
+        lifted = lifted,
+        nextFromEpochSeconds = next?.from?.toLong(),
+        nextUntilEpochSeconds = next?.until?.toLong(),
+    )
+
+    private companion object {
+        val DAY_WORDS = listOf("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+        fun JsonElement.text(): String? = (this as? JsonPrimitive)?.contentOrNull
+
+        fun JsonElement.number(): Double? = (this as? JsonPrimitive)?.let { it.doubleOrNull ?: it.contentOrNull?.toDoubleOrNull() }
+
+        /** "08:00" as 480, as `clock_minutes` in relay.py reads it. */
+        fun JsonElement?.clockMinutes(): Int? {
+            val text = this?.text()?.takeIf { it.isNotBlank() } ?: return null
+            val hours = text.substringBefore(':').trim().toIntOrNull() ?: return null
+            val minutes = text.substringAfter(':', "0").trim().toIntOrNull() ?: return null
+            return (hours * 60 + minutes).takeIf { it in 0..1440 }
+        }
+    }
+}
 
 @Serializable
 internal data class RelayParkedCar(

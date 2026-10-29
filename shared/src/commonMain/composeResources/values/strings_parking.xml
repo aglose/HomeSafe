@@ -8,6 +8,10 @@
     <string name="parking_map_title_due">Move %1$s by %2$s</string>
     <string name="parking_map_title_now">Move %1$s now</string>
     <string name="parking_map_when_other_day">%1$s %2$s</string>
+    <!-- A deadline tomorrow: %1$s is the time ("Move Andrew's Tesla by tomorrow 8:00 AM"). -->
+    <string name="parking_map_when_tomorrow">tomorrow %1$s</string>
+    <!-- A deadline a week or more away: %1$s is the weekday, %2$s the date ("Nov 5"), %3$s the time ("Thu, Nov 5, 8:00 AM"). -->
+    <string name="parking_map_when_date">%1$s, %2$s, %3$s</string>
     <string name="parking_map_place_north">North side of %1$s</string>
     <string name="parking_map_place_east">East side of %1$s</string>
     <string name="parking_map_place_south">South side of %1$s</string>
@@ -23,4 +27,43 @@
     <string name="parking_map_no_parking">No parking %1$s–%2$s</string>
     <string name="parking_map_directions">Directions</string>
     <string name="parking_map_description">Map of where %1$s is parked</string>
+
+    <!-- The cars' map can show the signs along each watched street's curbs, as the household wrote them down on the server. -->
+    <string name="parking_rules_toggle">Parking rules</string>
+    <string name="parking_rules_header">Street signs</string>
+    <string name="parking_rules_side_north">North side</string>
+    <string name="parking_rules_side_east">East side</string>
+    <string name="parking_rules_side_south">South side</string>
+    <string name="parking_rules_side_west">West side</string>
+    <string name="parking_rules_no_parking">No parking</string>
+    <!-- What a sign is and when it holds: %1$s is what ("Street sweeping", "No parking", "2-hour parking"), %2$s when ("1st &amp; 3rd Thu of the month, 8:00 AM–11:00 AM"). -->
+    <string name="parking_rules_line">%1$s · %2$s</string>
+    <string name="parking_rules_schedule">%1$s, %2$s</string>
+    <!-- The same, for a sign that holds only some months: %3$s is the months ("Apr–Oct"). -->
+    <string name="parking_rules_schedule_months">%1$s, %2$s (%3$s)</string>
+    <string name="parking_rules_every_day">Every day</string>
+    <!-- A run of days or months: "Mon–Fri", "Apr–Oct". -->
+    <string name="parking_rules_range">%1$s–%2$s</string>
+    <!-- Which of a weekday in the month: %1$s is the weeks ("1st &amp; 3rd"), %2$s the days ("Thu"). -->
+    <string name="parking_rules_days_in_weeks">%1$s %2$s of the month</string>
+    <string name="parking_rules_weeks_separator"> &amp; </string>
+    <string name="parking_rules_week_1">1st</string>
+    <string name="parking_rules_week_2">2nd</string>
+    <string name="parking_rules_week_3">3rd</string>
+    <string name="parking_rules_week_4">4th</string>
+    <string name="parking_rules_week_5">5th</string>
+    <string name="parking_rules_week_last">last</string>
+    <string name="parking_rules_all_day">all day</string>
+    <!-- The next time a sign holds: %1$s is the day ("today", "tomorrow", "Thu", "Thu, Nov 5"), %2$s and %3$s its start and end. -->
+    <string name="parking_rules_next">Next: %1$s, %2$s–%3$s</string>
+    <string name="parking_rules_now">On now, until %1$s</string>
+    <string name="parking_rules_none_soon">Not in the next few weeks</string>
+    <string name="parking_rules_today">today</string>
+    <string name="parking_rules_tomorrow">tomorrow</string>
+    <!-- A day a week or more away: %1$s is the weekday, %2$s the date ("Thu, Nov 5"). -->
+    <string name="parking_rules_day_date">%1$s, %2$s</string>
+    <!-- %1$s is the permit's name, as the sign gives it ("B"). -->
+    <string name="parking_rules_lifted">Your %1$s permit lifts this</string>
+    <string name="parking_rules_lifted_short">Permit lifts it</string>
+    <string name="parking_rules_label_now">Now, until %1$s</string>
 </resources>

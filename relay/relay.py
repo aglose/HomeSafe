@@ -11311,7 +11311,42 @@ def parking_status(now: float) -> dict[str, Any]:
             "asleep": bool(car.get("asleep")),
             "live": tesla_live_status(name, now),
         })
-    return {"streets": [{"street": s["street"], "points": len(s["line"]), "home_side": s["home_side"]} for s in stretches], "cars": cars}
+    return {"streets": parking_signs(stretches, config, zone, now), "cars": cars}
+
+
+def parking_signs(stretches: list[dict[str, Any]], config: dict[str, Any], zone: Any, now: float) -> list[dict[str, Any]]:
+    """
+    Each stretch of the file's streets with the signs along both its curbs, for the cars' map to
+    draw: {"street", "points", "home_side", "line", "width_m", "sides"}. Each of `sides` is {"side", "offset",
+    "rules"}: `offset` is which way of the line its curb is ("left" or "right", going the way the
+    line runs), `side` the compass word for that, and each rule comes with when it next holds
+    (`next`: {"from", "until"}, under way when `from` has passed; null for none within
+    PARKING_LOOKAHEAD_DAYS) and whether a permit the household holds lifts it (`lifted`). A
+    stretch is read end to end for its compass words, as near enough for the few blocks a file
+    keeps; a curb with no signs isn't listed.
+    """
+    permits = set(config.get("permits") or [])
+    signs = []
+    for stretch in stretches:
+        line = stretch["line"]
+        east, north = local_metres((line[0][0], line[0][1]), (line[-1][0], line[-1][1]))
+        bearing = math.degrees(math.atan2(east, north)) % 360
+        sides = []
+        for offset in ("left", "right"):
+            rules = []
+            for rule in side_rules(stretch, bearing, offset):
+                window = next(rule_windows(rule, zone, now, now + PARKING_LOOKAHEAD_DAYS * 86400), None)
+                rules.append({
+                    **rule, "next": window and {"from": window[0], "until": window[1]},
+                    "lifted": bool(rule.get("permit") and rule["permit"] in permits),
+                })
+            if rules:
+                sides.append({"side": compass_word(bearing + (-90 if offset == "left" else 90)), "offset": offset, "rules": rules})
+        signs.append({
+            "street": stretch["street"], "points": len(line), "home_side": stretch["home_side"],
+            "line": [[round(float(p[0]), 6), round(float(p[1]), 6)] for p in line], "width_m": stretch["width"], "sides": sides,
+        })
+    return signs
 
 
 @app.get("/parking")
@@ -13449,6 +13484,8 @@ if __name__ == "__main__":
             asked, where = tesla_ask(name, now, "parking-check")
             match = parking_match(where, stretches) if where and not where.get("asleep") else None
             report.setdefault("now", {})[name] = {"tesla": where, "match": match}
+        for street in report["streets"]:
+            street.pop("line", None)  # the points, for the map: their count says enough here
         print(json.dumps(report, indent=2, default=str))
     else:
         sys.exit("usage: python relay.py tesla-register | tesla-link | tesla-telemetry-config | tesla-telemetry-send | tesla-telemetry-status"

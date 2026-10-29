@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.domain.model.CarCheck
 import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.CarProfile
 import com.meticulouscreations.homesafe.domain.model.ParkingAlert
+import com.meticulouscreations.homesafe.domain.model.ParkingRule
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -129,6 +131,38 @@ class PushRelayApiCarsTest {
         assertEquals(120, spot.limitMinutes)
         assertNull(spot.fromEpochSeconds)
         assertNull(spot.side)
+    }
+
+    @Test
+    fun eachWatchedStreetComesWithTheSignsAlongItsCurbs() = runTest {
+        val (api, _) = api(
+            respondWith = """{"cars":[],"streets":[
+                {"street":"Central Ave","points":3,"home_side":"right","width_m":16,"line":[[37.7639,-122.2423],[37.7600,-122.2350],[37.7549,-122.2273]],"sides":[
+                  {"side":"north","offset":"left","rules":[{"kind":"no_parking","days":["thu"],"weeks":[1,3],"start":"08:00","end":"11:00","note":"Street sweeping",
+                    "next":{"from":1793894400,"until":1793905200},"lifted":false}]},
+                  {"side":"south","offset":"right","rules":[{"kind":"limit","minutes":120,"days":["Monday","tue","WED","thu","fri","sometimes"],"weeks":["2",-1,9],
+                    "months":[4,5,13],"start":"8","end":"18:30","permit":"B","next":null,"lifted":true}]}]},
+                {"street":"Nowhere St","line":[[37.76,-122.23]],"sides":[]}]}""",
+        )
+        val street = api.getParking("http://frigate:5000").getOrThrow().streets.single()
+        assertEquals(listOf("Central Ave", 16.0, 3), listOf(street.street, street.widthMetres, street.line.size))
+        val (north, south) = street.curbs
+        assertEquals(ParkingAlert.Side.NORTH to true, north.side to north.left)
+        assertEquals(
+            ParkingRule(
+                limitMinutes = null, days = listOf(3), weeks = listOf(1, 3), months = emptyList(), startMinutes = 480, endMinutes = 660, note = "Street sweeping",
+                permit = null, lifted = false, nextFromEpochSeconds = 1_793_894_400, nextUntilEpochSeconds = 1_793_905_200,
+            ),
+            north.rules.single(),
+        )
+        val limit = south.rules.single()
+        assertEquals(ParkingAlert.Side.SOUTH to false, south.side to south.left)
+        assertEquals(listOf(listOf(0, 1, 2, 3, 4), listOf(2, -1), listOf(4, 5)), listOf(limit.days, limit.weeks, limit.months), "read as loosely as the relay does; nonsense left out")
+        assertEquals(listOf(120, 480, 1110), listOf(limit.limitMinutes, limit.startMinutes, limit.endMinutes))
+        assertEquals("B" to true, limit.permit to limit.lifted)
+        assertNull(limit.nextFromEpochSeconds)
+        assertFalse(limit.on(1_793_894_400), "no window coming")
+        assertTrue(north.rules.single().on(1_793_894_400 + 60), "sweeping now")
     }
 
     @Test
