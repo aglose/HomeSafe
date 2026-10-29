@@ -3192,6 +3192,21 @@ class TeslaTest(CarPresenceTest):
         self.assertEqual("asleep", relay.tesla_verdict("sarahs_car", now=1300.0), "gone to sleep: Tesla is asked")
         self.assertEqual(1, len(self.tesla_calls))
 
+    def test_a_location_from_before_the_car_reconnected_is_not_taken_as_where_it_is(self):
+        self.where = {"VIN_S": "asleep"}
+        self.stream("VIN_S", 1000.0, connectivity="CONNECTED", Location=self.NEAR, Gear="ShiftStateP")
+        self.stream("VIN_S", 1100.0, connectivity="DISCONNECTED")
+        relay._tesla_answers.clear()
+        self.stream("VIN_S", 5000.0, connectivity="CONNECTED", Soc=70, Gear="ShiftStateD")
+        self.assertNotIn("sarahs_car", relay._tesla_answers, "the old location isn't restamped by a gear change")
+        with relay._tesla_lock:
+            self.assertIsNone(relay.tesla_stream_answer("sarahs_car", 5010.0), "nor by the battery")
+        self.stream("VIN_S", 5020.0, Location=self.FAR)
+        self.assertEqual("away", relay.tesla_verdict("sarahs_car", now=5030.0))
+        relay.tesla_stream_lost()
+        with relay._tesla_lock:
+            self.assertIsNone(relay.tesla_stream_answer("sarahs_car", 5040.0), "the broker dropped: what was missed is unknown")
+
     def test_a_sleeping_car_that_streams_is_asked_about_less_often(self):
         relay._tesla_answers["sarahs_car"] = (1000.0, {"asleep": True})
         later = 1000.0 + relay.TESLA_ASLEEP_CHECK_SECONDS
@@ -8213,12 +8228,24 @@ class ParkingTest(_FakeFrigate):
         stream(at - 120, Location={"latitude": lat + 0.01, "longitude": lng}, Gear="ShiftStateD", VehicleSpeed=20.0, Soc=64)
         stream(at, Location={"latitude": lat, "longitude": lng}, GpsHeading=270, VehicleSpeed=0.0)
         stream(at + 5, Gear="ShiftStateP")
+        stream(at + 30, GpsHeading=268)
         relay.parking_tick(at + 50, push=self.push)
         spot = (relay.state_get(relay.PARKING_KEY) or {})["sarahs_car"]["spot"]
         self.assertEqual(("Elm St", "north", at + 5), (spot["street"], spot["side"], spot["since"]), "parked as it shifted into P, not up to hours before")
         self.assertNotIn("VIN_S", self.asked, "the stream said where it is")
         sarah = next(c for c in relay.parking_status(at + 60)["cars"] if c["car"] == "sarahs_car")
         self.assertEqual((False, 64.0, True), (sarah["last"]["moving"], sarah["live"]["battery"], sarah["live"]["connected"]))
+
+    def test_a_car_first_heard_already_parked_keeps_the_cautious_since(self):
+        lat, lng = _metres(self.CROSSING, 60, 5)
+        at = self.WED_7PM + 3600
+        for field, value in {"Location": {"latitude": lat, "longitude": lng}, "GpsHeading": 270, "Gear": "ShiftStateP"}.items():
+            relay.tesla_stream_receive(f"tesla/VIN_S/v/{field}", json.dumps(value).encode(), at)
+        relay.tesla_stream_receive("tesla/VIN_S/v/GpsHeading", b"271", at + 40)
+        relay.parking_tick(at + 50, push=self.push)
+        spot = (relay.state_get(relay.PARKING_KEY) or {})["sarahs_car"]["spot"]
+        self.assertEqual(at + 40 - max(relay.TESLA_CHECK_SECONDS, relay.TESLA_ASLEEP_CHECK_SECONDS), spot["since"],
+                         "never seen shifting into P: it may have been there a while")
 
     def test_with_no_watched_streets_the_cars_are_still_kept_where_presence_last_heard_them(self):
         self.config({"tz": self.ZONE, "streets": []})

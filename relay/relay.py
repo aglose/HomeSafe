@@ -10306,16 +10306,20 @@ def tesla_public_key() -> Response:
         raise HTTPException(status_code=404)
 
 
+def tesla_partner_token() -> str:
+    """A partner token: the application's own, for what concerns no one account."""
+    return tesla_token_request({
+        "grant_type": "client_credentials", "client_id": TESLA_CLIENT_ID, "client_secret": TESLA_CLIENT_SECRET,
+        "scope": TESLA_SCOPES.replace("offline_access ", ""), "audience": TESLA_API,
+    })["access_token"]
+
+
 def tesla_register() -> dict[str, Any]:
     """Registers the application's domain with the Fleet API (once per region), by a partner token."""
     from urllib.parse import urlparse
 
-    partner = tesla_token_request({
-        "grant_type": "client_credentials", "client_id": TESLA_CLIENT_ID, "client_secret": TESLA_CLIENT_SECRET,
-        "scope": TESLA_SCOPES.replace("offline_access ", ""), "audience": TESLA_API,
-    })
     r = requests.post(f"{TESLA_API}/api/1/partner_accounts", json={"domain": urlparse(TESLA_PUBLIC_URL).hostname},
-                      headers={"Authorization": f"Bearer {partner['access_token']}"}, timeout=15)
+                      headers={"Authorization": f"Bearer {tesla_partner_token()}"}, timeout=15)
     r.raise_for_status()
     return r.json()
 
@@ -10335,8 +10339,11 @@ def tesla_register() -> dict[str, Any]:
 #
 # Each streamed location becomes the car's latest answer (see `tesla_ask`) as if the relay had just
 # asked, so car presence takes it up within CAR_PRESENCE_EVERY_SECONDS and parking within
-# PARKING_EVERY_SECONDS. While a car is connected and has been heard in the last
-# TESLA_STREAM_FRESH_SECONDS, asking about it answers from the stream without a call. Asking stays
+# PARKING_EVERY_SECONDS. A car sends its location only when it changes, so while it is connected
+# and has been heard in the last TESLA_STREAM_FRESH_SECONDS the last one it sent is where it is, and
+# asking about it answers from the stream without a call. Only a location sent over this connection
+# counts: one from before the car or the relay last connected may be from before a drive the relay
+# didn't hear. A car seen shifting into P is parked from then (`parked_at`). Asking stays
 # the backstop for a stream that has stopped, less often for a car that streams: asleep, it is
 # asked about every TESLA_STREAM_ASLEEP_CHECK_SECONDS, since it says itself when it wakes. A VIN
 # outside TESLA_CARS is ignored (Tesla's advice: a car's key could be stolen, so trust only your own).
@@ -10364,7 +10371,9 @@ TESLA_STREAM_FRESH_SECONDS = 300.0
 TESLA_STREAM_TRUST_SECONDS = 2 * 86400.0
 TESLA_STREAM_ASLEEP_CHECK_SECONDS = float(os.environ.get("TESLA_STREAM_ASLEEP_CHECK_SECONDS", str(6 * 3600)))
 # Each car's stream: its fields' latest values, when anything was last heard from it (`heard`), when
-# its location was (`located`), and whether it is connected now (None until the server says).
+# its location was (`located`), whether that location was sent over the connection as it is now
+# (`current`), whether it is connected now (None until the server says), and when it was seen to
+# shift from D, R or N into P on this connection (`parked_at`).
 _tesla_live: dict[str, dict[str, Any]] = {}
 
 
@@ -10385,12 +10394,25 @@ def tesla_stream_fix(live: dict[str, Any], at: float) -> dict[str, Any] | None:
     lat, lng = tesla_number(location.get("latitude")), tesla_number(location.get("longitude"))
     if lat is None or lng is None or (lat == 0 and lng == 0):
         return None
-    shift = str(fields.get("Gear") or "").removeprefix("ShiftState")
-    return {
+    shift = tesla_shift(fields.get("Gear"))
+    fix = {
         "lat": lat, "lng": lng, "at": at, "heading": tesla_number(fields.get("GpsHeading")),
-        "shift": shift if shift in ("P", "D", "R", "N") else None, "speed": tesla_number(fields.get("VehicleSpeed")),
-        "streamed": True,
+        "shift": shift, "speed": tesla_number(fields.get("VehicleSpeed")), "streamed": True,
     }
+    if shift == "P" and live.get("parked_at"):
+        fix["parked_at"] = float(live["parked_at"])
+    return fix
+
+
+def tesla_shift(gear: Any) -> str | None:
+    """ "ShiftStateD" as "D"; None for anything but P, D, R and N."""
+    shift = str(gear or "").removeprefix("ShiftState")
+    return shift if shift in ("P", "D", "R", "N") else None
+
+
+def tesla_stream_reset(live: dict[str, Any]) -> None:
+    """A connection begun or ended: what the car said over the last one may no longer hold. Under _tesla_lock."""
+    live["current"], live["parked_at"] = False, None
 
 
 def tesla_stream_receive(topic: str, payload: bytes, now: float) -> None:
@@ -10406,33 +10428,44 @@ def tesla_stream_receive(topic: str, payload: bytes, now: float) -> None:
     except ValueError:
         value = payload.decode("utf-8", "replace")
     with _tesla_lock:
-        live = _tesla_live.setdefault(name, {"fields": {}, "heard": 0.0, "located": 0.0, "connected": None})
+        live = _tesla_live.setdefault(name, {"fields": {}, "heard": 0.0, "located": 0.0, "connected": None,
+                                             "current": False, "parked_at": None})
         live["heard"] = now
         if parts[2] == "connectivity" and isinstance(value, dict):
             connected = value.get("Status") == "CONNECTED"
             if connected != live["connected"]:
                 log.info("tesla: %s's stream %s", name, "connected" if connected else "disconnected")
             live["connected"] = connected
+            tesla_stream_reset(live)
             return
         if parts[2] == "errors":
             log.warning("tesla: %s's stream reports %s: %s", name, parts[-1], value)
             return
         if parts[2] != "v" or len(parts) < 4:
             return
-        live["fields"][parts[3]] = value
+        field = parts[3]
+        if field == "Gear":
+            before, after = tesla_shift(live["fields"].get("Gear")), tesla_shift(value)
+            if after != "P":
+                live["parked_at"] = None
+            elif before in ("D", "R", "N"):
+                live["parked_at"] = now
+        live["fields"][field] = value
         # Anything coming through is the car awake and connected, whatever was missed of the last connect.
         live["connected"] = True
-        if parts[3] not in ("Location", "Gear", "VehicleSpeed", "GpsHeading"):
+        if field == "Location":
+            live["current"] = True
+        if field not in ("Location", "Gear", "VehicleSpeed", "GpsHeading") or not live.get("current"):
             return
         fix = tesla_stream_fix(live, now)
         if fix is None:
             return
-        if parts[3] == "Location" and not live["located"]:
+        if field == "Location" and not live["located"]:
             home = state_get(HOME_KEY)
             if home:
                 d = haversine_metres((fix["lat"], fix["lng"]), (float(home["lat"]), float(home["lng"])))
                 log.info("tesla: %s streaming, %.0f m from home", name, d)
-        if parts[3] == "Location":
+        if field == "Location":
             live["located"] = now
         _tesla_answers[name] = (now, fix)
 
@@ -10442,12 +10475,18 @@ def tesla_stream_lost() -> None:
     with _tesla_lock:
         for live in _tesla_live.values():
             live["connected"] = None
+            tesla_stream_reset(live)
 
 
 def tesla_stream_answer(name: str, now: float) -> dict[str, Any] | None:
-    """Where the car is by its stream, while it is connected and was heard in the last TESLA_STREAM_FRESH_SECONDS; None otherwise. Under _tesla_lock."""
+    """
+    Where the car is by its stream, while it is connected, was heard in the last
+    TESLA_STREAM_FRESH_SECONDS, and has sent its location over this connection; None otherwise.
+    Under _tesla_lock.
+    """
     live = _tesla_live.get(name)
-    if not live or not live.get("connected") or now - float(live.get("heard") or 0) > TESLA_STREAM_FRESH_SECONDS:
+    if (not live or not live.get("connected") or not live.get("current")
+            or now - float(live.get("heard") or 0) > TESLA_STREAM_FRESH_SECONDS):
         return None
     return tesla_stream_fix(live, now)
 
@@ -10575,9 +10614,12 @@ def tesla_telemetry_send(token: str) -> dict[str, Any]:
 
 
 def tesla_telemetry_status() -> dict[str, Any]:
-    """Whether each car has taken up the configuration (`synced`), and the errors it reported since."""
+    """
+    Whether each car has taken up the configuration (`synced`), and the errors it reported since:
+    each car's own, and the application's (`partner_errors`, all its cars', by a partner token).
+    """
     global _tesla_why
-    report = {}
+    report: dict[str, Any] = {}
     for name, vin in TESLA_CARS.items():
         row = with_db(lambda c: c.execute("SELECT account FROM tesla_vehicles WHERE vin=?", (vin,)).fetchone())
         access = tesla_access(row[0]) if row else None
@@ -10597,6 +10639,12 @@ def tesla_telemetry_status() -> dict[str, Any]:
                 body["config"].pop("ca", None)  # long, and only the box's own CA
             car[path] = body
         report[name] = car
+    try:
+        r = requests.get(f"{TESLA_API}/api/1/partner_accounts/fleet_telemetry_errors",
+                         headers={"Authorization": f"Bearer {tesla_partner_token()}"}, timeout=15)
+        report["partner_errors"] = (r.json().get("response") if r.ok else None) or f"{r.status_code} {r.text[:200]}"
+    except Exception as e:
+        report["partner_errors"] = f"failed: {e}"
     return report
 
 
@@ -11021,10 +11069,10 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
         return
     # From another spot at the curb, it was there until the last answer; else it was last seen elsewhere.
     # Answers come every TESLA_CHECK_SECONDS, or every TESLA_ASLEEP_CHECK_SECONDS while it slept. A
-    # car that streams (see "Tesla telemetry") said so as it parked.
+    # car whose stream was heard shifting into P parked then (see "Tesla telemetry").
     since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - max(TESLA_CHECK_SECONDS, TESLA_ASLEEP_CHECK_SECONDS))
-    if where.get("streamed"):
-        since = float(fix["at"])
+    if where.get("parked_at"):
+        since = float(where["parked_at"])
     car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
     log.info("parking: parked on the %s side of %s since %s (by its %s)", match["side"] or "unsure", match["street"],
              datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="minutes"), match["how"] or "nothing")
