@@ -90,6 +90,8 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.sqlite.bundled)
             implementation(libs.androidx.activity.compose) // ReportDrawnWhen, for time-to-fully-drawn
+            // traceSection's Tracing 2.0 sections (Tracing.android.kt); written only by a -Phomesafe.tracing=true build.
+            api(libs.androidx.tracing)
             implementation(libs.ktor.client.okhttp)
             // The push token is this device's identity to the relay (PushTokenProvider.android.kt).
             implementation(project.dependencies.platform(libs.firebase.bom))

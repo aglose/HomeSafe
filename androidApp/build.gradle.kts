@@ -48,6 +48,9 @@ dependencies {
     implementation(libs.firebase.messaging)
     implementation(libs.androidx.work.runtime)
 
+    // The driver and Perfetto file sink behind in-process tracing (HomeSafeApplication).
+    implementation(libs.androidx.tracing.wire)
+
     // Installs the shipped Baseline Profile into ART on first run (see androidApp/src/release/generated/baselineProfiles/).
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
@@ -132,6 +135,9 @@ android {
         // "1.0.62" for the release shipped by PR #62 (-PreleasePr=62, set by the same publish job),
         // so the version the app shows names the pull request it came from. See appVersionBase
         // in gradle.properties.
+        // -Phomesafe.tracing=true: the app's Tracing 2.0 driver writes what is traced in-process (Metro's
+        // graph bindings, the app's own sections) to a Perfetto file. Off, it is the library's stub.
+        buildConfigField("boolean", "IN_PROCESS_TRACING", providers.gradleProperty("homesafe.tracing").getOrElse("false"))
         val appVersionBase = providers.gradleProperty("appVersionBase").get()
         versionName = providers.gradleProperty("releasePr").map { "$appVersionBase.$it" }.getOrElse(appVersionBase)
 

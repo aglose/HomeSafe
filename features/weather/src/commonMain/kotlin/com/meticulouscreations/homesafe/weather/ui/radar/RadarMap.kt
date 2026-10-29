@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -113,7 +114,12 @@ internal fun RadarMap(
     val radar = remember(shaded) { if (shaded) weatherShaderOrNull(RADAR_SHADER) else null }
     val arrivals by tiles.arrivals.collectAsStateWithLifecycle()
     val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
-    val clock = rememberWeatherShaderClock(running = animated)
+    // The radar's shimmer and the marker's pulse: slow things, stepped thirty times a second like the
+    // atlas's map light, and only while some of the map is on screen. The Today page keeps its
+    // radar card composed below the fold, where a clock moving every frame kept the whole window
+    // drawing at the display's rate with nothing of it in view (docs/perf-tracing.md).
+    var onScreen by remember { mutableStateOf(true) }
+    val clock = rememberWeatherShaderClock(running = animated && onScreen, frameSeconds = MAP_LIGHT_FRAME_SECONDS)
     val scope = rememberCoroutineScope()
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val framePosition by rememberUpdatedState(position)
@@ -167,6 +173,7 @@ internal fun RadarMap(
         modifier
             .clipToBounds()
             .onSizeChanged { viewport = it }
+            .onVisibilityChanged(minFractionVisible = 0.01f) { onScreen = it }
             .then(
                 if (!interactive) {
                     Modifier
@@ -364,3 +371,6 @@ private fun DrawScope.drawTile(
         up++
     }
 }
+
+/** How often the radar map's own light (the radar's shimmer, the marker's pulse) moves on. */
+private const val MAP_LIGHT_FRAME_SECONDS = 1f / 30f

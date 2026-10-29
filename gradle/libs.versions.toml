@@ -25,7 +25,7 @@ material3 = "1.12.0-alpha03"
 material-icons-extended = "1.7.3"
 # Drag to reorder in lazy lists and grids (Calvin Liang), for the Home page's Arrange mode.
 reorderable = "3.1.0"
-metro = "1.4.5"
+metro = "1.5.0"
 navigation3 = "1.1.2"
 # Back as a gesture to animate with (NavigationBackHandler); the same dispatcher Navigation 3 feeds.
 navigationevent = "1.1.0"
@@ -42,6 +42,9 @@ stream-webrtc = "1.3.10"
 coil = "3.6.3"
 
 benchmark = "1.6.0-alpha01"
+# In-process tracing (Tracing 2.0): Metro's binding spans and the app's own sections, written to a Perfetto
+# file by the app (see HomeSafeApplication). Android only: androidx.tracing has no iOS target.
+tracing = "2.0.5"
 uiautomator = "2.4.0"
 profileinstaller = "1.4.1"
 composeStabilityAnalyzer = "0.15.0"
@@ -114,6 +117,8 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 metrox-viewmodel-compose = { module = "dev.zacsweers.metro:metrox-viewmodel-compose", version.ref = "metro" }
 androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
+androidx-tracing = { module = "androidx.tracing:tracing", version.ref = "tracing" }
+androidx-tracing-wire = { module = "androidx.tracing:tracing-wire", version.ref = "tracing" }
 androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 

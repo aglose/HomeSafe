@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
+import com.meticulouscreations.homesafe.tracing.traceInstant
+import com.meticulouscreations.homesafe.ui.components.frameGridSlot
 import com.meticulouscreations.homesafe.weather.ui.LocalWeatherShaders
 import com.meticulouscreations.homesafe.weather.ui.shader.CELESTIAL_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.CLOUD_SHADER
@@ -84,14 +86,18 @@ fun WeatherSky(
         // An infinite animation's frames: anything that waits for animations to settle (a UI
         // test's idling) knows this one never will.
         var last = withInfiniteAnimationFrameNanos { it }
+        var lastSlot = frameGridSlot(last, animator.frameSeconds)
         while (true) {
             withInfiniteAnimationFrameNanos { now ->
                 // Not every frame the display offers: cloud drifts and the sun creeps, and at thirty
                 // frames a second they look as they do at a hundred and twenty for a quarter of the
-                // shading. The frames between are the cards' alone (see the layer below).
-                val dt = (now - last) / 1e9f
-                if (dt >= animator.frameSeconds - FRAME_SLACK_SECONDS) {
-                    animator.step(dt.coerceIn(0f, 0.1f))
+                // shading. The frames between are the cards' alone (see the layer below). Which
+                // frames: the ones every other clock with this step moves on in (see frameGridSlot).
+                val slot = frameGridSlot(now, animator.frameSeconds)
+                if (slot != lastSlot) {
+                    lastSlot = slot
+                    animator.step(((now - last) / 1e9f).coerceIn(0f, 0.1f))
+                    traceInstant("weather.sky")
                     last = now
                 }
             }
@@ -202,9 +208,6 @@ private const val CLOUD_DOWNSCALE = 2
 /** How often the sky is drawn afresh: a dry one, and one with rain or snow falling or on its way to a new scene. */
 private const val SKY_FRAME_SECONDS = 1f / 30f
 private const val BUSY_SKY_FRAME_SECONDS = 1f / 60f
-
-/** A display's frames don't land on the microsecond: one this much early is still the one wanted. */
-private const val FRAME_SLACK_SECONDS = 0.002f
 
 /** How far from where it is heading a number can be and still count as arrived. */
 private const val SETTLED = 0.004f

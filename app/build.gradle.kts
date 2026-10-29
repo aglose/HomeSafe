@@ -94,6 +94,8 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiTooling)
             implementation(libs.androidx.activity.compose)
+            // The Tracer the graph's binding spans are written with (see TracingBindings.android.kt).
+            implementation(libs.androidx.tracing)
         }
         listOf("iosArm64Main", "iosSimulatorArm64Main").forEach { name ->
             getByName(name).kotlin.srcDir("src/skiaMain/kotlin")
@@ -128,6 +130,14 @@ tasks.withType<AbstractTestTask>().configureEach {
         events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+}
+
+// -Phomesafe.tracing=true: Metro wraps every binding the graph creates in a trace section and marks
+// every accessor, written by the app's Tracing 2.0 driver (HomeSafeApplication) to a Perfetto file
+// beside the app's data. Android only; the iOS graph is unchanged. docs/perf-tracing.md says how to read it.
+metro {
+    @OptIn(dev.zacsweers.metro.gradle.ExperimentalMetroGradleApi::class)
+    enableRuntimeTracing.set(providers.gradleProperty("homesafe.tracing").map(String::toBoolean).orElse(false))
 }
 
 ktlint {

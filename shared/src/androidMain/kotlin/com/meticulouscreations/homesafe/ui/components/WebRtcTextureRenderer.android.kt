@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.view.TextureView
+import com.meticulouscreations.homesafe.tracing.traceSection
 import org.webrtc.EglBase
 import org.webrtc.EglRenderer
 import org.webrtc.GlRectDrawer
@@ -73,9 +74,11 @@ internal class WebRtcTextureRenderer(
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) = Unit
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                val done = CountDownLatch(1)
-                renderer.releaseEglSurface { done.countDown() }
-                ThreadUtils.awaitUninterruptibly(done)
+                traceSection("live.renderer.releaseEglSurface") {
+                    val done = CountDownLatch(1)
+                    renderer.releaseEglSurface { done.countDown() }
+                    ThreadUtils.awaitUninterruptibly(done)
+                }
                 return true
             }
 
