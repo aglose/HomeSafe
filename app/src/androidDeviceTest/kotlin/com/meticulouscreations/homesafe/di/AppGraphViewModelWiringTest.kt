@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
 import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.integration.testPlatformContext
+import com.meticulouscreations.homesafe.ui.screens.CarUnitsViewModel
 import com.meticulouscreations.homesafe.ui.screens.MapTilesViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.AssistantViewModel
@@ -69,6 +70,7 @@ class AppGraphViewModelWiringTest {
                 DoorsViewModel::class,
                 CarsViewModel::class,
                 MapTilesViewModel::class,
+                CarUnitsViewModel::class,
                 ConnectionNoticeViewModel::class,
                 WeatherViewModel::class,
                 FitnessViewModel::class,

@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.network
 
 import com.meticulouscreations.homesafe.domain.model.CarCheck
 import com.meticulouscreations.homesafe.domain.model.CarFix
+import com.meticulouscreations.homesafe.domain.model.CarLive
 import com.meticulouscreations.homesafe.domain.model.CarProfile
 import com.meticulouscreations.homesafe.domain.model.ParkingAlert
 import io.ktor.client.HttpClient
@@ -117,6 +118,47 @@ class PushRelayApiCarsTest {
         assertEquals(37.78, sarah.latitude)
         assertNull(new.lastSeen)
         assertNull(new.latitude, "never seen: no pin")
+    }
+
+    @Test
+    fun aStreamingCarComesWithItsBatteryChargingLocksAndTrip() = runTest {
+        val (api, _) = api(
+            respondWith = """{"cars":[
+                {"car":"andrews_tesla","name":"Andrew's Tesla","last":null,"asleep":false,
+                 "live":{"connected":true,"heard":1793851200,"battery":71.6,"range_mi":215.4,"charge_limit":80,"charging":"Charging",
+                  "hours_to_full":1.25,"locked":false,"sentry":"Armed","odometer_mi":12034.5,"destination":"Hardware store",
+                  "minutes_to_arrival":12.4,"inside_c":21.5,"outside_c":14}},
+                {"car":"sarahs_car","name":"Sarah's Tesla","last":null,"asleep":true,
+                 "live":{"connected":false,"battery":64,"charging":"Disconnected","hours_to_full":0,"locked":true,"sentry":"Off","destination":""}},
+                {"car":"new_car","name":"New Car","last":null,"asleep":false,"live":null}]}""",
+        )
+        val (andrew, sarah, new) = api.getCars("http://frigate:5000").getOrThrow()
+        assertEquals(
+            CarLive(
+                connected = true,
+                heardEpochSeconds = 1_793_851_200,
+                batteryPercent = 72,
+                rangeMiles = 215.4,
+                charging = CarLive.Charging.CHARGING,
+                minutesToFull = 75,
+                locked = false,
+                sentry = true,
+                destination = "Hardware store",
+                minutesToArrival = 12,
+                insideCelsius = 21.5,
+            ),
+            andrew.live,
+        )
+        val parked = sarah.live!!
+        assertEquals(listOf(false, true, false), listOf(parked.connected, parked.locked, parked.sentry))
+        assertNull(parked.charging, "unplugged")
+        assertNull(parked.minutesToFull)
+        assertNull(parked.destination, "no route")
+        assertNull(new.live, "hasn't streamed")
+        val live = andrew.live!!
+        assertTrue(live.streaming(1_793_851_200 + 300))
+        assertTrue(!live.streaming(1_793_851_200 + 301), "the relay's window has passed: a page kept from an unreachable relay")
+        assertTrue(!parked.streaming(1_793_851_200), "disconnected, and never heard")
     }
 
     @Test

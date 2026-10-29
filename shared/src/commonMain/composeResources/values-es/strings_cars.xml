@@ -29,4 +29,20 @@
     <string name="household_cars_show_all">Ver todos</string>
     <string name="household_cars_map_description">Mapa de dónde están los coches</string>
     <string name="household_cars_select">Ver en el mapa</string>
+    <string name="household_cars_live">En directo</string>
+    <string name="household_cars_battery">%1$d%</string>
+    <string name="household_cars_battery_miles">%1$d% · %2$d mi</string>
+    <string name="household_cars_battery_km">%1$d% · %2$d km</string>
+    <string name="household_cars_charging">Cargando</string>
+    <string name="household_cars_charging_full_in">Cargando, completa en %1$s</string>
+    <string name="household_cars_charged">Carga completa</string>
+    <string name="household_cars_plugged_in">Enchufado, sin cargar</string>
+    <string name="household_cars_duration_minutes">%1$d min</string>
+    <string name="household_cars_duration_hours">%1$d h %2$d min</string>
+    <string name="household_cars_trip">Rumbo a %1$s, a %2$s</string>
+    <string name="household_cars_trip_no_eta">Rumbo a %1$s</string>
+    <string name="household_cars_locked">Bloqueado</string>
+    <string name="household_cars_unlocked">Desbloqueado</string>
+    <string name="household_cars_sentry">Centinela activado</string>
+    <string name="household_cars_inside">Dentro: %1$s</string>
 </resources>
