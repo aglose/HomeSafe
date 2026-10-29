@@ -116,10 +116,25 @@ take_lock() {
     # Between another run's mkdir and its pid, or left by one killed right there.
     [[ -n "$(find "$lock" -maxdepth 0 -mmin +5 2>/dev/null)" ]] || return 1
   fi
-  rm -rf "$lock"
-  mkdir "$lock" 2>/dev/null || return 1
-  printf '%s\n' "$$" >"$lock/pid"
-  owns_lock=true
+  # Taken over by one run at a time, which asks again under that: two runs that both found the
+  # same dead holder would otherwise each clear the lock, the second clearing the first's new one.
+  local reclaim="$lock.reclaim"
+  if ! mkdir "$reclaim" 2>/dev/null; then
+    # One killed while taking over leaves this; it is only ever held for a moment.
+    find "$reclaim" -maxdepth 0 -mmin +1 -exec rm -rf {} + 2>/dev/null || true
+    return 1
+  fi
+  local taken=false
+  if [[ "$(cat "$lock/pid" 2>/dev/null || true)" == "$holder" ]]; then
+    rm -rf "$lock"
+    if mkdir "$lock" 2>/dev/null; then
+      printf '%s\n' "$$" >"$lock/pid"
+      owns_lock=true
+      taken=true
+    fi
+  fi
+  rmdir "$reclaim" 2>/dev/null || true
+  [[ "$taken" == true ]]
 }
 take_lock || { say "Another update is running."; exit 0; }
 work=$(mktemp -d)
