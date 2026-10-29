@@ -21,6 +21,34 @@ request and on `main`) builds a `.dmg` on an Apple-silicon Mac and keeps it as t
    xattr -dr com.apple.quarantine /Applications/HomeSafe.app
    ```
 
+### Keeping it up to date
+
+`scripts/mac-app-update.sh` puts main's newest build in place of the one in Applications: it asks
+GitHub for the newest **HomeSafe-macOS** artifact of a run on `main`, and installs it if it isn't
+the one already there. With `--install` it does so every six hours and at login from then on, as a
+LaunchAgent (`~/Library/LaunchAgents/com.meticulouscreations.homesafe.updater.plist`, logging to
+`~/Library/Logs/HomeSafe-updater.log`). It needs GitHub's CLI signed in to an account that can
+read the repository, and no clone, as `--install` keeps a copy of the script for itself:
+
+```bash
+brew install gh && gh auth login
+```
+
+```bash
+gh api repos/aglose/HomeSafe/contents/scripts/mac-app-update.sh -H 'Accept: application/vnd.github.raw' | bash -s -- --install
+```
+
+From a clone, `scripts/mac-app-update.sh` updates once, `--install 2` checks every two hours,
+`--force` reinstalls the newest build even if it is in place, and `--uninstall` stops it all.
+
+A HomeSafe that is running (in the menu bar, say) is quit, replaced and opened again behind the
+other windows, and a notification says which version arrived. One in front is being used, and is
+left for the next check. What the app keeps (the sign-in, the settings, the data in
+`~/Library/Application Support/HomeSafe`) stays as it was. A copy fetched by `gh` carries no
+quarantine, so macOS doesn't ask about it again. The app's signature is ad hoc, so if macOS asks
+whether HomeSafe may use the login it saved in the Keychain after an update, **Always Allow**
+answers it for that build.
+
 It is built for Apple silicon (M1 and later). An Intel Mac can build its own with
 `./gradlew :desktopApp:packageDmg` (below).
 
