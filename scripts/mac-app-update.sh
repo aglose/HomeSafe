@@ -31,8 +31,18 @@ die() { say "$*" >&2; exit 1; }
 
 [[ "$(uname -s)" == Darwin ]] || die "This is for a Mac."
 
+# CI builds for Apple silicon only; an Intel Mac keeps the app it built itself (docs/desktop.md).
+require_apple_silicon() {
+  [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == 1 ]] || die "main's builds are for Apple silicon; this Mac builds its own (./gradlew :desktopApp:packageDmg)."
+}
+
+homesafe_running() { pgrep -f "$app/Contents/MacOS/HomeSafe" >/dev/null; }
+
+in_front() { [[ "$(lsappinfo info -only bundleid "$(lsappinfo front)" 2>/dev/null || true)" == *"$bundle_id"* ]]; }
+
 install_agent() {
   local hours=${1:-6}
+  require_apple_silicon
   [[ "$hours" =~ ^[0-9]+$ && "$hours" -gt 0 ]] || die "Hours must be a whole number above 0, not '$hours'."
   mkdir -p "$home_dir" "$(dirname "$agent")" "$(dirname "$log")"
   # Its own copy, so the schedule doesn't depend on a clone staying where it is (or existing).
@@ -82,6 +92,7 @@ case "${1:-}" in
   *) die "Unknown option '$1' (see --help)." ;;
 esac
 
+require_apple_silicon
 command -v gh >/dev/null || die "GitHub's CLI isn't installed: brew install gh && gh auth login"
 gh auth status >/dev/null 2>&1 || die "GitHub's CLI isn't signed in: gh auth login"
 
@@ -100,9 +111,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# main's newest .dmg, from a push (not a pull request's run), still kept.
-run_id=$(gh api "repos/$repo/actions/artifacts?name=$artifact&per_page=50" --jq \
-  '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .workflow_run.id // empty')
+# main's newest .dmg, still kept: built in this repository (never a fork's pull request, whose
+# branch may be called main too) by the Desktop app workflow, on a push to main or a run started on it.
+run_id=
+candidates=$(gh api "repos/$repo/actions/artifacts?name=$artifact&per_page=100" --jq \
+  '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main" and .workflow_run.head_repository_id == .workflow_run.repository_id)] | sort_by(.created_at) | reverse | .[].workflow_run.id')
+for candidate in $candidates; do
+  origin=$(gh api "repos/$repo/actions/runs/$candidate" --jq '[.event, .head_branch, .head_repository.full_name, .path] | join(" ")')
+  case "$origin" in
+    "push main $repo .github/workflows/desktop-app.yml" | "workflow_dispatch main $repo .github/workflows/desktop-app.yml")
+      run_id=$candidate
+      break
+      ;;
+  esac
+done
 [[ -n "$run_id" ]] || die "No $artifact build of main is kept on GitHub right now (they last 30 days)."
 installed=$(cat "$state" 2>/dev/null || true)
 if [[ "$run_id" == "$installed" && -d "$app" && "$force" == false ]]; then
@@ -111,8 +133,7 @@ if [[ "$run_id" == "$installed" && -d "$app" && "$force" == false ]]; then
 fi
 
 # Someone using it now keeps it; the next check tries again.
-front=$(lsappinfo info -only bundleid "$(lsappinfo front)" 2>/dev/null || true)
-if [[ "$front" == *"$bundle_id"* ]]; then
+if in_front; then
   say "HomeSafe is in front; leaving the update (run $run_id) for the next check."
   exit 0
 fi
@@ -133,12 +154,18 @@ ditto "$mount/HomeSafe.app" "$app.new"
 xattr -dr com.apple.quarantine "$app.new" 2>/dev/null || true
 
 running=false
-if pgrep -qf "$app/Contents/MacOS/HomeSafe"; then
+if homesafe_running; then
+  # Asked again now the download is done: it may have come to the front meanwhile.
+  if in_front; then
+    rm -rf "$app.new"
+    say "HomeSafe is in front; leaving the update (run $run_id) for the next check."
+    exit 0
+  fi
   running=true
   say "Quitting HomeSafe to update it…"
   osascript -e "quit app id \"$bundle_id\"" >/dev/null 2>&1 || true
-  for _ in $(seq 30); do pgrep -qf "$app/Contents/MacOS/HomeSafe" || break; sleep 1; done
-  if pgrep -qf "$app/Contents/MacOS/HomeSafe"; then
+  for _ in $(seq 30); do homesafe_running || break; sleep 1; done
+  if homesafe_running; then
     rm -rf "$app.new"
     die "HomeSafe didn't quit; leaving the update for the next check."
   fi
