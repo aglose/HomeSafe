@@ -51,7 +51,11 @@
     <!-- The sensor's own health, after how the door stands. -->
     <string name="doors_detail_battery">Battery %1$d%</string>
     <string name="doors_detail_battery_low">Battery low</string>
-    <string name="doors_detail_weak_signal">Weak signal</string>
+    <!-- The number is the sensor's Zigbee link quality, 0-255: higher is better. -->
+    <string name="doors_detail_signal_weak">Weak signal (%1$d)</string>
+    <string name="doors_detail_signal_fair">Fair signal (%1$d)</string>
+    <string name="doors_detail_signal_good">Good signal (%1$d)</string>
+    <string name="doors_detail_signal_strong">Strong signal (%1$d)</string>
     <string name="doors_detail_offline">Not heard from in 30 minutes</string>
 
     <!-- Each door's alert setting. -->

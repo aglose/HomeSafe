@@ -97,6 +97,27 @@ services:
       # tailscaled makes a new socket each time it restarts, and a mounted file would go stale.
       - /var/run/tailscale:/var/run/tailscale:ro
 
+  # Tesla's Fleet Telemetry server (relay.py, "Tesla telemetry"; docs/tesla.md, "Telemetry"): each
+  # household Tesla, whenever it is awake, holds a mutual-TLS connection here and streams where it is
+  # and how it stands, and this publishes each value to the broker the relay listens on. Funnel
+  # passes 8443 through to 127.0.0.1:4443 untouched, since the TLS has to end here. The certificate
+  # and its CA are made on the box (data/telemetry/, not in the repository); the cars trust that CA
+  # because the signed configuration names it.
+  tesla-telemetry:
+    image: tesla/fleet-telemetry:v0.9.5
+    container_name: tesla-telemetry
+    restart: always
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+    network_mode: host
+    # The box's own user, who owns the key: the image runs as nobody otherwise.
+    user: "1000:1000"
+    volumes:
+      - ./tesla-telemetry.json:/etc/fleet-telemetry/config.json:ro
+      - ./data/telemetry:/certs:ro
+
   # Local vision model for the car check's second opinion. The relay pulls qwen3-vl:4b-instruct
   # (3.3 GB, ~4.5 GB of VRAM with its context) the first time it runs. One model, one request at a
   # time: the GPU is shared with Frigate's detector and decoders.

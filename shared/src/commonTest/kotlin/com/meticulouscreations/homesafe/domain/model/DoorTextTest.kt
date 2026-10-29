@@ -9,7 +9,8 @@ import homesafe.shared.generated.resources.doors_day_yesterday
 import homesafe.shared.generated.resources.doors_detail_battery
 import homesafe.shared.generated.resources.doors_detail_battery_low
 import homesafe.shared.generated.resources.doors_detail_offline
-import homesafe.shared.generated.resources.doors_detail_weak_signal
+import homesafe.shared.generated.resources.doors_detail_signal_good
+import homesafe.shared.generated.resources.doors_detail_signal_weak
 import homesafe.shared.generated.resources.doors_state_closed
 import homesafe.shared.generated.resources.doors_state_closed_days
 import homesafe.shared.generated.resources.doors_state_closed_just_now
@@ -40,11 +41,31 @@ class DoorTextTest {
     fun theSensorsHealthSaysOnlyWhatsWorthSaying() {
         val dot = UiText.of(Res.string.common_dot_separator)
         assertNull(doorHealthText(Door("0x01", "Front door", open = false)))
-        assertEquals(UiText.Joined(listOf(UiText.of(Res.string.doors_detail_battery, 87)), dot), doorHealthText(Door("0x01", "Front door", open = false, battery = 87, linkQuality = 120)))
         assertEquals(
-            UiText.Joined(listOf(UiText.of(Res.string.doors_detail_offline), UiText.of(Res.string.doors_detail_battery_low), UiText.of(Res.string.doors_detail_weak_signal)), dot),
+            UiText.Joined(listOf(UiText.of(Res.string.doors_detail_battery, 87), UiText.of(Res.string.doors_detail_signal_good, 120)), dot),
+            doorHealthText(Door("0x01", "Front door", open = false, battery = 87, linkQuality = 120, online = true)),
+        )
+        assertEquals(
+            UiText.Joined(listOf(UiText.of(Res.string.doors_detail_offline), UiText.of(Res.string.doors_detail_battery_low), UiText.of(Res.string.doors_detail_signal_weak, 12)), dot),
             doorHealthText(Door("0x01", "Front door", open = false, battery = 15, linkQuality = 12, online = false)),
         )
+        // A good signal from before it went quiet isn't how it is now.
+        assertEquals(
+            UiText.Joined(listOf(UiText.of(Res.string.doors_detail_offline), UiText.of(Res.string.doors_detail_battery, 90)), dot),
+            doorHealthText(Door("0x01", "Front door", open = false, battery = 90, linkQuality = 200, online = false)),
+        )
+    }
+
+    @Test
+    fun linkQualityIsToldAsALevel() {
+        assertEquals(DoorSignal.WEAK, DoorSignal.of(0))
+        assertEquals(DoorSignal.WEAK, DoorSignal.of(29))
+        assertEquals(DoorSignal.FAIR, DoorSignal.of(30))
+        assertEquals(DoorSignal.FAIR, DoorSignal.of(79))
+        assertEquals(DoorSignal.GOOD, DoorSignal.of(80))
+        assertEquals(DoorSignal.STRONG, DoorSignal.of(150))
+        assertEquals(DoorSignal.STRONG, DoorSignal.of(255))
+        assertNull(Door("0x01", "Front door", open = false).signal)
     }
 
     @Test

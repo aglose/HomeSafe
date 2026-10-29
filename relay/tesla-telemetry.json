@@ -1,0 +1,25 @@
+{
+  "host": "127.0.0.1",
+  "port": 4443,
+  "log_level": "info",
+  "json_log_enable": false,
+  "namespace": "tesla_telemetry",
+  "reliable_ack": false,
+  "transmit_decoded_records": true,
+  "records": {
+    "V": ["mqtt"],
+    "connectivity": ["mqtt"],
+    "errors": ["mqtt"]
+  },
+  "mqtt": {
+    "broker": "127.0.0.1:1883",
+    "client_id": "tesla-telemetry",
+    "topic_base": "tesla",
+    "qos": 1,
+    "retained": false
+  },
+  "tls": {
+    "server_cert": "/certs/server.pem",
+    "server_key": "/certs/server.key"
+  }
+}

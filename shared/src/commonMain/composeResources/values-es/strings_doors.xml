@@ -47,7 +47,10 @@
 
     <string name="doors_detail_battery">Batería %1$d%</string>
     <string name="doors_detail_battery_low">Batería baja</string>
-    <string name="doors_detail_weak_signal">Señal débil</string>
+    <string name="doors_detail_signal_weak">Señal débil (%1$d)</string>
+    <string name="doors_detail_signal_fair">Señal regular (%1$d)</string>
+    <string name="doors_detail_signal_good">Buena señal (%1$d)</string>
+    <string name="doors_detail_signal_strong">Señal fuerte (%1$d)</string>
     <string name="doors_detail_offline">Sin noticias desde hace un día</string>
 
     <string name="doors_notify_title">Avisarme</string>
