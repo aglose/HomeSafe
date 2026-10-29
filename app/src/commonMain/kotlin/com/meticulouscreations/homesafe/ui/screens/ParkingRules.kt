@@ -53,6 +53,7 @@ import homesafe.shared.generated.resources.parking_rules_line
 import homesafe.shared.generated.resources.parking_rules_next
 import homesafe.shared.generated.resources.parking_rules_no_parking
 import homesafe.shared.generated.resources.parking_rules_none_soon
+import homesafe.shared.generated.resources.parking_rules_note_with_limit
 import homesafe.shared.generated.resources.parking_rules_now
 import homesafe.shared.generated.resources.parking_rules_range
 import homesafe.shared.generated.resources.parking_rules_schedule
@@ -207,7 +208,7 @@ internal fun CurbLabel(signs: CurbSigns, nowEpochSeconds: Long, selected: Boolea
                         when {
                             next == null && signs.curb.rules.any { it.lifted } -> stringResource(Res.string.parking_rules_lifted_short)
                             from == null -> stringResource(Res.string.parking_rules_none_soon)
-                            from <= nowEpochSeconds && until != null -> stringResource(Res.string.parking_rules_label_now, clockOf(until))
+                            from <= nowEpochSeconds && until != null -> stringResource(Res.string.parking_rules_label_now, parkingWhen(until, nowEpochSeconds))
                             else -> parkingWhen(from, nowEpochSeconds)
                         },
                         style = MaterialTheme.typography.labelSmall,
@@ -277,9 +278,13 @@ internal fun ruleText(rule: ParkingRule): String {
     val note = rule.note
     val limit = rule.limitMinutes
     val what = when {
+        // The household's words, and how long a car may stay where the sign gives both.
+        note != null && limit != null -> stringResource(Res.string.parking_rules_note_with_limit, note, limitText(limit))
+
         note != null -> note
-        limit != null && limit % 60 == 0 -> pluralStringResource(Res.plurals.parking_map_limit_hours, limit / 60, limit / 60)
-        limit != null -> pluralStringResource(Res.plurals.parking_map_limit_minutes, limit, limit)
+
+        limit != null -> limitText(limit)
+
         else -> stringResource(Res.string.parking_rules_no_parking)
     }
     val days = if (rule.days.isEmpty() || rule.days.size == 7) {
@@ -306,6 +311,14 @@ internal fun ruleText(rule: ParkingRule): String {
     return stringResource(Res.string.parking_rules_line, what, schedule)
 }
 
+/** "2-hour parking", "90-minute parking". */
+@Composable
+private fun limitText(minutes: Int): String = if (minutes % 60 == 0) {
+    pluralStringResource(Res.plurals.parking_map_limit_hours, minutes / 60, minutes / 60)
+} else {
+    pluralStringResource(Res.plurals.parking_map_limit_minutes, minutes, minutes)
+}
+
 /**
  * "Next: Thu, Nov 5, 8:00 AM–11:00 AM", "On now, until 11:00 AM", or that it doesn't hold for
  * weeks; null once the window the relay gave has ended, until it says when the next one is.
@@ -316,9 +329,19 @@ internal fun ruleNext(rule: ParkingRule, nowEpochSeconds: Long): String? {
     val until = rule.nextUntilEpochSeconds
     return when {
         from == null || until == null -> stringResource(Res.string.parking_rules_none_soon)
+
         until <= nowEpochSeconds -> null
-        from <= nowEpochSeconds -> stringResource(Res.string.parking_rules_now, clockOf(until))
-        else -> stringResource(Res.string.parking_rules_next, dayOf(from, nowEpochSeconds), clockOf(from), clockOf(until))
+
+        from <= nowEpochSeconds -> stringResource(Res.string.parking_rules_now, parkingWhen(until, nowEpochSeconds))
+
+        // A window that runs into another day (all day Mon–Fri is one window, to Saturday's
+        // midnight) says the day it ends on, too.
+        else -> stringResource(
+            Res.string.parking_rules_next,
+            dayOf(from, nowEpochSeconds),
+            clockOf(from),
+            if (daysAway(until, from) == 0) clockOf(until) else parkingWhen(until, nowEpochSeconds),
+        )
     }
 }
 

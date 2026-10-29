@@ -26,6 +26,7 @@
     <string name="parking_rules_side_east">Lado este</string>
     <string name="parking_rules_side_south">Lado sur</string>
     <string name="parking_rules_side_west">Lado oeste</string>
+    <string name="parking_rules_note_with_limit">%1$s (%2$s)</string>
     <string name="parking_rules_no_parking">Prohibido aparcar</string>
     <string name="parking_rules_line">%1$s · %2$s</string>
     <string name="parking_rules_schedule">%1$s, %2$s</string>

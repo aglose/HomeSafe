@@ -228,6 +228,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.dayOf(epochSeconds: kotl
     - nowEpochSeconds: STABLE (primitive type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.limitText(minutes: kotlin.Int): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - minutes: STABLE (primitive type)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.parkingPlace(street: kotlin.String, side: com.meticulouscreations.homesafe.domain.model.ParkingAlert.Side?): kotlin.String
   skippable: false
   restartable: false

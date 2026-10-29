@@ -1001,8 +1001,8 @@ internal data class RelayParkingSign(
     fun toDomain() = ParkingRule(
         limitMinutes = minutes?.number()?.toInt()?.takeIf { kind == "limit" && it > 0 },
         days = days.orEmpty().mapNotNull { day -> DAY_WORDS.indexOf(day.text()?.lowercase()?.take(3)).takeIf { it >= 0 } }.distinct().sorted(),
-        weeks = weeks.orEmpty().mapNotNull { it.number()?.toInt()?.takeIf { week -> week in 1..5 || week == -1 } }.distinct().sortedBy { if (it == -1) 6 else it },
-        months = months.orEmpty().mapNotNull { it.number()?.toInt()?.takeIf { month -> month in 1..12 } }.distinct().sorted(),
+        weeks = weeks.orEmpty().mapNotNull { it.whole()?.takeIf { week -> week in 1..5 || week == -1 } }.distinct().sortedBy { if (it == -1) 6 else it },
+        months = months.orEmpty().mapNotNull { it.whole()?.takeIf { month -> month in 1..12 } }.distinct().sorted(),
         startMinutes = start.clockMinutes() ?: 0,
         endMinutes = end.clockMinutes() ?: 1440,
         note = note?.text()?.takeIf { it.isNotBlank() },
@@ -1018,6 +1018,12 @@ internal data class RelayParkingSign(
         fun JsonElement.text(): String? = (this as? JsonPrimitive)?.contentOrNull
 
         fun JsonElement.number(): Double? = (this as? JsonPrimitive)?.let { it.doubleOrNull ?: it.contentOrNull?.toDoubleOrNull() }
+
+        /**
+         * A week or a month as `rule_windows` in relay.py matches it: a whole JSON number (2 or
+         * 2.0). Quoted ("2") or fractional, it matches no day there, so it counts for none here.
+         */
+        fun JsonElement.whole(): Int? = (this as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull?.takeIf { it % 1.0 == 0.0 }?.toInt()
 
         /** "08:00" as 480, as `clock_minutes` in relay.py reads it. */
         fun JsonElement?.clockMinutes(): Int? {

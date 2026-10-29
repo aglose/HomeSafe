@@ -183,7 +183,7 @@ class PushRelayApiCarsTest {
                   {"side":"north","offset":"left","rules":[{"kind":"no_parking","days":["thu"],"weeks":[1,3],"start":"08:00","end":"11:00","note":"Street sweeping",
                     "next":{"from":1793894400,"until":1793905200},"lifted":false}]},
                   {"side":"south","offset":"right","rules":[{"kind":"limit","minutes":120,"days":["Monday","tue","WED","thu","fri","sometimes"],"weeks":["2",-1,9],
-                    "months":[4,5,13],"start":"8","end":"18:30","permit":"B","next":null,"lifted":true},
+                    "months":[4,5.0,5.5,13],"start":"8","end":"18:30","permit":"B","next":null,"lifted":true},
                     {"kind":"no_parking","days":null,"weeks":null,"months":null,"start":null,"end":null,"note":null,"permit":null,"next":null}]}]},
                 {"street":"Nowhere St","line":[[37.76,-122.23]],"sides":[]}]}""",
         )
@@ -201,7 +201,7 @@ class PushRelayApiCarsTest {
         val (limit, always) = south.rules
         assertEquals(listOf(emptyList<Int>(), 0, 1440), listOf(always.days + always.weeks + always.months, always.startMinutes, always.endMinutes), "nulls are as good as left out")
         assertEquals(ParkingAlert.Side.SOUTH to false, south.side to south.left)
-        assertEquals(listOf(listOf(0, 1, 2, 3, 4), listOf(2, -1), listOf(4, 5)), listOf(limit.days, limit.weeks, limit.months), "read as loosely as the relay does; nonsense left out")
+        assertEquals(listOf(listOf(0, 1, 2, 3, 4), listOf(-1), listOf(4, 5)), listOf(limit.days, limit.weeks, limit.months), "read as the relay reads them: a quoted week or a fraction matches no day there")
         assertEquals(listOf(120, 480, 1110), listOf(limit.limitMinutes, limit.startMinutes, limit.endMinutes))
         assertEquals("B" to true, limit.permit to limit.lifted)
         assertNull(limit.nextFromEpochSeconds)
