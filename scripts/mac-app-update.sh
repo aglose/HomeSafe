@@ -98,24 +98,46 @@ gh auth status >/dev/null 2>&1 || die "GitHub's CLI isn't signed in: gh auth log
 
 # One at a time: a check at login can meet one started by hand.
 mkdir -p "$home_dir"
+# The lock names the run holding it, and is taken over only once that run has gone (killed, or
+# the Mac restarted under it); one that is only slow, asleep with the Mac, keeps it.
 lock="$home_dir/lock"
-# A lock older than an hour was left by a run that was killed.
-find "$lock" -maxdepth 0 -mmin +60 -exec rmdir {} \; 2>/dev/null || true
-mkdir "$lock" 2>/dev/null || { say "Another update is running."; exit 0; }
+owns_lock=false
+take_lock() {
+  if mkdir "$lock" 2>/dev/null; then
+    printf '%s\n' "$$" >"$lock/pid"
+    owns_lock=true
+    return 0
+  fi
+  local holder
+  holder=$(cat "$lock/pid" 2>/dev/null || true)
+  if [[ -n "$holder" ]]; then
+    kill -0 "$holder" 2>/dev/null && return 1
+  else
+    # Between another run's mkdir and its pid, or left by one killed right there.
+    [[ -n "$(find "$lock" -maxdepth 0 -mmin +5 2>/dev/null)" ]] || return 1
+  fi
+  rm -rf "$lock"
+  mkdir "$lock" 2>/dev/null || return 1
+  printf '%s\n' "$$" >"$lock/pid"
+  owns_lock=true
+}
+take_lock || { say "Another update is running."; exit 0; }
 work=$(mktemp -d)
 mount=
 cleanup() {
   [[ -n "$mount" ]] && hdiutil detach -quiet "$mount" 2>/dev/null || true
   rm -rf "$work"
-  rmdir "$lock" 2>/dev/null || true
+  if [[ "$owns_lock" == true && "$(cat "$lock/pid" 2>/dev/null)" == "$$" ]]; then rm -rf "$lock"; fi
 }
 trap cleanup EXIT
 
 # main's newest .dmg, still kept: built in this repository (never a fork's pull request, whose
 # branch may be called main too) by the Desktop app workflow, on a push to main or a run started on it.
 run_id=
-candidates=$(gh api "repos/$repo/actions/artifacts?name=$artifact&per_page=100" --jq \
-  '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main" and .workflow_run.head_repository_id == .workflow_run.repository_id)] | sort_by(.created_at) | reverse | .[].workflow_run.id')
+# Every page: pull requests' builds share the name, and can push main's past the first hundred.
+candidates=$(gh api --paginate "repos/$repo/actions/artifacts?name=$artifact&per_page=100" --jq \
+  '.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main" and .workflow_run.head_repository_id == .workflow_run.repository_id) | "\(.created_at) \(.workflow_run.id)"' |
+  sort -r | cut -d' ' -f2)
 for candidate in $candidates; do
   origin=$(gh api "repos/$repo/actions/runs/$candidate" --jq '[.event, .head_branch, .head_repository.full_name, .path] | join(" ")')
   case "$origin" in
