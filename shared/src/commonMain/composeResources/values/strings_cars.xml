@@ -34,4 +34,20 @@
     <string name="household_cars_show_all">Show all</string>
     <string name="household_cars_map_description">Map of where the cars are</string>
     <string name="household_cars_select">Show on the map</string>
+    <string name="household_cars_live">Live</string>
+    <string name="household_cars_battery">%1$d%</string>
+    <string name="household_cars_battery_miles">%1$d% · %2$d mi</string>
+    <string name="household_cars_battery_km">%1$d% · %2$d km</string>
+    <string name="household_cars_charging">Charging</string>
+    <string name="household_cars_charging_full_in">Charging, full in %1$s</string>
+    <string name="household_cars_charged">Charged</string>
+    <string name="household_cars_plugged_in">Plugged in, not charging</string>
+    <string name="household_cars_duration_minutes">%1$d min</string>
+    <string name="household_cars_duration_hours">%1$d h %2$d min</string>
+    <string name="household_cars_trip">Heading to %1$s, %2$s away</string>
+    <string name="household_cars_trip_no_eta">Heading to %1$s</string>
+    <string name="household_cars_locked">Locked</string>
+    <string name="household_cars_unlocked">Unlocked</string>
+    <string name="household_cars_sentry">Sentry on</string>
+    <string name="household_cars_inside">Inside %1$s</string>
 </resources>

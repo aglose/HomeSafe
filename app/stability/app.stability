@@ -31,12 +31,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.AppTabContent(nav: com.m
     - visible: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CarCard(car: com.meticulouscreations.homesafe.domain.model.HouseholdCar, nowEpochSeconds: kotlin.Long, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CarCard(car: com.meticulouscreations.homesafe.domain.model.HouseholdCar, nowEpochSeconds: kotlin.Long, units: com.meticulouscreations.homesafe.weather.domain.WeatherUnits, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - car: STABLE (class with no mutable properties)
     - nowEpochSeconds: STABLE (primitive type)
+    - units: STABLE (marked @Stable or @Immutable)
     - selected: STABLE (primitive type)
     - onClick: STABLE (function type)
 
@@ -50,7 +51,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CarPin(car: com.meticulo
     - onClick: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.CarsContent(state: com.meticulouscreations.homesafe.viewmodel.CarsUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, animated: kotlin.Boolean): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.CarsContent(state: com.meticulouscreations.homesafe.viewmodel.CarsUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, animated: kotlin.Boolean, units: com.meticulouscreations.homesafe.weather.domain.WeatherUnits): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -60,6 +61,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.CarsContent(state: com.me
     - onRefresh: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - animated: STABLE (primitive type)
+    - units: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CarsHeader(onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -70,11 +72,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.CarsHeader(onBack: kotli
     - onRefresh: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CarsPreviewFrame(state: com.meticulouscreations.homesafe.viewmodel.CarsUiState): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CarsPreviewFrame(state: com.meticulouscreations.homesafe.viewmodel.CarsUiState, units: com.meticulouscreations.homesafe.weather.domain.WeatherUnits): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
+    - units: STABLE (marked @Stable or @Immutable)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.CarsScreen(onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -134,6 +137,35 @@ public fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticu
   params:
     - nav: STABLE (marked @Stable or @Immutable)
     - tab: UNSTABLE (cross-module type without @Stable/@Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.carBattery(live: com.meticulouscreations.homesafe.domain.model.CarLive, units: com.meticulouscreations.homesafe.weather.domain.WeatherUnits): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - live: STABLE (class with no mutable properties)
+    - units: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.carCharging(live: com.meticulouscreations.homesafe.domain.model.CarLive): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - live: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.carDuration(minutes: kotlin.Int): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - minutes: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.carTrip(live: com.meticulouscreations.homesafe.domain.model.CarLive): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - live: STABLE (class with no mutable properties)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.parkingPlace(street: kotlin.String, side: com.meticulouscreations.homesafe.domain.model.ParkingAlert.Side?): kotlin.String

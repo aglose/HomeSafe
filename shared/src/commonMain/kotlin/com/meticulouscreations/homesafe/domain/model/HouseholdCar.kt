@@ -16,6 +16,8 @@ data class HouseholdCar(
     val parked: CurbSpot?,
     /** Tesla said it is asleep the last time it was asked: it hasn't moved since [lastSeen]. */
     val asleep: Boolean,
+    /** What the car itself last streamed beyond where it is; null for a car that hasn't streamed. */
+    val live: CarLive? = null,
 ) {
     /** Where to put it on a map: the curb spot when it has one, else where it was last seen. */
     val latitude: Double? get() = parked?.latitude ?: lastSeen?.latitude
@@ -56,3 +58,28 @@ data class CurbSpot(
     val fromEpochSeconds: Long?,
     val untilEpochSeconds: Long?,
 )
+
+/**
+ * What a car last streamed to the relay (Tesla's Fleet Telemetry, docs/tesla.md): its battery,
+ * charging, locks, the trip it is on and the cabin's temperature. Each is null when the car hasn't
+ * said. All but [connected] are the last word, so they stand while it sleeps.
+ */
+data class CarLive(
+    /** Streaming right now: awake and heard from within the last few minutes. */
+    val connected: Boolean,
+    val batteryPercent: Int?,
+    /** The range the car estimates, in miles. */
+    val rangeMiles: Double?,
+    val charging: Charging?,
+    /** How long until it reaches its charge limit, in minutes; null when not charging or unknown. */
+    val minutesToFull: Int?,
+    val locked: Boolean?,
+    /** Sentry Mode is watching (armed or alerted). */
+    val sentry: Boolean?,
+    /** Where the car is navigating to, as the car names it. Data, not copy. */
+    val destination: String?,
+    val minutesToArrival: Int?,
+    val insideCelsius: Double?,
+) {
+    enum class Charging { CHARGING, COMPLETE, PLUGGED_IN }
+}

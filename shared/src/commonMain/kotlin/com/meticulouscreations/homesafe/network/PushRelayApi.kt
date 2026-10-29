@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.network
 
 import com.meticulouscreations.homesafe.domain.model.CarCheck
 import com.meticulouscreations.homesafe.domain.model.CarFix
+import com.meticulouscreations.homesafe.domain.model.CarLive
 import com.meticulouscreations.homesafe.domain.model.CarProfile
 import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.CurbSpot
@@ -72,6 +73,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.math.roundToInt
 
 /**
  * The HomeSafe push relay that runs next to Frigate on the same box (port [RELAY_PORT]). It
@@ -951,6 +953,7 @@ internal data class RelayParkedCar(
     val window: RelayParkingWindow? = null,
     val last: RelayCarFix? = null,
     val asleep: Boolean = false,
+    val live: RelayCarLive? = null,
 ) {
     fun toDomain(): HouseholdCar? {
         if (car.isBlank()) return null
@@ -976,6 +979,43 @@ internal data class RelayParkedCar(
                 null
             },
             asleep = asleep,
+            live = live?.toDomain(),
+        )
+    }
+}
+
+/** What the car last streamed, the relay's `live` (miles, hours, °C, percent, as the car gives them). */
+@Serializable
+internal data class RelayCarLive(
+    val connected: Boolean = false,
+    val battery: Double? = null,
+    @SerialName("range_mi") val rangeMiles: Double? = null,
+    val charging: String? = null,
+    @SerialName("hours_to_full") val hoursToFull: Double? = null,
+    val locked: Boolean? = null,
+    val sentry: String? = null,
+    val destination: String? = null,
+    @SerialName("minutes_to_arrival") val minutesToArrival: Double? = null,
+    @SerialName("inside_c") val insideCelsius: Double? = null,
+) {
+    fun toDomain(): CarLive {
+        val charge = when (charging) {
+            "Charging", "Starting" -> CarLive.Charging.CHARGING
+            "Complete" -> CarLive.Charging.COMPLETE
+            "Stopped", "NoPower" -> CarLive.Charging.PLUGGED_IN
+            else -> null // Disconnected, Unknown, or not said
+        }
+        return CarLive(
+            connected = connected,
+            batteryPercent = battery?.takeIf { it in 0.0..100.0 }?.roundToInt(),
+            rangeMiles = rangeMiles?.takeIf { it >= 0 },
+            charging = charge,
+            minutesToFull = hoursToFull?.takeIf { charge == CarLive.Charging.CHARGING && it > 0 }?.let { (it * 60).roundToInt() },
+            locked = locked,
+            sentry = sentry?.let { it in setOf("Armed", "Aware", "Panic", "Quiet") },
+            destination = destination?.trim()?.takeIf { it.isNotEmpty() },
+            minutesToArrival = minutesToArrival?.takeIf { it >= 0 }?.roundToInt(),
+            insideCelsius = insideCelsius,
         )
     }
 }
