@@ -8229,6 +8229,28 @@ class ParkingTest(_FakeFrigate):
         self.assertEqual((_metres(self.CROSSING, 60, 5), "Elm St"), ((andrew["last"]["lat"], andrew["last"]["lng"]), andrew["street"]), "asleep, it is where it was")
         self.assertEqual((True, False, self.WED_7PM + 7200), (sarah["last"]["moving"], sarah["last"]["home"], sarah["last"]["at"]), "driving, away from home")
 
+    def test_the_status_draws_each_curb_with_its_signs_and_when_they_next_hold(self):
+        streets = relay.parking_status(self.WED_7PM)["streets"]
+        elm, oak = streets
+        self.assertEqual(("Elm St", 2, relay.PARKING_WIDTH_METRES), (elm["street"], len(elm["line"]), elm["width_m"]))
+        north, south = elm["sides"]
+        self.assertEqual(("north", "left"), (north["side"], north["offset"]), "Elm runs east: its north curb is on the left")
+        self.assertEqual(("south", "right"), (south["side"], south["offset"]))
+        self.assertEqual("Street sweeping", north["rules"][0]["note"])
+        self.assertEqual({"from": self.WED_7PM + 13 * 3600, "until": self.WED_7PM + 16 * 3600}, north["rules"][0]["next"], "the 1st Thursday, 8 to 11")
+        self.assertEqual(self.WED_7PM + (8 * 24 + 15) * 3600, south["rules"][0]["next"]["from"], "Friday the 13th, the month's 2nd, at 10")
+        self.assertFalse(north["rules"][0]["lifted"])
+        west, east = oak["sides"]
+        self.assertEqual(("west", "left", ["fri"]), (west["side"], west["offset"], west["rules"][0]["days"]), "the house's side, west of Oak")
+        self.assertEqual(("east", ["thu"]), (east["side"], east["rules"][0]["days"]), "across")
+        self.assertEqual(self.WED_7PM + 13 * 3600, east["rules"][0]["next"]["from"], "every Thursday")
+
+        self.config({"tz": self.ZONE, "permits": ["B"], "streets": [{"street": "Elm St", "line": self.ELM, "sides": {
+            "both": [{"kind": "limit", "minutes": 120, "start": "08:00", "end": "18:00", "permit": "B"}]}}]})
+        both = relay.parking_status(self.WED_7PM)["streets"][0]["sides"]
+        self.assertEqual([("north", True), ("south", True)], [(s["side"], s["rules"][0]["lifted"]) for s in both], "the household's permit lifts it")
+        self.assertEqual(self.WED_7PM + 13 * 3600, both[0]["rules"][0]["next"]["from"], "8 AM tomorrow")
+
     def test_a_car_that_streams_is_parked_from_when_it_said_so_and_shown_live(self):
         lat, lng = _metres(self.CROSSING, 60, 5)
         at = self.WED_7PM + 3600

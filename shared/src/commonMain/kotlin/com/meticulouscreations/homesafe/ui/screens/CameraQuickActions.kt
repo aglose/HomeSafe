@@ -77,8 +77,9 @@ import org.jetbrains.compose.resources.stringResource
  * The bar along the bottom of the player: the LIVE pill and how far behind live the picture is on
  * its left, quality, speaker and clip on its right. It sits under the video, never over it, in the
  * player's own backdrop colour, so it reads as part of the player and leaves the whole picture
- * clear. None of the cameras have a microphone, so there is no two-way talk button. Quality and
- * sound are saved preferences shared by every camera. Collects `playback` itself so the position
+ * clear. None of the Frigate cameras has a speaker, so there is no talk button (a Nest camera's
+ * page has one, which opens Google Home). Quality and sound are saved preferences shared by every
+ * camera. Collects `playback` itself so the position
  * polls that update it while a recording plays recompose only this bar.
  *
  * @param cameraAvailable whether there is a live stream to offer; without one there is no LIVE pill.

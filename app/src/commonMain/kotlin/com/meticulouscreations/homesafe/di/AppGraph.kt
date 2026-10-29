@@ -18,6 +18,7 @@ import com.meticulouscreations.homesafe.data.DeviceRegistrar
 import com.meticulouscreations.homesafe.data.FinanceSavedDao
 import com.meticulouscreations.homesafe.data.FitnessDao
 import com.meticulouscreations.homesafe.data.FitnessRunDao
+import com.meticulouscreations.homesafe.data.GoogleHomeApp
 import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
 import com.meticulouscreations.homesafe.data.MAPS_KEYS
 import com.meticulouscreations.homesafe.data.MomentsDao
@@ -38,6 +39,7 @@ import com.meticulouscreations.homesafe.data.createFinanceSavedDao
 import com.meticulouscreations.homesafe.data.createFitnessDao
 import com.meticulouscreations.homesafe.data.createFitnessRunDao
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
+import com.meticulouscreations.homesafe.data.createGoogleHomeApp
 import com.meticulouscreations.homesafe.data.createIdentityCheck
 import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createNotificationMute
@@ -266,6 +268,10 @@ interface AppGraph :
     @SingleIn(AppScope::class)
     @Provides
     fun provideTailscaleApp(platformContext: PlatformContext): TailscaleApp = createTailscaleApp(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideGoogleHomeApp(platformContext: PlatformContext): GoogleHomeApp = createGoogleHomeApp(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

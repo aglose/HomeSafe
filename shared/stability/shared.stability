@@ -2011,6 +2011,21 @@ private fun com.meticulouscreations.homesafe.ui.screens.NavRail(selected: com.me
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.NestCameraFooter(onTalk: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onTalk: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.NestCameraFooterSample(widthDp: kotlin.Int): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - widthDp: STABLE (primitive type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.screens.NestCameraScreen(streamName: kotlin.String, warmStreamUrl: kotlin.String?, warmWebRtcSignalingUrl: kotlin.String?, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, warmStillUrl: kotlin.String?): kotlin.Unit
   skippable: true
   restartable: true
@@ -2888,6 +2903,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.TagPanel(uiState: com.me
     - onTag: STABLE (function type)
     - onCancel: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.TalkIconButton(onTalk: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onTalk: STABLE (function type)
+    - tint: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.TimelineSection(cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier, overVideo: kotlin.Boolean, onTouch: kotlin.Function0<kotlin.Unit>): kotlin.Unit
