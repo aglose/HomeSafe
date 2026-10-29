@@ -12,6 +12,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,7 +125,8 @@ class BaseMapsTest {
 
     @Test
     fun aKeyForgottenWhileGoogleIsAskedLeavesNothingSaidAboutIt() = runTest {
-        // Google holds its answer back until the key has been forgotten, then refuses it.
+        // Google holds its answer back until the key has been forgotten, then refuses it. A second
+        // check waits its turn behind the first meanwhile.
         val asked = CompletableDeferred<Unit>()
         val answer = CompletableDeferred<Unit>()
         val slowGoogle = GoogleMapTiles(
@@ -144,13 +146,16 @@ class BaseMapsTest {
                     val checking = launch { maps.check() }
                     asked.await()
                     assertEquals(GoogleMapsStatus.Checking, maps.settings.first().google)
+                    // Runs until it waits for the first check, the key it checks already read.
+                    val queued = launch(start = CoroutineStart.UNDISPATCHED) { maps.check() }
                     maps.setGoogleKey(null)
                     answer.complete(Unit)
                     checking.join()
+                    queued.join()
                 }
             }
         }
-        assertEquals(GoogleMapsStatus.Unchecked, maps.settings.first().google, "the late refusal is about a key no longer kept")
+        assertEquals(GoogleMapsStatus.Unchecked, maps.settings.first().google, "what was said about the forgotten key stays cleared")
     }
 
     @Test
