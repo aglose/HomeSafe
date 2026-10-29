@@ -192,19 +192,25 @@ class BaseMaps(
     private suspend fun session(key: String): GoogleMapSession? = sessionLock.withLock {
         if (hasSession(key)) return@withLock session?.second
         status.value = GoogleMapsStatus.Checking
+
+        // Said only while [key] is still the one kept: one forgotten or replaced while Google was
+        // asked has had what was said about it cleared ([setGoogleKey]), and a late answer mustn't undo that.
+        fun report(outcome: GoogleMapsStatus) {
+            if (keys.current(HouseholdKeys.GOOGLE_MAPS) == key) status.value = outcome
+        }
         val locale = Locale.current
         try {
             google.createSession(key, locale.toLanguageTag(), locale.region.takeIf { it.length == 2 } ?: FALLBACK_REGION).also {
                 session = key to it
-                status.value = GoogleMapsStatus.Working
+                report(GoogleMapsStatus.Working)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LocalizedException) {
-            status.value = GoogleMapsStatus.Failed(e.text)
+            report(GoogleMapsStatus.Failed(e.text))
             null
         } catch (_: Exception) {
-            status.value = GoogleMapsStatus.Failed(UiText.of(Res.string.maps_google_unreachable))
+            report(GoogleMapsStatus.Failed(UiText.of(Res.string.maps_google_unreachable)))
             null
         }
     }

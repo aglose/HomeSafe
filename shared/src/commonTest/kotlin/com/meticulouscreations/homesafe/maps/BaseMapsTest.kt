@@ -11,6 +11,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -119,6 +120,37 @@ class BaseMapsTest {
 
         maps.setGoogleKey(null)
         assertEquals(MapSettings(MapProvider.GOOGLE, hasGoogleKey = false, google = GoogleMapsStatus.Unchecked), maps.settings.first(), "forgetting the key clears what was said about it")
+    }
+
+    @Test
+    fun aKeyForgottenWhileGoogleIsAskedLeavesNothingSaidAboutIt() = runTest {
+        // Google holds its answer back until the key has been forgotten, then refuses it.
+        val asked = CompletableDeferred<Unit>()
+        val answer = CompletableDeferred<Unit>()
+        val slowGoogle = GoogleMapTiles(
+            HttpClient(
+                MockEngine {
+                    asked.complete(Unit)
+                    answer.await()
+                    respond("""{"error": {"code": 403, "message": "API key not valid"}}""", HttpStatusCode.Forbidden, headersOf(HttpHeaders.ContentType, "application/json"))
+                },
+            ),
+        )
+        val maps = BaseMaps(InMemoryApiKeyStore(), InMemoryHouseholdKeys(HouseholdKeys.GOOGLE_MAPS to "not-a-key"), slowGoogle, clock)
+        maps.setProvider(MapProvider.GOOGLE)
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                coroutineScope {
+                    val checking = launch { maps.check() }
+                    asked.await()
+                    assertEquals(GoogleMapsStatus.Checking, maps.settings.first().google)
+                    maps.setGoogleKey(null)
+                    answer.complete(Unit)
+                    checking.join()
+                }
+            }
+        }
+        assertEquals(GoogleMapsStatus.Unchecked, maps.settings.first().google, "the late refusal is about a key no longer kept")
     }
 
     @Test
