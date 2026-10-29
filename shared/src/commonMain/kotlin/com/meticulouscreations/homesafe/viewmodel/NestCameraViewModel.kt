@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.data.GoogleHomeApp
 import com.meticulouscreations.homesafe.domain.model.CameraFraming
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
  * A Google Nest camera's live view. There is nothing to load: the card already had the video
  * playing, and the screen carries on with that, moving up to the camera's own stream (the card
  * may play a smaller one) and adding sound, which the card's stream doesn't ask go2rtc for.
+ * Talking through the camera is Google Home's to do ([GoogleHomeApp] says why).
  */
 @Inject
 @ViewModelKey
@@ -40,6 +42,7 @@ class NestCameraViewModel(
     private val observePlaybackPreferencesUseCase: ObservePlaybackPreferencesUseCase,
     private val updatePlaybackPreferencesUseCase: UpdatePlaybackPreferencesUseCase,
     private val observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
+    private val googleHomeApp: GoogleHomeApp,
 ) : ViewModel() {
 
     /** How [streamName]'s picture is framed: as turned and cropped from the Home page's Arrange mode. */
@@ -73,6 +76,11 @@ class NestCameraViewModel(
             val stored = observePlaybackPreferencesUseCase().first()
             updatePlaybackPreferencesUseCase(stored.copy(soundOn = !stored.soundOn))
         }
+    }
+
+    /** Opens Google Home, where the camera's talk button is; see [GoogleHomeApp]. */
+    fun talkInGoogleHome() {
+        googleHomeApp.open()
     }
 
     /**
