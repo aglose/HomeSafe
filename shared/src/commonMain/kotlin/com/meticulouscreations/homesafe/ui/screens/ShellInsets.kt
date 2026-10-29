@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.ui.LocalShellSidebarWidth
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.windowWidth
 
@@ -142,14 +143,14 @@ internal fun contentGutter(
 
 /**
  * How wide the shell's content area is: the window less what the system draws at its sides and
- * less the side nav, when that is up (see ShellScaffold).
+ * less the side nav or the sidebar, whichever is up (see ShellScaffold).
  */
 @Composable
 internal fun shellContentWidth(): Dp {
     val direction = LocalLayoutDirection.current
     val safe = WindowInsets.safeDrawing.asPaddingValues()
     val rail = if (showsNavRail()) NAV_RAIL_CLEARANCE else 0.dp
-    return windowWidth() - safe.calculateStartPadding(direction) - safe.calculateEndPadding(direction) - rail
+    return windowWidth() - safe.calculateStartPadding(direction) - safe.calculateEndPadding(direction) - rail - LocalShellSidebarWidth.current
 }
 
 /**

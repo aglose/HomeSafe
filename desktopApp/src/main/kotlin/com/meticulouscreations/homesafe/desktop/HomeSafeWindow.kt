@@ -42,6 +42,8 @@ import com.meticulouscreations.homesafe.DesktopStorage
 import com.meticulouscreations.homesafe.appicon.DesktopAppIcon
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.isMacOs
+import com.meticulouscreations.homesafe.ui.LocalShortcutKey
+import com.meticulouscreations.homesafe.ui.ShortcutKey
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.desktop_app_name
@@ -106,7 +108,10 @@ fun ApplicationScope.HomeSafeWindow(graph: AppGraph, visible: Boolean, onCloseRe
                         .onPointerEvent(PointerEventType.Press) { event -> if (event.button == PointerButton.Back) back.backCompleted() },
                 ) {
                     BackInput(back)
-                    App(graph)
+                    // The sidebar and the tooltips say each shortcut the menu bar has, in this platform's keys.
+                    CompositionLocalProvider(LocalShortcutKey provides if (isMacOs) ShortcutKey.Command else ShortcutKey.Control) {
+                        App(graph)
+                    }
                 }
             }
         }

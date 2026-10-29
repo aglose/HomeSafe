@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.fitness.ui
 
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.handCursor
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -176,10 +178,15 @@ internal fun RoundIconButton(
     enabled: Boolean = true,
 ) {
     Box(
-        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
+        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick).handCursor(enabled),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = if (enabled) tint else tint.copy(alpha = tint.alpha * 0.25f), modifier = Modifier.size(size * 0.5f))
+        // The tooltip hangs off the whole button: what it says shows wherever the pointer is over it.
+        WithTooltip(label, Modifier.matchParentSize()) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = label, tint = if (enabled) tint else tint.copy(alpha = tint.alpha * 0.25f), modifier = Modifier.size(size * 0.5f))
+            }
+        }
     }
 }
 

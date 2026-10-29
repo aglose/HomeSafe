@@ -1,0 +1,91 @@
+name: Desktop app
+
+# The Mac app (:desktopApp, see docs/desktop.md): the installable .dmg, built on an Apple-silicon
+# Mac and kept as an artifact of the run, and the app's journeys on the JVM, which draw the
+# desktop's layouts and keep a picture of every step.
+#
+# Not part of ci-green: the phones are what ship. This runs beside it on every pull request, so a
+# change that breaks the desktop says so, and on main, so there is always a .dmg of what is there.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dmg:
+    name: Mac app (.dmg)
+    # Apple silicon: jpackage packages the JDK it runs on, so the app is for the Mac it is built on.
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # The run number makes each build's version its own: 1.0.<run>.
+      - name: ./gradlew :desktopApp:packageDmg
+        run: ./gradlew :desktopApp:packageDmg -PdesktopBuild=${{ github.run_number }} --stacktrace
+
+      # What the .dmg holds, and that the Touch ID helper made it in (the app works without it,
+      # but has no Touch ID or saved sign-in then).
+      - name: Check the app
+        run: |
+          dmg="$(ls desktopApp/build/compose/binaries/main/dmg/*.dmg)"
+          echo "Built $dmg ($(du -h "$dmg" | cut -f1))"
+          mount="$(hdiutil attach -nobrowse -readonly "$dmg" | tail -1 | awk -F'\t' '{print $NF}')"
+          app="$mount/HomeSafe.app"
+          test -x "$app/Contents/MacOS/HomeSafe"
+          test -x "$app/Contents/app/resources/HomeSafe" || { echo "::error::The Touch ID helper is missing from the app"; exit 1; }
+          codesign --verify --deep --verbose=2 "$app" || echo "::warning::The app's signature doesn't verify; macOS will refuse to open it until it is allowed (docs/desktop.md)."
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
+          hdiutil detach "$mount"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HomeSafe-macOS
+          path: desktopApp/build/compose/binaries/main/dmg/*.dmg
+          retention-days: 30
+          # A .dmg is compressed already.
+          compression-level: 0
+
+  journeys:
+    name: Desktop journeys (JVM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # The whole app on a real graph, signed in to the fake Frigate, in a phone's shell and a
+      # laptop's window alike, and the desktop app's own code compiled.
+      - name: ./gradlew :app:desktopTest :desktopApp:compileKotlin
+        run: ./gradlew :app:desktopTest :desktopApp:compileKotlin --continue --stacktrace
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: desktop-journeys
+          path: |
+            app/build/journeys/**
+            app/build/reports/tests/desktopTest/**
+          retention-days: 14

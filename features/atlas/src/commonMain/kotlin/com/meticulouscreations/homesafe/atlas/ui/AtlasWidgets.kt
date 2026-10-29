@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.atlas.ui
 
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.handCursor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -102,10 +104,15 @@ internal fun AtlasRoundButton(
     enabled: Boolean = true,
 ) {
     Box(
-        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
+        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick).handCursor(enabled),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = if (enabled) tint else AtlasTheme.colors.textFaint.copy(alpha = 0.35f), modifier = Modifier.size(size * 0.5f))
+        // The tooltip hangs off the whole button: what it says shows wherever the pointer is over it.
+        WithTooltip(label, Modifier.matchParentSize()) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = label, tint = if (enabled) tint else AtlasTheme.colors.textFaint.copy(alpha = 0.35f), modifier = Modifier.size(size * 0.5f))
+            }
+        }
     }
 }
 

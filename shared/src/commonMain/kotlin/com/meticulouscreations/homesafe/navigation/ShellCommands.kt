@@ -19,6 +19,9 @@ sealed interface ShellCommand {
 
     /** Shows or hides the sidebar, where the window is wide enough to have one. */
     data object ToggleSidebar : ShellCommand
+
+    /** Opens the assistant over what is on screen, or closes it. */
+    data object Assistant : ShellCommand
 }
 
 /**

@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.integration
 
+import com.meticulouscreations.homesafe.data.createAlertNotifier
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
@@ -246,6 +247,8 @@ class SettingsJourneyTest {
 
     @Test
     fun notificationsSayTheyAreUnavailableWhereThereIsNothingToPostThem() = runAppJourney {
+        // Only where nothing can be posted: the desktop posts from its menu-bar icon, and a phone has its own centre.
+        if (createAlertNotifier(testPlatformContext()).isSupported) return@runAppJourney
         val settings = SettingsRobot(this)
         signIn.signInAs()
         settings.open()

@@ -25,7 +25,10 @@ import com.meticulouscreations.homesafe.ui.screens.CarsScreen
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
 import com.meticulouscreations.homesafe.ui.screens.LocalCarsPage
+import com.meticulouscreations.homesafe.ui.screens.InnerApp
 import com.meticulouscreations.homesafe.ui.screens.LocalShellApps
+import com.meticulouscreations.homesafe.ui.screens.LocalSidebarApp
+import com.meticulouscreations.homesafe.ui.screens.ShellAppTab
 import com.meticulouscreations.homesafe.ui.screens.RootCrossfade
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
 import com.meticulouscreations.homesafe.ui.screens.ShellApps
@@ -136,6 +139,7 @@ internal fun AppChrome(appGraph: AppGraph, assistant: AssistantHost? = null, con
     CompositionLocalProvider(
         LocalMetroViewModelFactory provides appGraph.metroViewModelFactory,
         LocalShellApps provides shellApps,
+        LocalSidebarApp provides sidebarApp,
         LocalCarsPage provides carsPage,
     ) {
         FrigateTheme {
@@ -148,6 +152,9 @@ internal fun AppChrome(appGraph: AppGraph, assistant: AssistantHost? = null, con
 
 /** The drawer and its apps, for the shell in :shared to draw (see LocalShellApps). One instance, so the local never changes. */
 private val shellApps: @Composable (ShellNavigation, TopLevelRoute) -> Unit = { nav, tab -> ShellApps(nav, tab) }
+
+/** One of the drawer's apps beside the shell's sidebar (see LocalSidebarApp). One instance, like [shellApps]. */
+private val sidebarApp: @Composable (ShellNavigation, InnerApp) -> Unit = { nav, app -> ShellAppTab(nav, app) }
 
 /** The cars' map, for Home's back stack in :shared to draw (see LocalCarsPage). One instance, like [shellApps]. */
 private val carsPage: @Composable (onBack: () -> Unit) -> Unit = { onBack -> CarsScreen(onBack) }

@@ -1,14 +1,20 @@
 package com.meticulouscreations.homesafe
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.KeyboardShortcutGroup
+import android.view.Menu
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.fragment.app.FragmentActivity
@@ -27,6 +33,8 @@ import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.tracing.traceSection
+import com.meticulouscreations.homesafe.ui.LocalShortcutKey
+import com.meticulouscreations.homesafe.ui.ShortcutKey
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
@@ -72,7 +80,13 @@ class MainActivity : FragmentActivity() {
             // testTagsAsResourceId lets UiAutomator (the :baselineprofile journeys) find nodes by
             // Modifier.testTag via By.res(...). Zero cost outside accessibility/test traversal.
             Box(modifier = Modifier.semantics { testTagsAsResourceId = true }) {
-                App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
+                // With a hardware keyboard the sidebar and the tooltips say each Ctrl shortcut (KeyboardShortcuts).
+                val configuration = LocalConfiguration.current
+                val keyboard = configuration.keyboard == Configuration.KEYBOARD_QWERTY &&
+                    configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+                CompositionLocalProvider(LocalShortcutKey provides if (keyboard) ShortcutKey.Control else null) {
+                    App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
+                }
             }
         }
         // The launcher's long-press shortcuts (Doors, Radar, Budget), on a background thread so the
@@ -123,6 +137,16 @@ class MainActivity : FragmentActivity() {
             ?: MomentDeepLink.from { key -> intent.getStringExtra(key) }
             ?: return
         MomentDeepLinks.open(link)
+    }
+
+    // A hardware keyboard's shortcuts (KeyboardShortcuts): before the view hierarchy, so they
+    // work whatever has focus, and the shell is told rather than whatever is focused.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = KeyboardShortcuts.handle(event) || super.dispatchKeyEvent(event)
+
+    // What Meta + / lists for the app.
+    override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
+        super.onProvideKeyboardShortcuts(data, menu, deviceId)
+        data += KeyboardShortcuts.group(this)
     }
 
     override fun onDestroy() {

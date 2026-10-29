@@ -1,5 +1,9 @@
 package com.meticulouscreations.homesafe.weather.ui
 
+import com.meticulouscreations.homesafe.ui.AppSection
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.handCursor
+import com.meticulouscreations.homesafe.ui.publishAppSections
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
@@ -327,11 +331,24 @@ fun WeatherAppContent(
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
         val sideNav = isCompactLandscape()
+        // Beside the shell's sidebar the tabs are listed in it, under Weather's row, and the app
+        // draws no nav of its own (see publishAppSections). With nowhere to forecast for there is
+        // nothing behind them to go to, as there isn't from the nav.
+        val inSidebar = publishAppSections(
+            sections = if (state.places.isEmpty()) emptyList() else WEATHER_SECTIONS,
+            selected = if (pages.isEmpty()) tab.ordinal else -1,
+        ) { index ->
+            val picked = WeatherTab.entries[index]
+            scrub = null
+            if (picked == tab && pages.isEmpty() && picked != WeatherTab.RADAR) scrollToTop++
+            pages.clear()
+            tab = picked
+        }
         val top = status.calculateTopPadding() + 58.dp
         val padding = PaddingValues(
             start = if (sideNav) SIDE_NAV_CLEARANCE else 0.dp,
             top = top,
-            bottom = nav.calculateBottomPadding() + if (sideNav) 28.dp else 104.dp,
+            bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 28.dp else 104.dp,
         )
         val pagePadding = PaddingValues(top = top + 6.dp, bottom = nav.calculateBottomPadding() + 28.dp)
 
@@ -391,7 +408,7 @@ fun WeatherAppContent(
                         headline = remember(report, state.nowEpochSeconds) {
                             report?.let { WeatherStory.nearTermPhrase(WeatherStory.nearTerm(it, state.nowEpochSeconds), state.nowEpochSeconds) }
                         },
-                        padding = PaddingValues(start = if (sideNav) SIDE_NAV_CLEARANCE else 0.dp, top = top, bottom = nav.calculateBottomPadding() + if (sideNav) 12.dp else 92.dp),
+                        padding = PaddingValues(start = if (sideNav) SIDE_NAV_CLEARANCE else 0.dp, top = top, bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 12.dp else 92.dp),
                         animated = active && !state.preferences.stillSky,
                     )
 
@@ -442,6 +459,7 @@ fun WeatherAppContent(
                 onBack = ::pop,
                 onOpenPlaces = { if (pages.lastOrNull() != WeatherPage.Places) pages += WeatherPage.Places },
                 onOpenSettings = { if (pages.lastOrNull() != WeatherPage.Settings) pages += WeatherPage.Settings },
+                closable = !inSidebar,
             )
 
             val onPickTab: (WeatherTab) -> Unit = { picked ->
@@ -453,7 +471,7 @@ fun WeatherAppContent(
             // With nowhere to forecast for there is nothing behind the tabs to go to.
             val navigable = pages.isEmpty() && state.places.isNotEmpty()
             AnimatedVisibility(
-                visible = navigable && !sideNav,
+                visible = navigable && !sideNav && !inSidebar,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it },
                 exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
@@ -461,7 +479,7 @@ fun WeatherAppContent(
                 WeatherNav(tab, onPickTab, vertical = false)
             }
             AnimatedVisibility(
-                visible = navigable && sideNav,
+                visible = navigable && sideNav && !inSidebar,
                 modifier = Modifier.align(Alignment.CenterStart).padding(top = status.calculateTopPadding() + 48.dp),
                 enter = fadeIn(tween(220)) + slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { -it },
                 exit = fadeOut(tween(140)) + slideOutHorizontally(tween(200)) { -it },
@@ -719,6 +737,7 @@ private fun WeatherTopBar(
     onBack: () -> Unit,
     onOpenPlaces: () -> Unit,
     onOpenSettings: () -> Unit,
+    closable: Boolean = true,
 ) {
     val colors = WeatherTheme.colors
     val type = WeatherTheme.type
@@ -736,12 +755,17 @@ private fun WeatherTopBar(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BarButton(
-            if (page != null) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
-            stringResource(if (page != null) Res.string.common_back else Res.string.weather_close),
-            onBack,
-            Modifier.testTag("weather_back"),
-        )
+        // Beside the shell's sidebar there is nothing to close: the sidebar is the way out, so only Back is offered.
+        if (page != null || closable) {
+            BarButton(
+                if (page != null) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
+                stringResource(if (page != null) Res.string.common_back else Res.string.weather_close),
+                onBack,
+                Modifier.testTag("weather_back"),
+            )
+        } else {
+            Spacer(Modifier.width(8.dp))
+        }
         if (page != null) {
             Text(
                 when (page) {
@@ -795,12 +819,20 @@ private fun WeatherTopBar(
 @Composable
 private fun BarButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = label, onClick = onClick).handCursor(),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = WeatherTheme.colors.onSky, modifier = Modifier.size(22.dp))
+        // The tooltip hangs off the whole button: what it says shows wherever the pointer is over it.
+        WithTooltip(label, Modifier.matchParentSize()) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = label, tint = WeatherTheme.colors.onSky, modifier = Modifier.size(22.dp))
+            }
+        }
     }
 }
+
+/** The weather's tabs as the shell's sidebar lists them, under its row (see publishAppSections). */
+private val WEATHER_SECTIONS = WeatherTab.entries.map { AppSection(it.label, it.icon) }
 
 /** The tabs as a pane of dark glass: a pill along the foot, or stood on end at the side of a phone on its side. */
 @Composable

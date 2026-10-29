@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.integration
 
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.test.platform.app.InstrumentationRegistry
 import com.meticulouscreations.homesafe.PlatformContext
 
@@ -20,3 +21,9 @@ internal fun testPlatformContext(): PlatformContext =
 @OptIn(ExperimentalTestApi::class)
 @Suppress("UNUSED_PARAMETER")
 internal fun saveJourneyScreen(ui: ComposeUiTest, journey: String, step: String) = Unit
+
+/** A journey on the emulator's screen, whatever size was asked for: a device's window is the device's. */
+@OptIn(ExperimentalTestApi::class)
+@Suppress("UNUSED_PARAMETER")
+internal fun runJourneyWindow(width: Int?, height: Int?, timeout: kotlin.time.Duration, block: suspend ComposeUiTest.() -> Unit) =
+    runComposeUiTest(testTimeout = timeout, block = block)

@@ -15,13 +15,14 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.printToString
-import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.App
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.ui.LocalCompactLandscape
+import com.meticulouscreations.homesafe.ui.LocalSidebar
+import com.meticulouscreations.homesafe.ui.LocalTwoPanes
 import com.meticulouscreations.homesafe.uitest.scrollIntoView
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -49,11 +50,31 @@ import kotlin.time.TimeSource
 @OptIn(ExperimentalTestApi::class)
 internal fun runAppJourney(
     state: FakeFrigateState = FakeFrigateState.household(),
+    window: JourneyWindow = JourneyWindow.PHONE,
     block: AppJourney.() -> Unit,
-) = runJourney(callingJourneyName(), state, block)
+) = runJourney(callingJourneyName(), state, window, block)
+
+/**
+ * The window a journey runs in: [width] × [height] in pixels where the platform can size one
+ * (the desktop; null keeps the platform's own, a 1024 × 768 test window there and the emulator's
+ * screen on Android), and whether the shell lays itself out with its [sidebar] (null lets the
+ * window's width decide, as the app does), and in [twoPanes] (null, the same).
+ */
+internal class JourneyWindow(val width: Int? = null, val height: Int? = null, val sidebar: Boolean? = null, val twoPanes: Boolean? = null) {
+    companion object {
+        /**
+         * A phone's layout, whatever window the journey has: the nav at the foot, the drawer, one
+         * pane. What most journeys walk through, as the emulator's phone lays the app out.
+         */
+        val PHONE = JourneyWindow(sidebar = false, twoPanes = false)
+
+        /** A laptop's window, as the desktop app opens at first. */
+        val DESKTOP = JourneyWindow(width = 1280, height = 800)
+    }
+}
 
 @OptIn(ExperimentalTestApi::class)
-private fun runJourney(name: String, state: FakeFrigateState, block: AppJourney.() -> Unit) = runComposeUiTest(testTimeout = JOURNEY_TIMEOUT) {
+private fun runJourney(name: String, state: FakeFrigateState, window: JourneyWindow, block: AppJourney.() -> Unit) = runJourneyWindow(window.width, window.height, JOURNEY_TIMEOUT) {
     FakeFrigateServer(state).start().use { server ->
         val graph = createAppGraph(testPlatformContext())
         val watchdog = JourneyWatchdog(Thread.currentThread(), JOURNEY_WATCHDOG)
@@ -65,7 +86,11 @@ private fun runJourney(name: String, state: FakeFrigateState, block: AppJourney.
             mainClock.autoAdvance = false
             setContent {
                 if (onScreen.value) {
-                    CompositionLocalProvider(LocalCompactLandscape provides onItsSide.value) { App(graph) }
+                    CompositionLocalProvider(
+                        LocalCompactLandscape provides onItsSide.value,
+                        LocalSidebar provides window.sidebar,
+                        LocalTwoPanes provides window.twoPanes,
+                    ) { App(graph) }
                 }
             }
             val journey = AppJourney(this, server, graph, name, onItsSide)

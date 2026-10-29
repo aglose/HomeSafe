@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.fitness.ui
 
+import com.meticulouscreations.homesafe.ui.AppSection
+import com.meticulouscreations.homesafe.ui.publishAppSections
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
@@ -351,7 +353,13 @@ fun FitnessAppContent(
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
         val top = status.calculateTopPadding() + 62.dp
-        val tabPadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 108.dp)
+        // Beside the shell's sidebar the tabs are listed in it, under Fitness's row, and the app
+        // draws no nav of its own (see publishAppSections).
+        val inSidebar = publishAppSections(FITNESS_SECTIONS, selected = if (pages.isEmpty()) tab.ordinal else -1) { index ->
+            pages.clear()
+            tab = FitnessTab.entries[index]
+        }
+        val tabPadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + if (inSidebar) 28.dp else 108.dp)
         val pagePadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 28.dp)
         val page = pages.lastOrNull()
         val workout = state.workout
@@ -616,10 +624,11 @@ fun FitnessAppContent(
                 },
                 paged = page != null,
                 onBack = ::pop,
+                closable = !inSidebar,
             )
 
             AnimatedVisibility(
-                visible = pages.isEmpty(),
+                visible = pages.isEmpty() && !inSidebar,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it },
                 exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
@@ -647,7 +656,7 @@ private fun fitnessTransition(from: Any, to: Any, forward: Boolean): ContentTran
 
 /** The bar across the top: the way out (or back), and where this is. */
 @Composable
-private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit) {
+private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit, closable: Boolean = true) {
     val colors = FitnessTheme.colors
     Row(
         Modifier
@@ -657,12 +666,15 @@ private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit) {
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RoundIconButton(
-            if (paged) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
-            stringResource(if (paged) Res.string.common_back else Res.string.fitness_close),
-            onBack,
-            Modifier.testTag("fitness_back"),
-        )
+        // Beside the shell's sidebar there is nothing to close: the sidebar is the way out, so only Back is offered.
+        if (paged || closable) {
+            RoundIconButton(
+                if (paged) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
+                stringResource(if (paged) Res.string.common_back else Res.string.fitness_close),
+                onBack,
+                Modifier.testTag("fitness_back"),
+            )
+        }
         Text(title, style = FitnessTheme.type.title, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
     }
 }
@@ -766,3 +778,6 @@ private fun RecordCelebration(flash: RecordFlash?, phase: PhaseKind, onDismiss: 
         }
     }
 }
+
+/** Fitness's tabs as the shell's sidebar lists them, under its row (see publishAppSections). */
+private val FITNESS_SECTIONS = FitnessTab.entries.map { AppSection(it.label, it.icon) }

@@ -5,6 +5,10 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.test.v2.runSkikoComposeUiTest
+import androidx.compose.ui.geometry.Size
+import kotlin.time.Duration
 import com.meticulouscreations.homesafe.PlatformContext
 import java.io.File
 import javax.imageio.ImageIO
@@ -26,3 +30,12 @@ internal fun saveJourneyScreen(ui: ComposeUiTest, journey: String, step: String)
         ImageIO.write(image, "png", file)
     }
 }
+
+/** A journey in a window [width] × [height] pixels across, or the test's default 1024 × 768 with neither. */
+@OptIn(ExperimentalTestApi::class)
+internal fun runJourneyWindow(width: Int?, height: Int?, timeout: Duration, block: suspend ComposeUiTest.() -> Unit) =
+    if (width != null && height != null) {
+        runSkikoComposeUiTest(size = Size(width.toFloat(), height.toFloat()), testTimeout = timeout, block = block)
+    } else {
+        runComposeUiTest(testTimeout = timeout, block = block)
+    }
