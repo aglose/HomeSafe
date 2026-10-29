@@ -15,7 +15,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -33,6 +35,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.ui.LocalFitnessShaders
+import com.meticulouscreations.homesafe.tracing.traceInstant
+import com.meticulouscreations.homesafe.ui.components.frameGridSlot
 import kotlin.math.min
 
 /** Where a shader's clock stands in a preview, which draws one frame: far enough in for everything to be on screen. */
@@ -55,14 +59,18 @@ internal fun rememberFitnessClock(running: Boolean = true, frameSeconds: Float =
         if (!running || still) return@LaunchedEffect
         // An infinite animation's frames, so anything waiting for animations to settle doesn't wait on this.
         var last = withInfiniteAnimationFrameNanos { it }
+        var lastSlot = frameGridSlot(last, frameSeconds)
         var owed = 0f
         while (true) {
             withInfiniteAnimationFrameNanos { now ->
                 owed += ((now - last) / 1e9f).coerceIn(0f, 0.1f)
                 last = now
-                // A little short of the step is the step: frames don't land to the microsecond.
-                if (owed >= frameSeconds - FRAME_SLACK_SECONDS) {
+                // On the frames every other clock with this step moves on too (see frameGridSlot).
+                val slot = frameGridSlot(now, frameSeconds)
+                if (slot != lastSlot) {
+                    lastSlot = slot
                     time.floatValue = (time.floatValue + owed) % 600f
+                    traceInstant("fitness.shaderClock")
                     owed = 0f
                 }
             }
@@ -70,8 +78,6 @@ internal fun rememberFitnessClock(running: Boolean = true, frameSeconds: Float =
     }
     return time
 }
-
-private const val FRAME_SLACK_SECONDS = 0.002f
 
 /** How often a slow surface (the forge, a ring) moves on: thirty times a second. */
 private const val SLOW_FRAME_SECONDS = 1f / 30f
@@ -146,7 +152,9 @@ internal fun FiberField(
 ) {
     val shader = rememberShader(FIBER_SHADER)
     val animatedEnergy by animateFloatAsState(energy.coerceIn(0f, 1f), tween(500), label = "fiberEnergy")
-    val time = rememberFitnessClock(running, frameSeconds = FIBER_FRAME_SECONDS)
+    // Sixty a second while a finger stirs the fibres (it drags them round); otherwise the slow
+    // step, like every other surface at rest.
+    val time = rememberFitnessClock(running, frameSeconds = if (touches?.stirring == true) FIBER_FRAME_SECONDS else SLOW_FRAME_SECONDS)
     Box(
         modifier.ownLayer().drawBehind {
             val now = time.floatValue
@@ -199,12 +207,17 @@ internal class FiberTouches {
     var now = 0f
         private set
 
+    /** A finger is down, or a mark it left is still settling: the field steps at the display's rate meanwhile. */
+    var stirring by mutableStateOf(false)
+        private set
+
     private var next = 0
     private val fingers = HashMap<Long, Int>()
 
     fun down(pointer: Long, at: Offset) {
         up(pointer)
         fingers[pointer] = mark(at, splash = 1f)
+        stirring = true
     }
 
     /** A finger [step] pixels or more from where it last left a mark leaves another. */
@@ -241,6 +254,7 @@ internal class FiberTouches {
                 splash[slot] = 0f
             }
         }
+        if (stirring && fingers.isEmpty() && (0 until FIBER_TOUCHES).none { marks[it * 4 + 2] >= 0f }) stirring = false
     }
 
     /** Each place a finger is down now. */

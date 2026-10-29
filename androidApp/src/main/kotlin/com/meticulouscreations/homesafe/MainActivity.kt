@@ -26,6 +26,7 @@ import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
 import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
+import com.meticulouscreations.homesafe.tracing.traceSection
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
@@ -53,7 +54,7 @@ class MainActivity : FragmentActivity() {
         // android:configChanges in the manifest. A font-size or language change still is.)
         if (savedInstanceState == null) openMomentFrom(intent)
 
-        appGraph = createAppGraph(platformContext = PlatformContext(this))
+        appGraph = traceSection("createAppGraph") { createAppGraph(platformContext = PlatformContext(this)) }
         // BuildConfig.TEST_USERNAME etc. are always empty in release builds (see
         // androidApp/build.gradle.kts), so this is null there. Gated on the value rather than
         // BuildConfig.DEBUG so the benchmarkRelease variant — release bytecode, not debuggable —

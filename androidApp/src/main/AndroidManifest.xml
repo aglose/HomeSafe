@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Lets the app notice Wi-Fi ↔ cellular changes and re-pick the server's local vs Tailscale address. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -331,6 +332,19 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- HomeSafeApplication sets its own Tracing 2.0 driver as the global tracer before any app graph
+             is made; the library's initializer would otherwise set one first (from the same factory). -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.tracing.profiler.ConnectedProfilerTracingInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
     </application>
 
 </manifest>

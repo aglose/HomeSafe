@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
+import com.meticulouscreations.homesafe.tracing.traceInstant
+import com.meticulouscreations.homesafe.ui.components.frameGridSlot
 import kotlin.math.min
 
 /**
@@ -47,14 +49,18 @@ internal fun rememberShaderClock(running: Boolean = true, frameSeconds: Float = 
         // An infinite animation's frames, so a UI test's idling (and anything else that waits for
         // animations to settle) knows this one never will and doesn't wait on it.
         var last = withInfiniteAnimationFrameNanos { it }
+        var lastSlot = frameGridSlot(last, frameSeconds)
         var owed = 0f
         while (true) {
             withInfiniteAnimationFrameNanos { now ->
                 owed += ((now - last) / 1e9f).coerceIn(0f, 0.1f)
                 last = now
-                // A little short of the step is the step: frames don't land to the microsecond.
-                if (owed >= frameSeconds - FRAME_SLACK_SECONDS) {
+                // On the frames every other clock with this step moves on too (see frameGridSlot).
+                val slot = frameGridSlot(now, frameSeconds)
+                if (slot != lastSlot) {
+                    lastSlot = slot
                     time.floatValue += owed
+                    traceInstant("finance.shaderClock")
                     owed = 0f
                 }
             }
@@ -62,8 +68,6 @@ internal fun rememberShaderClock(running: Boolean = true, frameSeconds: Float = 
     }
     return time
 }
-
-private const val FRAME_SLACK_SECONDS = 0.002f
 
 /**
  * The drifting aurora behind a hero number ([AURORA_SHADER]), crossfading to [tint] whenever

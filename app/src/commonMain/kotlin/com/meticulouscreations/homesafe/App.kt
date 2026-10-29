@@ -16,6 +16,7 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.tracing.traceSection
 import com.meticulouscreations.homesafe.ui.assistant.AssistantHost
 import com.meticulouscreations.homesafe.ui.assistant.AssistantRoot
 import com.meticulouscreations.homesafe.ui.components.LastSeenStillFetcher
@@ -94,7 +95,7 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
  * start here is idempotent, so a second root (the iOS 26 host has several) costs nothing.
  */
 @OptIn(ExperimentalCoilApi::class)
-internal fun startAppServices(appGraph: AppGraph) {
+internal fun startAppServices(appGraph: AppGraph) = traceSection("startAppServices") {
     // Route Coil through the app's one shared Ktor client so image requests carry Frigate's
     // session cookie. Camera snapshots (`/api/<camera>/latest.jpg`) live on the authenticated
     // API port; with Coil's own cookie-less default client they 401 and never render.
