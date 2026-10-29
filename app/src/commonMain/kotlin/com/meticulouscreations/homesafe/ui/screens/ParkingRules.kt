@@ -103,14 +103,22 @@ internal fun curbSigns(streets: List<ParkingStreet>): List<CurbSigns> = streets.
     street.curbs.mapIndexed { c, curb -> CurbSigns("curb:$s:$c", street, curb) }
 }
 
-/** The sign on [curb] that holds soonest (or is on now), leaving out those a permit the household holds lifts. */
-internal fun soonest(curb: ParkingCurb): ParkingRule? = curb.rules.filter { !it.lifted && it.nextFromEpochSeconds != null }.minByOrNull { it.nextFromEpochSeconds!! }
+/**
+ * The sign on [curb] that holds soonest (or is on now), leaving out those a permit the household
+ * holds lifts, and a window that has ended since the relay last answered: its next one is the
+ * relay's to say, on the next read.
+ */
+internal fun soonest(curb: ParkingCurb, nowEpochSeconds: Long): ParkingRule? =
+    curb.rules.filter { !it.lifted && !ended(it, nowEpochSeconds) }.minByOrNull { it.nextFromEpochSeconds!! }
+
+/** Whether [rule] has no window to show at [nowEpochSeconds]: none within weeks, or the one the relay gave is over. */
+private fun ended(rule: ParkingRule, nowEpochSeconds: Long): Boolean = rule.nextFromEpochSeconds == null || (rule.nextUntilEpochSeconds ?: Long.MAX_VALUE) <= nowEpochSeconds
 
 /** How soon a curb's signs next hold, for its colour: on now or within a day, within the week, later, or never (lifted, or none for weeks). */
 private enum class Urgency { SOON, WEEK, LATER, NONE }
 
 private fun urgency(curb: ParkingCurb, nowEpochSeconds: Long): Urgency {
-    val from = soonest(curb)?.nextFromEpochSeconds ?: return Urgency.NONE
+    val from = soonest(curb, nowEpochSeconds)?.nextFromEpochSeconds ?: return Urgency.NONE
     return when {
         from - nowEpochSeconds <= 86_400 -> Urgency.SOON
         from - nowEpochSeconds <= 7 * 86_400 -> Urgency.WEEK
@@ -176,7 +184,7 @@ private fun alongLine(line: List<ParkingStreet.Point>, fraction: Double, leftMet
 /** A curb's label on the map: a dot in its colour, which side it is, and when its signs next hold. Tapping it flies the map to it. */
 @Composable
 internal fun CurbLabel(signs: CurbSigns, nowEpochSeconds: Long, selected: Boolean, onClick: () -> Unit) {
-    val next = soonest(signs.curb)
+    val next = soonest(signs.curb, nowEpochSeconds)
     Box(Modifier.wrapContentSize(unbounded = true)) {
         Surface(
             shape = RoundedCornerShape(10.dp),
@@ -244,7 +252,9 @@ internal fun CurbSignsList(curbs: List<CurbSigns>, nowEpochSeconds: Long, focus:
                     if (rule.lifted && permit != null) {
                         Text(stringResource(Res.string.parking_rules_lifted, permit), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                     } else {
-                        Text(ruleNext(rule, nowEpochSeconds), style = MaterialTheme.typography.bodySmall, color = if (rule.on(nowEpochSeconds)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        ruleNext(rule, nowEpochSeconds)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = if (rule.on(nowEpochSeconds)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -296,13 +306,17 @@ internal fun ruleText(rule: ParkingRule): String {
     return stringResource(Res.string.parking_rules_line, what, schedule)
 }
 
-/** "Next: Thu, Nov 5, 8:00 AM–11:00 AM", "On now, until 11:00 AM", or that it doesn't hold for weeks. */
+/**
+ * "Next: Thu, Nov 5, 8:00 AM–11:00 AM", "On now, until 11:00 AM", or that it doesn't hold for
+ * weeks; null once the window the relay gave has ended, until it says when the next one is.
+ */
 @Composable
-internal fun ruleNext(rule: ParkingRule, nowEpochSeconds: Long): String {
+internal fun ruleNext(rule: ParkingRule, nowEpochSeconds: Long): String? {
     val from = rule.nextFromEpochSeconds
     val until = rule.nextUntilEpochSeconds
     return when {
         from == null || until == null -> stringResource(Res.string.parking_rules_none_soon)
+        until <= nowEpochSeconds -> null
         from <= nowEpochSeconds -> stringResource(Res.string.parking_rules_now, clockOf(until))
         else -> stringResource(Res.string.parking_rules_next, dayOf(from, nowEpochSeconds), clockOf(from), clockOf(until))
     }

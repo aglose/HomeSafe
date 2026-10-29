@@ -985,9 +985,10 @@ internal data class RelayParkingCurb(val side: String? = null, val offset: Strin
 internal data class RelayParkingSign(
     val kind: String? = null,
     val minutes: JsonElement? = null,
-    val days: List<JsonElement> = emptyList(),
-    val weeks: List<JsonElement> = emptyList(),
-    val months: List<JsonElement> = emptyList(),
+    // Null is as good as left out, to the relay as to the household writing the file.
+    val days: List<JsonElement>? = null,
+    val weeks: List<JsonElement>? = null,
+    val months: List<JsonElement>? = null,
     val start: JsonElement? = null,
     val end: JsonElement? = null,
     val note: JsonElement? = null,
@@ -997,9 +998,9 @@ internal data class RelayParkingSign(
 ) {
     fun toDomain() = ParkingRule(
         limitMinutes = minutes?.number()?.toInt()?.takeIf { kind == "limit" && it > 0 },
-        days = days.mapNotNull { day -> DAY_WORDS.indexOf(day.text()?.lowercase()?.take(3)).takeIf { it >= 0 } }.distinct().sorted(),
-        weeks = weeks.mapNotNull { it.number()?.toInt()?.takeIf { week -> week in 1..5 || week == -1 } }.distinct().sortedBy { if (it == -1) 6 else it },
-        months = months.mapNotNull { it.number()?.toInt()?.takeIf { month -> month in 1..12 } }.distinct().sorted(),
+        days = days.orEmpty().mapNotNull { day -> DAY_WORDS.indexOf(day.text()?.lowercase()?.take(3)).takeIf { it >= 0 } }.distinct().sorted(),
+        weeks = weeks.orEmpty().mapNotNull { it.number()?.toInt()?.takeIf { week -> week in 1..5 || week == -1 } }.distinct().sortedBy { if (it == -1) 6 else it },
+        months = months.orEmpty().mapNotNull { it.number()?.toInt()?.takeIf { month -> month in 1..12 } }.distinct().sorted(),
         startMinutes = start.clockMinutes() ?: 0,
         endMinutes = end.clockMinutes() ?: 1440,
         note = note?.text()?.takeIf { it.isNotBlank() },
