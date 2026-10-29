@@ -27,7 +27,7 @@ set -euo pipefail
 
 BOX=${HOMESAFE_BOX:-andrew@100.99.163.71}
 DIR=${HOMESAFE_RELAY_DIR:-surveillance/relay}
-FILES=(relay.py floorplan_editor.html requirements.txt Dockerfile docker-compose.yml)
+FILES=(relay.py floorplan_editor.html requirements.txt Dockerfile docker-compose.yml tesla-telemetry.json)
 CHECK=0
 for arg in "$@"; do
   case $arg in
@@ -124,6 +124,15 @@ if ! healthy || [ "$(box "docker exec homesafe-relay md5sum /app/relay.py" | cut
   box "for f in ${FILES[*]}; do if [ -e $backup/\$f ]; then cp $backup/\$f $DIR/; else rm -f $DIR/\$f; fi; done && cd $DIR && docker compose up -d --build --no-deps homesafe-relay" >/dev/null 2>&1
   box "docker logs --since 5m homesafe-relay 2>&1 | tail -30" || true
   fail "rolled back to $deployed"
+fi
+
+# Tesla's telemetry server (docs/tesla.md, "Telemetry") runs beside the relay once its certificate
+# has been made on the box; it reads its config only when it starts.
+if box "test -e $DIR/data/telemetry/server.pem"; then
+  restart=""
+  [[ " ${changed[*]} " == *" tesla-telemetry.json "* ]] && restart="&& docker compose restart tesla-telemetry"
+  box "cd $DIR && docker compose up -d --no-deps tesla-telemetry $restart" >/dev/null 2>&1 \
+    || say "the telemetry server didn't start; see: docker logs tesla-telemetry"
 fi
 
 branch=$(git rev-parse --abbrev-ref HEAD)

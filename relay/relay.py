@@ -1937,12 +1937,17 @@ class CarPresence:
         and Tesla has it well away, it left; recorded away and Tesla has it near home, it is home.
         Asleep or unsure, nothing changes. An answer already in hand that recent (a departure's, or
         parking's), or one saying the car is asleep from the last TESLA_ASLEEP_CHECK_SECONDS, is
-        read as it is rather than asked again.
+        read as it is rather than asked again. A car streaming to the relay is read again each time
+        it says where it is, so it is seen to leave or come home within CAR_PRESENCE_EVERY_SECONDS.
         """
-        if name not in TESLA_CARS or now - float(car.get("checked") or 0) < TESLA_CHECK_SECONDS:
+        if name not in TESLA_CARS:
+            return None
+        # A car streaming its location (see "Tesla telemetry") is read again as soon as it says, without asking.
+        due = now - float(car.get("checked") or 0) >= TESLA_CHECK_SECONDS
+        if not due and tesla_streamed_at(name) <= float(car.get("checked") or 0):
             return None
         car["checked"], car["dirty"] = now, True
-        verdict = tesla_verdict(name, now, "check", ask=tesla_due(name, now, TESLA_CHECK_SECONDS))
+        verdict = tesla_verdict(name, now, "check", ask=due and tesla_due(name, now, TESLA_CHECK_SECONDS))
         if verdict == ("away" if car["here"] else "home"):
             log.info("car presence: %s %s, by Tesla's check", name, "left" if car["here"] else "is home")
             return self.change(name, car, now, {"camera": car.get("camera") or "", "event_id": "", "movement": "parked"}, via="tesla")
@@ -4710,6 +4715,7 @@ def startup() -> None:
     threading.Thread(target=timeline_forever, name="timeline", daemon=True).start()
     threading.Thread(target=doors_forever, name="doors", daemon=True).start()
     threading.Thread(target=parking_forever, name="parking", daemon=True).start()
+    threading.Thread(target=tesla_stream_forever, name="tesla-stream", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -10184,6 +10190,11 @@ def tesla_ask(name: str, now: float, why: str) -> tuple[float, dict[str, Any] | 
         cached = _tesla_answers.get(name)
         if cached and now - cached[0] < TESLA_CACHE_SECONDS:
             return cached
+        # A car streaming to the relay right now (see "Tesla telemetry") is where it last said.
+        live = tesla_stream_answer(name, now)
+        if live:
+            _tesla_answers[name] = (now, live)
+            return now, live
         before, _tesla_why = tesla_calls_today(), why
         where, said = None, "nothing"
         try:
@@ -10203,13 +10214,17 @@ def tesla_ask(name: str, now: float, why: str) -> tuple[float, dict[str, Any] | 
 def tesla_due(name: str, now: float, every: float) -> bool:
     """
     Whether `name` is due to be asked about again, by the last answer about it: older than
-    `every`, or, when it was that the car is asleep, older than TESLA_ASLEEP_CHECK_SECONDS.
+    `every`, or, when it was that the car is asleep, older than TESLA_ASLEEP_CHECK_SECONDS, or
+    TESLA_STREAM_ASLEEP_CHECK_SECONDS while the car streams (it says itself when it wakes).
     """
     answer = _tesla_answers.get(name)
     if answer is None:
         return True
     asleep = bool(answer[1] and answer[1].get("asleep"))
-    return now - answer[0] >= (max(every, TESLA_ASLEEP_CHECK_SECONDS) if asleep else every)
+    if not asleep:
+        return now - answer[0] >= every
+    wait = TESLA_STREAM_ASLEEP_CHECK_SECONDS if tesla_streaming(name, now) else TESLA_ASLEEP_CHECK_SECONDS
+    return now - answer[0] >= max(every, wait)
 
 
 def tesla_verdict(name: str, now: float | None = None, why: str = "presence", ask: bool = True) -> str | None:
@@ -10291,18 +10306,355 @@ def tesla_public_key() -> Response:
         raise HTTPException(status_code=404)
 
 
+def tesla_partner_token() -> str:
+    """A partner token: the application's own, for what concerns no one account."""
+    return tesla_token_request({
+        "grant_type": "client_credentials", "client_id": TESLA_CLIENT_ID, "client_secret": TESLA_CLIENT_SECRET,
+        "scope": TESLA_SCOPES.replace("offline_access ", ""), "audience": TESLA_API,
+    })["access_token"]
+
+
 def tesla_register() -> dict[str, Any]:
     """Registers the application's domain with the Fleet API (once per region), by a partner token."""
     from urllib.parse import urlparse
 
-    partner = tesla_token_request({
-        "grant_type": "client_credentials", "client_id": TESLA_CLIENT_ID, "client_secret": TESLA_CLIENT_SECRET,
-        "scope": TESLA_SCOPES.replace("offline_access ", ""), "audience": TESLA_API,
-    })
     r = requests.post(f"{TESLA_API}/api/1/partner_accounts", json={"domain": urlparse(TESLA_PUBLIC_URL).hostname},
-                      headers={"Authorization": f"Bearer {partner['access_token']}"}, timeout=15)
+                      headers={"Authorization": f"Bearer {tesla_partner_token()}"}, timeout=15)
     r.raise_for_status()
     return r.json()
+
+
+# ---------------------------------------------------------------- Tesla telemetry
+
+# Asking Tesla only ever finds a car where it is at that moment, and a sleeping one won't say: a car
+# that wakes, drives off and is asleep again between two checks is never seen to move. Sarah's was
+# on the curb at 16:51 UTC on 2026-10-28, asleep at the checks at 17:26, 19:26 and 21:26, and miles
+# away all along. With Fleet Telemetry the car tells instead: whenever it is awake it holds a TLS
+# connection to Tesla's fleet-telemetry server beside the relay (the `tesla-telemetry` container,
+# reached through Funnel on TESLA_TELEMETRY_PORT) and streams the fields in TESLA_TELEMETRY_FIELDS
+# as they change, each no more often than its interval. The server publishes them to the broker the
+# door sensors use: `tesla/<VIN>/v/<field>` with the value as JSON (Location as
+# `{"latitude", "longitude"}`, Gear as "ShiftStateD"), and `tesla/<VIN>/connectivity` with
+# `{"Status": "CONNECTED"}` or "DISCONNECTED" as the car comes and goes.
+#
+# Each streamed location becomes the car's latest answer (see `tesla_ask`) as if the relay had just
+# asked, so car presence takes it up within CAR_PRESENCE_EVERY_SECONDS and parking within
+# PARKING_EVERY_SECONDS. A car sends its location only when it changes, so while it is connected
+# and has been heard in the last TESLA_STREAM_FRESH_SECONDS the last one it sent is where it is, and
+# asking about it answers from the stream without a call. Only a location sent over this connection
+# counts: one from before the car or the relay last connected may be from before a drive the relay
+# didn't hear. A car seen shifting into P is parked from then (`parked_at`). Asking stays
+# the backstop for a stream that has stopped, less often for a car that streams: asleep, it is
+# asked about every TESLA_STREAM_ASLEEP_CHECK_SECONDS, since it says itself when it wakes. A VIN
+# outside TESLA_CARS is ignored (Tesla's advice: a car's key could be stolen, so trust only your own).
+#
+# The car has to be told where to stream, by a configuration signed with the application's private
+# key, which stays off the box (docs/tesla.md, "Telemetry"): `relay.py tesla-telemetry-config`
+# prints it, `scripts/tesla-sign` signs it on the Mac, and `relay.py tesla-telemetry-send` hands the
+# signature to Tesla. It lapses after TESLA_TELEMETRY_DAYS; send it again before then.
+TESLA_TELEMETRY_TOPIC = os.environ.get("TESLA_TELEMETRY_TOPIC", "tesla").strip("/")
+TESLA_TELEMETRY_PORT = int(os.environ.get("TESLA_TELEMETRY_PORT", "8443"))
+# The CA that signed the telemetry server's certificate: the car trusts only it.
+TESLA_TELEMETRY_CA_FILE = os.environ.get("TESLA_TELEMETRY_CA_FILE", "/data/telemetry/ca.pem")
+TESLA_TELEMETRY_DAYS = 350
+# Each field streamed, and the fewest seconds between two of its values. Where the car is and how
+# it moves often enough to see it park; the rest for the Cars page. About $0.01 an hour of driving.
+TESLA_TELEMETRY_FIELDS = {
+    "Location": 10, "GpsHeading": 10, "VehicleSpeed": 10, "Gear": 1,
+    "Soc": 300, "EstBatteryRange": 300, "DetailedChargeState": 60, "TimeToFullCharge": 300, "ChargeLimitSoc": 300,
+    "Locked": 60, "SentryMode": 60, "Odometer": 600, "DestinationName": 60, "MinutesToArrival": 60,
+    "InsideTemp": 300, "OutsideTemp": 300,
+}
+TESLA_STREAM_FRESH_SECONDS = 300.0
+# How long since a car last streamed it still counts as streaming, for how often it is asked
+# about asleep: the stream works for it, so it will say when it wakes.
+TESLA_STREAM_TRUST_SECONDS = 2 * 86400.0
+TESLA_STREAM_ASLEEP_CHECK_SECONDS = float(os.environ.get("TESLA_STREAM_ASLEEP_CHECK_SECONDS", str(6 * 3600)))
+# Each car's stream: its fields' latest values, when anything was last heard from it (`heard`), when
+# its location was (`located`), whether that location was sent over the connection as it is now
+# (`current`), whether it is connected now (None until the server says), and when it was seen to
+# shift from D, R or N into P on this connection (`parked_at`).
+_tesla_live: dict[str, dict[str, Any]] = {}
+
+
+def tesla_number(value: Any) -> float | None:
+    """A streamed number, which older firmware sends as a string."""
+    try:
+        return float(value) if value is not None and value != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def tesla_stream_fix(live: dict[str, Any], at: float) -> dict[str, Any] | None:
+    """The stream's location as one of `tesla_location`'s answers, stamped `at`, with `streamed` set; None without one."""
+    fields = live.get("fields") or {}
+    location = fields.get("Location")
+    if not isinstance(location, dict):
+        return None
+    lat, lng = tesla_number(location.get("latitude")), tesla_number(location.get("longitude"))
+    if lat is None or lng is None or (lat == 0 and lng == 0):
+        return None
+    shift = tesla_shift(fields.get("Gear"))
+    fix = {
+        "lat": lat, "lng": lng, "at": at, "heading": tesla_number(fields.get("GpsHeading")),
+        "shift": shift, "speed": tesla_number(fields.get("VehicleSpeed")), "streamed": True,
+    }
+    if shift == "P" and live.get("parked_at"):
+        fix["parked_at"] = float(live["parked_at"])
+    return fix
+
+
+def tesla_shift(gear: Any) -> str | None:
+    """ "ShiftStateD" as "D"; None for anything but P, D, R and N."""
+    shift = str(gear or "").removeprefix("ShiftState")
+    return shift if shift in ("P", "D", "R", "N") else None
+
+
+def tesla_stream_reset(live: dict[str, Any]) -> None:
+    """
+    A connection begun or ended: what the car said over the last one may no longer hold, its gear
+    among it (a shift into P counts only when both gears were heard on this connection). Under _tesla_lock.
+    """
+    live["current"], live["parked_at"] = False, None
+    live["fields"].pop("Gear", None)
+
+
+def tesla_stream_receive(topic: str, payload: bytes, now: float) -> None:
+    """Takes one message from the telemetry server (see "Tesla telemetry")."""
+    parts = topic.split("/")
+    if len(parts) < 3 or parts[0] != TESLA_TELEMETRY_TOPIC:
+        return
+    name = next((n for n, vin in TESLA_CARS.items() if vin == parts[1]), None)
+    if name is None:
+        return
+    try:
+        value = json.loads(payload) if payload else None
+    except ValueError:
+        value = payload.decode("utf-8", "replace")
+    with _tesla_lock:
+        live = _tesla_live.setdefault(name, {"fields": {}, "heard": 0.0, "located": 0.0, "connected": None,
+                                             "current": False, "parked_at": None})
+        live["heard"] = now
+        if parts[2] == "connectivity" and isinstance(value, dict):
+            connected = value.get("Status") == "CONNECTED"
+            if connected != live["connected"]:
+                log.info("tesla: %s's stream %s", name, "connected" if connected else "disconnected")
+            live["connected"] = connected
+            tesla_stream_reset(live)
+            return
+        if parts[2] == "errors":
+            log.warning("tesla: %s's stream reports %s: %s", name, parts[-1], value)
+            return
+        if parts[2] != "v" or len(parts) < 4:
+            return
+        field = parts[3]
+        if field == "Gear":
+            before, after = tesla_shift(live["fields"].get("Gear")), tesla_shift(value)
+            if after != "P":
+                live["parked_at"] = None
+            elif before in ("D", "R", "N"):
+                live["parked_at"] = now
+        live["fields"][field] = value
+        # Anything coming through is the car awake and connected, whatever was missed of the last connect.
+        live["connected"] = True
+        if field == "Location":
+            live["current"] = True
+        if field not in ("Location", "Gear", "VehicleSpeed", "GpsHeading") or not live.get("current"):
+            return
+        fix = tesla_stream_fix(live, now)
+        if fix is None:
+            return
+        if field == "Location" and not live["located"]:
+            home = state_get(HOME_KEY)
+            if home:
+                d = haversine_metres((fix["lat"], fix["lng"]), (float(home["lat"]), float(home["lng"])))
+                log.info("tesla: %s streaming, %.0f m from home", name, d)
+        if field == "Location":
+            live["located"] = now
+        _tesla_answers[name] = (now, fix)
+
+
+def tesla_stream_lost() -> None:
+    """
+    The broker connection dropped: whatever the cars said meanwhile is lost, so none counts as
+    connected, and none as streaming (see `tesla_streaming`) until it sends its location again: a
+    car that drove off meanwhile is asked about as often as one that doesn't stream.
+    """
+    with _tesla_lock:
+        for live in _tesla_live.values():
+            live["connected"] = None
+            live["located"] = 0.0
+            tesla_stream_reset(live)
+
+
+def tesla_stream_answer(name: str, now: float) -> dict[str, Any] | None:
+    """
+    Where the car is by its stream, while it is connected, was heard in the last
+    TESLA_STREAM_FRESH_SECONDS, and has sent its location over this connection; None otherwise.
+    Under _tesla_lock.
+    """
+    live = _tesla_live.get(name)
+    if (not live or not live.get("connected") or not live.get("current")
+            or now - float(live.get("heard") or 0) > TESLA_STREAM_FRESH_SECONDS):
+        return None
+    return tesla_stream_fix(live, now)
+
+
+def tesla_streaming(name: str, now: float) -> bool:
+    """Whether the car has streamed its location in the last TESLA_STREAM_TRUST_SECONDS."""
+    located = float((_tesla_live.get(name) or {}).get("located") or 0)
+    return bool(located) and now - located <= TESLA_STREAM_TRUST_SECONDS
+
+
+def tesla_streamed_at(name: str) -> float:
+    """When the car's stream last said where it is, 0 for never."""
+    return float((_tesla_live.get(name) or {}).get("located") or 0)
+
+
+def tesla_live_status(name: str, now: float) -> dict[str, Any] | None:
+    """
+    What the car's stream last said beyond where it is, for the phones: battery, charging, locks,
+    the route, temperatures; and whether it is connected now. None for a car that hasn't streamed.
+    Numbers as the car gives them: miles, minutes, °C, percent.
+    """
+    live = _tesla_live.get(name)
+    if not live:
+        return None
+    fields = live.get("fields") or {}
+
+    def text(key: str) -> str | None:
+        value = fields.get(key)
+        return str(value) if value not in (None, "") else None
+
+    def flag(key: str) -> bool | None:
+        value = fields.get(key)
+        if isinstance(value, bool) or value is None:
+            return value
+        return {"true": True, "false": False}.get(str(value).lower())
+
+    return {
+        "connected": bool(live.get("connected")) and now - float(live.get("heard") or 0) <= TESLA_STREAM_FRESH_SECONDS,
+        "heard": live.get("heard") or None,
+        "battery": tesla_number(fields.get("Soc")), "range_mi": tesla_number(fields.get("EstBatteryRange")),
+        "charge_limit": tesla_number(fields.get("ChargeLimitSoc")),
+        "charging": (text("DetailedChargeState") or "").removeprefix("DetailedChargeState") or None,
+        "hours_to_full": tesla_number(fields.get("TimeToFullCharge")),
+        "locked": flag("Locked"), "sentry": (text("SentryMode") or "").removeprefix("SentryModeState") or None,
+        "odometer_mi": tesla_number(fields.get("Odometer")),
+        "destination": text("DestinationName"), "minutes_to_arrival": tesla_number(fields.get("MinutesToArrival")),
+        "inside_c": tesla_number(fields.get("InsideTemp")), "outside_c": tesla_number(fields.get("OutsideTemp")),
+    }
+
+
+def tesla_stream_forever() -> None:
+    """Listens to the telemetry server through the broker for as long as the relay runs, reconnecting whenever it drops."""
+    if not (tesla_on() and TESLA_CARS):
+        return
+    try:
+        import paho.mqtt.client as mqtt
+    except ImportError:
+        log.warning("tesla: paho-mqtt isn't installed, so the cars' streams are off")
+        return
+
+    def on_connect(client, userdata, flags, reason_code, properties):
+        if reason_code.is_failure:
+            log.warning("tesla: the broker refused the connection: %s", reason_code)
+            return
+        client.subscribe(f"{TESLA_TELEMETRY_TOPIC}/#")
+        log.info("tesla: listening for the cars' streams on %s", TESLA_TELEMETRY_TOPIC)
+
+    def on_message(client, userdata, message):
+        try:
+            tesla_stream_receive(message.topic, message.payload, time.time())
+        except Exception:
+            log.exception("tesla: couldn't take a message on %s", message.topic)
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="homesafe-relay-tesla")
+    client.on_connect, client.on_message = on_connect, on_message
+    client.on_disconnect = lambda *args: tesla_stream_lost()
+    client.reconnect_delay_set(min_delay=1, max_delay=60)
+    while True:
+        try:
+            client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+            client.loop_forever(retry_first_connection=True)
+        except Exception:
+            # The doors thread says when there's no broker; this one just keeps trying.
+            tesla_stream_lost()
+            time.sleep(30)
+
+
+def tesla_telemetry_config(now: float) -> dict[str, Any]:
+    """The configuration telling the cars where to stream and what: what `scripts/tesla-sign` signs (see "Tesla telemetry")."""
+    from urllib.parse import urlparse
+
+    with open(TESLA_TELEMETRY_CA_FILE, encoding="utf-8") as f:
+        ca = f.read()
+    return {
+        "hostname": urlparse(TESLA_PUBLIC_URL).hostname, "port": TESLA_TELEMETRY_PORT, "ca": ca,
+        "fields": {field: {"interval_seconds": seconds} for field, seconds in TESLA_TELEMETRY_FIELDS.items()},
+        "exp": int(now + TESLA_TELEMETRY_DAYS * 86400),
+    }
+
+
+def tesla_telemetry_send(token: str) -> dict[str, Any]:
+    """
+    Hands Tesla the signed configuration (a JWS from `scripts/tesla-sign`) for every one of TESLA_CARS, by
+    the account each is linked through; answers what Tesla said for each account. A car Tesla
+    skips as `missing_key` hasn't had the application's virtual key added (docs/tesla.md).
+    """
+    global _tesla_why
+    accounts: dict[str, list[str]] = {}
+    for vin in TESLA_CARS.values():
+        row = with_db(lambda c: c.execute("SELECT account FROM tesla_vehicles WHERE vin=?", (vin,)).fetchone())
+        if row:
+            accounts.setdefault(row[0], []).append(vin)
+    said = {}
+    for account, vins in accounts.items():
+        access = tesla_access(account)
+        with _tesla_lock:
+            _tesla_why = "telemetry"
+            if not access or not tesla_spend():
+                said[account[:8]] = "not linked, or out of calls"
+                continue
+        r = requests.post(f"{TESLA_API}/api/1/vehicles/fleet_telemetry_config_jws", json={"vins": vins, "token": token},
+                          headers={"Authorization": f"Bearer {access}"}, timeout=30)
+        said[account[:8]] = r.json() if r.headers.get("content-type", "").startswith("application/json") else f"{r.status_code} {r.text[:200]}"
+    return said
+
+
+def tesla_telemetry_status() -> dict[str, Any]:
+    """
+    Whether each car has taken up the configuration (`synced`), and the errors it reported since:
+    each car's own, and the application's (`partner_errors`, all its cars', by a partner token).
+    """
+    global _tesla_why
+    report: dict[str, Any] = {}
+    for name, vin in TESLA_CARS.items():
+        row = with_db(lambda c: c.execute("SELECT account FROM tesla_vehicles WHERE vin=?", (vin,)).fetchone())
+        access = tesla_access(row[0]) if row else None
+        if not access:
+            report[name] = "not linked"
+            continue
+        car = {}
+        for path in ("fleet_telemetry_config", "fleet_telemetry_errors"):
+            with _tesla_lock:
+                _tesla_why = "telemetry"
+                if not tesla_spend():
+                    car[path] = "out of calls"
+                    continue
+            r = requests.get(f"{TESLA_API}/api/1/vehicles/{vin}/{path}", headers={"Authorization": f"Bearer {access}"}, timeout=15)
+            body = (r.json().get("response") if r.ok else None) or f"{r.status_code} {r.text[:200]}"
+            if isinstance(body, dict) and isinstance(body.get("config"), dict):
+                body["config"].pop("ca", None)  # long, and only the box's own CA
+            car[path] = body
+        report[name] = car
+    try:
+        r = requests.get(f"{TESLA_API}/api/1/partner_accounts/fleet_telemetry_errors",
+                         headers={"Authorization": f"Bearer {tesla_partner_token()}"}, timeout=15)
+        report["partner_errors"] = (r.json().get("response") if r.ok else None) or f"{r.status_code} {r.text[:200]}"
+    except Exception as e:
+        report["partner_errors"] = f"failed: {e}"
+    return report
 
 
 # ---------------------------------------------------------------- parking
@@ -10693,12 +11045,14 @@ def parking_stage(at: float, now: float, zone: Any) -> int:
     return PARKING_SOON if at - now <= PARKING_NOTICE_SECONDS else 0
 
 
-def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None], stretches: list[dict[str, Any]]) -> None:
+def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None], stretches: list[dict[str, Any]],
+                 name: str | None = None) -> None:
     """
     Takes in an answer from Tesla newer than the last: where the car is parked (`spot`, the fix
     and since when), and when it was last seen anywhere else (`elsewhere`). Asleep, it is where it
     was. A car parked between two answers is taken to have parked just after the earlier one, so a
-    time limit is never counted from later than it began.
+    time limit is never counted from later than it began. `name` says which car, for how far
+    apart its answers can be.
     """
     asked, where = answer
     if where is None or asked <= float(car.get("asked") or 0) or (not where.get("asleep") and asked - float(where["at"]) > TESLA_STALE_SECONDS):
@@ -10725,8 +11079,14 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
         car["spot"], car["elsewhere"] = None, float(fix["at"])
         return
     # From another spot at the curb, it was there until the last answer; else it was last seen elsewhere.
-    # Answers come every TESLA_CHECK_SECONDS, or every TESLA_ASLEEP_CHECK_SECONDS while it slept.
-    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - max(TESLA_CHECK_SECONDS, TESLA_ASLEEP_CHECK_SECONDS))
+    # Answers come every TESLA_CHECK_SECONDS, or every TESLA_ASLEEP_CHECK_SECONDS while it slept
+    # (TESLA_STREAM_ASLEEP_CHECK_SECONDS for a car that streams). A car whose stream was heard
+    # shifting into P parked then (see "Tesla telemetry").
+    asleep_gap = TESLA_STREAM_ASLEEP_CHECK_SECONDS if name and tesla_streaming(name, asked) else TESLA_ASLEEP_CHECK_SECONDS
+    gap = max(TESLA_CHECK_SECONDS, TESLA_ASLEEP_CHECK_SECONDS, asleep_gap)
+    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - gap)
+    if where.get("parked_at"):
+        since = float(where["parked_at"])
     car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
     log.info("parking: parked on the %s side of %s since %s (by its %s)", match["side"] or "unsure", match["street"],
              datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="minutes"), match["how"] or "nothing")
@@ -10833,7 +11193,7 @@ def parking_tell(name: str, car: dict[str, Any], config: dict[str, Any], stretch
     owed = [p for p in parking_phones(name, config, now) if plan and stages.get(p[0], 0) < plan["stage"]]
     if owed and now - float(car.get("asked") or 0) > PARKING_VERIFY_SECONDS:
         # About to tell someone the car must move: make sure it is still there.
-        parking_read(car, tesla_ask(name, now, "parking: still there?"), stretches)
+        parking_read(car, tesla_ask(name, now, "parking: still there?"), stretches, name)
         plan = parking_plan(car, stretches, config, zone, now)
         stages = stages if plan and told.get("key") == plan["key"] else {}
         owed = [p for p in owed if plan and stages.get(p[0], 0) < plan["stage"]]
@@ -10901,7 +11261,7 @@ def parking_tick(now: float | None = None, push: Callable[..., str] | None = Non
         answer = _tesla_answers.get(name)
         if answer is None or tesla_due(name, now, TESLA_CHECK_SECONDS + 5 * PARKING_EVERY_SECONDS):
             answer = tesla_ask(name, now, "parking")
-        parking_read(car, answer, stretches)
+        parking_read(car, answer, stretches, name)
         pushed += parking_tell(name, car, config, stretches, zone, now, push or deliver)
     state_set(PARKING_KEY, saved)
     return pushed
@@ -10920,7 +11280,8 @@ def parking_status(now: float) -> dict[str, Any]:
     """
     Where each of TESLA_CARS is parked by the file's streets, and its next deadline there; and,
     wherever it is, where Tesla last saw it (`last`: the fix, whether it was moving, and whether
-    that is home), and whether the car is asleep now.
+    that is home), whether the car is asleep now, and what its stream last said (`live`, see
+    `tesla_live_status`).
     """
     config = parking_config()
     home = state_get(HOME_KEY)
@@ -10948,6 +11309,7 @@ def parking_status(now: float) -> dict[str, Any]:
             "window": deadline and {"from": deadline["from"], "until": deadline["until"]},
             "last": last and {**{k: last.get(k) for k in ("lat", "lng", "heading", "at", "moving")}, "home": at_home},
             "asleep": bool(car.get("asleep")),
+            "live": tesla_live_status(name, now),
         })
     return {"streets": [{"street": s["street"], "points": len(s["line"]), "home_side": s["home_side"]} for s in stretches], "cars": cars}
 
@@ -13035,8 +13397,9 @@ def post_timeline_sync(request: Request, response: Response) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # `python relay.py tesla-register` / `tesla-link` / `parking-check` / `timeline-import FILE` / `timeline-pull` /
-    # `timeline-refine` / `timeline-reread`, run in the relay's container.
+    # `python relay.py tesla-register` / `tesla-link` / `tesla-telemetry-config` / `tesla-telemetry-send` /
+    # `tesla-telemetry-status` / `parking-check` / `timeline-import FILE` / `timeline-pull` / `timeline-refine` /
+    # `timeline-reread`, run in the relay's container.
     import sys
 
     CONN = db()
@@ -13065,6 +13428,17 @@ if __name__ == "__main__":
         print(json.dumps(tesla_register(), indent=2))
     elif command == "tesla-link":
         print(f"Open within {TESLA_LINK_SECONDS // 60} minutes, signed in as the Tesla account that owns the car:\n\n{tesla_link_url()}")
+    elif command == "tesla-telemetry-config":
+        # What the cars are to be told about the telemetry server, for `scripts/tesla-sign` to sign (docs/tesla.md, "Telemetry").
+        print(json.dumps(tesla_telemetry_config(time.time())))
+    elif command == "tesla-telemetry-send":
+        # The signature `scripts/tesla-sign` made of that, on stdin.
+        token = sys.stdin.read().strip()
+        if token.count(".") != 2:
+            sys.exit("Pipe in the JWS scripts/tesla-sign printed.")
+        print(json.dumps(tesla_telemetry_send(token), indent=2))
+    elif command == "tesla-telemetry-status":
+        print(json.dumps(tesla_telemetry_status(), indent=2, default=str))
     elif command == "parking-check":
         # The streets PARKING_FILE names as the relay found them, and where each car is by them now
         # (asking Tesla, a call per car). Pushes nothing.
@@ -13077,4 +13451,5 @@ if __name__ == "__main__":
             report.setdefault("now", {})[name] = {"tesla": where, "match": match}
         print(json.dumps(report, indent=2, default=str))
     else:
-        sys.exit("usage: python relay.py tesla-register | tesla-link | parking-check | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")
+        sys.exit("usage: python relay.py tesla-register | tesla-link | tesla-telemetry-config | tesla-telemetry-send | tesla-telemetry-status"
+                 " | parking-check | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")
