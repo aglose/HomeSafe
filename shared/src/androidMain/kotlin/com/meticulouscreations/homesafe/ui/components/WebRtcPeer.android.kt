@@ -34,6 +34,9 @@ private const val LOG_TAG = "HomeSafeLive"
 /** How long a peer's video may go undrawn before its receive stream (and decoder) is stopped; see [AndroidWebRtcPeer]. */
 internal const val RECEIVE_GRACE_MS = 5_000L
 
+/** How often a stop the grace asked for, but that had no track or first frame to act on, is tried again. */
+private const val RECEIVE_RETRY_MS = 1_000L
+
 /**
  * A receive-only libwebrtc peer connection, exposed to the common join logic as [WebRtcPeer].
  *
@@ -85,7 +88,14 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
 
     /** Whether the track's receive stream is running; see the class doc. */
     private var receiving = true
-    private val stopReceiving = Runnable { setReceiving(false) }
+    private val stopReceiving = object : Runnable {
+        override fun run() {
+            if (closed || videoEnabled) return
+            // A track or first frame still to come once the grace is up: try again until it has
+            // come, or until enabling the video or closing the peer takes this off the queue.
+            if (!setReceiving(false)) mainThread.postDelayed(this, RECEIVE_RETRY_MS)
+        }
+    }
 
     private val observer = object : PeerConnection.Observer {
         override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) {
@@ -209,13 +219,15 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
         if (enabled) sinks.forEach(track::addSink) else sinks.forEach(track::removeSink)
     }
 
-    private fun setReceiving(receive: Boolean) {
-        if (closed || receiving == receive) return
-        val track = videoTrack ?: return
-        if (!receive && !_firstFrameReceived.value) return
+    /** Starts or stops the track's receive stream; false when it can't be stopped yet (no track, or no first frame). */
+    private fun setReceiving(receive: Boolean): Boolean {
+        if (closed || receiving == receive) return true
+        val track = videoTrack ?: return receive
+        if (!receive && !_firstFrameReceived.value) return false
         receiving = receive
         traceSection(if (receive) "live.peer.startReceiving" else "live.peer.stopReceiving") { track.setShouldReceive(receive) }
         Log.d(LOG_TAG, "video receive ${if (receive) "resumed" else "paused"}")
+        return true
     }
 
     override fun setMuted(muted: Boolean) {

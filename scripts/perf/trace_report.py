@@ -117,8 +117,10 @@ def cmd_drill(prefix, step, like, thread=None):
     for r in q(f"""select name, depth, count(*) n, sum(dur) / 1e6 total, max(dur) / 1e6 longest from descendant_slice({top.id})
                    group by name, depth order by total desc limit 30"""):
         print(f"  depth {r.depth:<2} {r.total:8.1f}ms n={r.n:<5} longest={r.longest:7.1f}  {r.name[:100]}")
-    states = q(f"""select state, sum(dur) / 1e6 d from thread_state where utid = {top.utid}
-                   and ts >= {top.ts} and ts < {top.ts + top.dur} group by state order by d desc""")
+    end = top.ts + top.dur
+    # Every interval that overlaps the slice, counted only for the part inside it.
+    states = q(f"""select state, sum(min(ts + dur, {end}) - max(ts, {top.ts})) / 1e6 d from thread_state
+                   where utid = {top.utid} and ts < {end} and ts + dur > {top.ts} group by state order by d desc""")
     print("  thread was: " + ", ".join(f"{r.state} {r.d:.0f}ms" for r in states) + "   (S asleep/waiting, R runnable, Running on a CPU, D in the kernel)")
 
 

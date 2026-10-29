@@ -1,14 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <baseline version="1.0">
     <file name="src/androidMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.android.kt">
-        <error line="93" column="5" source="compose:parameter-naming" />
         <error line="94" column="5" source="compose:parameter-naming" />
         <error line="95" column="5" source="compose:parameter-naming" />
         <error line="96" column="5" source="compose:parameter-naming" />
-        <error line="98" column="5" source="compose:parameter-naming" />
-    </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/WindowLayout.kt">
-        <error line="21" column="14" source="compose:compositionlocal-allowlist" />
+        <error line="97" column="5" source="compose:parameter-naming" />
+        <error line="99" column="5" source="compose:parameter-naming" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.kt">
         <error line="160" column="5" source="compose:parameter-naming" />
@@ -44,12 +41,6 @@
         <error line="96" column="5" source="compose:modifier-missing-check" />
         <error line="143" column="56" source="compose:vm-forwarding-check" />
     </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FrigateAppShell.kt">
-        <error line="413" column="5" source="compose:modifier-missing-check" />
-    </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
-        <error line="160" column="5" source="compose:modifier-missing-check" />
-    </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
         <error line="153" column="5" source="compose:modifier-missing-check" />
         <error line="154" column="5" source="compose:lambda-param-in-effect" />
@@ -62,9 +53,6 @@
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
         <error line="227" column="5" source="compose:modifier-missing-check" />
     </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
-        <error line="78" column="14" source="compose:compositionlocal-allowlist" />
-    </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/theme/Color.kt">
         <error line="78" column="5" source="compose:compositionlocal-allowlist" />
     </file>
@@ -74,19 +62,5 @@
         <error line="90" column="5" source="compose:parameter-naming" />
         <error line="91" column="5" source="compose:parameter-naming" />
         <error line="93" column="5" source="compose:parameter-naming" />
-    </file>
-    <file name="src/jvmMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.jvm.kt">
-        <error line="45" column="5" source="compose:parameter-naming" />
-        <error line="46" column="5" source="compose:parameter-naming" />
-        <error line="47" column="5" source="compose:parameter-naming" />
-        <error line="48" column="5" source="compose:parameter-naming" />
-        <error line="50" column="5" source="compose:parameter-naming" />
-    </file>
-    <file name="src/webMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.web.kt">
-        <error line="11" column="5" source="compose:parameter-naming" />
-        <error line="12" column="5" source="compose:parameter-naming" />
-        <error line="13" column="5" source="compose:parameter-naming" />
-        <error line="14" column="5" source="compose:parameter-naming" />
-        <error line="16" column="5" source="compose:parameter-naming" />
     </file>
 </baseline>
