@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.runProcess
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
@@ -7,12 +8,12 @@ import homesafe.shared.generated.resources.biometric_confirmation_cancelled
 import homesafe.shared.generated.resources.biometric_name_generic
 import homesafe.shared.generated.resources.biometric_name_passcode
 import homesafe.shared.generated.resources.biometric_name_touch_id
+import homesafe.shared.generated.resources.biometric_owner_check_failed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import org.jetbrains.compose.resources.StringResource
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Touch ID (or the Mac's password) and the login Keychain, by way of the small Swift helper the
@@ -38,16 +39,22 @@ internal object MacOwnerCheck {
             else -> Res.string.biometric_name_generic
         }
 
-    /** Puts up the prompt, explained by [reason], and waits for it; with [input] for a command that keeps something. */
-    suspend fun ask(command: String, reason: String, input: ByteArray? = null): Result<ByteArray> = withContext(Dispatchers.IO) {
+    /**
+     * Puts up the prompt, explained by [reason], and waits for it; with [input] for a command that
+     * keeps something. Cancelling the call takes the prompt down with the helper.
+     */
+    suspend fun ask(command: String, reason: String, input: ByteArray? = null): Result<ByteArray> = runInterruptible(Dispatchers.IO) {
         val outcome = run(command, reason, input = input, timeoutSeconds = PROMPT_TIMEOUT_SECONDS)
         when (outcome.exitCode) {
             0 -> Result.success(outcome.output)
 
             CANCELLED -> Result.failure(LocalizedException(UiText.of(Res.string.biometric_confirmation_cancelled), technical = "Owner check was cancelled"))
 
-            // The system's own words when it gave any, already in the reader's language.
-            else -> Result.failure(outcome.error.takeIf { it.isNotBlank() }?.let(::OwnerCheckException) ?: OwnerCheckException("Owner check failed (${outcome.exitCode})"))
+            // The system's own words when it gave any, already in the reader's language; else ours.
+            else -> Result.failure(
+                outcome.error.takeIf { it.isNotBlank() }?.let(::OwnerCheckException)
+                    ?: LocalizedException(UiText.of(Res.string.biometric_owner_check_failed), technical = "Owner check failed (${outcome.exitCode})"),
+            )
         }
     }
 
@@ -58,17 +65,8 @@ internal object MacOwnerCheck {
 
     private fun run(vararg arguments: String, input: ByteArray? = null, timeoutSeconds: Long = 10): Outcome {
         val executable = helper ?: return Outcome(-1, ByteArray(0), "")
-        return runCatching {
-            val process = ProcessBuilder(listOf(executable.absolutePath) + arguments).start()
-            process.outputStream.use { stream -> input?.let(stream::write) }
-            val output = process.inputStream.readBytes()
-            val error = process.errorStream.readBytes().decodeToString()
-            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                process.destroy()
-                return Outcome(-1, ByteArray(0), "")
-            }
-            Outcome(process.exitValue(), output, error)
-        }.getOrElse { Outcome(-1, ByteArray(0), "") }
+        val outcome = runProcess(listOf(executable.absolutePath) + arguments, input, timeoutSeconds) ?: return Outcome(-1, ByteArray(0), "")
+        return Outcome(outcome.exitCode, outcome.output, outcome.error.decodeToString())
     }
 
     private const val CANCELLED = 2

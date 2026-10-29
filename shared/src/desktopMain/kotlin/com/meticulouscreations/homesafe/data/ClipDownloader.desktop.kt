@@ -25,6 +25,8 @@ import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.io.File
 import java.io.IOException
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
 
 /**
  * Saves the clip into the person's Downloads folder, as a browser would, and shows it there:
@@ -42,21 +44,24 @@ private class DesktopClipDownloader(private val httpClient: HttpClient) : ClipDo
         onProgress: (ClipDownloadProgress) -> Unit,
     ): Result<Unit> = runCatching {
         onProgress(ClipDownloadProgress.Preparing)
-        val target = withContext(Dispatchers.IO) { freeName(downloadsFolder(), fileName) }
-        val partial = File(target.parentFile, "${target.name}.download")
-        httpClient.prepareGet(url) {
-            headers.forEach { (key, value) -> header(key, value) }
-            timeout {
-                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-                socketTimeoutMillis = SOCKET_TIMEOUT_MS
+        val folder = downloadsFolder()
+        // Claimed before the request, so a second save of the same clip started meanwhile takes the next name.
+        val partial = withContext(Dispatchers.IO) { claimPartial(folder, fileName) }
+        try {
+            httpClient.prepareGet(url) {
+                headers.forEach { (key, value) -> header(key, value) }
+                timeout {
+                    requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                    socketTimeoutMillis = SOCKET_TIMEOUT_MS
+                }
+            }.execute { response ->
+                response.requireSuccess(Res.string.download_frigate_refused)
+                writeToFile(partial, response.bodyAsChannel(), response.contentLength(), onProgress)
             }
-        }.execute { response ->
-            response.requireSuccess(Res.string.download_frigate_refused)
-            writeToFile(partial, response.bodyAsChannel(), response.contentLength(), onProgress)
-        }
-        withContext(Dispatchers.IO) {
-            if (!partial.renameTo(target)) throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't rename $partial")
-            reveal(target)
+            withContext(Dispatchers.IO) { reveal(publish(partial, fileName)) }
+        } catch (e: Throwable) {
+            partial.delete()
+            throw e
         }
     }
 
@@ -85,13 +90,34 @@ private class DesktopClipDownloader(private val httpClient: HttpClient) : ClipDo
 
     private fun downloadsFolder(): File = File(System.getProperty("user.home"), "Downloads").apply { mkdirs() }
 
-    /** [name] in [folder], or "name (2).mp4" and so on when that is taken. */
-    private fun freeName(folder: File, name: String): File {
+    /** [name] in [folder], then "name (2).mp4" and so on, as Safari numbers a download whose name is taken. */
+    private fun candidates(folder: File, name: String): Sequence<File> {
         val base = name.substringBeforeLast('.')
         val extension = name.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }
-        return generateSequence(1) { it + 1 }
-            .map { n -> File(folder, if (n == 1) name else "$base ($n)$extension") }
-            .first { !it.exists() && !File(folder, "${it.name}.download").exists() }
+        return generateSequence(1) { it + 1 }.map { n -> File(folder, if (n == 1) name else "$base ($n)$extension") }
+    }
+
+    /** Creates the first "name.download" whose name is free, the creation itself being the claim. */
+    private fun claimPartial(folder: File, name: String): File = candidates(folder, name)
+        .filter { !it.exists() }
+        .map { File(folder, "${it.name}$PARTIAL_SUFFIX") }
+        .first { it.createNewFile() }
+
+    /** Gives the finished [partial] its own name, or the next free one if a file took it meanwhile; never over another. */
+    private fun publish(partial: File, name: String): File {
+        val claimed = File(partial.parentFile, partial.name.removeSuffix(PARTIAL_SUFFIX))
+        val names = sequenceOf(claimed) + candidates(partial.parentFile, name).filter { it != claimed }
+        for (target in names) {
+            if (target.exists() || File(target.parentFile, "${target.name}$PARTIAL_SUFFIX").let { it != partial && it.exists() }) continue
+            try {
+                return Files.move(partial.toPath(), target.toPath()).toFile()
+            } catch (_: FileAlreadyExistsException) {
+                continue
+            } catch (e: IOException) {
+                throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't rename $partial: ${e.message}")
+            }
+        }
+        error("Ran out of names")
     }
 
     /** Selects [file] in a Finder window on a Mac; elsewhere opens the folder it is in. */
@@ -105,6 +131,9 @@ private class DesktopClipDownloader(private val httpClient: HttpClient) : ClipDo
         }
     }
 }
+
+/** What a clip is called while it is still arriving, as Safari marks one. */
+private const val PARTIAL_SUFFIX = ".download"
 
 /** How much of the clip is held in memory at once on its way to the file. */
 private const val DOWNLOAD_CHUNK_BYTES = 256 * 1024

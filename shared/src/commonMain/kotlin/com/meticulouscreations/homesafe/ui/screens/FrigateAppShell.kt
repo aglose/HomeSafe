@@ -637,6 +637,8 @@ fun FrigateAppShell() {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 val app = nav.sidebarApp.takeIf { sidebar }
                 if (app != null) {
+                    // ShellApps hears of shared notes while the tabs are up; with an app here instead, this does.
+                    LaunchedEffect(nav) { nav.openFitnessFromShares { notes -> nav.fitnessNotes = notes } }
                     pages.SaveableStateProvider("app-${app.name}") {
                         CompositionLocalProvider(LocalAppSections provides appSections) { LocalSidebarApp.current(nav, app) }
                     }

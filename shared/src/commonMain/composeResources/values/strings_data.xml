@@ -71,6 +71,7 @@
     <string name="biometric_confirm_save_reason">Confirm it's you to save this login</string>
     <string name="biometric_sign_in_reason">Sign in to your server</string>
     <string name="biometric_confirmation_cancelled">Biometric confirmation was cancelled</string>
+    <string name="biometric_owner_check_failed">Couldn't confirm it's you</string>
     <string name="biometric_keychain_save_failed">Couldn't save the login to the Keychain (status %1$s)</string>
     <string name="biometric_sign_in_failed">Biometric sign-in failed or was cancelled</string>
     <string name="biometric_no_saved_login">No login is saved for biometric sign-in</string>

@@ -57,6 +57,16 @@ val buildOwnerCheck by tasks.registering(Exec::class) {
     doFirst { output.parentFile.mkdirs() }
 }
 tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildOwnerCheck) }
+// jpackage copies the app's resources without their executable bit, so the helper is marked
+// runnable again in the app image (which packageDmg packs as it is).
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    val images = layout.buildDirectory.dir("compose/binaries/main/app")
+    doLast {
+        images.get().asFile.walk()
+            .filter { it.isFile && it.name == "HomeSafe" && it.parentFile.name == "resources" }
+            .forEach { it.setExecutable(true, false) }
+    }
+}
 
 // "1.0.<build>": macOS wants three numbers, the first above zero. CI passes the run number.
 val desktopVersion = "${providers.gradleProperty("appVersionBase").get()}.${providers.gradleProperty("desktopBuild").getOrElse("0")}"

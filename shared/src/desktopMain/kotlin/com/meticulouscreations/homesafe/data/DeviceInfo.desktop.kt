@@ -4,9 +4,9 @@ import com.meticulouscreations.homesafe.DesktopStorage
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.isMacOs
+import com.meticulouscreations.homesafe.runProcess
 import java.net.InetAddress
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 /**
  * The computer as the relay knows it. Never one of away mode's tracked phones: the relay tracks
@@ -50,11 +50,12 @@ private class DesktopDeviceInfo : DeviceInfo {
         ?.trim('"')
         ?.takeIf { it.isNotBlank() }
 
-    private fun command(vararg command: String): String? = runCatching {
-        val process = ProcessBuilder(*command).redirectErrorStream(true).start()
-        val output = process.inputStream.readBytes().decodeToString().trim()
-        if (process.waitFor(5, TimeUnit.SECONDS) && process.exitValue() == 0) output.takeIf { it.isNotBlank() } else null
-    }.getOrNull()
+    private fun command(vararg command: String): String? = runProcess(command.toList(), timeoutSeconds = 5)
+        ?.takeIf { it.exitCode == 0 }
+        ?.output
+        ?.decodeToString()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
 
     private companion object {
         const val HARDWARE_ID = "hardware_id"
