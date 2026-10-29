@@ -33,7 +33,7 @@ private const val PREVIEW_NOW = 1_792_300_000_000L
 
 private val previewDoors = listOf(
     Door("0x01", "Back door", open = true, changedAtMillis = PREVIEW_NOW - 7 * 60_000, battery = 88, linkQuality = 120, online = true, notify = DoorNotify.ALWAYS, spot = DoorSpot("ground", 14f, 0f)),
-    Door("0x02", "Front door", open = false, changedAtMillis = PREVIEW_NOW - 3 * 3_600_000, battery = 97, linkQuality = 140, online = true, spot = DoorSpot("ground", 9f, 36f)),
+    Door("0x02", "Front door", open = false, changedAtMillis = PREVIEW_NOW - 3 * 3_600_000, battery = 97, linkQuality = 244, online = true, spot = DoorSpot("ground", 9f, 36f)),
     Door("0x03", "Garage door", open = false, changedAtMillis = PREVIEW_NOW - 2 * 86_400_000, battery = 12, linkQuality = 22, online = true, notify = DoorNotify.NEVER),
 )
 

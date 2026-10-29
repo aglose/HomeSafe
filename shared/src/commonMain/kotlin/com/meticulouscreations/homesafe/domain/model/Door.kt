@@ -45,12 +45,27 @@ data class Door(
     /** Still called by its address, as Zigbee2MQTT names a device it has just paired. */
     val unnamed: Boolean get() = name == id
 
-    /** Link quality this low drops messages; a Zigbee plug between it and the stick helps. */
-    val weakSignal: Boolean get() = linkQuality != null && linkQuality < WEAK_LINK_QUALITY
+    /** How well the stick hears it, from its last [linkQuality]; null before it has said. */
+    val signal: DoorSignal? get() = linkQuality?.let(DoorSignal::of)
 
     companion object {
         const val LOW_BATTERY_PERCENT = 20
-        const val WEAK_LINK_QUALITY = 30
+    }
+}
+
+/**
+ * A door sensor's Zigbee link quality (0-255) told as a level, each from [atLeast] up. [WEAK]
+ * drops messages; a Zigbee plug between the sensor and the stick helps.
+ */
+enum class DoorSignal(val atLeast: Int) {
+    WEAK(0),
+    FAIR(30),
+    GOOD(80),
+    STRONG(150),
+    ;
+
+    companion object {
+        fun of(linkQuality: Int): DoorSignal = entries.last { linkQuality >= it.atLeast }
     }
 }
 
