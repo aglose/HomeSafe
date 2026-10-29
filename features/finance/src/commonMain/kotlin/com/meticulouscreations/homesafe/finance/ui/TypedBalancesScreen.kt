@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -135,21 +136,36 @@ internal fun TypedBalancesScreen(
             typedBalanceItems(balances, now, onOpen = { editing = it.cell.id })
         }
     }
-    // Found again by its cell on every read of the sheet, so the editor always works from the number the sheet holds now.
-    val open = editing?.let { id -> balances.firstOrNull { it.cell.id == id } }
-    if (open != null) {
-        BalanceEditor(
-            balance = open,
-            save = state.balanceSave?.takeIf { it.cellId == open.cell.id },
-            now = now,
-            onSave = { onSave(open, it) },
-            onClear = onClearSave,
-            onDismiss = {
-                editing = null
-                onClearSave()
-            },
-        )
-    }
+    editing?.let { id -> BalanceEditorFor(id, state, onSave, onClearSave, onDismiss = { editing = null }) }
+}
+
+/**
+ * Opens [BalanceEditor] on the typed balance with this cell id. Provided by [FinanceApp], so an
+ * account or debt row anywhere in the app can update its balance; null elsewhere (previews).
+ */
+val LocalBalanceEditor = staticCompositionLocalOf<((String) -> Unit)?> { null }
+
+/**
+ * [BalanceEditor] on the typed balance in the cell [cellId]. Found again by its cell on every read
+ * of the sheet, so the editor always works from the number the sheet holds now; nothing is shown
+ * while the sheet isn't read, or once it no longer has that balance.
+ */
+@Composable
+internal fun BalanceEditorFor(cellId: String, state: FinanceUiState, onSave: (TypedBalance, Double) -> Unit, onClearSave: () -> Unit, onDismiss: () -> Unit) {
+    val finance = state.finance ?: return
+    val balances = remember(finance) { typedBalances(finance) }
+    val open = balances.firstOrNull { it.cell.id == cellId } ?: return
+    BalanceEditor(
+        balance = open,
+        save = state.balanceSave?.takeIf { it.cellId == open.cell.id },
+        now = LocalFinanceClock.current.now().epochSeconds,
+        onSave = { onSave(open, it) },
+        onClear = onClearSave,
+        onDismiss = {
+            onDismiss()
+            onClearSave()
+        },
+    )
 }
 
 private fun LazyListScope.typedBalanceItems(balances: List<TypedBalance>, now: Long, onOpen: (TypedBalance) -> Unit) {
