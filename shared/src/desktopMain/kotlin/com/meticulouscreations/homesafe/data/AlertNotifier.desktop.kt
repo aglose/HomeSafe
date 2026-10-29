@@ -7,9 +7,6 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.isMacOs
-import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
-import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
-import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
 
 /**
  * The desktop's notifications, shown by the desktop app from its menu-bar icon
@@ -40,13 +37,8 @@ private class DesktopAlertNotifier : AlertNotifier {
             if (!shown.add(notification.id)) return
             if (shown.size > REMEMBERED) shown.remove(shown.first())
         }
-        val open: (() -> Unit)? = when {
-            notification.door != null -> ({ DoorDeepLinks.open(notification.door) })
-            notification.parkingMap != null -> ({ ParkingDeepLinks.open(notification.parkingMap) })
-            notification.target != null -> ({ MomentDeepLinks.open(notification.target) })
-            else -> null
-        }
-        DesktopNotifications.post(DesktopNotice(notification.title, notification.body, notification.urgent, open))
+        val link = notification.door?.toUri() ?: notification.parkingMap?.toUri() ?: notification.target?.toUri()
+        DesktopNotifications.post(DesktopNotice(notification.title, notification.body, notification.urgent, link))
     }
 
     private companion object {

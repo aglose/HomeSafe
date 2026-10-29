@@ -3,7 +3,6 @@ package com.meticulouscreations.homesafe.weather.data
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.desktop.DesktopNotice
 import com.meticulouscreations.homesafe.desktop.DesktopNotifications
-import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotification
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
@@ -23,7 +22,7 @@ private object DesktopWeatherNotifier : WeatherNotifier {
 
     override suspend fun notify(notification: WeatherNotification): Boolean {
         val title = listOfNotNull(notification.title, notification.place).joinToString(" · ")
-        DesktopNotifications.post(DesktopNotice(title, notification.detail ?: notification.body, notification.urgent) { WeatherDeepLinks.open(notification.link) })
+        DesktopNotifications.post(DesktopNotice(title, notification.detail ?: notification.body, notification.urgent, notification.link.toUri()))
         return true
     }
 }

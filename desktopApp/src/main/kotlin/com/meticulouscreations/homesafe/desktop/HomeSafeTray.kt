@@ -30,6 +30,9 @@ import homesafe.shared.generated.resources.desktop_tray_last_alert
 import homesafe.shared.generated.resources.desktop_tray_minimize
 import homesafe.shared.generated.resources.desktop_tray_mute
 import homesafe.shared.generated.resources.desktop_tray_open
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 import java.awt.SystemTray
 
@@ -58,7 +61,8 @@ fun ApplicationScope.HomeSafeTray(graph: AppGraph, windowUp: Boolean, onOpen: ()
     LaunchedEffect(state) {
         DesktopNotifications.notices.collect { notice ->
             latest = notice
-            if (!MacNotifications.post(notice)) {
+            // Off the UI thread: Notification Center is asked, each time, whether HomeSafe may still notify.
+            if (!withContext(Dispatchers.IO) { MacNotifications.post(notice) }) {
                 state.sendNotification(Notification(notice.title, notice.body, if (notice.urgent) Notification.Type.Warning else Notification.Type.Info))
             }
         }
@@ -66,7 +70,7 @@ fun ApplicationScope.HomeSafeTray(graph: AppGraph, windowUp: Boolean, onOpen: ()
 
     val openLatest: () -> Unit = {
         onOpen()
-        latest?.open?.invoke()
+        latest?.open()
     }
     // Up and in front, or out of the way: the window the other way from how it is.
     val openOrMinimize = if (windowUp) onMinimize else onOpen
@@ -81,7 +85,7 @@ fun ApplicationScope.HomeSafeTray(graph: AppGraph, windowUp: Boolean, onOpen: ()
         onAction = { if (MacNotifications.posting) openOrMinimize() else openLatest() },
     ) {
         Item(stringResource(if (windowUp) Res.string.desktop_tray_minimize else Res.string.desktop_tray_open), onClick = openOrMinimize)
-        Item(stringResource(Res.string.desktop_tray_last_alert), enabled = latest?.open != null, onClick = openLatest)
+        Item(stringResource(Res.string.desktop_tray_last_alert), enabled = latest?.link != null, onClick = openLatest)
         Separator()
         CheckboxItem(stringResource(Res.string.desktop_tray_mute), checked = muted) { mute.setMuted(it) }
         Separator()

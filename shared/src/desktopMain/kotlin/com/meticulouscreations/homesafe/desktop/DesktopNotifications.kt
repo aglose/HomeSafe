@@ -1,18 +1,32 @@
 package com.meticulouscreations.homesafe.desktop
 
+import com.meticulouscreations.homesafe.navigation.DoorDeepLink
+import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
+import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
+import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
+import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /**
- * A notification for the desktop to show, and what a click on it opens.
- *
- * [open] hands the notification's subject to the deep link the shell is already listening on
- * ([com.meticulouscreations.homesafe.navigation.MomentDeepLinks] and the like), as Android's
- * notification tap and iOS's notification-center delegate do.
+ * A notification for the desktop to show, and what a click on it opens: [link], the deep link's
+ * URI (`homesafe://…`, as Android puts on its notifications), which [open] hands to the deep link
+ * the shell is already listening on ([MomentDeepLinks] and the like). A URI rather than a lambda,
+ * so the Mac's Notification Center can keep it with the notification and a click on one from
+ * before the app last started still opens what it was about.
  */
-class DesktopNotice(val title: String, val body: String, val urgent: Boolean, val open: (() -> Unit)?)
+class DesktopNotice(val title: String, val body: String, val urgent: Boolean, val link: String?) {
+    fun open() {
+        link?.let(DesktopNotifications::open)
+    }
+}
 
 /**
  * The hand-off between the notifiers in the data layer, which have no window, and the desktop
@@ -27,5 +41,14 @@ object DesktopNotifications {
 
     fun post(notice: DesktopNotice) {
         posted.tryEmit(notice)
+    }
+
+    /** Opens what a notification's [link][DesktopNotice.link] names, routed as Android's MainActivity routes a tap on one. */
+    fun open(link: String) {
+        WeatherDeepLink.fromUri(link)?.let { return WeatherDeepLinks.open(it) }
+        DoorDeepLink.fromUri(link)?.let { return DoorDeepLinks.open(it) }
+        ParkingDeepLink.fromUri(link)?.let { return ParkingDeepLinks.open(it) }
+        FinanceDeepLink.fromUri(link)?.let { return FinanceDeepLinks.open(it) }
+        MomentDeepLink.fromUri(link)?.let(MomentDeepLinks::open)
     }
 }
