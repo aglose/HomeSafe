@@ -238,6 +238,9 @@ private fun FinanceAppContent(
     // The add-a-ticker search, up over whichever tab opened it.
     var addingSymbol by rememberSaveable { mutableStateOf(false) }
     val openAddSymbol: () -> Unit = remember { { addingSymbol = true } }
+    // A typed balance being updated from an account or debt row, by its cell id.
+    var editingBalance by rememberSaveable { mutableStateOf<String?>(null) }
+    val openBalanceEditor: (String) -> Unit = remember { { id -> editingBalance = id } }
     fun push(detail: FinanceDetail) {
         if (details.lastOrNull() != detail) details += detail
     }
@@ -248,6 +251,7 @@ private fun FinanceAppContent(
             details.clear()
             explaining = null
             addingSymbol = false
+            editingBalance = null
             tab = requestedTab
             requestShown()
         }
@@ -270,6 +274,7 @@ private fun FinanceAppContent(
         LocalFinancePalette provides palette,
         LocalFinanceTypography provides type,
         LocalExplainer provides openExplainer,
+        LocalBalanceEditor provides openBalanceEditor,
         LocalChartStyle provides chartStyle,
         LocalEconomyTone provides state.tone,
     ) {
@@ -430,6 +435,10 @@ private fun FinanceAppContent(
                         viewModel.clearSearch()
                     },
                 )
+            }
+
+            editingBalance?.let { id ->
+                BalanceEditorFor(id, state, viewModel::updateBalance, viewModel::clearBalanceSave, onDismiss = { editingBalance = null })
             }
 
             explaining?.let { id ->

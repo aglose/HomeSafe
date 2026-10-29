@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
@@ -72,6 +73,7 @@ import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.fin_balance_open_action
 import homesafe.shared.generated.resources.finance_change_at
 import homesafe.shared.generated.resources.finance_change_since
 import homesafe.shared.generated.resources.finance_change_with_percent
@@ -566,7 +568,7 @@ internal fun AccountsBlock(finance: PersonalFinance) {
         Spacer(Modifier.height(8.dp))
         val now = LocalFinanceClock.current.now().epochSeconds
         shown.forEachIndexed { i, account ->
-            AccountRow(account, account.balance / total, i, typedAge(account.cell, finance, now))
+            AccountRow(account, account.balance / total, i, typedAge(account.cell, finance, now), onUpdate = balanceUpdater(account.cell))
             if (i < shown.lastIndex) Hairline(Modifier.padding(horizontal = PageGutter))
         }
     }
@@ -585,10 +587,22 @@ private fun typedAge(cell: SheetCell?, finance: PersonalFinance, now: Long): Pai
     return balanceAgeText(age, now).resolve() to color
 }
 
+/** Opens the editor on a typed balance's cell, for a row showing its age; null for a cell the sheet works out, or outside the app. */
 @Composable
-private fun AccountRow(account: Account, share: Double, index: Int, age: Pair<String, Color>? = null) {
+private fun balanceUpdater(cell: SheetCell?): (() -> Unit)? {
+    val open = LocalBalanceEditor.current ?: return null
+    if (cell == null || cell.calculated) return null
+    return { open(cell.id) }
+}
+
+/** A row that opens the balance editor when tapped, if [onUpdate] is given; [label] is what a screen reader says the tap does. */
+private fun Modifier.updatesBalance(onUpdate: (() -> Unit)?, label: String): Modifier =
+    if (onUpdate == null) this else clickable(role = Role.Button, onClickLabel = label, onClick = onUpdate)
+
+@Composable
+private fun AccountRow(account: Account, share: Double, index: Int, age: Pair<String, Color>? = null, onUpdate: (() -> Unit)? = null) {
     val colors = FinanceTheme.colors
-    Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 12.dp)) {
+    Column(Modifier.fillMaxWidth().updatesBalance(onUpdate, stringResource(Res.string.fin_balance_open_action)).padding(horizontal = PageGutter, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(categoryColor(account.category, colors)))
             Spacer(Modifier.width(10.dp))
@@ -769,7 +783,7 @@ internal fun DebtBlock(finance: PersonalFinance) {
         }
         val now = LocalFinanceClock.current.now().epochSeconds
         finance.debts.sortedWith(compareBy({ it.isMortgage }, { -it.balance })).forEach { debt ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().updatesBalance(balanceUpdater(debt.cell), stringResource(Res.string.fin_balance_open_action)).padding(horizontal = PageGutter, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(debt.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
                     Text(

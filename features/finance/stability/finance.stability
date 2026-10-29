@@ -12,7 +12,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.AccountRow(account: com.
     - account: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.AccountRow(account: com.meticulouscreations.homesafe.finance.domain.Account, share: kotlin.Double, index: kotlin.Int, age: kotlin.Pair<kotlin.String, androidx.compose.ui.graphics.Color>?): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.AccountRow(account: com.meticulouscreations.homesafe.finance.domain.Account, share: kotlin.Double, index: kotlin.Int, age: kotlin.Pair<kotlin.String, androidx.compose.ui.graphics.Color>?, onUpdate: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -20,6 +20,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.AccountRow(account: com.
     - share: STABLE (primitive type)
     - index: STABLE (primitive type)
     - age: STABLE (known stable type)
+    - onUpdate: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.AccountsBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
@@ -86,6 +87,17 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BalanceEditor(balance: 
     - now: STABLE (primitive type)
     - onSave: STABLE (function type)
     - onClear: STABLE (function type)
+    - onDismiss: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.BalanceEditorFor(cellId: kotlin.String, state: com.meticulouscreations.homesafe.finance.FinanceUiState, onSave: kotlin.Function2<com.meticulouscreations.homesafe.finance.domain.TypedBalance, kotlin.Double, kotlin.Unit>, onClearSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - cellId: STABLE (String is immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+    - onSave: STABLE (function type)
+    - onClearSave: STABLE (function type)
     - onDismiss: STABLE (function type)
 
 @Composable
@@ -1721,6 +1733,13 @@ private fun com.meticulouscreations.homesafe.finance.ui.YieldCurveBlock(state: c
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.balanceUpdater(cell: com.meticulouscreations.homesafe.finance.domain.SheetCell?): kotlin.Function0<kotlin.Unit>?
+  skippable: false
+  restartable: false
+  params:
+    - cell: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.bucketColor(bucket: com.meticulouscreations.homesafe.finance.domain.BucketId, people: kotlin.collections.List<kotlin.String>): androidx.compose.ui.graphics.Color
