@@ -343,7 +343,8 @@ private fun CarCard(car: HouseholdCar, nowEpochSeconds: Long, units: WeatherUnit
                 }
             }
             // A route the car has stopped streaming may be over: only while it streams.
-            if (live?.connected == true) {
+            val streaming = live?.streaming(nowEpochSeconds) == true
+            if (live != null && streaming) {
                 carTrip(live)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             if (live != null) {
@@ -357,7 +358,7 @@ private fun CarCard(car: HouseholdCar, nowEpochSeconds: Long, units: WeatherUnit
                 val quiet = MaterialTheme.colorScheme.onSurfaceVariant
                 // A car streaming now is where it says: a parked one streams its place only once it moves,
                 // so "seen 3 hours ago" would read as stale beside it.
-                if (live?.connected == true) {
+                if (streaming) {
                     Text(stringResource(Res.string.household_cars_live), style = label, color = MaterialTheme.colorScheme.primary)
                 } else {
                     carSeen(car, nowEpochSeconds)?.let { Text(it, style = label, color = quiet) }

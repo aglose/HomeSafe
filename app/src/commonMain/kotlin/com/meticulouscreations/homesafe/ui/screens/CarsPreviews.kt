@@ -44,6 +44,7 @@ private val curb = HouseholdCar(
     asleep = false,
     live = CarLive(
         connected = false,
+        heardEpochSeconds = NOW - 3 * 3600,
         batteryPercent = 48,
         rangeMiles = 151.0,
         charging = null,
@@ -64,6 +65,7 @@ private val home = HouseholdCar(
     asleep = true,
     live = CarLive(
         connected = false,
+        heardEpochSeconds = NOW - 3 * 3600,
         batteryPercent = 80,
         rangeMiles = 248.0,
         charging = CarLive.Charging.COMPLETE,
@@ -84,6 +86,7 @@ private val driving = HouseholdCar(
     asleep = false,
     live = CarLive(
         connected = true,
+        heardEpochSeconds = NOW - 20,
         batteryPercent = 72,
         rangeMiles = 215.0,
         charging = null,
@@ -98,7 +101,7 @@ private val driving = HouseholdCar(
 
 private val charging = home.copy(
     asleep = false,
-    live = home.live!!.copy(connected = true, batteryPercent = 61, rangeMiles = 189.0, charging = CarLive.Charging.CHARGING, minutesToFull = 85, sentry = true, insideCelsius = 18.0),
+    live = home.live!!.copy(connected = true, heardEpochSeconds = NOW - 30, batteryPercent = 61, rangeMiles = 189.0, charging = CarLive.Charging.CHARGING, minutesToFull = 85, sentry = true, insideCelsius = 18.0),
 )
 
 @Composable

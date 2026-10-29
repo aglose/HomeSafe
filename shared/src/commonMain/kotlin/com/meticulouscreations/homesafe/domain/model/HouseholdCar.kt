@@ -65,8 +65,10 @@ data class CurbSpot(
  * said. All but [connected] are the last word, so they stand while it sleeps.
  */
 data class CarLive(
-    /** Streaming right now: awake and heard from within the last few minutes. */
+    /** Streaming when the relay answered: awake and heard from within the last few minutes. */
     val connected: Boolean,
+    /** When the relay last heard from the car, in epoch seconds; null when it never has. */
+    val heardEpochSeconds: Long?,
     val batteryPercent: Int?,
     /** The range the car estimates, in miles. */
     val rangeMiles: Double?,
@@ -82,4 +84,19 @@ data class CarLive(
     val insideCelsius: Double?,
 ) {
     enum class Charging { CHARGING, COMPLETE, PLUGGED_IN }
+
+    /**
+     * Still streaming at [nowEpochSeconds]: connected when the relay answered, and heard from within
+     * the relay's own window since. A page showing what an unreachable relay last said stops
+     * calling the car live once that has passed.
+     */
+    fun streaming(nowEpochSeconds: Long): Boolean {
+        val heard = heardEpochSeconds ?: return false
+        return connected && nowEpochSeconds - heard <= FRESH_SECONDS
+    }
+
+    companion object {
+        /** The relay's TESLA_STREAM_FRESH_SECONDS. */
+        const val FRESH_SECONDS = 300L
+    }
 }

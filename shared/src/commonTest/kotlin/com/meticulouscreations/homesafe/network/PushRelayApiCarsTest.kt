@@ -136,6 +136,7 @@ class PushRelayApiCarsTest {
         assertEquals(
             CarLive(
                 connected = true,
+                heardEpochSeconds = 1_793_851_200,
                 batteryPercent = 72,
                 rangeMiles = 215.4,
                 charging = CarLive.Charging.CHARGING,
@@ -154,6 +155,10 @@ class PushRelayApiCarsTest {
         assertNull(parked.minutesToFull)
         assertNull(parked.destination, "no route")
         assertNull(new.live, "hasn't streamed")
+        val live = andrew.live!!
+        assertTrue(live.streaming(1_793_851_200 + 300))
+        assertTrue(!live.streaming(1_793_851_200 + 301), "the relay's window has passed: a page kept from an unreachable relay")
+        assertTrue(!parked.streaming(1_793_851_200), "disconnected, and never heard")
     }
 
     @Test

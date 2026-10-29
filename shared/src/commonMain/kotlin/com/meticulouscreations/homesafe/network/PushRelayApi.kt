@@ -988,6 +988,7 @@ internal data class RelayParkedCar(
 @Serializable
 internal data class RelayCarLive(
     val connected: Boolean = false,
+    val heard: Double? = null,
     val battery: Double? = null,
     @SerialName("range_mi") val rangeMiles: Double? = null,
     val charging: String? = null,
@@ -1007,6 +1008,7 @@ internal data class RelayCarLive(
         }
         return CarLive(
             connected = connected,
+            heardEpochSeconds = heard?.toLong(),
             batteryPercent = battery?.takeIf { it in 0.0..100.0 }?.roundToInt(),
             rangeMiles = rangeMiles?.takeIf { it >= 0 },
             charging = charge,
