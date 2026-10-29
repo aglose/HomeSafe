@@ -12,7 +12,8 @@
 #     isn't pushed (the next deploy, from any checkout, must be able to find it);
 #   - HEAD doesn't contain the commit the box runs. That commit is read from the record this script
 #     leaves on the box (DEPLOYED), or, the first time, found by matching the running relay.py
-#     against the relay.py of every commit in the repository;
+#     against the relay.py of every commit in the repository. A branch deployed and then
+#     squash-merged counts as contained once HEAD has a commit with the same relay/ folder;
 #   - a relay file on the box is one no commit has had (edited by hand: find out why first);
 #   - another deploy holds the lock.
 # Then it backs the box's files up, copies the new ones, rebuilds only the relay container, waits
@@ -70,7 +71,16 @@ else
   [ -n "$deployed" ] || fail "the running relay.py ($running) matches no commit in this repository. Find where it came from before replacing it."
   say "box runs $deployed ($(git log -1 --format='%h %s' "$deployed")), matched by its relay.py (no deploy record yet)"
 fi
-git merge-base --is-ancestor "$deployed" HEAD || fail "HEAD doesn't contain $deployed, which the box runs ($(git log -1 --format='%h %s' "$deployed")). Merge it first, so its changes aren't dropped."
+if ! git merge-base --is-ancestor "$deployed" HEAD; then
+  # Deployed from a branch that was squash-merged since: main has its relay/ under another commit.
+  squashed=""
+  deployed_tree=$(git rev-parse "$deployed:relay")
+  for sha in $(git log --format=%H HEAD -- relay/); do
+    if [ "$(git rev-parse "$sha:relay")" = "$deployed_tree" ]; then squashed=$sha; break; fi
+  done
+  [ -n "$squashed" ] || fail "HEAD doesn't contain $deployed, which the box runs ($(git log -1 --format='%h %s' "$deployed")). Merge it first, so its changes aren't dropped."
+  say "HEAD has the box's relay/ as $(git log -1 --format='%h %s' "$squashed")"
+fi
 [ "$running" = "$(local_md5 "$deployed" relay.py)" ] || fail "the running relay.py ($running) isn't $deployed's. It was changed outside this script."
 # Every relay file on the box must be one the repository has had: $deployed's, or an earlier one
 # (only relay.py used to be copied over, so the rest can be behind). One that matches no commit
