@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.domain.usecase
 
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
+import com.meticulouscreations.homesafe.domain.model.ParkingStreet
 import com.meticulouscreations.homesafe.domain.repository.CarRepository
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.StateFlow
@@ -9,6 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 @Inject
 class ObserveCarsUseCase(private val carRepository: CarRepository) {
     operator fun invoke(): StateFlow<List<HouseholdCar>?> = carRepository.cars
+}
+
+/** The watched streets and the signs along their curbs, for the cars' map; read with the cars, so only while those are collected too. */
+@Inject
+class ObserveParkingStreetsUseCase(private val carRepository: CarRepository) {
+    operator fun invoke(): StateFlow<List<ParkingStreet>> = carRepository.streets
 }
 
 /** Re-reads the cars now: Home's pull to refresh, and each visit to the cars' map. */

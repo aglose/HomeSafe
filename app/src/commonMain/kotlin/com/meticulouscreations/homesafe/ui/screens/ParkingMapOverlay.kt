@@ -66,7 +66,9 @@ import homesafe.shared.generated.resources.parking_map_place_south
 import homesafe.shared.generated.resources.parking_map_place_west
 import homesafe.shared.generated.resources.parking_map_title_due
 import homesafe.shared.generated.resources.parking_map_title_now
+import homesafe.shared.generated.resources.parking_map_when_date
 import homesafe.shared.generated.resources.parking_map_when_other_day
+import homesafe.shared.generated.resources.parking_map_when_tomorrow
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
 import org.jetbrains.compose.resources.pluralStringResource
@@ -180,15 +182,28 @@ private fun parkingTitle(alert: ParkingAlert): String {
     return stringResource(Res.string.parking_map_title_due, alert.carName, parkingWhen(by))
 }
 
-/** When a car must be gone by, on this phone's clock: "8:00 AM" when that is today, else "Thu 8:00 AM". */
+/**
+ * When a car must be gone by, on this phone's clock: "8:00 AM" today, "tomorrow 8:00 AM",
+ * "Thu 8:00 AM" later this week, and with the date a week or more away ("Thu, Nov 5, 8:00 AM"):
+ * on a Wednesday, a sweeping on the Thursday after next mustn't read as tomorrow's.
+ */
 @Composable
 internal fun parkingWhen(byEpochSeconds: Long, nowEpochSeconds: Long = Clock.System.now().epochSeconds): String {
     val offset = utcOffset(byEpochSeconds)
     val clock = WeatherFormat.clock(byEpochSeconds, offset).resolve()
-    val sameDay = WeatherFormat.weekdayIndex(byEpochSeconds, offset) == WeatherFormat.weekdayIndex(nowEpochSeconds, utcOffset(nowEpochSeconds)) &&
-        byEpochSeconds - nowEpochSeconds < 86_400
-    return if (sameDay) clock else stringResource(Res.string.parking_map_when_other_day, stringResource(WeatherFormat.weekday(byEpochSeconds, offset)), clock)
+    val weekday = WeatherFormat.weekday(byEpochSeconds, offset)
+    val days = daysAway(byEpochSeconds, nowEpochSeconds)
+    return when {
+        days <= 0 -> clock
+        days == 1 -> stringResource(Res.string.parking_map_when_tomorrow, clock)
+        days < 7 -> stringResource(Res.string.parking_map_when_other_day, stringResource(weekday), clock)
+        else -> stringResource(Res.string.parking_map_when_date, stringResource(weekday), WeatherFormat.date(byEpochSeconds, offset).resolve(), clock)
+    }
 }
+
+/** How many calendar days on from [nowEpochSeconds] [epochSeconds] falls, on this phone's clock: 0 today, 1 tomorrow. */
+internal fun daysAway(epochSeconds: Long, nowEpochSeconds: Long): Int =
+    ((epochSeconds + utcOffset(epochSeconds)).floorDiv(86_400L) - (nowEpochSeconds + utcOffset(nowEpochSeconds)).floorDiv(86_400L)).toInt()
 
 /** "North side of Elm St", or the street alone when the relay couldn't tell the side. */
 @Composable
@@ -223,4 +238,4 @@ internal fun parkingReason(note: String?, limitMinutes: Int?, fromEpochSeconds: 
     }
 }
 
-private fun utcOffset(epochSeconds: Long): Int = TimeZone.currentSystemDefault().offsetAt(Instant.fromEpochSeconds(epochSeconds)).totalSeconds
+internal fun utcOffset(epochSeconds: Long): Int = TimeZone.currentSystemDefault().offsetAt(Instant.fromEpochSeconds(epochSeconds)).totalSeconds

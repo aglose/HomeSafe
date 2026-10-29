@@ -2,8 +2,10 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
+import com.meticulouscreations.homesafe.domain.model.ParkingStreet
 import com.meticulouscreations.homesafe.domain.repository.CarRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCarsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveParkingStreetsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshCarsUseCase
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
@@ -35,6 +37,7 @@ import kotlin.time.Instant
 /** The relay's cars, in memory: what the cars' map and Home's car pills are tested against. */
 internal class FakeCarRepository(cars: List<HouseholdCar>? = null) : CarRepository {
     override val cars = MutableStateFlow(cars)
+    override val streets = MutableStateFlow<List<ParkingStreet>>(emptyList())
     var refreshes = 0
     var refreshFailure: Throwable? = null
 
@@ -67,6 +70,7 @@ class CarsViewModelTest {
 
     private fun viewModel(repo: FakeCarRepository) = CarsViewModel(
         ObserveCarsUseCase(repo),
+        ObserveParkingStreetsUseCase(repo),
         RefreshCarsUseCase(repo),
         object : Clock {
             override fun now(): Instant = Instant.fromEpochSeconds(now)

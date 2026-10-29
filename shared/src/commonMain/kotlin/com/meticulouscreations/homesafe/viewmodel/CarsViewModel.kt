@@ -4,7 +4,9 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
+import com.meticulouscreations.homesafe.domain.model.ParkingStreet
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCarsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveParkingStreetsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshCarsUseCase
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
@@ -29,6 +31,8 @@ import kotlin.time.Clock
 @Immutable
 data class CarsUiState(
     val cars: List<HouseholdCar> = emptyList(),
+    /** The watched streets and their curbs' signs, for the map's parking rules. */
+    val streets: List<ParkingStreet> = emptyList(),
     /** Whether the relay has answered, so "no cars" isn't said before it has. */
     val loaded: Boolean = false,
     /** What "seen 5 min ago" is counted from; moves on every [CarsViewModel.TICK_MS]. */
@@ -42,6 +46,7 @@ data class CarsUiState(
 @ContributesIntoMap(AppScope::class)
 class CarsViewModel(
     observeCarsUseCase: ObserveCarsUseCase,
+    observeParkingStreetsUseCase: ObserveParkingStreetsUseCase,
     private val refreshCarsUseCase: RefreshCarsUseCase,
     private val clock: Clock,
 ) : ViewModel() {
@@ -58,8 +63,14 @@ class CarsViewModel(
         }
     }
 
-    val uiState: StateFlow<CarsUiState> = combine(observeCarsUseCase(), local, ticks) { cars, local, now ->
-        CarsUiState(cars = cars.orEmpty(), loaded = cars != null || local.refreshed, nowEpochSeconds = now, error = local.failure?.let { failed(it, cars) })
+    val uiState: StateFlow<CarsUiState> = combine(observeCarsUseCase(), observeParkingStreetsUseCase(), local, ticks) { cars, streets, local, now ->
+        CarsUiState(
+            cars = cars.orEmpty(),
+            streets = streets,
+            loaded = cars != null || local.refreshed,
+            nowEpochSeconds = now,
+            error = local.failure?.let { failed(it, cars) },
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CarsUiState())
 
     /** Reads the cars again now: each visit to the page, and its pull to refresh. */

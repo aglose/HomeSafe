@@ -26,8 +26,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -103,6 +106,7 @@ import homesafe.shared.generated.resources.household_cars_trip
 import homesafe.shared.generated.resources.household_cars_trip_no_eta
 import homesafe.shared.generated.resources.household_cars_unlocked
 import homesafe.shared.generated.resources.parking_map_directions
+import homesafe.shared.generated.resources.parking_rules_toggle
 import homesafe.shared.generated.resources.settings_refresh
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -132,8 +136,10 @@ class MapTilesViewModel(val tiles: MapTileStore) : ViewModel()
  * (whichever is picked in Settings), close in on them all, and under it a card per car saying
  * where it is, what the sign says where one is parked at the curb and by when it must move, how
  * long ago Tesla last saw it, and what a car that streams last said: battery, charging, the trip
- * it is on, locks, Sentry and the cabin's temperature. A tap on a card or a pin flies the map to that car; Show all
- * flies back out. Read again on every visit, and every couple of minutes while it is up.
+ * it is on, locks, Sentry and the cabin's temperature. A tap on a card or a pin flies the map to
+ * that car; Show all flies back out. Parking rules draws each watched street's curbs and their
+ * signs on the map, and lists them under the cars, to check against the street's own
+ * (ParkingRules.kt). Read again on every visit, and every couple of minutes while it is up.
  */
 @Composable
 fun CarsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
@@ -146,7 +152,11 @@ fun CarsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     CarsContent(state = state, tiles = maps.tiles, onBack = onBack, onRefresh = viewModel::refresh, modifier = modifier, units = units)
 }
 
-/** The page itself, from [state]: what the previews draw. */
+/**
+ * The page itself, from [state]: what the previews draw. [rulesShown] is whether the watched
+ * streets' parking rules start out drawn on the map (see ParkingRules.kt); they always are while
+ * no car has a place to show.
+ */
 @Composable
 fun CarsContent(
     state: CarsUiState,
@@ -156,16 +166,23 @@ fun CarsContent(
     modifier: Modifier = Modifier,
     animated: Boolean = true,
     units: WeatherUnits = WeatherUnits(),
+    rulesShown: Boolean = false,
 ) {
-    // The car the map is on; null shows them all. Kept while the page is: it's only a car's name.
+    // The car or curb the map is on; null shows them all. Kept while the page is: it's only a key.
     var focus by rememberSaveable { mutableStateOf<String?>(null) }
-    val pins = remember(state.cars) {
+    var showRules by rememberSaveable { mutableStateOf(rulesShown) }
+    val carPins = remember(state.cars) {
         state.cars.mapNotNull { car ->
             val latitude = car.latitude ?: return@mapNotNull null
             val longitude = car.longitude ?: return@mapNotNull null
             MapPin(car.id, latitude, longitude)
         }
     }
+    val curbs = remember(state.streets) { curbSigns(state.streets) }
+    val rules = curbs.isNotEmpty() && (showRules || carPins.isEmpty())
+    // The cars after the curbs' labels, so they are drawn over them.
+    val pins = remember(carPins, curbs, rules) { if (rules) curbPins(curbs) + carPins else carPins }
+    val lines = if (rules) curbLines(curbs, state.nowEpochSeconds, focus) else emptyList()
     val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         CarsHeader(onBack = onBack, onRefresh = onRefresh)
@@ -177,10 +194,25 @@ fun CarsContent(
                     tiles = tiles,
                     focus = focus?.takeIf { key -> pins.any { it.key == key } },
                     animated = animated,
+                    lines = lines,
                     modifier = Modifier.fillMaxSize().semantics { contentDescription = description }.testTag("cars_map"),
                 ) { pin ->
-                    val car = state.cars.first { it.id == pin.key }
-                    CarPin(car, selected = pin.key == focus, onClick = { focus = pin.key })
+                    val car = state.cars.firstOrNull { it.id == pin.key }
+                    if (car != null) {
+                        CarPin(car, selected = pin.key == focus, onClick = { focus = pin.key })
+                    } else {
+                        curbs.firstOrNull { it.key == pin.key }?.let { CurbLabel(it, state.nowEpochSeconds, selected = pin.key == focus, onClick = { focus = pin.key }) }
+                    }
+                }
+                if (curbs.isNotEmpty() && carPins.isNotEmpty()) {
+                    FilterChip(
+                        selected = showRules,
+                        onClick = { showRules = !showRules },
+                        label = { Text(stringResource(Res.string.parking_rules_toggle)) },
+                        leadingIcon = { Icon(Icons.Filled.LocalParking, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) },
+                        colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        modifier = Modifier.align(Alignment.TopStart).padding(12.dp).testTag("cars_parking_rules"),
+                    )
                 }
                 if (focus != null) {
                     Surface(
@@ -232,6 +264,7 @@ fun CarsContent(
                     onClick = { focus = if (focus == car.id || car.latitude == null) null else car.id },
                 )
             }
+            if (rules) CurbSignsList(curbs, state.nowEpochSeconds, focus, onSelect = { key -> focus = if (focus == key) null else key })
         }
     }
 }
