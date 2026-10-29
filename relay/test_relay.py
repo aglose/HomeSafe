@@ -3206,6 +3206,18 @@ class TeslaTest(CarPresenceTest):
         relay.tesla_stream_lost()
         with relay._tesla_lock:
             self.assertIsNone(relay.tesla_stream_answer("sarahs_car", 5040.0), "the broker dropped: what was missed is unknown")
+        self.assertFalse(relay.tesla_streaming("sarahs_car", 5040.0), "so it is asked about as often as any car")
+        self.stream("VIN_S", 5100.0, Location=self.FAR)
+        self.assertTrue(relay.tesla_streaming("sarahs_car", 5100.0), "until it streams again")
+
+    def test_a_shift_into_p_counts_only_when_both_gears_came_over_this_connection(self):
+        self.stream("VIN_S", 1000.0, connectivity="CONNECTED", Location=self.FAR, Gear="ShiftStateD")
+        self.stream("VIN_S", 1100.0, connectivity="DISCONNECTED")
+        self.stream("VIN_S", 9000.0, connectivity="CONNECTED", Location=self.FAR, Gear="ShiftStateP")
+        self.assertNotIn("parked_at", relay._tesla_answers["sarahs_car"][1], "parked who knows when, not as it reconnected")
+        self.stream("VIN_S", 9100.0, Gear="ShiftStateD")
+        self.stream("VIN_S", 9200.0, Gear="ShiftStateP")
+        self.assertEqual(9200.0, relay._tesla_answers["sarahs_car"][1]["parked_at"])
 
     def test_a_sleeping_car_that_streams_is_asked_about_less_often(self):
         relay._tesla_answers["sarahs_car"] = (1000.0, {"asleep": True})
@@ -8244,7 +8256,7 @@ class ParkingTest(_FakeFrigate):
         relay.tesla_stream_receive("tesla/VIN_S/v/GpsHeading", b"271", at + 40)
         relay.parking_tick(at + 50, push=self.push)
         spot = (relay.state_get(relay.PARKING_KEY) or {})["sarahs_car"]["spot"]
-        self.assertEqual(at + 40 - max(relay.TESLA_CHECK_SECONDS, relay.TESLA_ASLEEP_CHECK_SECONDS), spot["since"],
+        self.assertEqual(at + 40 - max(relay.TESLA_CHECK_SECONDS, relay.TESLA_ASLEEP_CHECK_SECONDS, relay.TESLA_STREAM_ASLEEP_CHECK_SECONDS), spot["since"],
                          "never seen shifting into P: it may have been there a while")
 
     def test_with_no_watched_streets_the_cars_are_still_kept_where_presence_last_heard_them(self):

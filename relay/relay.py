@@ -10350,7 +10350,7 @@ def tesla_register() -> dict[str, Any]:
 #
 # The car has to be told where to stream, by a configuration signed with the application's private
 # key, which stays off the box (docs/tesla.md, "Telemetry"): `relay.py tesla-telemetry-config`
-# prints it, `tesla-jws` signs it on the Mac, and `relay.py tesla-telemetry-send` hands the
+# prints it, `scripts/tesla-sign` signs it on the Mac, and `relay.py tesla-telemetry-send` hands the
 # signature to Tesla. It lapses after TESLA_TELEMETRY_DAYS; send it again before then.
 TESLA_TELEMETRY_TOPIC = os.environ.get("TESLA_TELEMETRY_TOPIC", "tesla").strip("/")
 TESLA_TELEMETRY_PORT = int(os.environ.get("TESLA_TELEMETRY_PORT", "8443"))
@@ -10411,8 +10411,12 @@ def tesla_shift(gear: Any) -> str | None:
 
 
 def tesla_stream_reset(live: dict[str, Any]) -> None:
-    """A connection begun or ended: what the car said over the last one may no longer hold. Under _tesla_lock."""
+    """
+    A connection begun or ended: what the car said over the last one may no longer hold, its gear
+    among it (a shift into P counts only when both gears were heard on this connection). Under _tesla_lock.
+    """
     live["current"], live["parked_at"] = False, None
+    live["fields"].pop("Gear", None)
 
 
 def tesla_stream_receive(topic: str, payload: bytes, now: float) -> None:
@@ -10471,10 +10475,15 @@ def tesla_stream_receive(topic: str, payload: bytes, now: float) -> None:
 
 
 def tesla_stream_lost() -> None:
-    """The broker connection dropped: whatever the cars said meanwhile is lost, so none counts as connected."""
+    """
+    The broker connection dropped: whatever the cars said meanwhile is lost, so none counts as
+    connected, and none as streaming (see `tesla_streaming`) until it sends its location again: a
+    car that drove off meanwhile is asked about as often as one that doesn't stream.
+    """
     with _tesla_lock:
         for live in _tesla_live.values():
             live["connected"] = None
+            live["located"] = 0.0
             tesla_stream_reset(live)
 
 
@@ -10493,8 +10502,8 @@ def tesla_stream_answer(name: str, now: float) -> dict[str, Any] | None:
 
 def tesla_streaming(name: str, now: float) -> bool:
     """Whether the car has streamed its location in the last TESLA_STREAM_TRUST_SECONDS."""
-    live = _tesla_live.get(name)
-    return bool(live and now - float(live.get("located") or 0) <= TESLA_STREAM_TRUST_SECONDS)
+    located = float((_tesla_live.get(name) or {}).get("located") or 0)
+    return bool(located) and now - located <= TESLA_STREAM_TRUST_SECONDS
 
 
 def tesla_streamed_at(name: str) -> float:
@@ -10575,7 +10584,7 @@ def tesla_stream_forever() -> None:
 
 
 def tesla_telemetry_config(now: float) -> dict[str, Any]:
-    """The configuration telling the cars where to stream and what: what `tesla-jws` signs (see "Tesla telemetry")."""
+    """The configuration telling the cars where to stream and what: what `scripts/tesla-sign` signs (see "Tesla telemetry")."""
     from urllib.parse import urlparse
 
     with open(TESLA_TELEMETRY_CA_FILE, encoding="utf-8") as f:
@@ -10589,7 +10598,7 @@ def tesla_telemetry_config(now: float) -> dict[str, Any]:
 
 def tesla_telemetry_send(token: str) -> dict[str, Any]:
     """
-    Hands Tesla the signed configuration (a JWS from `tesla-jws`) for every one of TESLA_CARS, by
+    Hands Tesla the signed configuration (a JWS from `scripts/tesla-sign`) for every one of TESLA_CARS, by
     the account each is linked through; answers what Tesla said for each account. A car Tesla
     skips as `missing_key` hasn't had the application's virtual key added (docs/tesla.md).
     """
@@ -11036,12 +11045,14 @@ def parking_stage(at: float, now: float, zone: Any) -> int:
     return PARKING_SOON if at - now <= PARKING_NOTICE_SECONDS else 0
 
 
-def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None], stretches: list[dict[str, Any]]) -> None:
+def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None], stretches: list[dict[str, Any]],
+                 name: str | None = None) -> None:
     """
     Takes in an answer from Tesla newer than the last: where the car is parked (`spot`, the fix
     and since when), and when it was last seen anywhere else (`elsewhere`). Asleep, it is where it
     was. A car parked between two answers is taken to have parked just after the earlier one, so a
-    time limit is never counted from later than it began.
+    time limit is never counted from later than it began. `name` says which car, for how far
+    apart its answers can be.
     """
     asked, where = answer
     if where is None or asked <= float(car.get("asked") or 0) or (not where.get("asleep") and asked - float(where["at"]) > TESLA_STALE_SECONDS):
@@ -11068,9 +11079,12 @@ def parking_read(car: dict[str, Any], answer: tuple[float, dict[str, Any] | None
         car["spot"], car["elsewhere"] = None, float(fix["at"])
         return
     # From another spot at the curb, it was there until the last answer; else it was last seen elsewhere.
-    # Answers come every TESLA_CHECK_SECONDS, or every TESLA_ASLEEP_CHECK_SECONDS while it slept. A
-    # car whose stream was heard shifting into P parked then (see "Tesla telemetry").
-    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - max(TESLA_CHECK_SECONDS, TESLA_ASLEEP_CHECK_SECONDS))
+    # Answers come every TESLA_CHECK_SECONDS, or every TESLA_ASLEEP_CHECK_SECONDS while it slept
+    # (TESLA_STREAM_ASLEEP_CHECK_SECONDS for a car that streams). A car whose stream was heard
+    # shifting into P parked then (see "Tesla telemetry").
+    asleep_gap = TESLA_STREAM_ASLEEP_CHECK_SECONDS if name and tesla_streaming(name, asked) else TESLA_ASLEEP_CHECK_SECONDS
+    gap = max(TESLA_CHECK_SECONDS, TESLA_ASLEEP_CHECK_SECONDS, asleep_gap)
+    since = max(before if spot else float(car.get("elsewhere") or 0), float(fix["at"]) - gap)
     if where.get("parked_at"):
         since = float(where["parked_at"])
     car["spot"] = {**fix, "since": since, "street": match["street"], "side": match["side"]}
@@ -11179,7 +11193,7 @@ def parking_tell(name: str, car: dict[str, Any], config: dict[str, Any], stretch
     owed = [p for p in parking_phones(name, config, now) if plan and stages.get(p[0], 0) < plan["stage"]]
     if owed and now - float(car.get("asked") or 0) > PARKING_VERIFY_SECONDS:
         # About to tell someone the car must move: make sure it is still there.
-        parking_read(car, tesla_ask(name, now, "parking: still there?"), stretches)
+        parking_read(car, tesla_ask(name, now, "parking: still there?"), stretches, name)
         plan = parking_plan(car, stretches, config, zone, now)
         stages = stages if plan and told.get("key") == plan["key"] else {}
         owed = [p for p in owed if plan and stages.get(p[0], 0) < plan["stage"]]
@@ -11247,7 +11261,7 @@ def parking_tick(now: float | None = None, push: Callable[..., str] | None = Non
         answer = _tesla_answers.get(name)
         if answer is None or tesla_due(name, now, TESLA_CHECK_SECONDS + 5 * PARKING_EVERY_SECONDS):
             answer = tesla_ask(name, now, "parking")
-        parking_read(car, answer, stretches)
+        parking_read(car, answer, stretches, name)
         pushed += parking_tell(name, car, config, stretches, zone, now, push or deliver)
     state_set(PARKING_KEY, saved)
     return pushed
@@ -13415,13 +13429,13 @@ if __name__ == "__main__":
     elif command == "tesla-link":
         print(f"Open within {TESLA_LINK_SECONDS // 60} minutes, signed in as the Tesla account that owns the car:\n\n{tesla_link_url()}")
     elif command == "tesla-telemetry-config":
-        # What the cars are to be told about the telemetry server, for `tesla-jws` to sign (docs/tesla.md, "Telemetry").
+        # What the cars are to be told about the telemetry server, for `scripts/tesla-sign` to sign (docs/tesla.md, "Telemetry").
         print(json.dumps(tesla_telemetry_config(time.time())))
     elif command == "tesla-telemetry-send":
-        # The signature `tesla-jws` made of that, on stdin.
+        # The signature `scripts/tesla-sign` made of that, on stdin.
         token = sys.stdin.read().strip()
         if token.count(".") != 2:
-            sys.exit("Pipe in the JWS tesla-jws printed.")
+            sys.exit("Pipe in the JWS scripts/tesla-sign printed.")
         print(json.dumps(tesla_telemetry_send(token), indent=2))
     elif command == "tesla-telemetry-status":
         print(json.dumps(tesla_telemetry_status(), indent=2, default=str))
