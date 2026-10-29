@@ -10,6 +10,8 @@
     trace_report.py shaders <prefix>                          GPU program compiles on the app's RenderThread, per step
     trace_report.py inproc  <prefix>                          the in-process file: the app's sections and Metro's binding
                                                               spans by total time, and instants (clock ticks) per second per step
+    trace_report.py back    <prefix>                          after each back_<how>:<n> mark (back_to_home.py): when Home's
+                                                              cameras were drawing again, and when each one was moving
 
 <prefix> is what record.sh was given: <prefix>.pftrace, and <prefix>.inproc.pftrace for `inproc`.
 Uses the `perfetto` Python package (pip install perfetto), which fetches trace_processor itself.
@@ -149,6 +151,44 @@ def cmd_inproc(prefix):
                 print(f"  {name:24} " + ", ".join(f"{k} {v / ((e - s) / 1e9):.0f}/s" for k, v in counts.most_common()))
 
 
+def cmd_back(prefix):
+    """
+    Zero is when Home starts drawing again under the closing app: its cards make their WebRTC
+    renderers then, each a new libwebrtc `EglThread`. A camera is moving once its renderer has drawn
+    two frames into its card's surface within 200 ms (`dequeueBuffer - SurfaceTexture-…` on the
+    renderer's thread): one frame alone may be the renderer clearing, or a still.
+    """
+    _, q = open_trace(prefix + ".pftrace")
+    upid, _, _ = app_process(q)
+    marks = [(r.ts, r.msg) for r in q("select ts, msg from android_logs where tag = 'HomeSafeJourney' and msg like 'back_%' order by ts")]
+    rows = collections.defaultdict(list)
+    for at, msg in marks:
+        end = at + 6_000_000_000
+        drawn = q(f"select min(start_ts) t from thread where upid = {upid} and name = 'EglThread' and start_ts > {at} and start_ts < {end}")[0].t
+        if drawn is None:
+            print(f"{msg:16} no new renderers")
+            continue
+        frames = collections.defaultdict(list)
+        for r in q(f"""select s.ts, s.name from slice s join thread_track tt on s.track_id = tt.id join thread t using(utid)
+                       where t.upid = {upid} and t.name = 'EglThread' and s.name like 'dequeueBuffer - SurfaceTexture%'
+                       and s.ts > {drawn} and s.ts < {end} order by s.ts"""):
+            frames[r.name].append(r.ts)
+        moving = []
+        for times in frames.values():
+            first = next((a for a, b in zip(times, times[1:]) if b - a < 200_000_000), None)
+            if first is not None:
+                moving.append((first - drawn) / 1e6)
+        moving.sort()
+        how = msg.split(":")[0]
+        rows[how].append(moving[-1] if moving else None)
+        print(f"{msg:16} Home drawn {(drawn - at) / 1e6:5.0f} ms after the mark; cameras moving at " +
+              ", ".join(f"+{m:.0f}" for m in moving) + " ms" + ("" if moving else " (none)"))
+    for how, last in rows.items():
+        done = sorted(x for x in last if x is not None)
+        if done:
+            print(f"{how}: every camera moving {done[len(done) // 2]:.0f} ms after Home is drawn (median of {len(done)}; {done[0]:.0f}–{done[-1]:.0f})")
+
+
 if __name__ == "__main__":
     a = sys.argv[1:]
     flag = lambda f: a[a.index(f) + 1] if f in a else None
@@ -164,5 +204,7 @@ if __name__ == "__main__":
         cmd_shaders(args[0])
     elif cmd == "inproc":
         cmd_inproc(args[0])
+    elif cmd == "back":
+        cmd_back(args[0])
     else:
         sys.exit(__doc__)

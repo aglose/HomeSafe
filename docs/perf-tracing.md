@@ -59,11 +59,20 @@ also calls `VideoTrack.setShouldReceive(false)`, which stops the track's receive
 included, with the connection left up; enabling it starts the stream again. A glance away and back
 inside 5 s never pauses. A peer is never paused before its first frame, because a join waits for
 that frame. `park()` now disables a standby's video, so it pauses the same way. Resuming
-costs one keyframe: the first decoded frame arrived **44–795 ms** after `setShouldReceive(true)`
-in the traces, usually 300–600 ms, with the last picture kept on screen and the card already
-reporting Live, against a cold join's poster and 1–5 s. That still picture, for up to a keyframe
-interval on coming back to Home after more than 5 s away, is the price; `RECEIVE_GRACE_MS` is the
-knob between it and decoding for nobody.
+costs one keyframe per camera. Measured on screen with `scripts/perf/back_to_home.py` (Finance
+for 12 s, then back, ten times; `trace_report.py back`), from Home starting to draw again under the
+closing app to each camera's renderer drawing frames again:
+
+| Back by | Before: every camera moving | After: first camera | After: every camera (median, range) |
+| --- | --- | --- | --- |
+| Back button | 37 ms | 26–836 ms | 1,346 ms (423–1,893) |
+| Back swipe | 33 ms | 26–819 ms | 905 ms (429–1,254) |
+
+Meanwhile each card shows its last picture, already reporting Live, never the poster. One camera
+is regularly the last by a second or so, which fits a longer keyframe interval on its stream. So
+coming back after more than 5 s away now shows still pictures for up to about a second and a half
+where it used to move at once: that is the price of the CPU saved, and `RECEIVE_GRACE_MS` and the
+cameras' keyframe intervals are the knobs.
 
 Not done: iOS presumably has the same behaviour (its WebRTC is libwebrtc too); not measured.
 
@@ -283,7 +292,8 @@ python3 scripts/perf/trace_report.py steps build/perf/tour --top 10
 
 The first `tour.py` run records where everything is; `record.sh … --replay` is the measured run.
 For the at-rest walk: `tour.py <package> --replay --steps none`, then
-`JOURNEY=scripts/perf/idle.py scripts/perf/record.sh build/perf/idle`. Compare like with like: a
+`JOURNEY=scripts/perf/idle.py scripts/perf/record.sh build/perf/idle`; for the return to Home,
+`JOURNEY=scripts/perf/back_to_home.py` and `trace_report.py back`. Compare like with like: a
 first run after an install (no shader cache) against another, later runs against later runs.
 
 ## Carrying this to another project
