@@ -139,9 +139,9 @@ class MainActivity : FragmentActivity() {
         MomentDeepLinks.open(link)
     }
 
-    // A hardware keyboard's shortcuts (KeyboardShortcuts): before the view hierarchy, so they
-    // work whatever has focus, and the shell is told rather than whatever is focused.
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean = KeyboardShortcuts.handle(event) || super.dispatchKeyEvent(event)
+    // A hardware keyboard's shortcuts (KeyboardShortcuts): the keys nothing focused took for
+    // itself come here, so a text field keeps its own Ctrl keys and the shell is told of the rest.
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = KeyboardShortcuts.handle(event) || super.onKeyDown(keyCode, event)
 
     // What Meta + / lists for the app.
     override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
