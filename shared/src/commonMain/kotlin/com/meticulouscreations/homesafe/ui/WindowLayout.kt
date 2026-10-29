@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
 
 /**
@@ -102,6 +103,22 @@ fun showsSidebar(): Boolean {
  * everywhere else (no sidebar, or put away).
  */
 val LocalShellSidebarWidth = compositionLocalOf { 0.dp }
+
+/**
+ * How wide an app from the drawer lets its pages grow before it centres them: they were laid out
+ * for a phone, and a card stretched across a laptop's window puts its words a long way apart.
+ */
+val APP_PAGE_MAX_WIDTH = 760.dp
+
+/**
+ * The gutter either side of an app's pages that centres them at [maxWidth] in the [available]
+ * width the app has (less [reserved] for a nav of its own at the side), and none where there is no
+ * more room than that: nothing on a phone. Added to the padding the app hands its pages, so each
+ * still scrolls across the whole width, under a wheel anywhere over it. From the app's own
+ * constraints rather than the window: beside the shell's sidebar, or drawn in a test's phone-sized box.
+ */
+fun appPageGutter(available: Dp, reserved: Dp = 0.dp, maxWidth: Dp = APP_PAGE_MAX_WIDTH): Dp =
+    ((available - reserved - maxWidth) / 2).coerceAtLeast(0.dp)
 
 /** The window's width, system bars and cutouts included. */
 @Composable

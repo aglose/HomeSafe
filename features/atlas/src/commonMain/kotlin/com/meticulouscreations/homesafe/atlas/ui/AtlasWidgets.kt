@@ -1,7 +1,5 @@
 package com.meticulouscreations.homesafe.atlas.ui
 
-import com.meticulouscreations.homesafe.ui.WithTooltip
-import com.meticulouscreations.homesafe.ui.handCursor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,6 +47,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.atlas.domain.TravelMode
 import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_CONTOUR_SHADER
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.weather.ui.shader.layersKeepTheirPixels
 import com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock
 import com.meticulouscreations.homesafe.weather.ui.shader.weatherShaderOrNull

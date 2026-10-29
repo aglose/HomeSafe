@@ -24,13 +24,13 @@ import com.meticulouscreations.homesafe.ui.components.warmUpLivePlayback
 import com.meticulouscreations.homesafe.ui.screens.CarsScreen
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
-import com.meticulouscreations.homesafe.ui.screens.LocalCarsPage
 import com.meticulouscreations.homesafe.ui.screens.InnerApp
+import com.meticulouscreations.homesafe.ui.screens.LocalCarsPage
 import com.meticulouscreations.homesafe.ui.screens.LocalShellApps
 import com.meticulouscreations.homesafe.ui.screens.LocalSidebarApp
-import com.meticulouscreations.homesafe.ui.screens.ShellAppTab
 import com.meticulouscreations.homesafe.ui.screens.RootCrossfade
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
+import com.meticulouscreations.homesafe.ui.screens.ShellAppTab
 import com.meticulouscreations.homesafe.ui.screens.ShellApps
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme

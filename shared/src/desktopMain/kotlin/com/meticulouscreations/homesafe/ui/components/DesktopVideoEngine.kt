@@ -283,7 +283,12 @@ internal class DesktopVideoEngine(val key: String?) {
                     continue
                 }
                 if (frame.image == null) continue
-                if (!wantAudio) line?.let { it.stop(); it.flush() }
+                if (!wantAudio) {
+                    line?.let {
+                        it.stop()
+                        it.flush()
+                    }
+                }
                 // Pace the picture against the wall clock, from the first frame (or the first after a pause, a seek or a lag).
                 val now = System.nanoTime()
                 if (clockOriginUs == Long.MIN_VALUE || frame.timestamp < clockOriginUs) {
@@ -294,6 +299,7 @@ internal class DesktopVideoEngine(val key: String?) {
                     val waitNanos = dueNanos - now
                     when {
                         waitNanos > 0 -> Thread.sleep(waitNanos / 1_000_000, (waitNanos % 1_000_000).toInt())
+
                         -waitNanos > MAX_LAG_US * 1000 -> {
                             clockOriginUs = frame.timestamp
                             clockOriginNanos = now

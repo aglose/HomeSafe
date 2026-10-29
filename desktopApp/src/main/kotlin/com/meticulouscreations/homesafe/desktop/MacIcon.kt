@@ -3,13 +3,13 @@ package com.meticulouscreations.homesafe.desktop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.geometry.RoundRect
 
 /**
  * One of the app's icons ([art], square and full-bleed, as the phones' are) on the Mac's icon
@@ -41,4 +41,3 @@ private class MacIconPainter(private val art: Painter) : Painter() {
         const val CORNER = 185f / 1024f
     }
 }
-

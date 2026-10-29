@@ -11,13 +11,17 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.shell_shortcut_command
 import homesafe.shared.generated.resources.shell_shortcut_control
 import homesafe.shared.generated.resources.shell_tooltip_with_shortcut
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.pow
 
 /** The modifier key a platform's shortcuts are written with: ⌘ on a Mac, Ctrl elsewhere. */
 enum class ShortcutKey { Command, Control }
@@ -64,3 +68,26 @@ fun WithTooltip(text: String, modifier: Modifier = Modifier, shortcut: String? =
 
 /** The pointing hand over something that acts on a click, while it is [enabled]; the ordinary arrow otherwise. */
 fun Modifier.handCursor(enabled: Boolean = true): Modifier = if (enabled) pointerHoverIcon(PointerIcon.Hand) else this
+
+/**
+ * Zooms a map with a mouse's wheel (or a trackpad's two-finger scroll), about the pointer: what a
+ * pinch is to a finger, which a desktop has no other way to make. [onZoom] gets the factor (above 1
+ * nearer, below 1 further) and where the pointer is, in this element's coordinates. A notch of the
+ * wheel is a fifth of a doubling, so five go from one zoom level to the next. Nothing on a phone,
+ * where no wheel turns.
+ */
+fun Modifier.wheelZoom(key: Any?, onZoom: (factor: Float, at: Offset) -> Unit): Modifier = pointerInput(key) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent()
+            if (event.type != PointerEventType.Scroll) continue
+            val change = event.changes.firstOrNull() ?: continue
+            val notches = change.scrollDelta.y
+            if (notches == 0f) continue
+            onZoom(2f.pow(-notches / WHEEL_NOTCHES_PER_DOUBLING), change.position)
+            change.consume()
+        }
+    }
+}
+
+private const val WHEEL_NOTCHES_PER_DOUBLING = 5f

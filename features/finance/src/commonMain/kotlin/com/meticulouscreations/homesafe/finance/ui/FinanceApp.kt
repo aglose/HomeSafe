@@ -1,9 +1,5 @@
 package com.meticulouscreations.homesafe.finance.ui
 
-import com.meticulouscreations.homesafe.ui.AppSection
-import com.meticulouscreations.homesafe.ui.WithTooltip
-import com.meticulouscreations.homesafe.ui.handCursor
-import com.meticulouscreations.homesafe.ui.publishAppSections
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
@@ -28,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -99,10 +96,15 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.AppSection
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.appPageGutter
 import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
 import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
 import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
+import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
+import com.meticulouscreations.homesafe.ui.publishAppSections
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -296,15 +298,18 @@ private fun FinanceAppContent(
             details.clear()
             tab = picked
         }
-        val padding = PaddingValues(
-            start = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp,
-            top = status.calculateTopPadding() + 60.dp,
-            bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 32.dp else 104.dp,
-        )
-        val detailPadding = PaddingValues(top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 32.dp)
-        val pullState = rememberPullToRefreshState()
+        BoxWithConstraints(modifier.fillMaxSize().background(palette.background).testTag("finance_app")) {
+            // Centred at a readable width in a wide window (a desktop's, a tablet's): see appPageGutter.
+            val gutter = appPageGutter(maxWidth, reserved = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp)
+            val padding = PaddingValues(
+                start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter,
+                end = gutter,
+                top = status.calculateTopPadding() + 60.dp,
+                bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 32.dp else 104.dp,
+            )
+            val detailPadding = PaddingValues(start = gutter, end = gutter, top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 32.dp)
+            val pullState = rememberPullToRefreshState()
 
-        Box(modifier.fillMaxSize().background(palette.background).testTag("finance_app")) {
             PullToRefreshBox(
                 isRefreshing = state.refreshing,
                 onRefresh = {
@@ -433,7 +438,7 @@ private fun FinanceAppContent(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     // Above the nav when it floats along the bottom; beside it when it is at the side.
-                    .padding(start = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp, bottom = if (sideNav || inSidebar) 16.dp else 84.dp),
+                    .padding(start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter, end = gutter, bottom = if (sideNav || inSidebar) 16.dp else 84.dp),
             )
 
             if (addingSymbol) {
@@ -590,17 +595,17 @@ private fun FinanceTopBar(
             }
         }
         WithTooltip(stringResource(if (refreshing) Res.string.finance_refreshing else Res.string.finance_refresh), modifier = Modifier.align(Alignment.CenterEnd)) {
-        IconButton(onClick = onRefresh, modifier = Modifier.handCursor()) {
-            if (refreshing) {
-                // Only while refreshing, and turned in the layer: no frames spent when idle, and no
-                // recomposition per frame when not.
-                val spin = rememberInfiniteTransition(label = "refreshSpin")
-                val angle = spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
-                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refreshing), tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
-            } else {
-                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refresh), tint = colors.textSecondary)
+            IconButton(onClick = onRefresh, modifier = Modifier.handCursor()) {
+                if (refreshing) {
+                    // Only while refreshing, and turned in the layer: no frames spent when idle, and no
+                    // recomposition per frame when not.
+                    val spin = rememberInfiniteTransition(label = "refreshSpin")
+                    val angle = spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
+                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refreshing), tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
+                } else {
+                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refresh), tint = colors.textSecondary)
+                }
             }
-        }
         }
     }
 }

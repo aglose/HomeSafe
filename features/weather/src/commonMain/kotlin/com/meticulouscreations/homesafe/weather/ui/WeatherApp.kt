@@ -1,9 +1,5 @@
 package com.meticulouscreations.homesafe.weather.ui
 
-import com.meticulouscreations.homesafe.ui.AppSection
-import com.meticulouscreations.homesafe.ui.WithTooltip
-import com.meticulouscreations.homesafe.ui.handCursor
-import com.meticulouscreations.homesafe.ui.publishAppSections
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
@@ -24,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -105,11 +102,16 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.AppSection
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.appPageGutter
 import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
 import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
 import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
+import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
+import com.meticulouscreations.homesafe.ui.publishAppSections
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -345,14 +347,17 @@ fun WeatherAppContent(
             tab = picked
         }
         val top = status.calculateTopPadding() + 58.dp
-        val padding = PaddingValues(
-            start = if (sideNav) SIDE_NAV_CLEARANCE else 0.dp,
-            top = top,
-            bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 28.dp else 104.dp,
-        )
-        val pagePadding = PaddingValues(top = top + 6.dp, bottom = nav.calculateBottomPadding() + 28.dp)
+        BoxWithConstraints(modifier.fillMaxSize().background(Color(0xFF05080E)).testTag("weather_app")) {
+            // Centred at a readable width in a wide window (a desktop's, a tablet's): see appPageGutter.
+            val gutter = appPageGutter(maxWidth, reserved = if (sideNav) SIDE_NAV_CLEARANCE else 0.dp)
+            val padding = PaddingValues(
+                start = (if (sideNav) SIDE_NAV_CLEARANCE else 0.dp) + gutter,
+                end = gutter,
+                top = top,
+                bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 28.dp else 104.dp,
+            )
+            val pagePadding = PaddingValues(start = gutter, end = gutter, top = top + 6.dp, bottom = nav.calculateBottomPadding() + 28.dp)
 
-        Box(modifier.fillMaxSize().background(Color(0xFF05080E)).testTag("weather_app")) {
             // Under the sky, which covers it: drawn, and never seen.
             if (active) WeatherShaderWarmUp()
             WeatherSky(
@@ -408,7 +413,12 @@ fun WeatherAppContent(
                         headline = remember(report, state.nowEpochSeconds) {
                             report?.let { WeatherStory.nearTermPhrase(WeatherStory.nearTerm(it, state.nowEpochSeconds), state.nowEpochSeconds) }
                         },
-                        padding = PaddingValues(start = if (sideNav) SIDE_NAV_CLEARANCE else 0.dp, top = top, bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 12.dp else 92.dp),
+                        padding = PaddingValues(
+                            start = (if (sideNav) SIDE_NAV_CLEARANCE else 0.dp) + gutter,
+                            end = gutter,
+                            top = top,
+                            bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 12.dp else 92.dp,
+                        ),
                         animated = active && !state.preferences.stillSky,
                     )
 

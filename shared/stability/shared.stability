@@ -42,6 +42,16 @@ internal fun com.meticulouscreations.homesafe.ui.BackScope(enabled: kotlin.Boole
     - content: STABLE (composable function type)
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.WithTooltip(text: kotlin.String, modifier: androidx.compose.ui.Modifier, shortcut: kotlin.String?, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - text: STABLE (String is immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - shortcut: STABLE (class with no mutable properties)
+    - content: STABLE (composable function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.assistant.AnswerCard(state: com.meticulouscreations.homesafe.viewmodel.AssistantUiState, actions: com.meticulouscreations.homesafe.ui.assistant.AssistantPanelActions, time: kotlin.Function0<kotlin.Float>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -472,6 +482,15 @@ public fun com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview(c
   restartable: true
   params:
     - content: STABLE (composable function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.publishAppSections(sections: kotlin.collections.List<com.meticulouscreations.homesafe.ui.AppSection>, selected: kotlin.Int, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Boolean
+  skippable: false
+  restartable: false
+  params:
+    - sections: RUNTIME (requires runtime check)
+    - selected: STABLE (primitive type)
+    - onSelect: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.rememberKeyboardClearance(typing: kotlin.Boolean, keys: kotlin.Any?, above: androidx.compose.ui.unit.Dp): com.meticulouscreations.homesafe.ui.KeyboardClearance
@@ -1517,7 +1536,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.FrigateAppShell(): kotlin
   params:
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeConnection: com.meticulouscreations.homesafe.domain.model.ActiveConnection?, appVersion: kotlin.String, onMenu: kotlin.Function0<kotlin.Unit>?, offline: kotlin.Boolean, arrange: com.meticulouscreations.homesafe.ui.screens.ArrangeAction?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeConnection: com.meticulouscreations.homesafe.domain.model.ActiveConnection?, appVersion: kotlin.String, onMenu: kotlin.Function0<kotlin.Unit>?, offline: kotlin.Boolean, arrange: com.meticulouscreations.homesafe.ui.screens.ArrangeAction?, menu: com.meticulouscreations.homesafe.ui.screens.TopBarMenuButton, showTitle: kotlin.Boolean, pageTitle: kotlin.String?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1526,6 +1545,9 @@ internal fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeCon
     - onMenu: STABLE (function type)
     - offline: STABLE (primitive type)
     - arrange: STABLE (marked @Stable or @Immutable)
+    - menu: STABLE (class with no mutable properties)
+    - showTitle: STABLE (primitive type)
+    - pageTitle: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FullScreenButton(onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -2647,6 +2669,16 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBa
     - content: STABLE (composable function type)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellSidebar(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, sections: com.meticulouscreations.homesafe.ui.AppSectionsHost, onHide: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - sections: STABLE (marked @Stable or @Immutable)
+    - onHide: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.ShellSkeleton(onMenu: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -2662,11 +2694,38 @@ public fun com.meticulouscreations.homesafe.ui.screens.ShellTab(nav: com.meticul
     - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.ShellTabs(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, stores: com.meticulouscreations.homesafe.ui.screens.ShellViewModelStores, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, activeConnection: com.meticulouscreations.homesafe.domain.model.ActiveConnection?, appVersion: kotlin.String, offline: kotlin.Boolean, sidebar: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - stores: STABLE (marked @Stable or @Immutable)
+    - cardZoom: STABLE (marked @Stable or @Immutable)
+    - activeConnection: STABLE (class with no mutable properties)
+    - appVersion: STABLE (String is immutable)
+    - offline: STABLE (primitive type)
+    - sidebar: STABLE (primitive type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Shimmer(modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SidebarItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, selected: kotlin.Boolean, shortcut: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, emphasised: kotlin.Boolean, compact: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+    - selected: STABLE (primitive type)
+    - shortcut: STABLE (class with no mutable properties)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - emphasised: STABLE (primitive type)
+    - compact: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.SkipBadge(skip: com.meticulouscreations.homesafe.ui.screens.SkipFeedback?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -3189,6 +3248,19 @@ internal fun com.meticulouscreations.homesafe.ui.screens.tabContentPadding(top: 
     - top: STABLE (marked @Stable or @Immutable)
     - maxWidth: STABLE (marked @Stable or @Immutable)
     - bottom: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.shortcutLabel(key: kotlin.String): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - key: STABLE (String is immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.showsSidebar(): kotlin.Boolean
+  skippable: false
+  restartable: false
+  params:
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.showsTwoPanes(): kotlin.Boolean

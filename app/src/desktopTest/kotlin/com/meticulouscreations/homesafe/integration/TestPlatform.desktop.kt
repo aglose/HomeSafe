@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.integration
 
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -7,11 +8,10 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.test.v2.runSkikoComposeUiTest
-import androidx.compose.ui.geometry.Size
-import kotlin.time.Duration
 import com.meticulouscreations.homesafe.PlatformContext
 import java.io.File
 import javax.imageio.ImageIO
+import kotlin.time.Duration
 
 /** What the app graph is built with in the desktop journeys: nothing, as in the app itself. */
 internal fun testPlatformContext(): PlatformContext = PlatformContext()

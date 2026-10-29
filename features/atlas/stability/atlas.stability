@@ -170,7 +170,7 @@ public fun com.meticulouscreations.homesafe.atlas.ui.AtlasTheme.type(): com.meti
   params:
 
 @Composable
-private fun com.meticulouscreations.homesafe.atlas.ui.AtlasTopBar(title: kotlin.String, paged: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onOpenSync: kotlin.Function0<kotlin.Unit>?, syncNeedsAttention: kotlin.Boolean, syncing: kotlin.Boolean): kotlin.Unit
+private fun com.meticulouscreations.homesafe.atlas.ui.AtlasTopBar(title: kotlin.String, paged: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onOpenSync: kotlin.Function0<kotlin.Unit>?, syncNeedsAttention: kotlin.Boolean, syncing: kotlin.Boolean, closable: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -180,6 +180,7 @@ private fun com.meticulouscreations.homesafe.atlas.ui.AtlasTopBar(title: kotlin.
     - onOpenSync: STABLE (function type)
     - syncNeedsAttention: STABLE (primitive type)
     - syncing: STABLE (primitive type)
+    - closable: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.atlas.ui.CommuteCard(commute: com.meticulouscreations.homesafe.atlas.domain.Commute): kotlin.Unit

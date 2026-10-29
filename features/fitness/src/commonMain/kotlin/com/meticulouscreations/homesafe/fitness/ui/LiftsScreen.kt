@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -137,7 +140,12 @@ internal fun LiftsScreen(
     val shown = remember(state.boards, shelf) { state.boards.filter { shelf == null || it.exercise.bodyPart.name == shelf } }
     LazyColumn(
         modifier.fillMaxSize().testTag("fitness_lifts"),
-        contentPadding = PaddingValues(start = FitnessGutter, end = FitnessGutter, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
+        contentPadding = PaddingValues(
+            start = FitnessGutter + padding.calculateStartPadding(LocalLayoutDirection.current),
+            end = FitnessGutter + padding.calculateEndPadding(LocalLayoutDirection.current),
+            top = padding.calculateTopPadding(),
+            bottom = padding.calculateBottomPadding(),
+        ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item(key = "filters") {

@@ -62,6 +62,8 @@ import java.awt.Taskbar
  * of the app's own colour where the traffic lights sit ([TITLE_BAR_HEIGHT]): one dark surface from
  * edge to edge, as Apple's own apps have, with nothing of the app's under the lights.
  */
+// A window of its own, not an element laid out in a parent, so there is nothing for a Modifier to do.
+@Suppress("ktlint:compose:modifier-missing-check")
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ApplicationScope.HomeSafeWindow(graph: AppGraph, visible: Boolean, onCloseRequest: () -> Unit, onQuit: () -> Unit) {

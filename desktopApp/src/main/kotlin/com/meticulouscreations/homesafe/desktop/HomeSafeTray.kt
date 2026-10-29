@@ -19,9 +19,9 @@ import androidx.compose.ui.window.Notification
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.rememberTrayState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.data.createNotificationMute
 import com.meticulouscreations.homesafe.desktop.DesktopNotice
 import com.meticulouscreations.homesafe.desktop.DesktopNotifications
-import com.meticulouscreations.homesafe.data.createNotificationMute
 import com.meticulouscreations.homesafe.di.AppGraph
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.desktop_app_name

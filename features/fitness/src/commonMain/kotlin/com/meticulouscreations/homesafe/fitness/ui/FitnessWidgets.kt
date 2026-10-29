@@ -1,7 +1,5 @@
 package com.meticulouscreations.homesafe.fitness.ui
 
-import com.meticulouscreations.homesafe.ui.WithTooltip
-import com.meticulouscreations.homesafe.ui.handCursor
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -80,6 +78,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.domain.Rung
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.handCursor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.max

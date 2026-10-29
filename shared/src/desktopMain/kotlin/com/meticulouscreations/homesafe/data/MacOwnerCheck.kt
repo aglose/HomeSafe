@@ -1,12 +1,12 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_confirmation_cancelled
 import homesafe.shared.generated.resources.biometric_name_generic
 import homesafe.shared.generated.resources.biometric_name_passcode
 import homesafe.shared.generated.resources.biometric_name_touch_id
-import com.meticulouscreations.homesafe.text.LocalizedException
-import com.meticulouscreations.homesafe.text.UiText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -43,7 +43,9 @@ internal object MacOwnerCheck {
         val outcome = run(command, reason, input = input, timeoutSeconds = PROMPT_TIMEOUT_SECONDS)
         when (outcome.exitCode) {
             0 -> Result.success(outcome.output)
+
             CANCELLED -> Result.failure(LocalizedException(UiText.of(Res.string.biometric_confirmation_cancelled), technical = "Owner check was cancelled"))
+
             // The system's own words when it gave any, already in the reader's language.
             else -> Result.failure(outcome.error.takeIf { it.isNotBlank() }?.let(::OwnerCheckException) ?: OwnerCheckException("Owner check failed (${outcome.exitCode})"))
         }

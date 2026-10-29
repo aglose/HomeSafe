@@ -76,6 +76,7 @@ import com.meticulouscreations.homesafe.atlas.domain.VisitRole
 import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_HEAT_SHADER
 import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_NIGHT_SHADER
 import com.meticulouscreations.homesafe.maps.BaseMap
+import com.meticulouscreations.homesafe.ui.wheelZoom
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.data.requestUntilArrived
 import com.meticulouscreations.homesafe.weather.domain.MapCamera
@@ -434,6 +435,8 @@ fun AtlasMap(
                     Modifier
                 } else {
                     Modifier
+                        // A desktop's wheel zooms about the pointer, as a pinch does about the fingers.
+                        .wheelZoom(state to tilePx) { factor, at -> state.zoomBy(scope, factor, at.x - viewport.width / 2f, at.y - viewport.height / 2f, tilePx) }
                         .pointerInput(state, tilePx, decay) { detectMapGestures(state, tilePx, scope, decay) }
                         .pointerInput(state, tilePx) {
                             detectTapGestures(

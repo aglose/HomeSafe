@@ -124,6 +124,10 @@ compose.desktop {
 
 ktlint {
     version.set(libs.versions.ktlint)
+    // Not the Compose resource accessors generated under build/ (see shared/build.gradle.kts).
+    filter {
+        exclude { entry -> entry.file.path.contains("/build/") }
+    }
     reporters {
         reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
     }
