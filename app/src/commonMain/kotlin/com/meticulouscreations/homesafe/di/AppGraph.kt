@@ -85,12 +85,10 @@ import com.meticulouscreations.homesafe.weather.data.createWeatherNotifier
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import dev.zacsweers.metro.AppScope
-import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.createGraphFactory
 import dev.zacsweers.metrox.viewmodel.ViewModelGraph
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
@@ -120,8 +118,11 @@ import kotlin.time.ExperimentalTime
  * Use cases self-register via `@Inject`, repository implementations via `@ContributesBinding`,
  * and view models via `@ContributesIntoMap`, so this file only lists what needs a hand-written
  * provider (platform factories, the HTTP client) and the few things platform entry points read.
+ *
+ * The graph itself is declared per platform ([AndroidAppGraph], [IosAppGraph]), each extending
+ * this: Metro's runtime tracing wants the root graph's factory to take `androidx.tracing.Tracer`,
+ * which only Android has. Everything else, bindings and accessors alike, lives here.
  */
-@DependencyGraph(AppScope::class)
 interface AppGraph :
     ViewModelGraph,
     BackgroundServices,
@@ -401,15 +402,14 @@ interface AppGraph :
             requestTimeoutMillis = 10_000
         }
     }
-
-    @DependencyGraph.Factory
-    fun interface Factory {
-        fun create(@Provides platformContext: PlatformContext): AppGraph
-    }
 }
 
 /** How often the alert poller asks Frigate for new detections; one small request per tick. */
 private const val DETECTION_POLL_INTERVAL_MS = 15_000L
 
-fun createAppGraph(platformContext: PlatformContext): AppGraph =
-    createGraphFactory<AppGraph.Factory>().create(platformContext)
+/**
+ * The app graph for this platform: [AndroidAppGraph] or [IosAppGraph], the `@DependencyGraph`s that
+ * extend [AppGraph]. Each platform declares its own because Android's takes the Tracing 2.0
+ * `Tracer` that Metro's runtime tracing needs, a type iOS doesn't have.
+ */
+expect fun createAppGraph(platformContext: PlatformContext): AppGraph

@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.ui.components
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.meticulouscreations.homesafe.tracing.traceSection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -30,6 +31,12 @@ import kotlin.coroutines.resumeWithException
 
 private const val LOG_TAG = "HomeSafeLive"
 
+/** How long a peer's video may go undrawn before its receive stream (and decoder) is stopped; see [AndroidWebRtcPeer]. */
+internal const val RECEIVE_GRACE_MS = 5_000L
+
+/** How often a stop the grace asked for, but that had no track or first frame to act on, is tried again. */
+private const val RECEIVE_RETRY_MS = 1_000L
+
 /**
  * A receive-only libwebrtc peer connection, exposed to the common join logic as [WebRtcPeer].
  *
@@ -40,10 +47,19 @@ private const val LOG_TAG = "HomeSafeLive"
  * the peer counts frames itself for [firstFrameReceived] regardless of who is drawing.
  *
  * "Video disabled" ([setVideoEnabled]) detaches the sinks rather than disabling the track:
- * libwebrtc keeps decoding a remote track either way, and a *disabled* remote track hands its
- * sinks black frames — which would paint over the last good picture the moment a viewer pressed
- * pause. Detached sinks simply stop being called, so the surface keeps its frame, and the peer
- * is ready to resume (or be handed to another surface) on the very next decoded frame.
+ * a *disabled* remote track hands its sinks black frames — which would paint over the last good
+ * picture the moment a viewer pressed pause. Detached sinks simply stop being called, so the
+ * surface keeps its frame, and the peer is ready to resume (or be handed to another surface) on
+ * the very next decoded frame.
+ *
+ * libwebrtc goes on receiving and decoding a track with no sinks, though: a Home grid left under
+ * a drawer app, or a grid stream parked behind the detail screen's, decoded every frame for the
+ * whole idle window (about a third of a core per camera on the emulator, docs/perf-tracing.md).
+ * So video left disabled for [RECEIVE_GRACE_MS] also stops the track's receive stream
+ * ([VideoTrack.setShouldReceive]), decoder and all, while the connection stays up; enabling it
+ * starts the stream again, and its picture comes back at the camera's next keyframe. A glance
+ * away and back inside the grace never pauses at all. Not before the first frame: a join waits
+ * for that, and a stream paused under it would wait out its timeout instead.
  *
  * libwebrtc calls its observers on its own signaling thread; anything that touches this
  * object's collections is hopped to the main thread, where every caller of this class lives.
@@ -69,6 +85,17 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
     private var closed = false
 
     private val frameCounter = VideoSink { if (!_firstFrameReceived.value) _firstFrameReceived.value = true }
+
+    /** Whether the track's receive stream is running; see the class doc. */
+    private var receiving = true
+    private val stopReceiving = object : Runnable {
+        override fun run() {
+            if (closed || videoEnabled) return
+            // A track or first frame still to come once the grace is up: try again until it has
+            // come, or until enabling the video or closing the peer takes this off the queue.
+            if (!setReceiving(false)) mainThread.postDelayed(this, RECEIVE_RETRY_MS)
+        }
+    }
 
     private val observer = object : PeerConnection.Observer {
         override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) {
@@ -186,8 +213,21 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
     override fun setVideoEnabled(enabled: Boolean) {
         if (videoEnabled == enabled) return
         videoEnabled = enabled
+        mainThread.removeCallbacks(stopReceiving)
+        if (enabled) setReceiving(true) else mainThread.postDelayed(stopReceiving, RECEIVE_GRACE_MS)
         val track = videoTrack ?: return
         if (enabled) sinks.forEach(track::addSink) else sinks.forEach(track::removeSink)
+    }
+
+    /** Starts or stops the track's receive stream; false when it can't be stopped yet (no track, or no first frame). */
+    private fun setReceiving(receive: Boolean): Boolean {
+        if (closed || receiving == receive) return true
+        val track = videoTrack ?: return receive
+        if (!receive && !_firstFrameReceived.value) return false
+        receiving = receive
+        traceSection(if (receive) "live.peer.startReceiving" else "live.peer.stopReceiving") { track.setShouldReceive(receive) }
+        Log.d(LOG_TAG, "video receive ${if (receive) "resumed" else "paused"}")
+        return true
     }
 
     override fun setMuted(muted: Boolean) {
@@ -209,6 +249,7 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
     override fun close() {
         if (closed) return
         closed = true
+        mainThread.removeCallbacks(stopReceiving)
         videoTrack?.let { track ->
             track.removeSink(frameCounter)
             sinks.forEach(track::removeSink)

@@ -29,6 +29,7 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
+import com.meticulouscreations.homesafe.tracing.traceSection
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -221,7 +222,7 @@ actual fun CameraStreamPlayer(
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
-            holder.unbindSurface(textureView)
+            traceSection("live.unbindSurface") { holder.unbindSurface(textureView) }
             textureView.onDetaching = null
         }
     }
@@ -259,7 +260,7 @@ actual fun CameraStreamPlayer(
             holder.bindRenderer(renderer)
             renderer.onDetaching = { holder.keepFrame(renderer) }
             onDispose {
-                holder.unbindRenderer(renderer)
+                traceSection("live.unbindRenderer") { holder.unbindRenderer(renderer) }
                 renderer.onFrameRendered = null
                 renderer.onDetaching = null
             }
@@ -367,8 +368,8 @@ private class HolderLease(context: Context, key: String?) : RememberObserver {
     val holder: LivePlayerHolder = LivePlayerPool.acquire(context, key)
 
     override fun onRemembered() = Unit
-    override fun onForgotten() = LivePlayerPool.release(holder)
-    override fun onAbandoned() = LivePlayerPool.release(holder)
+    override fun onForgotten() = traceSection("live.pool.release") { LivePlayerPool.release(holder) }
+    override fun onAbandoned() = traceSection("live.pool.release") { LivePlayerPool.release(holder) }
 }
 
 /** Same idea for the WebRTC renderer, whose render thread must be torn down when this call site goes. */
@@ -376,8 +377,8 @@ private class RendererLease(context: Context) : RememberObserver {
     val renderer = WebRtcTextureRenderer(context, WebRtcRuntime.eglContext)
 
     override fun onRemembered() = Unit
-    override fun onForgotten() = renderer.release()
-    override fun onAbandoned() = renderer.release()
+    override fun onForgotten() = traceSection("live.renderer.release") { renderer.release() }
+    override fun onAbandoned() = traceSection("live.renderer.release") { renderer.release() }
 }
 
 /** The HLS surface, with the same last-chance hook as [WebRtcTextureRenderer.onDetaching]. */

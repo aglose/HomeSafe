@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.network.WhepSignalingClient
+import com.meticulouscreations.homesafe.tracing.traceSection
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -229,7 +230,9 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
             surface === boundSurface && boundSurfaceHasFrame
         }
         if (!showing || !surface.isAvailable) return
-        val frame = (surface as? WebRtcTextureRenderer)?.snapshot() ?: runCatching { surface.bitmap }.getOrNull() ?: return
+        val frame = traceSection("live.keepFrame", { "$key ${surface.width}x${surface.height}" }) {
+            (surface as? WebRtcTextureRenderer)?.snapshot() ?: runCatching { surface.bitmap }.getOrNull()
+        } ?: return
         keptFrame = frame
         keptFrameGeneration = generation
     }
@@ -245,7 +248,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     /** Detach [surface]; a no-op if another binder has since taken over (ExoPlayer checks identity). */
     fun unbindSurface(surface: TextureView) {
         keepFrame(surface)
-        player.clearVideoTextureView(surface)
+        traceSection("live.clearVideoTextureView") { player.clearVideoTextureView(surface) }
         if (boundSurface === surface) {
             boundSurface = null
             boundSurfaceHasFrame = false
@@ -716,6 +719,8 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         dropStandby()
         renderers.forEach(old::removeSink)
         old.setMuted(true)
+        // Nobody draws a standby: after the peer's grace it stops decoding until it is adopted again.
+        old.setVideoEnabled(false)
         val parked = StandbyPeer(old, endpoint)
         parked.watchJob = scope.launch {
             old.state.first { it != WebRtcPeerState.Connected }

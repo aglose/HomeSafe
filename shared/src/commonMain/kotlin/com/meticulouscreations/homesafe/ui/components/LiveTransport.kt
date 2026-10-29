@@ -62,9 +62,10 @@ interface WebRtcPeer {
 
     /**
      * Stops or resumes delivering the remote video to whatever is drawing it, without tearing
-     * the connection down. The engine keeps decoding either way (there is no way to pause a
-     * WHEP stream), so resuming shows the next frame at once — and what was last drawn stays
-     * on screen meanwhile, rather than being replaced by black.
+     * the connection down; what was last drawn stays on screen meanwhile, rather than being
+     * replaced by black. Resumed within a few seconds, the next frame shows at once; left off
+     * longer, an engine may stop receiving and decoding the stream until it is resumed, and the
+     * picture then moves again at the next keyframe.
      */
     fun setVideoEnabled(enabled: Boolean)
 
