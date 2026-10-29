@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.data.CameraLayoutRepositoryImpl
 import com.meticulouscreations.homesafe.data.FrigateMediaUrlRepository
+import com.meticulouscreations.homesafe.data.GoogleHomeApp
 import com.meticulouscreations.homesafe.data.InMemoryCameraListDao
 import com.meticulouscreations.homesafe.data.InMemorySettingsDao
 import com.meticulouscreations.homesafe.data.PlaybackPreferencesRepositoryImpl
@@ -63,7 +64,7 @@ class NestCameraViewModelTest {
         override fun onAppVisibilityChanged(visible: Boolean) = Unit
     }
 
-    private fun viewModel(preferences: PlaybackPreferencesRepositoryImpl): NestCameraViewModel {
+    private fun viewModel(preferences: PlaybackPreferencesRepositoryImpl, googleHomeApp: GoogleHomeApp = GoogleHomeApp { true }): NestCameraViewModel {
         val media = FrigateMediaUrlRepository()
         return NestCameraViewModel(
             observeCurrentServerUrlUseCase = ObserveCurrentServerUrlUseCase(NoConnection),
@@ -72,6 +73,7 @@ class NestCameraViewModelTest {
             observePlaybackPreferencesUseCase = ObservePlaybackPreferencesUseCase(preferences),
             updatePlaybackPreferencesUseCase = UpdatePlaybackPreferencesUseCase(preferences),
             observeCameraLayoutsUseCase = ObserveCameraLayoutsUseCase(CameraLayoutRepositoryImpl(InMemoryCameraListDao(), NoConnection)),
+            googleHomeApp = googleHomeApp,
         )
     }
 
@@ -94,5 +96,19 @@ class NestCameraViewModelTest {
         backgroundScope.launch { next.soundOn.collect {} }
         runCurrent()
         assertTrue(next.soundOn.value, "a later visit opens with sound on")
+    }
+
+    @Test
+    fun talkingOpensGoogleHome() {
+        var opened = 0
+        val googleHome = GoogleHomeApp {
+            opened++
+            true
+        }
+        val viewModel = viewModel(PlaybackPreferencesRepositoryImpl(InMemorySettingsDao()), googleHomeApp = googleHome)
+
+        viewModel.talkInGoogleHome()
+
+        assertEquals(1, opened)
     }
 }

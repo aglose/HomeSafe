@@ -91,6 +91,8 @@
     <!-- The Nest camera page's button between showing the whole picture and filling the frame; it names what a tap does. -->
     <string name="camera_nest_fit_fill">Fill the frame</string>
     <string name="camera_nest_fit_whole">Show the whole picture</string>
+    <!-- The Nest camera page's button for talking through the camera's speaker. Google only lets its own app do that, so the button opens Google Home; the label says so because the tap leaves HomeSafe. -->
+    <string name="camera_nest_talk">Talk in Google Home</string>
     <!-- Accessibility description of the scissors button, which cuts a clip of the video; %1$s is the camera's name. -->
     <string name="camera_action_clip_description">Clip a video from %1$s</string>
     <!-- One-line feedback under the player's bar after a tap. -->

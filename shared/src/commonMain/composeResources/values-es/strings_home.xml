@@ -68,6 +68,7 @@
     <string name="camera_nest_live_only">Solo en vivo. Las cámaras Nest transmiten desde Google mientras miras, y HomeSafe no las graba.</string>
     <string name="camera_nest_fit_fill">Llenar el marco</string>
     <string name="camera_nest_fit_whole">Mostrar la imagen completa</string>
+    <string name="camera_nest_talk">Hablar en Google Home</string>
     <string name="camera_action_clip_description">Crear un clip de video de %1$s</string>
     <string name="camera_hint_single_quality">Esta cámara tiene una sola calidad de transmisión</string>
     <string name="camera_hint_sound_on_no_audio">Sonido activado, pero esta transmisión no tiene audio</string>

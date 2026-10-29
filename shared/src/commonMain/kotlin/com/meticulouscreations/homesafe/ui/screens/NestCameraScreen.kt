@@ -8,19 +8,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FitScreen
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +77,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.camera_nest_fit_fill
 import homesafe.shared.generated.resources.camera_nest_fit_whole
 import homesafe.shared.generated.resources.camera_nest_live_only
+import homesafe.shared.generated.resources.camera_nest_talk
 import homesafe.shared.generated.resources.camera_sound_turn_off
 import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
@@ -82,7 +88,8 @@ import kotlin.math.abs
 /**
  * A Google Nest camera, live. These cameras are go2rtc streams pulled from Google while
  * someone watches, with no Frigate camera behind them, so there is no timeline, no recordings and
- * nothing detected: the page is the video, a way back, and the speaker. The video zooms like a
+ * nothing detected: the page is the video, a way back, the speaker, and a way to talk through the
+ * camera, which hands over to Google Home (see `GoogleHomeApp` for why). The video zooms like a
  * Frigate camera's: pinch, double tap, or hold, and drag to look around once zoomed in. The
  * speaker is the same saved choice as theirs, so a camera opens with sound when it was left on.
  *
@@ -97,7 +104,8 @@ import kotlin.math.abs
  * The picture is framed as the camera has been in Arrange mode: turned, and cropped, the crop
  * being where the zoom rests, so pinching out from it shows the whole picture.
  *
- * Turned on its side the video takes the whole window, with the way back and the speaker over it.
+ * Turned on its side the video takes the whole window, with the way back, the speaker and talking
+ * over it.
  *
  * A Nest camera's picture is whatever shape the model makes it (the doorbell's is tall). Shown
  * whole ([VideoFit.Fit], the default), the video's box here takes the picture's own shape, as
@@ -269,6 +277,7 @@ fun NestCameraScreen(
             }
             Row(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
                 if (fitMatters) FitButton(fit = fit, onToggle = viewModel::toggleFit, tint = Color.White)
+                TalkIconButton(onTalk = viewModel::talkInGoogleHome, tint = Color.White)
                 SoundButton(soundOn = soundOn, onToggle = toggleSound, tint = Color.White)
             }
         }
@@ -301,12 +310,38 @@ fun NestCameraScreen(
         Box(modifier = Modifier.weight(1f, fill = false).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             video(Modifier.aspectRatio(boxAspect))
         }
+        NestCameraFooter(onTalk = viewModel::talkInGoogleHome)
+    }
+}
+
+/**
+ * Under the video: talking through the camera, named for the app it opens since the tap leaves
+ * HomeSafe, and why the page has nothing else.
+ */
+@Composable
+internal fun NestCameraFooter(onTalk: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(horizontal = contentGutter(), vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        FilledTonalButton(onClick = onTalk) {
+            Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Text(stringResource(Res.string.camera_nest_talk))
+        }
         Text(
             text = stringResource(Res.string.camera_nest_live_only),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = contentGutter(), vertical = 16.dp),
         )
+    }
+}
+
+/** Full screen, where there is no room for the footer's labelled button. */
+@Composable
+private fun TalkIconButton(onTalk: () -> Unit, tint: Color) {
+    IconButton(onClick = onTalk) {
+        Icon(imageVector = Icons.Filled.Mic, contentDescription = stringResource(Res.string.camera_nest_talk), tint = tint)
     }
 }
 

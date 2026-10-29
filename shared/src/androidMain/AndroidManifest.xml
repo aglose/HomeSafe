@@ -55,6 +55,9 @@
          hides other apps from this one unless they are named here. -->
     <queries>
         <package android:name="com.tailscale.ipn" />
+        <!-- Google Home, which the Nest camera page opens to talk through a camera
+             (GoogleHomeApp.android.kt). -->
+        <package android:name="com.google.android.apps.chromecast.app" />
         <!-- Health Connect, which is an app of its own on Android 13. -->
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
