@@ -275,13 +275,14 @@ public fun com.meticulouscreations.homesafe.fitness.ui.FitnessTheme.type(): com.
   params:
 
 @Composable
-private fun com.meticulouscreations.homesafe.fitness.ui.FitnessTopBar(title: kotlin.String, paged: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.fitness.ui.FitnessTopBar(title: kotlin.String, paged: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, closable: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - title: STABLE (String is immutable)
     - paged: STABLE (primitive type)
     - onBack: STABLE (function type)
+    - closable: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.ForgeButton(text: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, colors: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, icon: androidx.compose.ui.graphics.vector.ImageVector?, enabled: kotlin.Boolean, height: androidx.compose.ui.unit.Dp): kotlin.Unit

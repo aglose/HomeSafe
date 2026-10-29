@@ -23,6 +23,8 @@ kotlin {
 
     iosArm64()
     iosSimulatorArm64()
+    // The Mac app (:desktopApp): the same Compose UI on the JVM, drawn with Skia as on iOS.
+    jvm("desktop")
 
     android {
         namespace = "com.meticulouscreations.homesafe.finance"
@@ -80,7 +82,7 @@ kotlin {
             implementation(libs.compose.uiTooling)
             implementation(libs.androidx.core.ktx)
         }
-        listOf("iosArm64Main", "iosSimulatorArm64Main").forEach { name ->
+        listOf("iosArm64Main", "iosSimulatorArm64Main", "desktopMain").forEach { name ->
             getByName(name).kotlin.srcDir("src/skiaMain/kotlin")
         }
         getByName("androidDeviceTest").dependencies {

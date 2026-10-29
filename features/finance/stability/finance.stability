@@ -623,7 +623,7 @@ public fun com.meticulouscreations.homesafe.finance.ui.FinanceTheme.type(): com.
   params:
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.FinanceTopBar(title: kotlin.String, isDetail: kotlin.Boolean, refreshing: kotlin.Boolean, offline: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>, onGlossary: kotlin.Function0<kotlin.Unit>, onChartSettings: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.FinanceTopBar(title: kotlin.String, isDetail: kotlin.Boolean, refreshing: kotlin.Boolean, offline: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>, onGlossary: kotlin.Function0<kotlin.Unit>, onChartSettings: kotlin.Function0<kotlin.Unit>, closable: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -635,6 +635,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.FinanceTopBar(title: kot
     - onRefresh: STABLE (function type)
     - onGlossary: STABLE (function type)
     - onChartSettings: STABLE (function type)
+    - closable: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.FinePrint(text: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit

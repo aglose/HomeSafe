@@ -2,4 +2,15 @@
     <string name="app_name" translatable="false">HomeSafe</string>
     <!-- The share sheet's name for sending a note to the fitness app -->
     <string name="share_workout_notes">Import workout notes</string>
+    <!-- Android's Keyboard Shortcuts helper (Meta + /): the app's shortcuts with a hardware keyboard, Ctrl and a key each. -->
+    <string name="shortcuts_group">HomeSafe</string>
+    <string name="shortcut_home">Home</string>
+    <string name="shortcut_moments">Moments</string>
+    <string name="shortcut_settings">Settings</string>
+    <string name="shortcut_weather">Weather</string>
+    <string name="shortcut_atlas">Atlas</string>
+    <string name="shortcut_fitness">Fitness</string>
+    <string name="shortcut_finance">Finance</string>
+    <string name="shortcut_assistant">Ask Claude about this screen</string>
+    <string name="shortcut_sidebar">Show or hide the sidebar</string>
 </resources>

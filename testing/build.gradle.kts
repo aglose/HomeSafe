@@ -13,6 +13,8 @@ plugins {
 kotlin {
     iosArm64()
     iosSimulatorArm64()
+    // The Mac app (:desktopApp): the same Compose UI on the JVM, drawn with Skia as on iOS.
+    jvm("desktop")
 
     android {
         namespace = "com.meticulouscreations.homesafe.testing"

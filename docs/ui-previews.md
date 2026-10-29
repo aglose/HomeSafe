@@ -2,8 +2,8 @@
 
 You can't judge a UI change from a diff. HomeSafe turns a change into pictures through Layoutlib, the renderer
 behind Android Studio's preview pane, on your own machine or on CI (for an agent's sandbox with no Android
-toolchain). The app is Android and iOS only; the JVM renderer (`:shared:renderPreviews`) and the journey
-screenshots went with the JVM target.
+toolchain). Whole-app pictures come from the journeys on the JVM (the desktop target): each step of each
+journey leaves a PNG under `app/build/journeys/` (`./gradlew :app:desktopTest`; see [desktop.md](desktop.md)).
 
 | What | Command | Draws | Output |
 |---|---|---|---|

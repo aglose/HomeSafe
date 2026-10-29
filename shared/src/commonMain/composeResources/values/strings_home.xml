@@ -229,6 +229,16 @@
     <string name="shell_drawer_finance_locked">Locked while offline</string>
     <string name="shell_drawer_market_disclaimer">Market data is delayed and for information only.</string>
     <!-- Pull-to-refresh, for screen readers: the action, and what is announced while it runs. -->
+    <!-- The sidebar the shell lists its destinations in on a wide window (a desktop's, a tablet on its side). -->
+    <string name="shell_sidebar_show">Show sidebar</string>
+    <string name="shell_sidebar_hide">Hide sidebar</string>
+    <!-- The sidebar's way to the assistant, which a hold on the floating nav opens elsewhere. -->
+    <string name="shell_sidebar_assistant">Ask Claude</string>
+    <!-- A keyboard shortcut as a hint beside what it does: the key is a digit or a symbol. -->
+    <string name="shell_shortcut_command">⌘%1$s</string>
+    <string name="shell_shortcut_control">Ctrl+%1$s</string>
+    <!-- A tooltip that names an action and its keyboard shortcut: "Home (⌘1)". -->
+    <string name="shell_tooltip_with_shortcut">%1$s (%2$s)</string>
     <string name="shell_refresh">Refresh</string>
     <string name="shell_refreshing">Refreshing</string>
 

@@ -601,7 +601,7 @@ public fun com.meticulouscreations.homesafe.weather.ui.WeatherTheme.units(): com
   params:
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ui.WeatherTopBar(state: com.meticulouscreations.homesafe.weather.WeatherUiState, page: com.meticulouscreations.homesafe.weather.ui.WeatherPage?, onSky: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onOpenPlaces: kotlin.Function0<kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ui.WeatherTopBar(state: com.meticulouscreations.homesafe.weather.WeatherUiState, page: com.meticulouscreations.homesafe.weather.ui.WeatherPage?, onSky: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onOpenPlaces: kotlin.Function0<kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>, closable: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -611,6 +611,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.WeatherTopBar(state: com
     - onBack: STABLE (function type)
     - onOpenPlaces: STABLE (function type)
     - onOpenSettings: STABLE (function type)
+    - closable: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ui.Welcome(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUseLocation: kotlin.Function0<kotlin.Unit>, onOpenPlaces: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit

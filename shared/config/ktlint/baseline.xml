@@ -63,4 +63,11 @@
         <error line="91" column="5" source="compose:parameter-naming" />
         <error line="93" column="5" source="compose:parameter-naming" />
     </file>
+    <file name="src/desktopMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.desktop.kt">
+        <error line="39" column="5" source="compose:parameter-naming" />
+        <error line="40" column="5" source="compose:parameter-naming" />
+        <error line="41" column="5" source="compose:parameter-naming" />
+        <error line="42" column="5" source="compose:parameter-naming" />
+        <error line="44" column="5" source="compose:parameter-naming" />
+    </file>
 </baseline>

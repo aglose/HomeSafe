@@ -23,6 +23,8 @@ kotlin {
 
     iosArm64()
     iosSimulatorArm64()
+    // The Mac app (:desktopApp): the same Compose UI on the JVM, drawn with Skia as on iOS.
+    jvm("desktop")
 
     android {
         namespace = "com.meticulouscreations.homesafe.fitness"
@@ -88,7 +90,7 @@ kotlin {
             // The phone's GPS for a run recorded in the app (RunLocation.android.kt).
             implementation(libs.play.services.location)
         }
-        listOf("iosArm64Main", "iosSimulatorArm64Main").forEach { name ->
+        listOf("iosArm64Main", "iosSimulatorArm64Main", "desktopMain").forEach { name ->
             getByName(name).kotlin.srcDir("src/skiaMain/kotlin")
         }
         getByName("androidDeviceTest").dependencies {

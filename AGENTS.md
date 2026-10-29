@@ -15,6 +15,16 @@ Add or adjust a `@Preview` for the state you changed; every one is drawn, nothin
 `ui-previews` skill has the rest: the fallback if the server breaks, and what to do in a sandbox
 that can't build.
 
+## Wide windows and the desktop
+
+The app also runs on a Mac (`:desktopApp`, every module's `desktop` target; see
+[docs/desktop.md](docs/desktop.md)), and lays itself out by the width it has, not by device. From
+840dp the shell lists everything in a sidebar (`showsSidebar()`) and the drawer's apps hand their
+tabs to it (`publishAppSections`); app pages centre at a readable width (`appPageGutter`). An icon
+button gets a tooltip (`WithTooltip`, reusing its content description) and what acts on a click the
+hand cursor (`handCursor()`). Whole-app pictures at a laptop's size come from the JVM journeys:
+`./gradlew :app:desktopTest --tests '*Desktop*'`, then `app/build/journeys/`.
+
 ## Cloud sessions
 
 `.claude/hooks/session-start.sh` sets up a Claude Code cloud session: the Android SDK, a warm

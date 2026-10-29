@@ -24,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -95,10 +96,15 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.AppSection
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.appPageGutter
 import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
 import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
 import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
+import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
+import com.meticulouscreations.homesafe.ui.publishAppSections
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -284,15 +290,26 @@ private fun FinanceAppContent(
         // the foot of the page (as the camera shell's does; see showsNavRail there), and the tabs'
         // pages start clear of it.
         val sideNav = isCompactLandscape()
-        val padding = PaddingValues(
-            start = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp,
-            top = status.calculateTopPadding() + 60.dp,
-            bottom = nav.calculateBottomPadding() + if (sideNav) 32.dp else 104.dp,
-        )
-        val detailPadding = PaddingValues(top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 32.dp)
-        val pullState = rememberPullToRefreshState()
+        // Beside the shell's sidebar the tabs are listed in it, under Finance's row, and the app
+        // draws no nav of its own (see publishAppSections).
+        val inSidebar = publishAppSections(FINANCE_SECTIONS, selected = if (details.isEmpty()) FinanceTab.entries.indexOf(tab) else -1) { index ->
+            val picked = FinanceTab.entries[index]
+            if (details.isEmpty() && picked == tab) scope.launch { listStates.getValue(picked).animateScrollToItem(0) }
+            details.clear()
+            tab = picked
+        }
+        BoxWithConstraints(modifier.fillMaxSize().background(palette.background).testTag("finance_app")) {
+            // Centred at a readable width in a wide window (a desktop's, a tablet's): see appPageGutter.
+            val gutter = appPageGutter(maxWidth, reserved = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp)
+            val padding = PaddingValues(
+                start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter,
+                end = gutter,
+                top = status.calculateTopPadding() + 60.dp,
+                bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 32.dp else 104.dp,
+            )
+            val detailPadding = PaddingValues(start = gutter, end = gutter, top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 32.dp)
+            val pullState = rememberPullToRefreshState()
 
-        Box(modifier.fillMaxSize().background(palette.background).testTag("finance_app")) {
             PullToRefreshBox(
                 isRefreshing = state.refreshing,
                 onRefresh = {
@@ -407,6 +424,7 @@ private fun FinanceAppContent(
                 refreshing = state.refreshing,
                 offline = offline,
                 onBack = { if (details.isNotEmpty()) details.removeAt(details.lastIndex) else onClose() },
+                closable = !inSidebar,
                 onRefresh = viewModel::refresh,
                 onGlossary = { push(FinanceDetail.Glossary) },
                 onChartSettings = { push(FinanceDetail.ChartSettings) },
@@ -420,7 +438,7 @@ private fun FinanceAppContent(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     // Above the nav when it floats along the bottom; beside it when it is at the side.
-                    .padding(start = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp, bottom = if (sideNav) 16.dp else 84.dp),
+                    .padding(start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter, end = gutter, bottom = if (sideNav || inSidebar) 16.dp else 84.dp),
             )
 
             if (addingSymbol) {
@@ -463,7 +481,7 @@ private fun FinanceAppContent(
                 }
             }
             AnimatedVisibility(
-                visible = details.isEmpty() && !sideNav,
+                visible = details.isEmpty() && !sideNav && !inSidebar,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it },
                 exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
@@ -471,7 +489,7 @@ private fun FinanceAppContent(
                 FinanceBottomNav(tab, onPickTab)
             }
             AnimatedVisibility(
-                visible = details.isEmpty() && sideNav,
+                visible = details.isEmpty() && sideNav && !inSidebar,
                 // Centred in the height the top bar leaves.
                 modifier = Modifier.align(Alignment.CenterStart).padding(top = status.calculateTopPadding() + 48.dp),
                 enter = fadeIn(tween(220)) + slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { -it },
@@ -532,6 +550,7 @@ private fun FinanceTopBar(
     onRefresh: () -> Unit,
     onGlossary: () -> Unit,
     onChartSettings: () -> Unit,
+    closable: Boolean = true,
 ) {
     val colors = FinanceTheme.colors
     Box(
@@ -542,13 +561,15 @@ private fun FinanceTopBar(
             .statusBarsPadding()
             .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart).testTag("finance_back")) {
-            AnimatedContent(isDetail, label = "backIcon") { detail ->
-                Icon(
-                    if (detail) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
-                    contentDescription = stringResource(if (detail) Res.string.common_back else Res.string.finance_close),
-                    tint = colors.textPrimary,
-                )
+        // Beside the shell's sidebar there is nothing to close: the sidebar is the way out, so only Back is offered.
+        if (isDetail || closable) {
+            val label = stringResource(if (isDetail) Res.string.common_back else Res.string.finance_close)
+            WithTooltip(label, modifier = Modifier.align(Alignment.CenterStart)) {
+                IconButton(onClick = onBack, modifier = Modifier.handCursor().testTag("finance_back")) {
+                    AnimatedContent(isDetail, label = "backIcon") { detail ->
+                        Icon(if (detail) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close, contentDescription = label, tint = colors.textPrimary)
+                    }
+                }
             }
         }
         Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -560,26 +581,37 @@ private fun FinanceTopBar(
         }
         // On the tabs only: their titles are short enough to leave room for a third button.
         if (!isDetail) {
-            IconButton(onClick = onChartSettings, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 88.dp).testTag("finance_chart_settings")) {
-                Icon(Icons.Filled.Tune, contentDescription = stringResource(Res.string.finance_title_chart_settings), tint = colors.textSecondary)
+            val chartSettings = stringResource(Res.string.finance_title_chart_settings)
+            WithTooltip(chartSettings, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 88.dp)) {
+                IconButton(onClick = onChartSettings, modifier = Modifier.handCursor().testTag("finance_chart_settings")) {
+                    Icon(Icons.Filled.Tune, contentDescription = chartSettings, tint = colors.textSecondary)
+                }
             }
         }
-        IconButton(onClick = onGlossary, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 44.dp).testTag("finance_glossary")) {
-            Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = stringResource(Res.string.finance_title_glossary), tint = colors.textSecondary)
+        val glossary = stringResource(Res.string.finance_title_glossary)
+        WithTooltip(glossary, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 44.dp)) {
+            IconButton(onClick = onGlossary, modifier = Modifier.handCursor().testTag("finance_glossary")) {
+                Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = glossary, tint = colors.textSecondary)
+            }
         }
-        IconButton(onClick = onRefresh, modifier = Modifier.align(Alignment.CenterEnd)) {
-            if (refreshing) {
-                // Only while refreshing, and turned in the layer: no frames spent when idle, and no
-                // recomposition per frame when not.
-                val spin = rememberInfiniteTransition(label = "refreshSpin")
-                val angle = spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
-                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refreshing), tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
-            } else {
-                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refresh), tint = colors.textSecondary)
+        WithTooltip(stringResource(if (refreshing) Res.string.finance_refreshing else Res.string.finance_refresh), modifier = Modifier.align(Alignment.CenterEnd)) {
+            IconButton(onClick = onRefresh, modifier = Modifier.handCursor()) {
+                if (refreshing) {
+                    // Only while refreshing, and turned in the layer: no frames spent when idle, and no
+                    // recomposition per frame when not.
+                    val spin = rememberInfiniteTransition(label = "refreshSpin")
+                    val angle = spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
+                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refreshing), tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
+                } else {
+                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refresh), tint = colors.textSecondary)
+                }
             }
         }
     }
 }
+
+/** Finance's tabs as the shell's sidebar lists them, under its row (see publishAppSections). */
+private val FINANCE_SECTIONS = FinanceTab.entries.map { AppSection(it.label, it.icon) }
 
 @Composable
 private fun FinanceBottomNav(selected: FinanceTab, onSelect: (FinanceTab) -> Unit) {

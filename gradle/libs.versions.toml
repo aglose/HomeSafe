@@ -40,6 +40,10 @@ media3 = "1.11.0"
 # libwebrtc for Android, Stream's build of the upstream org.webrtc API (live view over WebRTC).
 stream-webrtc = "1.3.10"
 coil = "3.6.3"
+# The desktop's video: FFmpeg, through JavaCV's frame grabber, for go2rtc's HLS and Frigate's
+# recordings (DesktopVideoEngine.kt). The two move together: javacv x.y.z wants ffmpeg *-x.y.z.
+javacv = "1.5.14"
+ffmpeg = "8.1.2-1.5.14"
 
 benchmark = "1.6.0-alpha01"
 # In-process tracing (Tracing 2.0): Metro's binding spans and the app's own sections, written to a Perfetto
@@ -94,6 +98,10 @@ compose-uiTest = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "c
 compose-uiTestJunit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", version.ref = "composeMultiplatform" }
 compose-uiTestManifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "composeMultiplatform" }
 kotlinx-coroutinesTest = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+# Dispatchers.Main on the desktop: the AWT event thread Compose draws on.
+kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+# Compose for the desktop, without a Skia for any one OS: :desktopApp picks that (see its build file).
+compose-desktop = { module = "org.jetbrains.compose.desktop:desktop", version.ref = "composeMultiplatform" }
 room-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room" }
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
@@ -113,6 +121,9 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
 stream-webrtc-android = { module = "io.getstream:stream-webrtc-android", version.ref = "stream-webrtc" }
+javacv = { module = "org.bytedeco:javacv", version.ref = "javacv" }
+javacpp = { module = "org.bytedeco:javacpp", version.ref = "javacv" }
+ffmpeg = { module = "org.bytedeco:ffmpeg", version.ref = "ffmpeg" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 metrox-viewmodel-compose = { module = "dev.zacsweers.metro:metrox-viewmodel-compose", version.ref = "metro" }

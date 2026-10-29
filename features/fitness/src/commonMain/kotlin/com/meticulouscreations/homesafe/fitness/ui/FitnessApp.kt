@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -103,10 +104,13 @@ import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground
 import com.meticulouscreations.homesafe.fitness.ui.shader.RecordBurst
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.AppSection
+import com.meticulouscreations.homesafe.ui.appPageGutter
 import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
 import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
 import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.components.rememberShareText
+import com.meticulouscreations.homesafe.ui.publishAppSections
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -351,25 +355,33 @@ fun FitnessAppContent(
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
         val top = status.calculateTopPadding() + 62.dp
-        val tabPadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 108.dp)
-        val pagePadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 28.dp)
-        val page = pages.lastOrNull()
-        val workout = state.workout
-        // A workout is read between sets with the phone put down: the screen stays on while one is open and the app is up.
-        if (active && workout != null && !LocalInspectionMode.current) KeepScreenOn()
-        // What has been added to the open workout from off its shelves, kept up here above the pages: opening one of
-        // those exercises' own pages and coming back must not lose it.
-        var pulled by rememberSaveable(workout?.workout?.id) { mutableStateOf(emptyList<String>()) }
-        // The forge takes the colours of what is on screen: the workout's while one is open, the phase's otherwise.
-        val heatOf = when {
-            page == FitnessPage.Workout && workout != null -> palette.focus(workout.workout.focus)
-            page is FitnessPage.Lift -> state.board(page.exerciseId)?.let { palette.focus(focusOf(it.exercise.bodyPart)) } ?: palette.phase(state.phase.kind)
-            page is FitnessPage.Session -> state.session(page.workoutId, page.epochDay)?.focus?.let { palette.focus(it) } ?: palette.phase(state.phase.kind)
-            page == FitnessPage.Runs || page is FitnessPage.Run || page == FitnessPage.Recording -> palette.run
-            else -> palette.phase(state.phase.kind)
+        // Beside the shell's sidebar the tabs are listed in it, under Fitness's row, and the app
+        // draws no nav of its own (see publishAppSections).
+        val inSidebar = publishAppSections(FITNESS_SECTIONS, selected = if (pages.isEmpty()) tab.ordinal else -1) { index ->
+            pages.clear()
+            tab = FitnessTab.entries[index]
         }
+        BoxWithConstraints(modifier.fillMaxSize().background(palette.background).testTag("fitness_app")) {
+            // Centred at a readable width in a wide window (a desktop's, a tablet's): see appPageGutter.
+            val gutter = appPageGutter(maxWidth)
+            val tabPadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + if (inSidebar) 28.dp else 108.dp)
+            val pagePadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + 28.dp)
+            val page = pages.lastOrNull()
+            val workout = state.workout
+            // A workout is read between sets with the phone put down: the screen stays on while one is open and the app is up.
+            if (active && workout != null && !LocalInspectionMode.current) KeepScreenOn()
+            // What has been added to the open workout from off its shelves, kept up here above the pages: opening one of
+            // those exercises' own pages and coming back must not lose it.
+            var pulled by rememberSaveable(workout?.workout?.id) { mutableStateOf(emptyList<String>()) }
+            // The forge takes the colours of what is on screen: the workout's while one is open, the phase's otherwise.
+            val heatOf = when {
+                page == FitnessPage.Workout && workout != null -> palette.focus(workout.workout.focus)
+                page is FitnessPage.Lift -> state.board(page.exerciseId)?.let { palette.focus(focusOf(it.exercise.bodyPart)) } ?: palette.phase(state.phase.kind)
+                page is FitnessPage.Session -> state.session(page.workoutId, page.epochDay)?.focus?.let { palette.focus(it) } ?: palette.phase(state.phase.kind)
+                page == FitnessPage.Runs || page is FitnessPage.Run || page == FitnessPage.Recording -> palette.run
+                else -> palette.phase(state.phase.kind)
+            }
 
-        Box(modifier.fillMaxSize().background(palette.background).testTag("fitness_app")) {
             ForgeBackground(
                 tint = heatOf.first,
                 tint2 = heatOf.second,
@@ -616,10 +628,11 @@ fun FitnessAppContent(
                 },
                 paged = page != null,
                 onBack = ::pop,
+                closable = !inSidebar,
             )
 
             AnimatedVisibility(
-                visible = pages.isEmpty(),
+                visible = pages.isEmpty() && !inSidebar,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it },
                 exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
@@ -647,7 +660,7 @@ private fun fitnessTransition(from: Any, to: Any, forward: Boolean): ContentTran
 
 /** The bar across the top: the way out (or back), and where this is. */
 @Composable
-private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit) {
+private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit, closable: Boolean = true) {
     val colors = FitnessTheme.colors
     Row(
         Modifier
@@ -657,12 +670,15 @@ private fun FitnessTopBar(title: String, paged: Boolean, onBack: () -> Unit) {
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RoundIconButton(
-            if (paged) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
-            stringResource(if (paged) Res.string.common_back else Res.string.fitness_close),
-            onBack,
-            Modifier.testTag("fitness_back"),
-        )
+        // Beside the shell's sidebar there is nothing to close: the sidebar is the way out, so only Back is offered.
+        if (paged || closable) {
+            RoundIconButton(
+                if (paged) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
+                stringResource(if (paged) Res.string.common_back else Res.string.fitness_close),
+                onBack,
+                Modifier.testTag("fitness_back"),
+            )
+        }
         Text(title, style = FitnessTheme.type.title, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
     }
 }
@@ -766,3 +782,6 @@ private fun RecordCelebration(flash: RecordFlash?, phase: PhaseKind, onDismiss: 
         }
     }
 }
+
+/** Fitness's tabs as the shell's sidebar lists them, under its row (see publishAppSections). */
+private val FITNESS_SECTIONS = FitnessTab.entries.map { AppSection(it.label, it.icon) }

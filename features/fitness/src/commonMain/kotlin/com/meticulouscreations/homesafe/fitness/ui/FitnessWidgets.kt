@@ -78,6 +78,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.domain.Rung
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.handCursor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -176,10 +178,15 @@ internal fun RoundIconButton(
     enabled: Boolean = true,
 ) {
     Box(
-        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
+        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick).handCursor(enabled),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = if (enabled) tint else tint.copy(alpha = tint.alpha * 0.25f), modifier = Modifier.size(size * 0.5f))
+        // The tooltip hangs off the whole button: what it says shows wherever the pointer is over it.
+        WithTooltip(label, Modifier.matchParentSize()) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = label, tint = if (enabled) tint else tint.copy(alpha = tint.alpha * 0.25f), modifier = Modifier.size(size * 0.5f))
+            }
+        }
     }
 }
 

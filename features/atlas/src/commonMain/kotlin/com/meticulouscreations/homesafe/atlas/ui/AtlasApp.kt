@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -81,9 +82,13 @@ import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.AtlasViewModel
 import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.AppSection
+import com.meticulouscreations.homesafe.ui.LocalAppSections
+import com.meticulouscreations.homesafe.ui.appPageGutter
 import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
 import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
 import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
+import com.meticulouscreations.homesafe.ui.publishAppSections
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -170,7 +175,7 @@ fun AtlasApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean
             LaunchedEffect(lockViewModel) { lockViewModel.unlock() }
             Box(modifier.fillMaxSize()) {
                 AtlasLockScreen(lock, onUnlock = lockViewModel::unlock)
-                AtlasTopBar(stringResource(Res.string.atlas_title), paged = false, onBack = onClose, onOpenSync = null)
+                AtlasTopBar(stringResource(Res.string.atlas_title), paged = false, onBack = onClose, onOpenSync = null, closable = LocalAppSections.current == null)
             }
         } else {
             // The activity's instance, the one the drawer's card shares.
@@ -222,12 +227,23 @@ fun AtlasAppContent(
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
         val top = status.calculateTopPadding() + 62.dp
-        val tabPadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 108.dp)
-        val pagePadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 28.dp)
-        val page = pages.lastOrNull()
-        val showTabs = pages.isEmpty() && state.loaded && !state.empty
+        BoxWithConstraints(modifier.fillMaxSize().background(palette.background).testTag("atlas_app")) {
+            // Centred at a readable width in a wide window (a desktop's, a tablet's): see appPageGutter.
+            val gutter = appPageGutter(maxWidth)
+            val tabPadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + if (LocalAppSections.current != null) 28.dp else 108.dp)
+            val pagePadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + 28.dp)
+            val page = pages.lastOrNull()
+            val showTabs = pages.isEmpty() && state.loaded && !state.empty
+            // Beside the shell's sidebar the tabs are listed in it, under Atlas's row, and the app
+            // draws no nav of its own (see publishAppSections); there are none while nothing has been kept.
+            val inSidebar = publishAppSections(
+                sections = if (state.loaded && !state.empty) ATLAS_SECTIONS else emptyList(),
+                selected = if (pages.isEmpty()) tab.ordinal else -1,
+            ) { index ->
+                pages.clear()
+                tab = AtlasTab.entries[index]
+            }
 
-        Box(modifier.fillMaxSize().background(palette.background).testTag("atlas_app")) {
             // The map fills the screen itself; everything else has contours running under its head.
             if (page != null || tab != AtlasTab.MAP || !state.loaded || state.empty) {
                 AtlasBackdrop(palette.trail, palette.air, Modifier.fillMaxWidth().height(380.dp), seed = 0.2f, energy = 0.45f, running = active)
@@ -343,7 +359,7 @@ fun AtlasAppContent(
             )
 
             AnimatedVisibility(
-                visible = showTabs,
+                visible = showTabs && !inSidebar,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it },
                 exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
@@ -369,7 +385,15 @@ private fun atlasTransition(from: Any, to: Any, forward: Boolean): ContentTransf
 
 /** The bar across the top: the way out (or back), where this is, and the way to where the history comes from. */
 @Composable
-private fun AtlasTopBar(title: String, paged: Boolean, onBack: () -> Unit, onOpenSync: (() -> Unit)?, syncNeedsAttention: Boolean = false, syncing: Boolean = false) {
+private fun AtlasTopBar(
+    title: String,
+    paged: Boolean,
+    onBack: () -> Unit,
+    onOpenSync: (() -> Unit)?,
+    syncNeedsAttention: Boolean = false,
+    syncing: Boolean = false,
+    closable: Boolean = LocalAppSections.current == null,
+) {
     val colors = AtlasTheme.colors
     Row(
         Modifier
@@ -379,12 +403,15 @@ private fun AtlasTopBar(title: String, paged: Boolean, onBack: () -> Unit, onOpe
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AtlasRoundButton(
-            if (paged) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
-            stringResource(if (paged) Res.string.common_back else Res.string.atlas_close),
-            onBack,
-            Modifier.testTag("atlas_back"),
-        )
+        // Beside the shell's sidebar there is nothing to close: the sidebar is the way out, so only Back is offered.
+        if (paged || closable) {
+            AtlasRoundButton(
+                if (paged) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
+                stringResource(if (paged) Res.string.common_back else Res.string.atlas_close),
+                onBack,
+                Modifier.testTag("atlas_back"),
+            )
+        }
         Text(title, style = AtlasTheme.type.title, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
         if (onOpenSync != null) {
             Box {
@@ -433,3 +460,6 @@ private fun AtlasNav(selected: AtlasTab, onSelect: (AtlasTab) -> Unit) {
         }
     }
 }
+
+/** The atlas's tabs as the shell's sidebar lists them, under its row (see publishAppSections). */
+private val ATLAS_SECTIONS = AtlasTab.entries.map { AppSection(it.label, it.icon) }

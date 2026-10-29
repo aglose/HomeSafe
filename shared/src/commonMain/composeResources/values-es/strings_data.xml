@@ -66,6 +66,7 @@
     <string name="biometric_confirm_save_reason">Confirma que eres tú para guardar este inicio de sesión</string>
     <string name="biometric_sign_in_reason">Inicia sesión en tu servidor</string>
     <string name="biometric_confirmation_cancelled">Se canceló la confirmación biométrica</string>
+    <string name="biometric_owner_check_failed">No se pudo confirmar que eres tú</string>
     <string name="biometric_keychain_save_failed">No se pudo guardar el inicio de sesión en el Llavero (estado %1$s)</string>
     <string name="biometric_sign_in_failed">El inicio de sesión biométrico falló o se canceló</string>
     <string name="biometric_no_saved_login">No hay ningún inicio de sesión guardado para el acceso biométrico</string>

@@ -23,14 +23,16 @@ ktlint_function_naming_ignore_when_annotated_with = Composable
 
 # CompositionLocals that cross modules (the shell in :shared and what :app provides it, and the
 # assistant every app's bottom bar opens); the rule only looks at public ones, and these became
-# public when the feature modules were split out.
-compose_allowed_composition_locals = LocalAssistant,LocalCarsPage,LocalCompactLandscape,LocalNativeTabBar,LocalShellApps,LocalTwoPanes,LocalPaneWidth,LocalOpenSettingsPage,LocalBalanceEditor
+# public when the feature modules were split out. The desktop's: the sidebar (LocalSidebar,
+# LocalShellSidebarWidth, LocalSidebarApp, LocalAppSections) and the shortcut hints the desktop app
+# and Android's keyboard provide (LocalShortcutKey); see docs/desktop.md.
+compose_allowed_composition_locals = LocalAssistant,LocalCarsPage,LocalCompactLandscape,LocalNativeTabBar,LocalShellApps,LocalTwoPanes,LocalPaneWidth,LocalOpenSettingsPage,LocalBalanceEditor,LocalSidebar,LocalShellSidebarWidth,LocalSidebarApp,LocalAppSections,LocalShortcutKey
 
 # This codebase deliberately puts `=` expression bodies on the following line (see
 # ConnectionRepositoryImpl.kt). The rule wants them inline.
 ktlint_standard_function-signature = disabled
 
-# main.kt in :desktopApp and :webApp are conventional entry-point filenames.
+# Main.kt in :desktopApp is the conventional entry-point filename.
 ktlint_standard_filename = disabled
 
 # Backing properties for StateFlow (`_foo` / `foo`) are the documented Compose/Flow idiom.

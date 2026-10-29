@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.meticulouscreations.homesafe.maps.BaseMap
+import com.meticulouscreations.homesafe.ui.wheelZoom
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.data.RadarDecoder
 import com.meticulouscreations.homesafe.weather.data.requestUntilArrived
@@ -179,6 +180,11 @@ internal fun RadarMap(
                     Modifier
                 } else {
                     Modifier
+                        // A desktop's wheel zooms about the pointer, as a pinch does about the fingers.
+                        .wheelZoom(Triple(state, tilePx, minZoom to maxZoom)) { factor, at ->
+                            val size = viewport
+                            state.camera = state.camera.zoomed(factor, at.x - size.width / 2f, at.y - size.height / 2f, tilePx, minZoom = minZoom, maxZoom = maxZoom)
+                        }
                         .pointerInput(state, tilePx, minZoom, maxZoom) {
                             detectTransformGestures { centroid, pan, zoom, _ ->
                                 state.camera = state.camera

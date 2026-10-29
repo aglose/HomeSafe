@@ -1,0 +1,79 @@
+package com.meticulouscreations.homesafe.data
+
+import com.meticulouscreations.homesafe.runProcess
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_confirmation_cancelled
+import homesafe.shared.generated.resources.biometric_name_generic
+import homesafe.shared.generated.resources.biometric_name_passcode
+import homesafe.shared.generated.resources.biometric_name_touch_id
+import homesafe.shared.generated.resources.biometric_owner_check_failed
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.runInterruptible
+import org.jetbrains.compose.resources.StringResource
+import java.io.File
+
+/**
+ * Touch ID (or the Mac's password) and the login Keychain, by way of the small Swift helper the
+ * Mac app carries in its resources (`desktopApp/macos/OwnerCheck.swift`): the JVM has no
+ * LocalAuthentication of its own. Absent anywhere but a packaged Mac app (a `run` from Gradle on
+ * Linux, say), and then [isAvailable] is false and nothing is asked.
+ */
+internal object MacOwnerCheck {
+    private val helper: File? by lazy {
+        val resources = System.getProperty("compose.application.resources.dir") ?: return@lazy null
+        File(resources, "HomeSafe").takeIf { it.canExecute() }
+    }
+
+    /** What the check asks for here: touchid, password or none. Asked once; it only changes in System Settings. */
+    private val method: String by lazy { run("can").takeIf { it.exitCode == 0 }?.output?.decodeToString()?.trim() ?: "none" }
+
+    val isAvailable: Boolean get() = method != "none"
+
+    val methodName: StringResource
+        get() = when (method) {
+            "touchid" -> Res.string.biometric_name_touch_id
+            "password" -> Res.string.biometric_name_passcode
+            else -> Res.string.biometric_name_generic
+        }
+
+    /**
+     * Puts up the prompt, explained by [reason], and waits for it; with [input] for a command that
+     * keeps something. Cancelling the call takes the prompt down with the helper.
+     */
+    suspend fun ask(command: String, reason: String, input: ByteArray? = null): Result<ByteArray> = runInterruptible(Dispatchers.IO) {
+        val outcome = run(command, reason, input = input, timeoutSeconds = PROMPT_TIMEOUT_SECONDS)
+        when (outcome.exitCode) {
+            0 -> Result.success(outcome.output)
+
+            CANCELLED -> Result.failure(LocalizedException(UiText.of(Res.string.biometric_confirmation_cancelled), technical = "Owner check was cancelled"))
+
+            // The system's own words when it gave any, already in the reader's language; else ours.
+            else -> Result.failure(
+                outcome.error.takeIf { it.isNotBlank() }?.let(::OwnerCheckException)
+                    ?: LocalizedException(UiText.of(Res.string.biometric_owner_check_failed), technical = "Owner check failed (${outcome.exitCode})"),
+            )
+        }
+    }
+
+    /** A command that puts up no prompt. */
+    fun quietly(command: String): Boolean = run(command).exitCode == 0
+
+    private class Outcome(val exitCode: Int, val output: ByteArray, val error: String)
+
+    private fun run(vararg arguments: String, input: ByteArray? = null, timeoutSeconds: Long = 10): Outcome {
+        val executable = helper ?: return Outcome(-1, ByteArray(0), "")
+        val outcome = runProcess(listOf(executable.absolutePath) + arguments, input, timeoutSeconds) ?: return Outcome(-1, ByteArray(0), "")
+        return Outcome(outcome.exitCode, outcome.output, outcome.error.decodeToString())
+    }
+
+    private const val CANCELLED = 2
+
+    /** Long enough for someone to find the sensor, or type their password. */
+    private const val PROMPT_TIMEOUT_SECONDS = 120L
+}
+
+/** The system refused or gave up; the message is its own, already in the reader's language. */
+internal class OwnerCheckException(message: String) : Exception(message)

@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
 
 /**
@@ -70,8 +71,54 @@ private val TWO_PANE_WIDTH = 800.dp
 @ReadOnlyComposable
 fun showsTwoPanes(): Boolean {
     LocalTwoPanes.current?.let { return it }
-    return !isCompactLandscape() && windowWidth() >= TWO_PANE_WIDTH
+    return !isCompactLandscape() && windowWidth() - LocalShellSidebarWidth.current >= TWO_PANE_WIDTH
 }
+
+/** Stands in for the window in [showsSidebar], as [LocalTwoPanes] does in [showsTwoPanes]: null asks the window. */
+val LocalSidebar = compositionLocalOf<Boolean?> { null }
+
+/**
+ * Material's "expanded" width: a laptop's or a desktop's window, a tablet on its side. From here
+ * there is room for a list of every destination down the side, and a nav floating over the foot
+ * of each page (built for a thumb) is the wrong thing for a pointer.
+ */
+private val SIDEBAR_WINDOW_WIDTH = 840.dp
+
+/**
+ * Whether the shell lists its destinations in a sidebar down the start edge, the drawer's apps
+ * among them, instead of a nav along the bottom and a drawer behind a menu button: a desktop's
+ * window, a tablet on its side, a phone unfolded flat. Never a phone on its side
+ * ([isCompactLandscape]), which is wide but has no height to spare for a list down it.
+ */
+@Composable
+@ReadOnlyComposable
+fun showsSidebar(): Boolean {
+    LocalSidebar.current?.let { return it }
+    return !isCompactLandscape() && windowWidth() >= SIDEBAR_WINDOW_WIDTH
+}
+
+/**
+ * How much of the window's width the shell's sidebar takes ([showsSidebar]), for whatever lays
+ * itself out by the window to take off: the shell provides it around its content, and it is zero
+ * everywhere else (no sidebar, or put away).
+ */
+val LocalShellSidebarWidth = compositionLocalOf { 0.dp }
+
+/**
+ * How wide an app from the drawer lets its pages grow before it centres them: they were laid out
+ * for a phone, and a card stretched across a laptop's window puts its words a long way apart.
+ */
+val APP_PAGE_MAX_WIDTH = 760.dp
+
+/**
+ * The gutter either side of an app's pages that centres them at [maxWidth] in the [available]
+ * width the app has (less [reserved] for a nav of its own at the side), and none where there is no
+ * more room than that: nothing on a phone. Added to the padding the app hands its pages, so each
+ * still scrolls across the whole width, under a wheel anywhere over it. From the app's own
+ * constraints rather than the window: beside the shell's sidebar, or drawn in a test's phone-sized box.
+ */
+fun appPageGutter(available: Dp, reserved: Dp = 0.dp, maxWidth: Dp = APP_PAGE_MAX_WIDTH): Dp =
+    ((available - reserved - maxWidth) / 2).coerceAtLeast(0.dp)
 
 /** The window's width, system bars and cutouts included. */
 @Composable

@@ -25,12 +25,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.ViewSidebar
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -55,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -71,7 +75,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -96,18 +103,26 @@ import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
+import com.meticulouscreations.homesafe.navigation.ShellCommand
+import com.meticulouscreations.homesafe.navigation.ShellCommands
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.navigation.rememberBackStackViewModelStores
+import com.meticulouscreations.homesafe.ui.AppSectionsHost
 import com.meticulouscreations.homesafe.ui.BackScope
+import com.meticulouscreations.homesafe.ui.LocalAppSections
+import com.meticulouscreations.homesafe.ui.LocalShellSidebarWidth
+import com.meticulouscreations.homesafe.ui.WithTooltip
 import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
 import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
 import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
+import com.meticulouscreations.homesafe.ui.showsSidebar
 import com.meticulouscreations.homesafe.ui.showsTwoPanes
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
@@ -122,6 +137,7 @@ import homesafe.shared.generated.resources.shell_menu
 import homesafe.shared.generated.resources.shell_offline
 import homesafe.shared.generated.resources.shell_show_options
 import homesafe.shared.generated.resources.shell_show_version
+import homesafe.shared.generated.resources.shell_sidebar_show
 import homesafe.shared.generated.resources.shell_status
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -173,6 +189,40 @@ class ShellNavigation(
      * app ([onAppSelected]) instead of growing it over the shell.
      */
     var appsInSidebar by mutableStateOf(false)
+
+    /**
+     * Where the shell draws the sidebar itself ([showsSidebar]): the app from the drawer that is
+     * showing beside it in place of the tabs, or null while one of the tabs is.
+     */
+    var sidebarApp by mutableStateOf<InnerApp?>(null)
+        private set
+
+    /** Whether the sidebar has been put away, to give the page the whole window (View → Hide Sidebar, or the button beside the title). */
+    var sidebarHidden by mutableStateOf(false)
+
+    /**
+     * Lays the shell out with the shell's own sidebar or without, as the window crosses into
+     * [showsSidebar] and back. An app that is up carries across: from over the shell into the
+     * sidebar's content area as the window widens, and back over the shell as it narrows, on
+     * whatever it had been asked to show.
+     */
+    fun useSidebar(sidebar: Boolean) {
+        if (sidebar == appsInSidebar) return
+        val requestedFinanceTab = financeTab
+        val requestedWeatherLink = weatherLink
+        if (sidebar) {
+            drawerOpen = false
+            val open = app.takeIf { appOpen }
+            closeApp()
+            appsInSidebar = true
+            if (open != null) openApp(open, Offset.Zero, selectedTab, requestedFinanceTab, requestedWeatherLink)
+        } else {
+            val open = sidebarApp
+            sidebarApp = null
+            appsInSidebar = false
+            if (open != null) openApp(open, Offset.Zero, selectedTab, requestedFinanceTab, requestedWeatherLink)
+        }
+    }
 
     /** Notes shared into the fitness app while it is a sidebar tab ([appsInSidebar]), until that tab has taken them to its import page. */
     var fitnessNotes by mutableStateOf<String?>(null)
@@ -234,6 +284,7 @@ class ShellNavigation(
         // The app is a destination of its own in the sidebar: it reads what it was asked to show
         // ([financeTab], [weatherLink]) from here when it comes up.
         if (appsInSidebar) {
+            sidebarApp = which
             onAppSelected(which)
             return
         }
@@ -330,7 +381,7 @@ class ShellNavigation(
      * stays under the other tabs, as soon as it is off screen — see [FrigateAppShell]).
      */
     fun selectTab(tab: TopLevelRoute) {
-        if (tab == selectedTab && isAtRoot(tab)) reselected.tryEmit(tab)
+        if (tab == selectedTab && isAtRoot(tab) && sidebarApp == null) reselected.tryEmit(tab)
         popToRoot(tab)
         showTab(tab)
     }
@@ -346,6 +397,7 @@ class ShellNavigation(
     }
 
     private fun showTab(tab: TopLevelRoute) {
+        sidebarApp = null
         topLevel.switchTo(tab)
         onTabSelected(tab)
     }
@@ -362,6 +414,7 @@ class ShellNavigation(
             TopLevelRoute.Moments -> null
         }
         if (page != null) append(", page: ").append(page)
+        sidebarApp?.let { append(", with the ").append(it.name.lowercase()).append(" app showing beside the sidebar in its place") }
         if (drawerOpen) append(", with the drawer of apps open over it")
         if (appOpen) append(", under the ").append(app.name.lowercase()).append(" app, which is open over it")
     }
@@ -491,7 +544,15 @@ class ShellNavigation(
     }
 }
 
-/** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
+/**
+ * The main app shell: a persistent header, tab content driven by Navigation 3, and a floating
+ * bottom nav — or, in a wide window ([showsSidebar]), a sidebar down the start edge with every
+ * destination in it, the drawer's apps among them, each shown beside it ([ShellNavigation.sidebarApp]).
+ * A window that narrows or widens through the threshold changes over in place, an open app with it.
+ *
+ * The shell also acts on [ShellCommands]: the Mac's menu bar and a keyboard's shortcuts, which
+ * are heard outside its composition.
+ */
 // Public for another module to place; it fills whatever it is given, so it takes no Modifier.
 @Suppress("ktlint:compose:modifier-missing-check")
 @Composable
@@ -509,22 +570,117 @@ fun FrigateAppShell() {
     LaunchedEffect(nav) { nav.openWeatherFromNotifications() }
     LaunchedEffect(nav) { nav.openFinanceFromNotifications() }
     AssistantScreenContext { nav.assistantContext() }
-    val compactLandscape = isCompactLandscape()
-    val twoPanes = showsTwoPanes()
+
+    // Laid out from the window's answer straight away; the navigation catches up after the frame.
+    val sidebar = !LocalNativeTabBar.current && showsSidebar()
+    val sidebarShown = sidebar && !nav.sidebarHidden
     SideEffect {
-        nav.compactLandscape = compactLandscape
-        nav.twoPanes = twoPanes
+        nav.useSidebar(sidebar)
+        ShellCommands.sidebarShown(available = sidebar, hidden = nav.sidebarHidden)
+    }
+    val assistant = LocalAssistant.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    LaunchedEffect(nav, assistant) {
+        ShellCommands.commands.collect { command ->
+            when (command) {
+                is ShellCommand.Go -> {
+                    nav.drawerOpen = false
+                    nav.closeApp()
+                    nav.selectTab(command.tab)
+                }
+
+                is ShellCommand.Open -> nav.openApp(command.app, Offset.Zero, nav.selectedTab)
+
+                ShellCommand.ToggleSidebar -> nav.sidebarHidden = !nav.sidebarHidden
+
+                // From the foot of the window's start edge, where the sidebar keeps its row for it.
+                ShellCommand.Assistant -> assistant?.toggle(Rect(0f, windowSize.height.toFloat(), windowSize.width / 4f, windowSize.height.toFloat()))
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        ShellCommands.shellShown(true)
+        onDispose {
+            ShellCommands.shellShown(false)
+            ShellCommands.sidebarShown(available = false, hidden = false)
+        }
     }
 
+    val sidebarWidth by animateDpAsState(
+        targetValue = if (sidebarShown) SIDEBAR_WIDTH else 0.dp,
+        animationSpec = tween(NAV_TRANSITION_MS, easing = NavEnterEasing),
+        label = "sidebar-width",
+    )
+    // The tabs and each app keep what they had scrolled to and typed while another is beside the sidebar.
+    val pages = rememberSaveableStateHolder()
+    // Where the app beside the sidebar lists its sections, for the sidebar to show under its row.
+    val appSections = remember { AppSectionsHost() }
+    CompositionLocalProvider(LocalShellSidebarWidth provides sidebarWidth) {
+        val compactLandscape = isCompactLandscape()
+        val twoPanes = showsTwoPanes()
+        SideEffect {
+            nav.compactLandscape = compactLandscape
+            nav.twoPanes = twoPanes
+        }
+        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            if (sidebar) {
+                Box(Modifier.width(sidebarWidth).fillMaxHeight().clipToBounds()) {
+                    // At its full width throughout, so it slides out from under the edge rather than squeezing.
+                    ShellSidebar(
+                        nav = nav,
+                        sections = appSections,
+                        onHide = { nav.sidebarHidden = true },
+                        modifier = Modifier.requiredWidth(SIDEBAR_WIDTH).align(Alignment.CenterEnd),
+                    )
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                val app = nav.sidebarApp.takeIf { sidebar }
+                if (app != null) {
+                    // ShellApps hears of shared notes while the tabs are up; with an app here instead, this does.
+                    LaunchedEffect(nav) { nav.openFitnessFromShares { notes -> nav.fitnessNotes = notes } }
+                    pages.SaveableStateProvider("app-${app.name}") {
+                        CompositionLocalProvider(LocalAppSections provides appSections) { LocalSidebarApp.current(nav, app) }
+                    }
+                } else {
+                    pages.SaveableStateProvider("tabs") { ShellTabs(nav, stores, cardZoom, activeConnection, viewModel.appVersion, offline, sidebar) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The shell's tabs in their scaffold: the top bar, Navigation 3's tab content, and the floating
+ * nav, or none of it where the [sidebar] lists the tabs instead. In a sidebar's window the top bar
+ * leaves the app's name to the sidebar, and its button brings back a sidebar that was put away.
+ */
+@Composable
+private fun ShellTabs(
+    nav: ShellNavigation,
+    stores: ShellViewModelStores,
+    cardZoom: CameraCardZoomState,
+    activeConnection: ActiveConnection?,
+    appVersion: String,
+    offline: Boolean,
+    sidebar: Boolean,
+) {
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
-        showBottomNav = nav.showsBottomNav(nav.selectedTab),
+        showBottomNav = !sidebar && nav.showsBottomNav(nav.selectedTab),
         immersive = nav.showsFullScreenVideo(nav.selectedTab),
         topBar = {
             FrigateTopBar(
                 activeConnection = activeConnection,
-                appVersion = viewModel.appVersion,
-                onMenu = { nav.drawerOpen = true },
+                appVersion = appVersion,
+                onMenu = when {
+                    !sidebar -> ({ nav.drawerOpen = true })
+                    nav.sidebarHidden -> ({ nav.sidebarHidden = false })
+                    else -> null
+                },
+                menu = if (sidebar) TopBarMenuButton.ShowSidebar else TopBarMenuButton.Drawer,
+                showTitle = !sidebar || nav.sidebarHidden,
+                pageTitle = stringResource(nav.selectedTab.label),
                 offline = offline,
                 arrange = if (nav.selectedTab == TopLevelRoute.Home) homeArrangeAction() else null,
             )
@@ -534,7 +690,7 @@ fun FrigateAppShell() {
         overlay = { ShellOverlays(nav, cardZoom, nav.selectedTab) },
         contentCovered = nav.appCovering,
         contentObscured = nav.drawerOpen || nav.appOpen,
-        drawerPull = nav.drawerPullOn(nav.selectedTab),
+        drawerPull = if (sidebar) null else nav.drawerPullOn(nav.selectedTab),
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
@@ -833,9 +989,15 @@ internal fun ShellSkeleton(onMenu: () -> Unit = {}) {
     }
 }
 
+/** What the top bar's button at the start opens: the drawer of apps, or a sidebar that was put away. */
+internal enum class TopBarMenuButton { Drawer, ShowSidebar }
+
 /**
  * [appVersion] is what the route badge shows when tapped; unused until there is a route to badge.
- * [onMenu] opens the drawer; null where there is none to open (the apps are in an iPad's sidebar). With [offline] the badge says so instead of naming the route: the
+ * [onMenu] opens the drawer, or with [menu] as [TopBarMenuButton.ShowSidebar] brings back the
+ * sidebar; null where there is nothing to open (the apps are in an iPad's sidebar, or in the
+ * shell's own, which is out). [showTitle] false leaves the app's name to the sidebar, which
+ * carries it. With [offline] the badge says so instead of naming the route: the
  * app is on what the device kept, and "Tailscale" there would read as "connected over Tailscale".
  * [arrange] is Home's way into Arrange mode, the first thing in the badge's menu while Home is up
  * with cameras to arrange (the status icon opens the same menu before there is a route).
@@ -847,6 +1009,9 @@ internal fun FrigateTopBar(
     onMenu: (() -> Unit)? = {},
     offline: Boolean = false,
     arrange: ArrangeAction? = null,
+    menu: TopBarMenuButton = TopBarMenuButton.Drawer,
+    showTitle: Boolean = true,
+    pageTitle: String? = null,
 ) {
     // A Box, not a Row: the title is centred on the screen regardless of what sits at the ends,
     // so it doesn't shift when the status icon becomes the (wider) route badge — which is also
@@ -860,22 +1025,42 @@ internal fun FrigateTopBar(
             .padding(horizontal = 24.dp, vertical = shellTopBarVerticalPadding()),
     ) {
         if (onMenu != null) {
-            IconButton(onClick = onMenu, modifier = Modifier.size(48.dp).align(Alignment.CenterStart).testTag("shell_menu")) {
-                Icon(Icons.Filled.Menu, contentDescription = stringResource(Res.string.shell_menu), tint = MaterialTheme.colorScheme.primary)
+            val label = stringResource(if (menu == TopBarMenuButton.ShowSidebar) Res.string.shell_sidebar_show else Res.string.shell_menu)
+            WithTooltip(label, modifier = Modifier.align(Alignment.CenterStart)) {
+                IconButton(onClick = onMenu, modifier = Modifier.size(48.dp).handCursor().testTag("shell_menu")) {
+                    Icon(
+                        if (menu == TopBarMenuButton.ShowSidebar) Icons.Filled.ViewSidebar else Icons.Filled.Menu,
+                        contentDescription = label,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
-        Text(
-            text = stringResource(Res.string.shell_app_title),
-            style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.align(Alignment.Center),
-        )
+        if (showTitle) {
+            Text(
+                text = stringResource(Res.string.shell_app_title),
+                style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        } else if (pageTitle != null) {
+            // Where a Mac app's toolbar names the page: at the start, after the button there if there is one.
+            Text(
+                text = pageTitle,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = if (onMenu != null) 56.dp else 0.dp),
+            )
+        }
         val route = activeConnection?.route
         if (route == null) {
             var showMenu by remember { mutableStateOf(false) }
             Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-                IconButton(onClick = { showMenu = arrange != null }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Filled.Sensors, contentDescription = stringResource(Res.string.shell_status), tint = MaterialTheme.colorScheme.primary)
+                val status = stringResource(Res.string.shell_status)
+                WithTooltip(status) {
+                    IconButton(onClick = { showMenu = arrange != null }, modifier = Modifier.size(48.dp).handCursor(arrange != null)) {
+                        Icon(Icons.Filled.Sensors, contentDescription = status, tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 // No version here: the sign-in skeleton's bar has none to give.
                 TopBarMenu(expanded = showMenu && arrange != null, onDismiss = { showMenu = false }, appVersion = null, arrange = arrange)
@@ -912,6 +1097,7 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, off
                 role = Role.Button,
                 onClickLabel = stringResource(if (arrange != null) Res.string.shell_show_options else Res.string.shell_show_version),
             ) { showVersion = true }
+            .handCursor()
             .minimumInteractiveComponentSize(),
     ) {
         Row(
@@ -1272,6 +1458,7 @@ private fun BottomNavItemView(
             .clip(CircleShape)
             .let { if (isSelected) it.background(MaterialTheme.colorScheme.primaryContainer) else it }
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .handCursor()
             // Which tab is up, for accessibility services and tests alike.
             .semantics { selected = isSelected }
             .testTag(bottomNavTestTag(route))
@@ -1300,6 +1487,15 @@ fun bottomNavTestTag(route: TopLevelRoute): String = "bottom_nav_" + when (route
  * The shell and the sign-in screen draw it through this; App() provides it.
  */
 val LocalShellApps = staticCompositionLocalOf<@Composable (nav: ShellNavigation, tab: TopLevelRoute) -> Unit> {
+    { _, _ -> }
+}
+
+/**
+ * One of the drawer's apps as a destination of its own, beside the shell's sidebar
+ * ([ShellNavigation.sidebarApp]): `ShellAppTab` in :app, the one module that sees every feature.
+ * App() provides it, as it does [LocalShellApps].
+ */
+val LocalSidebarApp = staticCompositionLocalOf<@Composable (nav: ShellNavigation, app: InnerApp) -> Unit> {
     { _, _ -> }
 }
 

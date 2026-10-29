@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -181,22 +183,22 @@ private fun AppTabContent(nav: ShellNavigation, app: InnerApp, visible: Boolean)
     when (app) {
         InnerApp.FINANCE -> {
             val finance: FinanceViewModel = metroViewModel()
-            LaunchedEffect(visible) { finance.setActive(visible, full = true) }
+            ActiveWhile(visible) { finance.setActive(it, full = true) }
             FinanceApp(onClose = goHome, active = visible, requestedTab = nav.financeTab, onShowRequestedTab = nav::onFinanceTabShown)
         }
 
         InnerApp.WEATHER -> {
             val weather: WeatherViewModel = metroViewModel()
-            LaunchedEffect(visible) { weather.setActive(visible, full = true) }
+            ActiveWhile(visible) { weather.setActive(it, full = true) }
             WeatherApp(onClose = goHome, active = visible, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
         }
 
         InnerApp.FITNESS -> {
             val fitness: FitnessViewModel = metroViewModel()
             val health: HealthViewModel = metroViewModel()
-            LaunchedEffect(visible) {
-                fitness.setActive(visible, full = true)
-                health.setActive(visible)
+            ActiveWhile(visible) {
+                fitness.setActive(it, full = true)
+                health.setActive(it)
             }
             // Notes shared into the app (see ShellApps, which hears of them) land on its import page.
             val notes = nav.fitnessNotes
@@ -211,8 +213,19 @@ private fun AppTabContent(nav: ShellNavigation, app: InnerApp, visible: Boolean)
 
         InnerApp.ATLAS -> {
             val atlas: AtlasViewModel = metroViewModel()
-            LaunchedEffect(visible) { atlas.setActive(visible, full = true) }
+            ActiveWhile(visible) { atlas.setActive(it, full = true) }
             AtlasApp(onClose = goHome, active = visible)
         }
     }
+}
+
+/**
+ * Keeps an app's view model working exactly while its tab is [visible], and stops it once the
+ * tab goes (another app taken up beside the sidebar), so nothing of it polls from offscreen.
+ */
+@Composable
+private fun ActiveWhile(visible: Boolean, setActive: (Boolean) -> Unit) {
+    val current by rememberUpdatedState(setActive)
+    LaunchedEffect(visible) { current(visible) }
+    DisposableEffect(Unit) { onDispose { current(false) } }
 }

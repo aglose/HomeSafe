@@ -22,6 +22,14 @@ internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulous
     - content: STABLE (composable function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.ActiveWhile(visible: kotlin.Boolean, setActive: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - visible: STABLE (primitive type)
+    - setActive: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.AppTabContent(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, app: com.meticulouscreations.homesafe.ui.screens.InnerApp, visible: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true

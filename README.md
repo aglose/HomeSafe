@@ -1,4 +1,5 @@
-This is a Kotlin Multiplatform project targeting Android and iOS.
+This is a Kotlin Multiplatform project targeting Android, iOS and the desktop (a Mac app; see
+[docs/desktop.md](docs/desktop.md)).
 
 * [/iosApp](./iosApp/iosApp) contains an iOS application. Even if you’re sharing your UI with Compose Multiplatform,
   you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
@@ -12,15 +13,20 @@ This is a Kotlin Multiplatform project targeting Android and iOS.
     `finance`'s lock.
   - [/app](./app/src) is the composition root: the Metro app graph, `App()`, the drawer's apps (`ShellApps`) and
     the iOS entry points. It builds the iOS framework (still named `Shared`).
+  - [/desktopApp](./desktopApp) is the Mac app: its window, menu bar and menu-bar icon, around `App()`.
   - [/testing](./testing/src) holds fakes the tests of more than one module use.
-  - Inside each, [commonMain](./shared/src/commonMain/kotlin) is common to both platforms; `androidMain` and
-    `iosMain` are for one platform (`skiaMain` is drawing code for iOS's Skia).
+  - Inside each, [commonMain](./shared/src/commonMain/kotlin) is common to every platform; `androidMain`,
+    `iosMain` and `desktopMain` are for one platform (`skiaMain` is drawing code for the Skia that iOS and the
+    desktop draw with).
 
 ### Running the apps
 
 Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
 
 - Android app: `./gradlew :androidApp:assembleDebug`
+- Desktop app: `./gradlew :desktopApp:run`, or `./gradlew :desktopApp:packageDmg` on a Mac for an
+  installable `.dmg`. CI's **Desktop app** workflow builds one on every pull request; see
+  [docs/desktop.md](docs/desktop.md) for installing it.
 - iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
   On iOS 26 the bottom navigation is a native Liquid Glass tab bar over Compose tabs, which needs
   Xcode 26 to build; see [docs/ios-liquid-glass.md](docs/ios-liquid-glass.md).
