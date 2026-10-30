@@ -987,11 +987,13 @@ internal fun com.meticulouscreations.homesafe.finance.ui.MoneyCheckup(checkup: c
     - compact: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.MonthsBlock(budget: com.meticulouscreations.homesafe.finance.domain.Budget, onShowMonth: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.MonthsBlock(current: com.meticulouscreations.homesafe.finance.domain.Budget, showing: kotlin.String, shown: com.meticulouscreations.homesafe.finance.domain.Budget, onShowMonth: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
-    - budget: STABLE (marked @Stable or @Immutable)
+    - current: STABLE (marked @Stable or @Immutable)
+    - showing: STABLE (String is immutable)
+    - shown: STABLE (marked @Stable or @Immutable)
     - onShowMonth: STABLE (function type)
 
 @Composable
@@ -1061,12 +1063,13 @@ private fun com.meticulouscreations.homesafe.finance.ui.OverlayBlock(lines: kotl
     - howToRead: STABLE (class with no mutable properties)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.PaceBlock(budget: com.meticulouscreations.homesafe.finance.domain.Budget, pace: com.meticulouscreations.homesafe.finance.domain.BudgetPace): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.PaceBlock(budget: com.meticulouscreations.homesafe.finance.domain.Budget, pace: com.meticulouscreations.homesafe.finance.domain.BudgetPace, current: com.meticulouscreations.homesafe.finance.domain.Budget?): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - budget: STABLE (marked @Stable or @Immutable)
     - pace: STABLE (marked @Stable or @Immutable)
+    - current: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.Pairs(items: kotlin.collections.List<T of com.meticulouscreations.homesafe.finance.ui.Pairs>, modifier: androidx.compose.ui.Modifier, tile: @[Composable] androidx.compose.runtime.internal.ComposableFunction2<T of com.meticulouscreations.homesafe.finance.ui.Pairs, androidx.compose.ui.Modifier, kotlin.Unit>): kotlin.Unit
