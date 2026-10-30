@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,6 +84,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -96,6 +98,7 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.APP_PAGE_MAX_WIDTH
 import com.meticulouscreations.homesafe.ui.AppSection
 import com.meticulouscreations.homesafe.ui.WithTooltip
 import com.meticulouscreations.homesafe.ui.appPageGutter
@@ -124,6 +127,12 @@ import homesafe.shared.generated.resources.finance_title_glossary
 import homesafe.shared.generated.resources.finance_title_sheet_sync
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
+
+/** Whether [this] page is a dashboard on a desk: the tabs and the pages of figures and charts, not the forms, maps and lists read down. */
+private fun Any.isDashboard(): Boolean = this is FinanceTab ||
+    this is FinanceDetail.QuotePage ||
+    this is FinanceDetail.IndicatorPage ||
+    this is FinanceDetail.WalletPage
 
 /** A page pushed over the tabs. */
 @Immutable
@@ -299,15 +308,26 @@ private fun FinanceAppContent(
             tab = picked
         }
         BoxWithConstraints(modifier.fillMaxSize().background(palette.background).testTag("finance_app")) {
-            // Centred at a readable width in a wide window (a desktop's, a tablet's): see appPageGutter.
+            // A wide window (a desktop's, a tablet's on its side) lays the tabs out as dashboards
+            // (see FinanceDesk), centred at a dashboard's width; the pages that are a form or a list
+            // to read down stay centred at a readable width (see appPageGutter).
+            val desk = !sideNav && maxWidth >= DESK_MIN_WIDTH
             val gutter = appPageGutter(maxWidth, reserved = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp)
-            val padding = PaddingValues(
-                start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter,
-                end = gutter,
-                top = status.calculateTopPadding() + 60.dp,
-                bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 32.dp else 104.dp,
-            )
-            val detailPadding = PaddingValues(start = gutter, end = gutter, top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 32.dp)
+            val deskGutter = appPageGutter(maxWidth, reserved = DESK_MARGIN * 2, maxWidth = DESK_MAX_WIDTH) + DESK_MARGIN
+            val top = status.calculateTopPadding() + if (desk) 68.dp else 60.dp
+            val padding = if (desk) {
+                // Clear of the floating tabs where they still show: an iPad's host lists no app sections in a sidebar.
+                PaddingValues(start = deskGutter, end = deskGutter, top = top, bottom = nav.calculateBottomPadding() + if (inSidebar) 40.dp else 104.dp)
+            } else {
+                PaddingValues(
+                    start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter,
+                    end = gutter,
+                    top = top,
+                    bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 32.dp else 104.dp,
+                )
+            }
+            val detailPadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + 32.dp)
+            val deskDetailPadding = if (desk) padding else detailPadding
             val pullState = rememberPullToRefreshState()
 
             PullToRefreshBox(
@@ -344,76 +364,80 @@ private fun FinanceAppContent(
                     transitionSpec = { financeTransition(initialState, targetState, pop = back.inProgress || depth[1] < 0) },
                     contentKey = { it },
                 ) { page ->
-                    when (page) {
-                        FinanceTab.WALLET -> WalletScreen(
-                            state,
-                            listStates.getValue(FinanceTab.WALLET),
-                            padding,
-                            onRetrySheet = viewModel::retrySheet,
-                            onOpenSync = { push(FinanceDetail.SheetSync) },
-                            onOpenTopic = { topic, focus -> push(FinanceDetail.WalletPage(topic, focus)) },
-                            budget = budgetState.budget,
-                            onOpenBudget = { tab = FinanceTab.BUDGET },
-                            onOpenBalances = { push(FinanceDetail.TypedBalances) },
-                        )
+                    // A dashboard keeps its margin itself, so what stands on its page (a setup card, the sync line) lines up with its panels.
+                    val dashboard = desk && page.isDashboard()
+                    CompositionLocalProvider(LocalFinanceDesk provides dashboard, LocalPageGutter provides if (dashboard) 0.dp else LocalPageGutter.current) {
+                        when (page) {
+                            FinanceTab.WALLET -> WalletScreen(
+                                state,
+                                listStates.getValue(FinanceTab.WALLET),
+                                padding,
+                                onRetrySheet = viewModel::retrySheet,
+                                onOpenSync = { push(FinanceDetail.SheetSync) },
+                                onOpenTopic = { topic, focus -> push(FinanceDetail.WalletPage(topic, focus)) },
+                                budget = budgetState.budget,
+                                onOpenBudget = { tab = FinanceTab.BUDGET },
+                                onOpenBalances = { push(FinanceDetail.TypedBalances) },
+                            )
 
-                        FinanceTab.BUDGET -> BudgetRoute(
-                            state.finance,
-                            listStates.getValue(FinanceTab.BUDGET),
-                            padding,
-                            onOpenLinkedAccounts = { push(FinanceDetail.BankSync) },
-                            onOpenSettings = { push(FinanceDetail.BudgetSettings) },
-                        )
+                            FinanceTab.BUDGET -> BudgetRoute(
+                                state.finance,
+                                listStates.getValue(FinanceTab.BUDGET),
+                                padding,
+                                onOpenLinkedAccounts = { push(FinanceDetail.BankSync) },
+                                onOpenSettings = { push(FinanceDetail.BudgetSettings) },
+                            )
 
-                        FinanceTab.MARKETS -> MarketsScreen(
-                            state,
-                            listStates.getValue(FinanceTab.MARKETS),
-                            padding,
-                            viewModel::requestHistory,
-                            onAddSymbol = openAddSymbol,
-                        ) { push(FinanceDetail.QuotePage(it)) }
+                            FinanceTab.MARKETS -> MarketsScreen(
+                                state,
+                                listStates.getValue(FinanceTab.MARKETS),
+                                padding,
+                                viewModel::requestHistory,
+                                onAddSymbol = openAddSymbol,
+                            ) { push(FinanceDetail.QuotePage(it)) }
 
-                        FinanceTab.ECONOMY -> EconomyScreen(
-                            state,
-                            listStates.getValue(FinanceTab.ECONOMY),
-                            padding,
-                            onOpenIndicator = { push(FinanceDetail.IndicatorPage(it)) },
-                            onOpenConnections = { push(FinanceDetail.Connections) },
-                            onToneChange = viewModel::setTone,
-                        )
+                            FinanceTab.ECONOMY -> EconomyScreen(
+                                state,
+                                listStates.getValue(FinanceTab.ECONOMY),
+                                padding,
+                                onOpenIndicator = { push(FinanceDetail.IndicatorPage(it)) },
+                                onOpenConnections = { push(FinanceDetail.Connections) },
+                                onToneChange = viewModel::setTone,
+                            )
 
-                        FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { push(FinanceDetail.IndicatorPage(it)) }
+                            FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { push(FinanceDetail.IndicatorPage(it)) }
 
-                        is FinanceDetail.QuotePage -> QuoteDetailScreen(
-                            page.symbol,
-                            state,
-                            detailPadding,
-                            viewModel::requestHistory,
-                            onFollow = { symbol ->
-                                val meta = state.meta(symbol)
-                                viewModel.addSymbol(SymbolMatch(symbol, state.nameToSave(symbol), meta.kind, typeLabel = "", exchange = null))
-                            },
-                            onUnfollow = viewModel::removeSymbol,
-                            onSetPosition = viewModel::setPosition,
-                        )
+                            is FinanceDetail.QuotePage -> QuoteDetailScreen(
+                                page.symbol,
+                                state,
+                                deskDetailPadding,
+                                viewModel::requestHistory,
+                                onFollow = { symbol ->
+                                    val meta = state.meta(symbol)
+                                    viewModel.addSymbol(SymbolMatch(symbol, state.nameToSave(symbol), meta.kind, typeLabel = "", exchange = null))
+                                },
+                                onUnfollow = viewModel::removeSymbol,
+                                onSetPosition = viewModel::setPosition,
+                            )
 
-                        is FinanceDetail.IndicatorPage -> IndicatorDetailScreen(page.id, state, detailPadding)
+                            is FinanceDetail.IndicatorPage -> IndicatorDetailScreen(page.id, state, deskDetailPadding)
 
-                        FinanceDetail.Connections -> ConnectionsScreen(state, detailPadding)
+                            FinanceDetail.Connections -> ConnectionsScreen(state, detailPadding)
 
-                        FinanceDetail.Glossary -> GlossaryScreen(detailPadding)
+                            FinanceDetail.Glossary -> GlossaryScreen(detailPadding)
 
-                        FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh, onOpenBankSync = { push(FinanceDetail.BankSync) })
+                            FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh, onOpenBankSync = { push(FinanceDetail.BankSync) })
 
-                        FinanceDetail.BankSync -> BankSyncRoute(detailPadding)
+                            FinanceDetail.BankSync -> BankSyncRoute(detailPadding)
 
-                        FinanceDetail.BudgetSettings -> BudgetSettingsRoute(state.finance, detailPadding)
+                            FinanceDetail.BudgetSettings -> BudgetSettingsRoute(state.finance, detailPadding)
 
-                        FinanceDetail.ChartSettings -> ChartSettingsScreen(chartStyle, detailPadding, onChange = chartStyleViewModel::update)
+                            FinanceDetail.ChartSettings -> ChartSettingsScreen(chartStyle, detailPadding, onChange = chartStyleViewModel::update)
 
-                        is FinanceDetail.WalletPage -> WalletTopicScreen(page.topic, page.focus, state, detailPadding)
+                            is FinanceDetail.WalletPage -> WalletTopicScreen(page.topic, page.focus, state, deskDetailPadding)
 
-                        FinanceDetail.TypedBalances -> TypedBalancesScreen(state, detailPadding, onSave = viewModel::updateBalance, onClearSave = viewModel::clearBalanceSave)
+                            FinanceDetail.TypedBalances -> TypedBalancesScreen(state, detailPadding, onSave = viewModel::updateBalance, onClearSave = viewModel::clearBalanceSave)
+                        }
                     }
                 }
             }
@@ -428,6 +452,8 @@ private fun FinanceAppContent(
                 onRefresh = viewModel::refresh,
                 onGlossary = { push(FinanceDetail.Glossary) },
                 onChartSettings = { push(FinanceDetail.ChartSettings) },
+                desk = desk,
+                inset = if (desk) deskGutter else gutter,
             )
 
             // The first-openings nudge, floating above the tabs' nav until it's put away.
@@ -438,7 +464,8 @@ private fun FinanceAppContent(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     // Above the nav when it floats along the bottom; beside it when it is at the side.
-                    .padding(start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter, end = gutter, bottom = if (sideNav || inSidebar) 16.dp else 84.dp),
+                    .padding(start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter, end = gutter, bottom = if (sideNav || inSidebar) 16.dp else 84.dp)
+                    .widthIn(max = APP_PAGE_MAX_WIDTH),
             )
 
             if (addingSymbol) {
@@ -551,7 +578,13 @@ private fun FinanceTopBar(
     onGlossary: () -> Unit,
     onChartSettings: () -> Unit,
     closable: Boolean = true,
+    desk: Boolean = false,
+    inset: Dp = 0.dp,
 ) {
+    if (desk) {
+        FinanceDeskBar(title, isDetail, refreshing, offline, onBack, onRefresh, onGlossary, onChartSettings, closable, inset)
+        return
+    }
     val colors = FinanceTheme.colors
     Box(
         Modifier
@@ -594,17 +627,85 @@ private fun FinanceTopBar(
                 Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = glossary, tint = colors.textSecondary)
             }
         }
-        WithTooltip(stringResource(if (refreshing) Res.string.finance_refreshing else Res.string.finance_refresh), modifier = Modifier.align(Alignment.CenterEnd)) {
-            IconButton(onClick = onRefresh, modifier = Modifier.handCursor()) {
-                if (refreshing) {
-                    // Only while refreshing, and turned in the layer: no frames spent when idle, and no
-                    // recomposition per frame when not.
-                    val spin = rememberInfiniteTransition(label = "refreshSpin")
-                    val angle = spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
-                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refreshing), tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
-                } else {
-                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refresh), tint = colors.textSecondary)
+        RefreshButton(refreshing, onRefresh, Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+/**
+ * [FinanceTopBar] on a desk: a toolbar over the dashboard, its title at the dashboard's start edge
+ * in the large type a window's page has, and the buttons at its end edge, all [inset] from the
+ * window's sides as the dashboard is.
+ */
+@Composable
+private fun FinanceDeskBar(
+    title: String,
+    isDetail: Boolean,
+    refreshing: Boolean,
+    offline: Boolean,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onGlossary: () -> Unit,
+    onChartSettings: () -> Unit,
+    closable: Boolean,
+    inset: Dp,
+) {
+    val colors = FinanceTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(0f to colors.background, 0.8f to colors.background.copy(alpha = 0.94f), 1f to Color.Transparent))
+            .statusBarsPadding()
+            // The buttons' own padding brings their icons to the dashboard's edges.
+            .padding(start = (inset - 12.dp).coerceAtLeast(8.dp), end = (inset - 12.dp).coerceAtLeast(8.dp), top = 12.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isDetail || closable) {
+            val label = stringResource(if (isDetail) Res.string.common_back else Res.string.finance_close)
+            WithTooltip(label) {
+                IconButton(onClick = onBack, modifier = Modifier.handCursor().testTag("finance_back")) {
+                    AnimatedContent(isDetail, label = "backIcon") { detail ->
+                        Icon(if (detail) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close, contentDescription = label, tint = colors.textPrimary)
+                    }
                 }
+            }
+        } else {
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            AnimatedContent(title, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "title") { t ->
+                Text(t, style = FinanceTheme.type.title, color = colors.textPrimary, maxLines = 1)
+            }
+            if (offline) Text(stringResource(Res.string.finance_offline_note), style = FinanceTheme.type.micro, color = colors.watch, maxLines = 1, modifier = Modifier.testTag("finance_offline"))
+        }
+        val chartSettings = stringResource(Res.string.finance_title_chart_settings)
+        WithTooltip(chartSettings) {
+            IconButton(onClick = onChartSettings, modifier = Modifier.handCursor().testTag("finance_chart_settings")) {
+                Icon(Icons.Filled.Tune, contentDescription = chartSettings, tint = colors.textSecondary)
+            }
+        }
+        val glossary = stringResource(Res.string.finance_title_glossary)
+        WithTooltip(glossary) {
+            IconButton(onClick = onGlossary, modifier = Modifier.handCursor().testTag("finance_glossary")) {
+                Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = glossary, tint = colors.textSecondary)
+            }
+        }
+        RefreshButton(refreshing, onRefresh)
+    }
+}
+
+@Composable
+private fun RefreshButton(refreshing: Boolean, onRefresh: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    WithTooltip(stringResource(if (refreshing) Res.string.finance_refreshing else Res.string.finance_refresh), modifier = modifier) {
+        IconButton(onClick = onRefresh, modifier = Modifier.handCursor()) {
+            if (refreshing) {
+                // Only while refreshing, and turned in the layer: no frames spent when idle, and no
+                // recomposition per frame when not.
+                val spin = rememberInfiniteTransition(label = "refreshSpin")
+                val angle = spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
+                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refreshing), tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
+            } else {
+                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refresh), tint = colors.textSecondary)
             }
         }
     }
@@ -691,3 +792,30 @@ private val FINANCE_SIDE_NAV_CLEARANCE = FINANCE_SIDE_NAV_MARGIN + FINANCE_SIDE_
 
 /** For the drawer: the S&P's quote, if there is one yet. */
 internal fun FinanceUiState.spQuote() = quotes[MarketCatalog.SP500.symbol]
+
+@Preview(name = "Desk · the app's toolbar over the Wallet", widthDp = 1200, heightDp = 900)
+@Composable
+private fun FinanceDeskBarPreview() {
+    FinanceDeskStage {
+        WalletScreen(
+            FinanceFixtures.state,
+            rememberLazyListState(),
+            PaddingValues(start = DESK_MARGIN, end = DESK_MARGIN, top = 68.dp, bottom = 32.dp),
+            onRetrySheet = {},
+            budget = BudgetFixtures.month(),
+        )
+        FinanceTopBar(
+            title = stringResource(FinanceTab.WALLET.label),
+            isDetail = false,
+            refreshing = false,
+            offline = false,
+            onBack = {},
+            onRefresh = {},
+            onGlossary = {},
+            onChartSettings = {},
+            closable = false,
+            desk = true,
+            inset = DESK_MARGIN,
+        )
+    }
+}

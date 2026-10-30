@@ -156,6 +156,15 @@
     <string name="fin_budget_compare_level">Al %1$s, este mes va en %2$s, a la par de %3$s al mismo día.</string>
 
     <string name="fin_budget_purchases_title">Compras</string>
+    <string name="fin_budget_table_purchase">Compra</string>
+    <string name="fin_budget_table_line">Línea o categoría</string>
+    <string name="fin_budget_table_card">Tarjeta</string>
+    <string name="fin_budget_table_whose">De quién</string>
+    <string name="fin_budget_table_amount">Importe</string>
+    <string name="fin_budget_kpi_of_limit">de un límite de %1$s</string>
+    <string name="fin_budget_kpi_left">Queda por gastar</string>
+    <string name="fin_budget_kpi_per_day">%1$s al día</string>
+    <string name="fin_budget_kpi_of_take_home">de %1$s de sueldo neto</string>
     <plurals name="fin_budget_purchases_count">
         <item quantity="one">%1$d compra</item>
         <item quantity="other">%1$d compras</item>

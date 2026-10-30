@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -43,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.Account
@@ -50,6 +53,7 @@ import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.BalanceFreshness
 import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.HomeEquity
+import com.meticulouscreations.homesafe.finance.domain.HouseSale
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
@@ -57,12 +61,14 @@ import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.SheetCell
 import com.meticulouscreations.homesafe.finance.domain.Snapshot
+import com.meticulouscreations.homesafe.finance.domain.typedBalances
 import com.meticulouscreations.homesafe.finance.ui.components.AuroraBackground
 import com.meticulouscreations.homesafe.finance.ui.components.Bar
 import com.meticulouscreations.homesafe.finance.ui.components.BarChart
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
 import com.meticulouscreations.homesafe.finance.ui.components.ChartAxis
 import com.meticulouscreations.homesafe.finance.ui.components.ChartLine
+import com.meticulouscreations.homesafe.finance.ui.components.DESK_RANGE_SLOT
 import com.meticulouscreations.homesafe.finance.ui.components.DonutChart
 import com.meticulouscreations.homesafe.finance.ui.components.DonutSlice
 import com.meticulouscreations.homesafe.finance.ui.components.LineChart
@@ -71,6 +77,8 @@ import com.meticulouscreations.homesafe.finance.ui.components.RangeSelector
 import com.meticulouscreations.homesafe.finance.ui.components.RollingNumber
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.APP_PAGE_MAX_WIDTH
+import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.fin_balance_open_action
@@ -204,9 +212,24 @@ internal fun WalletScreen(
     // The checkup's breakdown sheet: open or not, and on which page (null: how it's scored).
     var checkupOpen by rememberSaveable { mutableStateOf(false) }
     var checkupPage by rememberSaveable { mutableStateOf<CheckKind?>(null) }
+    val desk = LocalFinanceDesk.current
     LazyColumn(state = listState, contentPadding = contentPadding) {
-        if (finance != null) item(key = "sync") { SheetSyncLine(state, onOpenSync, Modifier.padding(top = 4.dp)) }
+        // On a desk the pill's own padding is drawn out past the dashboard's edge, so its dot lines up with the panels'.
+        if (finance != null) item(key = "sync") { SheetSyncLine(state, onOpenSync, Modifier.padding(top = 4.dp).offset(x = if (desk) (-10).dp else 0.dp)) }
         when {
+            desk && finance != null && checkup != null -> walletDeskItems(
+                finance,
+                checkup,
+                budget,
+                onOpenBudget,
+                onOpenTopic,
+                onOpenBalances,
+                onOpenCheckup = { page ->
+                    checkupPage = page
+                    checkupOpen = true
+                },
+            )
+
             finance != null && checkup != null -> walletItems(
                 finance,
                 checkup,
@@ -266,124 +289,274 @@ private fun LazyListScope.walletItems(
 }
 
 /**
- * A part of the sheet as its page's list: [flash] lights the header the checkup jumped to. Every
- * section a checkup ledger row can jump to ([WalletSection]) is keyed by its [WalletSection.key].
+ * The Wallet on a desk: the headline chart beside the figures, the checkup and the month, then
+ * "Your money" as a grid of tiles, each opening its page as the phone's rows do.
  */
-internal fun LazyListScope.walletTopicItems(topic: WalletTopic, finance: PersonalFinance, state: FinanceUiState, flash: WalletSection?) {
-    when (topic) {
-        WalletTopic.ACCOUNTS -> {
-            item(key = WalletSection.ACCOUNTS.key) { Flashable(flash == WalletSection.ACCOUNTS) { SectionHeader(stringResource(Res.string.finance_wallet_accounts_title), trailing = finance.totalAssets?.let(FinanceFormat::compactMoney), info = "totalassets") } }
-            item(key = "acct") { CascadeIn(0) { AccountsBlock(finance) } }
-            item(key = WalletSection.ALLOCATION.key) {
-                Flashable(flash == WalletSection.ALLOCATION) {
-                    SectionHeader(stringResource(Res.string.finance_wallet_allocation_title), subtitle = stringResource(Res.string.finance_wallet_allocation_subtitle), info = "allocation")
+private fun LazyListScope.walletDeskItems(
+    finance: PersonalFinance,
+    checkup: Checkup,
+    budget: Budget?,
+    onOpenBudget: () -> Unit,
+    onOpenTopic: (WalletTopic, WalletSection?) -> Unit,
+    onOpenBalances: () -> Unit,
+    onOpenCheckup: (CheckKind?) -> Unit,
+) {
+    item(key = "top") {
+        DeskPage {
+            DeskRow(Modifier.padding(top = 8.dp)) {
+                DeskColumn(DESK_MAIN_WEIGHT) {
+                    DeskPanel(top = 0.dp, bottom = 6.dp) { NetWorthHero(finance, chartHeight = DESK_HERO_CHART + 40.dp) }
                 }
-            }
-            item(key = "alloc") { CascadeIn(1) { AllocationBlock(finance.accounts) } }
-        }
-
-        WalletTopic.CASH_FLOW -> {
-            if (finance.expenses.isNotEmpty()) {
-                item(key = WalletSection.CASH_FLOW.key) {
-                    Flashable(flash == WalletSection.CASH_FLOW) {
-                        SectionHeader(
-                            stringResource(Res.string.finance_wallet_cash_flow_title),
-                            trailing = finance.netMonthly?.let { stringResource(Res.string.finance_wallet_per_month, FinanceFormat.signedMoney(it, 0)) },
-                            info = "cashflow",
-                        )
+                DeskColumn(1f) {
+                    QuickStats(finance)
+                    CascadeIn(1) { MoneyCheckup(checkup, onOpenCheckup, compact = true) }
+                    if (budget != null && budget.isCurrentMonth && budget.budgetCards.isNotEmpty()) {
+                        CascadeIn(2) { BudgetTeaser(budget, onOpenBudget) }
                     }
-                }
-                item(key = "flow") { CascadeIn(0) { CashFlowBlock(finance) } }
-            }
-            val history = flowHistory(finance)
-            if (history.size > 2) {
-                item(key = "flowhist-h") {
-                    SectionHeader(
-                        stringResource(Res.string.finance_wallet_flow_history_title),
-                        subtitle = stringResource(Res.string.finance_wallet_flow_history_subtitle),
-                        info = "savingsrate",
-                    )
-                }
-                item(key = "flowhist") { CascadeIn(1) { FlowHistoryBlock(history) } }
-            }
-        }
-
-        WalletTopic.DEBT -> {
-            item(key = WalletSection.DEBT.key) {
-                Flashable(flash == WalletSection.DEBT) {
-                    SectionHeader(
-                        stringResource(Res.string.finance_wallet_debt_title),
-                        trailing = stringResource(Res.string.finance_wallet_debt_excl_mortgage, FinanceFormat.compactMoney(finance.consumerDebt)),
-                        info = "debt",
-                    )
-                }
-            }
-            item(key = "debt") { CascadeIn(0) { DebtBlock(finance) } }
-        }
-
-        WalletTopic.HOME -> {
-            finance.home?.let { home ->
-                item(key = "home-h") { SectionHeader(stringResource(Res.string.finance_wallet_home_title), info = "homeequity") }
-                item(key = "home") { CascadeIn(0) { HomeBlock(home, finance.mortgageBalance) } }
-            }
-            finance.mortgagePlan?.let { plan ->
-                item(key = "mort-h") {
-                    SectionHeader(
-                        stringResource(Res.string.finance_wallet_mortgage_title),
-                        subtitle = stringResource(Res.string.finance_wallet_mortgage_subtitle),
-                        info = "mortgageplanner",
-                    )
-                }
-                item(key = "mort") { CascadeIn(1) { MortgagePlanner(plan, state.readings[IndicatorCatalog.mortgage.id]?.latest) } }
-            }
-            finance.oldHouse?.takeIf { it.soldPrice != null }?.let { sale ->
-                item(key = "old-h") { SectionHeader(stringResource(Res.string.finance_wallet_old_house_title)) }
-                item(key = "old") {
-                    CascadeIn(2) {
-                        FinanceCard {
-                            StatPairRow(
-                                stringResource(Res.string.finance_wallet_bought_for),
-                                sale.purchasePrice?.let { FinanceFormat.money(it, 0) } ?: "—",
-                                stringResource(Res.string.finance_wallet_sold_for),
-                                FinanceFormat.money(sale.soldPrice!!, 0),
-                            )
-                            StatPairRow(
-                                stringResource(Res.string.finance_wallet_total_profit),
-                                sale.profit?.let { FinanceFormat.signedMoney(it, 0) } ?: "—",
-                                stringResource(Res.string.finance_wallet_return),
-                                sale.roi?.let { FinanceFormat.fractionPercent(it) } ?: "—",
-                                rightColor = FinanceTheme.colors.gain,
-                            )
-                            sale.cashReceived?.let { StatPairRow(stringResource(Res.string.finance_wallet_cash_received), FinanceFormat.money(it, 0), "", "") }
+                    // Only when there is one: a column's gap is kept for anything put in it, even something that draws nothing.
+                    if (remember(finance) { typedBalances(finance).any { !it.fromBank } }) {
+                        CascadeIn(2) { TypedBalancesTeaser(finance, onOpenBalances) }
+                    }
+                    if (finance.accounts.isNotEmpty()) {
+                        CascadeIn(3) {
+                            DeskPanel(title = stringResource(Res.string.finance_wallet_allocation_title), info = "allocation") { AllocationBlock(finance.accounts) }
                         }
                     }
                 }
             }
         }
+    }
+    val topics = walletTopics(finance)
+    if (topics.isNotEmpty()) {
+        item(key = "money") {
+            DeskPage {
+                Column(Modifier.padding(top = 20.dp)) {
+                    DeskHeading(stringResource(Res.string.finance_wallet_your_money))
+                    CascadeIn(3) { WalletHub(finance, topics, onOpen = { onOpenTopic(it, null) }, columns = 3) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One section of a topic's page: its heading ([header], none for a chart under the page's one
+ * heading) and its block, each keyed as the page's list keys them; every section a checkup ledger
+ * row can jump to ([WalletSection]) has its header keyed by its [WalletSection.key].
+ */
+private class TopicSection(val headerKey: String?, val key: String, val header: (@Composable () -> Unit)?, val block: @Composable () -> Unit)
+
+/** The sections of [topic]'s page, in order: [flash] lights the header the checkup jumped to. */
+private fun topicSections(topic: WalletTopic, finance: PersonalFinance, state: FinanceUiState, flash: WalletSection?): List<TopicSection> = buildList {
+    when (topic) {
+        WalletTopic.ACCOUNTS -> {
+            add(
+                TopicSection(
+                    WalletSection.ACCOUNTS.key,
+                    "acct",
+                    { Flashable(flash == WalletSection.ACCOUNTS) { SectionHeader(stringResource(Res.string.finance_wallet_accounts_title), trailing = finance.totalAssets?.let(FinanceFormat::compactMoney), info = "totalassets") } },
+                ) { CascadeIn(0) { AccountsBlock(finance) } },
+            )
+            add(
+                TopicSection(
+                    WalletSection.ALLOCATION.key,
+                    "alloc",
+                    {
+                        Flashable(flash == WalletSection.ALLOCATION) {
+                            SectionHeader(stringResource(Res.string.finance_wallet_allocation_title), subtitle = stringResource(Res.string.finance_wallet_allocation_subtitle), info = "allocation")
+                        }
+                    },
+                ) { CascadeIn(1) { AllocationBlock(finance.accounts) } },
+            )
+        }
+
+        WalletTopic.CASH_FLOW -> {
+            if (finance.expenses.isNotEmpty()) {
+                add(
+                    TopicSection(
+                        WalletSection.CASH_FLOW.key,
+                        "flow",
+                        {
+                            Flashable(flash == WalletSection.CASH_FLOW) {
+                                SectionHeader(
+                                    stringResource(Res.string.finance_wallet_cash_flow_title),
+                                    trailing = finance.netMonthly?.let { stringResource(Res.string.finance_wallet_per_month, FinanceFormat.signedMoney(it, 0)) },
+                                    info = "cashflow",
+                                )
+                            }
+                        },
+                    ) { CascadeIn(0) { CashFlowBlock(finance) } },
+                )
+            }
+            val history = flowHistory(finance)
+            if (history.size > 2) {
+                add(
+                    TopicSection(
+                        "flowhist-h",
+                        "flowhist",
+                        {
+                            SectionHeader(
+                                stringResource(Res.string.finance_wallet_flow_history_title),
+                                subtitle = stringResource(Res.string.finance_wallet_flow_history_subtitle),
+                                info = "savingsrate",
+                            )
+                        },
+                    ) { CascadeIn(1) { FlowHistoryBlock(history) } },
+                )
+            }
+        }
+
+        WalletTopic.DEBT -> add(
+            TopicSection(
+                WalletSection.DEBT.key,
+                "debt",
+                {
+                    Flashable(flash == WalletSection.DEBT) {
+                        SectionHeader(
+                            stringResource(Res.string.finance_wallet_debt_title),
+                            trailing = stringResource(Res.string.finance_wallet_debt_excl_mortgage, FinanceFormat.compactMoney(finance.consumerDebt)),
+                            info = "debt",
+                        )
+                    }
+                },
+            ) { CascadeIn(0) { DebtBlock(finance) } },
+        )
+
+        WalletTopic.HOME -> {
+            finance.home?.let { home ->
+                add(TopicSection("home-h", "home", { SectionHeader(stringResource(Res.string.finance_wallet_home_title), info = "homeequity") }) { CascadeIn(0) { HomeBlock(home, finance.mortgageBalance) } })
+            }
+            finance.mortgagePlan?.let { plan ->
+                add(
+                    TopicSection(
+                        "mort-h",
+                        "mort",
+                        {
+                            SectionHeader(
+                                stringResource(Res.string.finance_wallet_mortgage_title),
+                                subtitle = stringResource(Res.string.finance_wallet_mortgage_subtitle),
+                                info = "mortgageplanner",
+                            )
+                        },
+                    ) { CascadeIn(1) { MortgagePlanner(plan, state.readings[IndicatorCatalog.mortgage.id]?.latest) } },
+                )
+            }
+            finance.oldHouse?.takeIf { it.soldPrice != null }?.let { sale ->
+                add(TopicSection("old-h", "old", { SectionHeader(stringResource(Res.string.finance_wallet_old_house_title)) }) { CascadeIn(2) { OldHouseBlock(sale) } })
+            }
+        }
 
         WalletTopic.VESTING_TAXES -> {
             if (finance.vesting.isNotEmpty()) {
-                item(key = "vest-h") {
-                    SectionHeader(
-                        stringResource(Res.string.finance_wallet_vesting_title),
-                        trailing = stringResource(Res.string.finance_wallet_after_tax, FinanceFormat.compactMoney(finance.vesting.sumOf { it.postTax ?: it.amount })),
-                        info = "vesting",
-                    )
-                }
-                item(key = "vest") { CascadeIn(0) { VestingBlock(finance) } }
+                add(
+                    TopicSection(
+                        "vest-h",
+                        "vest",
+                        {
+                            SectionHeader(
+                                stringResource(Res.string.finance_wallet_vesting_title),
+                                trailing = stringResource(Res.string.finance_wallet_after_tax, FinanceFormat.compactMoney(finance.vesting.sumOf { it.postTax ?: it.amount })),
+                                info = "vesting",
+                            )
+                        },
+                    ) { CascadeIn(0) { VestingBlock(finance) } },
+                )
             }
             if (finance.taxYears.isNotEmpty()) {
-                item(key = "tax-h") { SectionHeader(stringResource(Res.string.finance_wallet_taxes_title), subtitle = stringResource(Res.string.finance_wallet_taxes_subtitle), info = "taxes") }
-                item(key = "tax") { CascadeIn(1) { TaxBlock(finance) } }
+                add(
+                    TopicSection("tax-h", "tax", { SectionHeader(stringResource(Res.string.finance_wallet_taxes_title), subtitle = stringResource(Res.string.finance_wallet_taxes_subtitle), info = "taxes") }) {
+                        CascadeIn(1) { TaxBlock(finance) }
+                    },
+                )
             }
         }
 
-        WalletTopic.SHEET_CHARTS -> {
-            item(key = "charts-h") { SectionHeader(stringResource(Res.string.finance_wallet_charts_title), subtitle = stringResource(Res.string.finance_wallet_charts_subtitle, finance.title)) }
-            items(finance.charts.size, key = { "chart-${finance.charts[it].id}" }) { i ->
-                CascadeIn(i) { SheetChartCard(finance.charts[i], Modifier.padding(bottom = 12.dp)) }
+        WalletTopic.SHEET_CHARTS -> finance.charts.forEachIndexed { i, chart ->
+            val header: (@Composable () -> Unit)? = if (i == 0) {
+                { SectionHeader(stringResource(Res.string.finance_wallet_charts_title), subtitle = stringResource(Res.string.finance_wallet_charts_subtitle, finance.title)) }
+            } else {
+                null
+            }
+            add(TopicSection(if (i == 0) "charts-h" else null, "chart-${chart.id}", header) { CascadeIn(i) { SheetChartCard(chart, Modifier.padding(bottom = 12.dp)) } })
+        }
+    }
+}
+
+/** A part of the sheet as its page's list, a heading over each block. */
+internal fun LazyListScope.walletTopicItems(topic: WalletTopic, finance: PersonalFinance, state: FinanceUiState, flash: WalletSection?) {
+    topicSections(topic, finance, state, flash).forEach { section ->
+        val header = section.header
+        if (section.headerKey != null && header != null) item(key = section.headerKey) { header() }
+        item(key = section.key) { section.block() }
+    }
+}
+
+/**
+ * A part of the sheet as a desk's page: each section a panel, two columns of them; the sheet's
+ * charts two across under their heading; a page of one section centred at a reading width rather
+ * than stretched across the window. A row of panels is keyed by its first section's header, which
+ * is where a checkup's jump lands.
+ */
+internal fun LazyListScope.walletTopicDeskItems(topic: WalletTopic, finance: PersonalFinance, state: FinanceUiState, flash: WalletSection?) {
+    val sections = topicSections(topic, finance, state, flash)
+    if (sections.isEmpty()) return
+    when {
+        topic == WalletTopic.SHEET_CHARTS -> {
+            item(key = "charts-h") { DeskPage { sections.first().header?.invoke() } }
+            item(key = "charts") {
+                // Packed down two columns: the sheet's charts differ in height (a legend, a second scale).
+                DeskPage { DeskMasonry(sections, columns = 2) { it.block() } }
             }
         }
+
+        sections.size == 1 -> item(key = sections.first().headerKey ?: sections.first().key) {
+            DeskPage {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    TopicPanel(sections.first(), Modifier.widthIn(max = APP_PAGE_MAX_WIDTH))
+                }
+            }
+        }
+
+        else -> item(key = sections.first().headerKey ?: sections.first().key) {
+            DeskPage { DeskMasonry(sections, columns = 2, Modifier.padding(top = 8.dp)) { TopicPanel(it) } }
+        }
+    }
+}
+
+/** The key of the desk item that holds [topic]'s sections, where a checkup's jump to one of them lands: see [walletTopicDeskItems]. */
+internal fun walletTopicDeskKey(topic: WalletTopic, finance: PersonalFinance, state: FinanceUiState): Any? {
+    if (topic == WalletTopic.SHEET_CHARTS) return null
+    val first = topicSections(topic, finance, state, flash = null).firstOrNull() ?: return null
+    return first.headerKey ?: first.key
+}
+
+/** A topic's section as a desk's panel: its heading at the top, its block in it. */
+@Composable
+private fun TopicPanel(section: TopicSection, modifier: Modifier = Modifier) {
+    DeskPanel(modifier, top = 0.dp) {
+        section.header?.invoke()
+        section.block()
+    }
+}
+
+/** The house sold before this one: what it cost, what it fetched, what it made. */
+@Composable
+private fun OldHouseBlock(sale: HouseSale) {
+    FinanceCard {
+        StatPairRow(
+            stringResource(Res.string.finance_wallet_bought_for),
+            sale.purchasePrice?.let { FinanceFormat.money(it, 0) } ?: "—",
+            stringResource(Res.string.finance_wallet_sold_for),
+            FinanceFormat.money(sale.soldPrice!!, 0),
+        )
+        StatPairRow(
+            stringResource(Res.string.finance_wallet_total_profit),
+            sale.profit?.let { FinanceFormat.signedMoney(it, 0) } ?: "—",
+            stringResource(Res.string.finance_wallet_return),
+            sale.roi?.let { FinanceFormat.fractionPercent(it) } ?: "—",
+            rightColor = FinanceTheme.colors.gain,
+        )
+        sale.cashReceived?.let { StatPairRow(stringResource(Res.string.finance_wallet_cash_received), FinanceFormat.money(it, 0), "", "") }
     }
 }
 
@@ -392,7 +565,7 @@ internal fun flowHistory(finance: PersonalFinance): List<Snapshot> = finance.his
 
 /** The headline: total assets over the sheet's history, scrubbable, with the metric and range chosen below it. */
 @Composable
-internal fun NetWorthHero(finance: PersonalFinance) {
+internal fun NetWorthHero(finance: PersonalFinance, chartHeight: Dp = 230.dp) {
     val colors = FinanceTheme.colors
     val dates = rememberFinanceDates()
     var metric by rememberSaveable { mutableStateOf(WalletMetric.ASSETS) }
@@ -454,7 +627,7 @@ internal fun NetWorthHero(finance: PersonalFinance) {
                     axis = ChartAxis({ FinanceFormat.compactMoney(it) }, { dates.monthYear(it) }),
                     contentDescription = stringResource(Res.string.finance_wallet_chart_description, stringResource(metric.label)),
                     onScrub = { scrub = it },
-                    modifier = Modifier.fillMaxWidth().height(230.dp),
+                    modifier = Modifier.fillMaxWidth().height(chartHeight),
                 )
             } else {
                 Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
@@ -462,9 +635,18 @@ internal fun NetWorthHero(finance: PersonalFinance) {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            RangeSelector(WalletRanges, range, { stringResource(if (it == EconRange.MAX) Res.string.finance_range_all else it.label) }, color, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
-            Spacer(Modifier.height(10.dp))
-            ChipRow(WalletMetric.entries, metric, { stringResource(it.label) }, color, { metric = it })
+            val rangeLabel: @Composable (EconRange) -> String = { stringResource(if (it == EconRange.MAX) Res.string.finance_range_all else it.label) }
+            if (LocalFinanceDesk.current) {
+                // What's plotted and over how long, on one row under a wide chart.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ChipRow(WalletMetric.entries, metric, { stringResource(it.label) }, color, { metric = it }, Modifier.weight(1f))
+                    RangeSelector(WalletRanges, range, rangeLabel, color, { range = it }, Modifier.width(DESK_RANGE_SLOT * WalletRanges.size).padding(end = PageGutter - 4.dp))
+                }
+            } else {
+                RangeSelector(WalletRanges, range, rangeLabel, color, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+                Spacer(Modifier.height(10.dp))
+                ChipRow(WalletMetric.entries, metric, { stringResource(it.label) }, color, { metric = it })
+            }
             HowToRead(stringResource(Res.string.finance_wallet_hero_how_to_read))
         }
     }
@@ -494,7 +676,6 @@ private fun metricSeries(finance: PersonalFinance, metric: WalletMetric): Series
 @Composable
 internal fun QuickStats(finance: PersonalFinance) {
     val colors = FinanceTheme.colors
-    val open = LocalExplainer.current
     // Each card is a figure and the explainer a tap on it opens.
     val cards = listOfNotNull(
         finance.netWorth?.let { QuickCard(stringResource(Res.string.finance_wallet_quick_net_worth), FinanceFormat.compactMoney(it), colors.accent, "networth") },
@@ -515,32 +696,42 @@ internal fun QuickStats(finance: PersonalFinance) {
         },
         QuickCard(stringResource(Res.string.finance_wallet_quick_debt), FinanceFormat.compactMoney(finance.consumerDebt), colors.textPrimary, "debt"),
     )
+    // On a desk, every figure at once in a grid beside the chart, rather than a strip to swipe along.
+    if (LocalFinanceDesk.current) {
+        DeskGrid(cards.indices.toList(), columns = 2, gap = 12.dp) { i -> QuickCardTile(cards[i], i, Modifier.fillMaxWidth()) }
+        return
+    }
     LazyRow(
         contentPadding = PaddingValues(horizontal = PageGutter),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.padding(top = 20.dp),
     ) {
-        items(cards.size) { i ->
-            val (label, value, color, explainerId) = cards[i]
-            val explainLabel = stringResource(Res.string.finance_wallet_explain_card, label)
-            CascadeIn(i) {
-                Column(
-                    Modifier
-                        .width(150.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(FinanceTheme.colors.surface)
-                        .border(1.dp, FinanceTheme.colors.hairline, RoundedCornerShape(16.dp))
-                        .clickable(onClickLabel = explainLabel) { open(explainerId) }
-                        .padding(14.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(label, style = FinanceTheme.type.micro, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(13.dp))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    RollingNumber(value, FinanceTheme.type.bodyStrong, color)
-                }
+        items(cards.size) { i -> QuickCardTile(cards[i], i, Modifier.width(150.dp)) }
+    }
+}
+
+@Composable
+private fun QuickCardTile(card: QuickCard, index: Int, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    val open = LocalExplainer.current
+    val (label, value, color, explainerId) = card
+    val explainLabel = stringResource(Res.string.finance_wallet_explain_card, label)
+    CascadeIn(index) {
+        Column(
+            modifier
+                .handCursor()
+                .clip(RoundedCornerShape(16.dp))
+                .background(colors.surface)
+                .border(1.dp, colors.hairline, RoundedCornerShape(16.dp))
+                .clickable(onClickLabel = explainLabel) { open(explainerId) }
+                .padding(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = FinanceTheme.type.micro, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(13.dp))
             }
+            Spacer(Modifier.height(6.dp))
+            RollingNumber(value, FinanceTheme.type.bodyStrong, color)
         }
     }
 }
@@ -630,7 +821,8 @@ internal fun AllocationBlock(accounts: List<Account>) {
     val total = slices.sumOf { it.value }
     var highlighted by remember { mutableStateOf<Int?>(null) }
     Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(170.dp), contentAlignment = Alignment.Center) {
+        // Beside a desk's chart, in its rail, a little smaller.
+        Box(Modifier.size(if (LocalFinanceDesk.current) 140.dp else 170.dp), contentAlignment = Alignment.Center) {
             DonutChart(slices, Modifier.matchParentSize(), highlighted = highlighted)
             val h = highlighted?.let { slices.getOrNull(it) }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {

@@ -582,7 +582,7 @@ internal fun parseAmount(text: String): Double? = text.replace(",", "").replace(
  * loads, so switching between indices never changes the page's height.
  */
 @Composable
-internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHistory: (String, ChartRange) -> Unit) {
+internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHistory: (String, ChartRange) -> Unit, deskColumns: Int = 2) {
     val requestHistory by rememberUpdatedState(onRequestHistory)
     LaunchedEffect(symbol) { requestHistory(symbol, ChartRange.MAX) }
     val quote = state.quotes[symbol]
@@ -613,6 +613,7 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
                 pluralStringResource(Res.plurals.longrun_years, 10, 10) to (stats?.tenYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
                 since to (stats?.let { FinanceFormat.longRunPercent(it.sinceStartPercent) } ?: dash),
             ),
+            deskColumns = deskColumns,
         )
         val error = load?.error
         FinePrint(
