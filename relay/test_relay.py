@@ -5780,7 +5780,49 @@ Shipment total: $32.47
 """
 
 
+# The shapes of Amazon's emails since 2026, which name no items: Amazon's category, how many, and
+# the total. The order numbers are made up; the marks round them are Amazon's own.
+AMAZON_2026_ORDERED_PLAIN = "Drew, thanks for your order!\nArriving tomorrow\nOrder #\n113-0000000-0000003\nGrand Total:\n24.35 USD\n"
+AMAZON_2026_ORDERED_HTML = ("<html><body><table><tr><td>Drew, thanks for your order!</td></tr><tr><td>Arriving tomorrow</td></tr>"
+                            "<tr><td>1 Hardware item</td></tr><tr><td>Order # \u202b113-0000000-0000003</td></tr>"
+                            "<tr><td>Grand Total:</td></tr><tr><td>$24.35</td></tr></table></body></html>")
+AMAZON_2026_SHIPPED_HTML = ("<html><body><div>Drew, your package was shipped!</div><div>2 items: 1 Hardware, 1 Vitamins</div>"
+                            "<div>Order # \u202b113-0000000-0000004</div><div>Track package</div><div>Total</div><div>$46.87</div></body></html>")
+
+
 class AmazonEmailTest(unittest.TestCase):
+    def test_a_2026_order_email_gives_amazon_s_category_and_its_grand_total(self):
+        parsed = relay.parse_amazon_email("Ordered 1 item: Hardware", relay.html_text(AMAZON_2026_ORDERED_HTML))
+        self.assertEqual({"kind": "ordered", "orders": ["113-0000000-0000003"], "total": 24.35, "shipment_total": None,
+                          "items": [{"title": "Hardware", "quantity": 1, "price": None}]}, parsed)
+        # Its plain part names nothing, and writes the total in dollars after it.
+        plain = relay.parse_amazon_email("Ordered 1 item: Hardware", AMAZON_2026_ORDERED_PLAIN)
+        self.assertEqual((24.35, [{"title": "Hardware", "quantity": 1, "price": None}]), (plain["total"], plain["items"]))
+
+    def test_a_2026_shipment_email_counts_each_category_and_gives_its_own_total(self):
+        parsed = relay.parse_amazon_email("Shipped 2 items: Hardware, Vitamins", relay.html_text(AMAZON_2026_SHIPPED_HTML))
+        self.assertEqual(("shipped", ["113-0000000-0000004"], 46.87), (parsed["kind"], parsed["orders"], parsed["shipment_total"]))
+        self.assertEqual([{"title": "Hardware", "quantity": 1, "price": None}, {"title": "Vitamins", "quantity": 1, "price": None}], parsed["items"])
+
+    def test_categories_are_read_however_amazon_lists_them(self):
+        self.assertEqual(["Home", "Tools"], [i["title"] for i in relay.amazon_categories("Ordered", ["2 Home and Tools items"])])
+        self.assertEqual([("Electronics", 1), ("Home Improvement", 1)], [(i["title"], i["quantity"]) for i in relay.amazon_categories("Ordered", ["5 Electronics, Home Improvement, and other items"])])
+        self.assertEqual([("Electronics", 3)], [(i["title"], i["quantity"]) for i in relay.amazon_categories("Ordered", ["3 Electronics items"])])
+        self.assertEqual(["Travel Gear", "Travel Accessories"], [i["title"] for i in relay.amazon_categories("Ordered 2 items: Travel Gear, Travel Accessories, and more", [])])
+        self.assertEqual([("Coffee", 2)], [(i["title"], i["quantity"]) for i in relay.amazon_categories("Shipped", ["3 items: 2 Coffee, 1 other"])])
+        self.assertEqual([("Shoes", 1)], [(i["title"], i["quantity"]) for i in relay.amazon_categories("Shipped: 1 Shoes item", [])])
+        self.assertEqual("discretionary", relay.amazon_need_by_words("Home Décor"))
+
+    def test_only_an_order_s_or_a_shipment_s_own_email_is_read(self):
+        for subject in ("Included with your Amazon order", "Delivery estimate update for your Amazon order \u200e#113-0000000-0000003\u200e"):
+            self.assertIsNone(relay.parse_amazon_email(subject, "Order # 113-0000000-0000003"), subject)
+
+    def test_amazon_s_categories_sort_themselves_where_they_say_enough(self):
+        self.assertEqual({"Beverages": "essential", "Hair Care": "essential", "Baby Products": "essential", "Pet Supplies": "essential",
+                          "Toys & Games": "discretionary", "Electronics": "discretionary", "Musical Instruments": "discretionary", "Hardware": None},
+                         {c: relay.amazon_need_by_words(c) for c in ("Beverages", "Hair Care", "Baby Products", "Pet Supplies", "Toys & Games",
+                                                                       "Electronics", "Musical Instruments", "Hardware")})
+
     """Reading Amazon's emails: what was ordered, what it cost, and the emails that are about nothing to keep."""
 
     def test_an_order_email_gives_its_items_prices_and_grand_total(self):
@@ -5983,6 +6025,16 @@ class AmazonBudgetTest(_Budget):
         relay.amazon_store("sam", "s1", "2026-10-04", relay.parse_amazon_email('Shipped: "Bluey Family Home Playset"', AMAZON_SHIPPED_TEXT), self.NOW)
         relay.amazon_sort_items()
         self.assertEqual([(None, None)], relay.with_db(lambda c: c.execute("SELECT need, need_by FROM amazon_items").fetchall()))
+
+    def test_a_new_way_of_reading_reads_every_email_again_and_keeps_what_someone_said(self):
+        relay.amazon_sync(self.NOW)
+        relay.with_db(lambda c: (c.execute("UPDATE amazon_items SET need='essential', need_by='user:alex' WHERE title LIKE 'LEGO%'"), c.commit()))
+        relay.state_set(relay.AMAZON_PARSER_KEY, relay.AMAZON_PARSER - 1)
+        relay.amazon_sync(self.NOW + 3600)
+        self.assertEqual(8, len(self.fetched))
+        self.assertEqual([("essential", "user:alex")], relay.with_db(lambda c: c.execute("SELECT need, need_by FROM amazon_items WHERE title LIKE 'LEGO%'").fetchall()))
+        relay.amazon_sync(self.NOW + 7200)
+        self.assertEqual(8, len(self.fetched))
 
     def test_off_without_a_mailbox(self):
         relay.AMAZON_GMAIL_TOKENS = {}

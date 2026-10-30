@@ -172,6 +172,13 @@ paid for:
   turn of a month is found from both sides.
   A charge with no match says so (`amazon: null`). AWS, Prime, Prime Video, Kindle Unlimited and
   Audible are not orders and are left alone.
+- **What the emails say.** Since 2026 Amazon's emails name no items. They give how many there
+  were and Amazon's category for them ("1 Hardware item", "2 items: 1 Hardware, 1 Vitamins",
+  "Ordered 2 items: Beverages, Dairy"), and the order's Grand Total or the shipment's Total. So
+  an order's items are mostly its categories, each as many as Amazon counted. Older emails that
+  quote a product's name in the subject still give that name. The HTML part is read first: the
+  plain part leaves out the categories and writes amounts "24.35 USD". When the emails are read
+  differently (`AMAZON_PARSER`), every one is read again and what someone said about an item is kept.
 - **Sorting.** Each item is *essential* (groceries, household and cleaning supplies, toiletries,
   medicine, the baby's and the pets' things) or *discretionary*. Word lists sort the obvious ones
   (`_AMAZON_NEED_WORDS`). The rest go to the box's own model through Ollama (`VLM_MODEL`), twenty

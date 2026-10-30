@@ -10053,6 +10053,10 @@ AMAZON_QUERY = ('from:amazon.com {subject:Ordered subject:Shipped subject:"Your 
 AMAZON_MAX_EMAILS = 400
 AMAZON_MAX_PAGES = 30
 AMAZON_SYNCED_KEY = "amazon_synced"
+# Bumped when the emails are read differently, so the ones read already are read again (see
+# `amazon_reread`). 2: Amazon's own categories, since its emails stopped naming the items (2026).
+AMAZON_PARSER = 2
+AMAZON_PARSER_KEY = "amazon_parser"
 # A charge comes the day of the order or after it, up to a month later for one that waited for
 # stock; a shipment's charge within a few days of its email either way.
 AMAZON_ORDER_WINDOW = (-1, 30)
@@ -10072,6 +10076,14 @@ _AMAZON_PRICE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})")
 _AMAZON_TOTAL = re.compile(r"\b(grand total|order total|(?<!sub)(?<!sub )total)\b[^$\n]{0,30}(?:\n\s*)?\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})", re.IGNORECASE)
 _AMAZON_SHIPMENT_TOTAL = re.compile(r"\bshipment total\b[^$\n]{0,30}(?:\n\s*)?\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})", re.IGNORECASE)
 _AMAZON_SUBJECT_TITLE = re.compile(r"[\"“](.+?)[\"”]")
+# The marks Amazon puts round order numbers and counts to keep their direction, which no reader sees.
+_AMAZON_INVISIBLE = re.compile("[\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+# Amazon's emails since 2026 name no items, only how many there were and Amazon's categories for
+# them: "1 Hardware item", "2 Home and Tools items", "2 items: 1 Hardware, 1 Vitamins", and in the
+# subject "Ordered 2 items: Beverages, Dairy".
+_AMAZON_COUNTED_CATEGORIES = re.compile(r"^(\d{1,3}) items?:\s*(.+)$", re.IGNORECASE)
+_AMAZON_CATEGORIES_LINE = re.compile(r"^(\d{1,3}) (.+?) items?$", re.IGNORECASE)
+_AMAZON_SUBJECT_CATEGORIES = re.compile(r"^(?:ordered|shipped)(?: \d{1,3} items?)?:\s*(.+)$", re.IGNORECASE)
 # An email about an order that says nothing new about what was bought, or that it wasn't.
 _AMAZON_NOT_ORDER_EMAIL = re.compile(r"\b(delivered|delivery|arriving|out for delivery|refund\w*|return\w*|cancel\w*)\b")
 # A line of an email that is never an item's title.
@@ -10087,13 +10099,19 @@ _AMAZON_NOT_ORDER = re.compile(r"web services|\baws\b|\bprime\b|kindle (unlimite
 # else goes to the model. Clothes, kitchenware and chargers are left to it: either can be true.
 _AMAZON_NEED_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = tuple((need, re.compile(rf"\b({words})", re.IGNORECASE)) for need, words in (
     ("discretionary", r"lego|toys?\b|board game|puzzle|video game|playstation|ps5|xbox|nintendo|gift card|jewel|necklace|earring|"
-                      r"costume|decor|poster|figurine|collectible|drone|headphone|earbud|airpods|speaker|smart ?watch|gaming"),
+                      r"costume|d[eé]cor|poster|figurine|collectible|drone|headphone|earbud|airpods|speaker|smart ?watch|gaming|"
+                      # Amazon's categories, which its emails name in place of the items.
+                      r"games\b|electronics|musical instrument|travel gear|travel accessor|outdoor cooking|camping|sports|"
+                      r"computer|home automation|camera|photo|video\b|movies|music\b|books?\b|party|arts|crafts|collectibles|watches"),
     ("essential", r"paper towel|toilet paper|bath tissue|facial tissue|kleenex|detergent|dishwasher|dish soap|hand soap|body wash|shampoo|"
                   r"conditioner|toothpaste|toothbrush|floss|mouthwash|deodorant|razor|diaper|wipes|baby formula|infant|tampon|"
                   r"pads\b|vitamin|supplement|ibuprofen|acetaminophen|tylenol|advil|allergy|antacid|bandage|first aid|thermometer|"
                   r"prescription|contact lens|dog food|cat food|kibble|cat litter|litter|trash bags?|garbage bags?|cleaner|cleaning|"
                   r"disinfect|bleach|sponge|air filter|water filter|furnace filter|light bulb|batter(y|ies)|coffee|milk|eggs|cereal|"
-                  r"snacks?|rice|pasta|olive oil|flour|sugar|organic|grocer"),
+                  r"snacks?|rice|pasta|olive oil|flour|sugar|organic|grocer|"
+                  # Amazon's categories, which its emails name in place of the items.
+                  r"beverages|dairy|snack foods|pantry|gourmet|breakfast|produce|bakery|frozen|meat|nutrition|"
+                  r"hair care|oral care|skin care|health care|health & household|household supplies|personal care|baby|pet supplies|medical"),
 ))
 
 
@@ -10113,15 +10131,57 @@ def amazon_money(text: str) -> float:
     return float(text.replace(",", ""))
 
 
+def amazon_category_names(text: str) -> list[str]:
+    """Amazon's list of categories as names: "Home and Tools" is two, "Travel Gear, and more" one."""
+    names = re.split(r",\s*(?:and\s+)?|\s+and\s+", text.strip())
+    return [n.strip() for n in names if n.strip() and n.strip().lower() not in ("more", "other", "others")]
+
+
+def amazon_categories(subject: str, lines: list[str]) -> list[dict[str, Any]]:
+    """
+    What an email that names no items says was in it, as items titled by Amazon's categories,
+    each as many as it counts: from the email's own line where it has one ("2 items: 1
+    Hardware, 1 Vitamins"), else from the subject. Items in "other" categories aren't counted.
+    """
+    from_subject = _AMAZON_SUBJECT_CATEGORIES.match(subject.strip())
+    # The subject's list read like a line of the email's ("Shipped: 1 Shoes item"), after the email's own.
+    if from_subject and not _AMAZON_SUBJECT_TITLE.search(subject):
+        lines = [*lines, from_subject.group(1)]
+    for line in lines:
+        counted = _AMAZON_COUNTED_CATEGORIES.match(line)
+        if counted:
+            parts = [re.match(r"^(\d{1,3}) (.+)$", part.strip()) for part in counted.group(2).split(",")]
+            items = [{"title": m.group(2).strip(), "quantity": int(m.group(1)), "price": None} for m in parts if m and m.group(2).strip().lower() not in ("other", "others", "other items")]
+            if items:
+                return items
+        named = _AMAZON_CATEGORIES_LINE.match(line)
+        if named:
+            names = amazon_category_names(re.sub(r",?\s*and other$", "", named.group(2)))
+            if names:
+                each = int(named.group(1)) if len(names) == 1 else 1
+                return [{"title": name, "quantity": each, "price": None} for name in names]
+    if from_subject and not _AMAZON_SUBJECT_TITLE.search(subject):
+        return [{"title": name, "quantity": 1, "price": None} for name in amazon_category_names(from_subject.group(1))]
+    return []
+
+
 def parse_amazon_email(subject: str, text: str) -> dict[str, Any] | None:
     """
     What one of Amazon's emails says: `kind` "ordered" or "shipped", the order numbers in it,
     each item (title, quantity, price when given), the order's total, and a shipment's total.
-    None for an email that isn't about an order (a delivery, a refund, an ad). Amazon changes
-    these emails' layout now and then, so it reads loosely: an item is whatever line comes
-    before a "Quantity", with the nearest price; failing that, the title quoted in the subject.
+    None for an email that isn't an order's or a shipment's (a delivery, a refund, an ad).
+    Amazon changes these emails' layout now and then, so it reads loosely: an item is whatever
+    line comes before a "Quantity", with the nearest price; failing that, the title quoted in
+    the subject; failing that (Amazon's emails since 2026 name no items), Amazon's categories.
     """
+    subject = _AMAZON_INVISIBLE.sub("", subject)
+    # Plain text writes amounts "24.35 USD" where the HTML has "$24.35".
+    text = re.sub(r"(?<![\d$.])(\d{1,3}(?:,\d{3})*\.\d{2})\s?USD\b", r"$\1", _AMAZON_INVISIBLE.sub("", text))
     head = subject.strip().lower()
+    # Only an order's or a shipment's own email: "Included with your Amazon order" and the like
+    # carry an order number but would put the wrong day on it.
+    if not head.startswith(("ordered", "shipped", "your amazon.com order", "your amazon order")):
+        return None
     # Anywhere in the subject ("Your Amazon.com order has been delivered"), but not in a quoted
     # item title (an order of "Return to Oz" is still an order).
     if _AMAZON_NOT_ORDER_EMAIL.search(_AMAZON_SUBJECT_TITLE.sub("", head)):
@@ -10146,6 +10206,8 @@ def parse_amazon_email(subject: str, text: str) -> dict[str, Any] | None:
         items.append({"title": title, "quantity": int(quantity.group(1)), "price": price})
     if not items:
         items = [{"title": title, "quantity": 1, "price": None} for title in _AMAZON_SUBJECT_TITLE.findall(subject)[:1]]
+    if not items:
+        items = amazon_categories(subject, lines)
     totals = [(m.group(1).lower(), amazon_money(m.group(2))) for m in _AMAZON_TOTAL.finditer(text)]
     # A grand total beats an order total beats a plain one; the last of them, which comes after any subtotals.
     total = next((amount for rank in ("grand total", "order total") for label, amount in reversed(totals) if label == rank),
@@ -10189,7 +10251,12 @@ def gmail_token(mailbox: str, now: float) -> str:
 
 
 def gmail_get(mailbox: str, path: str, now: float, **params: Any) -> dict[str, Any]:
-    r = requests.get(f"{GMAIL_API}{path}", params=params, headers={"Authorization": f"Bearer {gmail_token(mailbox, now)}"}, timeout=20)
+    # Gmail answers 403 or 429 for a burst over its per-user rate; that passes in seconds.
+    for wait in (2, 5, 0):
+        r = requests.get(f"{GMAIL_API}{path}", params=params, headers={"Authorization": f"Bearer {gmail_token(mailbox, now)}"}, timeout=20)
+        if r.status_code not in (403, 429) or "rate" not in r.text.lower() or not wait:
+            break
+        time.sleep(wait)
     if r.status_code != 200:
         raise RuntimeError(f"Gmail answered {r.status_code} for {path.split('/')[1]}")
     return r.json()
@@ -10258,9 +10325,9 @@ def amazon_read_mailbox(mailbox: str, now: float) -> int:
         payload = message.get("payload") or {}
         plain, markup = gmail_parts(payload)
         subject = gmail_header(payload, "subject")
-        parsed = parse_amazon_email(subject, plain) if plain else None
-        if markup and (parsed is None or not parsed["items"] or parsed["items"][0]["price"] is None):
-            parsed = parse_amazon_email(subject, html_text(markup)) or parsed
+        # The HTML as people see it first: Amazon's plain part leaves out what was in the order.
+        readings = [parse_amazon_email(subject, text) for text in (html_text(markup) if markup else "", plain) if text]
+        parsed = next((r for r in readings if r and r["items"]), next((r for r in readings if r), None))
         day = datetime.fromtimestamp(int(message.get("internalDate") or now * 1000) / 1000, zone).date().isoformat()
         amazon_store(mailbox, message_id, day, parsed, now)
     return len(fresh)
@@ -10272,7 +10339,8 @@ def amazon_need_by_words(title: str) -> str | None:
 
 
 AMAZON_MODEL_PROMPT = (
-    "Each line is something a household bought on Amazon. For each, in order, say whether it is essential "
+    "Each line is something a household bought on Amazon, or Amazon's category for it (Amazon's emails often give only the "
+    "category, such as Hardware or Kitchen). For each, in order, say whether it is essential "
     "(groceries and food, household and cleaning supplies, toiletries, medicine and health, baby and pet necessities, "
     "repairs or replacements of things the home needs) or discretionary (wants rather than needs: electronics, toys, "
     "games, hobbies, decor, entertainment, fashion, gifts, upgrades). Answer with one word per line in `needs`.\n\n"
@@ -10324,12 +10392,34 @@ def amazon_sort_items(ask: Callable[[list[str]], list[str] | None] | None = None
     return len(verdicts)
 
 
+def amazon_reread() -> None:
+    """
+    Forgets what the emails were read as, when they are now read differently (`AMAZON_PARSER`),
+    so the next read goes through them all again. What someone said about an item stays: a
+    re-read item of the same title in the same order gets it back.
+    """
+    if state_get(AMAZON_PARSER_KEY) == AMAZON_PARSER:
+        return
+
+    def forget(c: sqlite3.Connection) -> None:
+        c.execute("DELETE FROM amazon_emails")
+        c.execute("DELETE FROM amazon_shipments")
+        c.execute("DELETE FROM amazon_items WHERE need_by IS NULL OR need_by NOT LIKE 'user:%'")
+        c.execute("UPDATE amazon_orders SET confirmed=0")
+        c.commit()
+
+    with_db(forget)
+    state_set(AMAZON_PARSER_KEY, AMAZON_PARSER)
+    log.info("amazon: the emails will be read again (parser %d)", AMAZON_PARSER)
+
+
 def amazon_sync(now: float | None = None) -> None:
     """Every mailbox's new Amazon emails, then sorting what they ordered. A mailbox that fails is logged and the next read tries again."""
     if not amazon_on() or not _amazon_lock.acquire(blocking=False):
         return
     now = time.time() if now is None else now
     try:
+        amazon_reread()
         read, failed = 0, []
         for mailbox in sorted(AMAZON_GMAIL_TOKENS):
             try:
