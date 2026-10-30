@@ -178,12 +178,21 @@ def cmd_teardown(prefix):
     names = ",".join(f"'{n}'" for n in teardown)
     worst = []
     for at, msg in marks:
-        rows = iq(f"select name, count(*) n, sum(dur) / 1e6 total from slice where name in ({names}) and ts > {at} and ts < {at + 2_000_000_000} group by name")
-        spent = {r.name: (r.n, r.total) for r in rows}
-        keep = spent.get("live.keepFrame", (0, 0.0))
+        spans = [(r.name, r.ts, r.ts + r.dur) for r in iq(
+            f"select name, ts, dur from slice where name in ({names}) and ts > {at} and ts < {at + 2_000_000_000} order by ts")]
+        keeps = [e - s for n, s, e in spans if n == "live.keepFrame"]
+        # The sections nest (an unbind runs keepFrame inside it), so the total is the time any of them was open.
+        covered, reach = 0, None
+        for _, s, e in spans:
+            if reach is None or s > reach:
+                covered += e - s
+                reach = e
+            elif e > reach:
+                covered += e - reach
+                reach = e
         worst.append(frames[msg])
-        print(f"{msg:16} longest frame {frames[msg]:6.1f} ms; keepFrame {keep[0]}× {keep[1]:5.1f} ms; all teardown sections "
-              f"{sum(t for _, t in spent.values()):5.1f} ms")
+        print(f"{msg:16} longest frame {frames[msg]:6.1f} ms; keepFrame {len(keeps)}× {sum(keeps) / 1e6:5.1f} ms; "
+              f"teardown sections {covered / 1e6:5.1f} ms")
     if worst:
         print(f"longest frame opening Finance: median {pct(worst, 0.5):.1f} ms, worst {max(worst):.1f} ms ({len(worst)} rounds)")
     print(f"renderers' EGL threads: {egl:.0f} ms of CPU over {seconds:.0f} s ({egl / seconds:.1f} ms/s)")
