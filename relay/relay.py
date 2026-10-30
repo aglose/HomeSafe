@@ -10137,6 +10137,13 @@ def amazon_money(text: str) -> float:
     return float(text.replace(",", ""))
 
 
+def amazon_total(text: str) -> float | None:
+    """What an email (or one order's part of it) says was paid: a grand total beats an order total beats a plain one; the last of them, which comes after any subtotals."""
+    totals = [(m.group(1).lower(), amazon_money(m.group(2))) for m in _AMAZON_TOTAL.finditer(text)]
+    return next((amount for rank in ("grand total", "order total") for label, amount in reversed(totals) if label == rank),
+                totals[-1][1] if totals else None)
+
+
 def amazon_category_names(text: str) -> list[str]:
     """Amazon's list of categories as names: "Kitchen and Dining" is two, "Camping Gear, and more" one."""
     names = re.split(r",\s*(?:and\s+)?|\s+and\s+", text.strip())
@@ -10220,10 +10227,7 @@ def parse_amazon_email(subject: str, text: str) -> dict[str, Any] | None:
         items = [{"title": title, "quantity": 1, "price": None} for title in _AMAZON_SUBJECT_TITLE.findall(subject)[:1]]
     if not items:
         items = amazon_categories(subject, lines)
-    totals = [(m.group(1).lower(), amazon_money(m.group(2))) for m in _AMAZON_TOTAL.finditer(text)]
-    # A grand total beats an order total beats a plain one; the last of them, which comes after any subtotals.
-    total = next((amount for rank in ("grand total", "order total") for label, amount in reversed(totals) if label == rank),
-                 totals[-1][1] if totals else None)
+    total = amazon_total(text)
     shipment = _AMAZON_SHIPMENT_TOTAL.search(text)
     parsed = {"kind": kind, "orders": orders, "items": items, "total": None if kind == "shipped" else total,
               "shipment_total": amazon_money(shipment.group(1)) if shipment else (total if kind == "shipped" else None)}
@@ -10245,9 +10249,9 @@ def amazon_order_blocks(lines: list[str]) -> dict[str, dict[str, Any]]:
         after = "\n".join(lines[at + 1:marks[k + 1][0] if k + 1 < len(marks) else len(lines)])
         block = blocks.setdefault(order_id, {"items": [], "total": None})
         block["items"] += amazon_categories("", list(reversed(before)))
-        found = _AMAZON_TOTAL.search(after)
-        if found and block["total"] is None:
-            block["total"] = amazon_money(found.group(2))
+        total = amazon_total(after)
+        if total is not None and block["total"] is None:
+            block["total"] = total
     return blocks
 
 
@@ -10541,25 +10545,26 @@ def amazon_match(charges: list[tuple[str, str, float]], orders: list[dict[str, A
             found[charge_id] = {"order": order_id, "match": "shipment"}
             shipped.add((order_id, n))
 
+    # Every charge's every group of two or three shipments adding up to it, ranked together and
+    # taken best first, as the single shipments were: one order's shipments before several
+    # orders', then the nearest, whichever charge they are for.
     left = [(order["id"], n, day, _cents(total)) for order in orders for n, (day, total) in enumerate(order.get("shipments") or []) if (order["id"], n) not in shipped]
-    for charge in sorted((c for c in charges if c[0] not in found), key=lambda c: (c[1], c[0])):
-        near = [s for s in left if (s[0], s[1]) not in shipped and within(s[2], AMAZON_SHIPMENT_WINDOW, charge) and 0 < s[3] < _cents(charge[2])]
-        best = None
+    groups = []
+    for charge in (c for c in charges if c[0] not in found):
+        near = sorted((s for s in left if within(s[2], AMAZON_SHIPMENT_WINDOW, charge) and 0 < s[3] < _cents(charge[2])),
+                      key=lambda s: (abs(_days_between(s[2], charge[1])), s[0], s[1]))[:AMAZON_SPLIT_CANDIDATES]
         for size in (2, 3):
-            for group in combinations(near[:AMAZON_SPLIT_CANDIDATES], size):
+            for group in combinations(near, size):
                 if sum(s[3] for s in group) == _cents(charge[2]):
-                    # One order's shipments before several orders', then the nearest.
-                    rank = (len({s[0] for s in group}), sum(abs(_days_between(s[2], charge[1])) for s in group))
-                    if best is None or rank < best[0]:
-                        best = (rank, group)
-            if best:
-                break
-        if best:
-            parts: dict[str, int] = {}
-            for order_id, n, _, cents in best[1]:
-                parts[order_id] = parts.get(order_id, 0) + cents
-                shipped.add((order_id, n))
-            found[charge[0]] = {"order": max(parts, key=lambda o: (parts[o], o)), "match": "shipment", "parts": parts}
+                    groups.append(((len({s[0] for s in group}), sum(abs(_days_between(s[2], charge[1])) for s in group), charge[1], charge[0]), charge, group))
+    for _, charge, group in sorted(groups, key=lambda g: g[0]):
+        if charge[0] in found or any((s[0], s[1]) in shipped for s in group):
+            continue
+        parts: dict[str, int] = {}
+        for order_id, n, _, cents in group:
+            parts[order_id] = parts.get(order_id, 0) + cents
+            shipped.add((order_id, n))
+        found[charge[0]] = {"order": max(parts, key=lambda o: (parts[o], o)), "match": "shipment", "parts": parts}
 
     def paid(match: dict[str, Any], order_id: str, charge: tuple[str, str, float]) -> int:
         if "parts" in match:

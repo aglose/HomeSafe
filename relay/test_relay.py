@@ -5810,7 +5810,8 @@ class AmazonEmailTest(unittest.TestCase):
             "<div>Grand Total:</div><div>$27.10</div><div>Arriving tomorrow</div><div>6 items: 1 Cereal, 2 Beverages, and 3 others</div>"
             "<div>Order # \u202b111-0000000-0000002</div><div>Grand Total:</div><div>$118.40</div>"
             "<div>2 items: 1 Garden Supplies, 1 Tools</div><div>Order # 111-0000000-0000003</div><div>View or edit order</div>"
-            "<div>8 items: 2 Party Supplies, 2 Socks, and 4 others</div><div>Order # 111-0000000-0000003</div><div>Grand Total:</div><div>$164.25</div>")
+            "<div>8 items: 2 Party Supplies, 2 Socks, and 4 others</div><div>Order # 111-0000000-0000003</div><div>Total before tax:</div><div>$150.00</div>"
+            "<div>Grand Total:</div><div>$164.25</div>")
         parsed = relay.parse_amazon_email("Ordered 17 items: Pasta, Cereal, and more", text)
         blocks = {order_id: ([(i["title"], i["quantity"]) for i in b["items"]], b["total"]) for order_id, b in parsed["per_order"].items()}
         self.assertEqual({"111-0000000-0000001": ([("Pasta", 1)], 27.10),
@@ -5923,6 +5924,16 @@ class AmazonMatchTest(unittest.TestCase):
         # Across orders when it must, the order paid most toward named first.
         found = relay.amazon_match([("c", "2026-10-27", 129.70)], orders)
         self.assertEqual(("A", {"A": 8820, "B": 4150}), (found["c"]["order"], found["c"]["parts"]))
+
+    def test_shipments_that_add_up_go_to_the_charge_nearest_them(self):
+        orders = [self.order("A", "2026-10-01", None, [("2026-10-05", 10.0), ("2026-10-05", 20.0)])]
+        found = relay.amazon_match([("early", "2026-10-03", 30.0), ("same", "2026-10-05", 30.0)], orders)
+        self.assertEqual(["same"], list(found))
+
+    def test_one_order_s_three_shipments_beat_two_orders_two(self):
+        orders = [self.order("A", "2026-10-01", None, [("2026-10-05", 7.0), ("2026-10-05", 8.0), ("2026-10-05", 9.0)]),
+                  self.order("B", "2026-10-01", None, [("2026-10-05", 11.0)]), self.order("C", "2026-10-01", None, [("2026-10-05", 13.0)])]
+        self.assertEqual({"A": 2400}, relay.amazon_match([("c", "2026-10-05", 24.0)], orders)["c"]["parts"])
 
     def test_what_a_matched_shipment_leaves_owing_is_matched_too(self):
         charges = [("first", "2026-10-02", 20.0), ("rest", "2026-10-06", 30.0)]
