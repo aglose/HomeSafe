@@ -172,7 +172,7 @@ internal fun AmazonOrderSection(purchase: Purchase, busy: Boolean, onSayNeed: (o
         )
         order.items.forEach { item ->
             Spacer(Modifier.height(12.dp))
-            AmazonItemRow(item, busy, onSay = { need -> onSayNeed(order.orderId, item, need) })
+            AmazonItemRow(item, busy, onSay = { need -> onSayNeed(item.orderId ?: order.orderId, item, need) })
         }
     }
 }

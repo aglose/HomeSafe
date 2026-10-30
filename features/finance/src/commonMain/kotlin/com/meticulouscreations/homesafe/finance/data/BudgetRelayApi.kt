@@ -437,6 +437,7 @@ internal data class RelayAmazonOrder(
                     item.needBy == "model" -> NeedSource.MODEL
                     else -> NeedSource.RULE
                 },
+                orderId = item.order?.takeIf { it.isNotEmpty() },
             )
         },
         essential = essential,
@@ -447,6 +448,7 @@ internal data class RelayAmazonOrder(
 
 @Serializable
 internal data class RelayAmazonItem(
+    val order: String? = null,
     val pos: Int = 0,
     val title: String = "",
     val quantity: Int = 1,
