@@ -359,6 +359,17 @@ def db() -> sqlite3.Connection:
         if column not in columns:
             conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} TEXT")
     conn.execute("CREATE TABLE IF NOT EXISTS budget_line_rules (merchant_key TEXT PRIMARY KEY, line TEXT NOT NULL, by TEXT, at REAL)")
+    # What Amazon's emails said was ordered (see "Amazon orders"): each email read once
+    # (`amazon_emails`), each order with the day it was placed and its total when an email gave
+    # one, what was in it (`need` "essential" or "discretionary", `need_by` "rule", "model" or
+    # "user:<name>"), and each shipment whose email said what it cost.
+    conn.execute("CREATE TABLE IF NOT EXISTS amazon_emails (message_id TEXT PRIMARY KEY, mailbox TEXT, at REAL, kind TEXT)")
+    conn.execute("CREATE TABLE IF NOT EXISTS amazon_orders (order_id TEXT PRIMARY KEY, mailbox TEXT, ordered TEXT NOT NULL, total REAL, updated REAL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS amazon_items (order_id TEXT NOT NULL, pos INTEGER NOT NULL, title TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 1,"
+        " price REAL, need TEXT, need_by TEXT, PRIMARY KEY (order_id, pos))"
+    )
+    conn.execute("CREATE TABLE IF NOT EXISTS amazon_shipments (message_id TEXT PRIMARY KEY, order_id TEXT NOT NULL, shipped TEXT NOT NULL, total REAL NOT NULL)")
     # Where each institution's transactions were read up to (Plaid's cursor), when they were last
     # asked for and last changed, and whether Plaid has finished fetching their history.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_items)")}
@@ -9405,6 +9416,10 @@ def plaid_transactions_sync_all(now: float | None = None, wait: bool = False) ->
         plaid_transactions_sync(time.time() if now is None else now)
     finally:
         _bank_lock.release()
+    try:
+        amazon_sync()
+    except Exception:
+        log.exception("amazon: reading the orders failed")
     budget_check_quietly()
     return True
 
@@ -9638,6 +9653,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     What counts toward the budget between two days (inclusive), each put in its bucket: every
     purchase and refund on a card that has a role, pending ones too. A card being paid off
     doesn't count, nor a transaction Plaid took back, nor a pending one whose posted one is here.
+    Each of Amazon's charges also says what its order was (see "Amazon orders").
     """
     rows = with_db(lambda c: c.execute(
         "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key, t.category_detail, t.line_tag"
@@ -9651,10 +9667,13 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     line_rules = budget_line_rules()
     lines = config["card_paid_lines"]
     purchases = []
+    amazon: set[str] = set()
     for txn_id, date, amount, name, merchant, key, category, pending, owner, kind, tag, card, detail, line_tag in rows:
         role = config["roles"].get(card) or ""
         if role in ("", BUDGET_IGNORE):
             continue
+        if kind == "spend" and is_amazon_order_charge(name, merchant):
+            amazon.add(txn_id)
         bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules, holder=(config["holders"].get(card) or {}).get(owner or ""))
         line, line_source = budget_line(line_tag, key, category, detail, lines, line_rules)
         purchases.append({
@@ -9662,6 +9681,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
             "pending": bool(pending), "card": card, "bucket": bucket, "source": source, "kind": kind, "remembered": bool(key) and key in rules,
             "line": line, "line_source": line_source, "line_remembered": bool(key) and key in line_rules,
         })
+    amazon_attach(purchases, amazon, first, last)
     return purchases
 
 
@@ -9752,6 +9772,7 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
         "history": [{"month": m, "spent": round(spent_by_month.get(m, 0.0), 2), "days": month_days(m)}
                     for m in (month_before(month, back) for back in range(BUDGET_HISTORY_MONTHS - 1, 0, -1))],
         "alerts_sent": sorted(alerts.get("sent") or {}) if alerts.get("month") == month else [],
+        "amazon": amazon_month(purchases),
     }
 
 
@@ -9992,6 +10013,482 @@ def post_budget_sync(request: Request, response: Response) -> dict[str, Any]:
         _txn_asked["at"] = time.time()
         budget_sync_in_background()
     return {**budget_month(), "syncing": True}
+
+
+# ---------------------------------------------------------------- Amazon orders
+
+# A card says only "AMAZON MKTPL*2K1" and an amount: groceries and a new game look the same. Amazon
+# has no API for a person's orders, but it emails each one ("Ordered: …") and each shipment
+# ("Shipped: …"), and Amazon charges the card once per shipment. So every hour, after the cards are
+# read, the relay reads those emails from the household's Gmail (read-only), keeps what was ordered,
+# matches each Amazon charge to the order or shipment it paid for, and sorts each item into
+# essential (groceries, household supplies, medicine, the baby's and the pets' things) or
+# discretionary. The sorting is a few word lists first, then the box's own model through Ollama for
+# the rest, so no titles leave the house; someone can say otherwise for any item by hand.
+#
+# Setup (docs/budget.md, "Amazon orders"): a Desktop OAuth client with the Gmail API, published so
+# its refresh tokens last, then `python3 relay/gmail_link.py` once per mailbox Amazon writes to.
+# AMAZON_GMAIL_CLIENT_ID, AMAZON_GMAIL_CLIENT_SECRET and AMAZON_GMAIL_TOKENS (a JSON object, a
+# refresh token by mailbox) go in amazon.env on the box. Off without them.
+AMAZON_GMAIL_CLIENT_ID = os.environ.get("AMAZON_GMAIL_CLIENT_ID", "").strip()
+AMAZON_GMAIL_CLIENT_SECRET = os.environ.get("AMAZON_GMAIL_CLIENT_SECRET", "").strip()
+try:
+    AMAZON_GMAIL_TOKENS: dict[str, str] = json.loads(os.environ.get("AMAZON_GMAIL_TOKENS") or "{}")
+except ValueError:
+    # A mangled amazon.env turns the Amazon orders off rather than the whole relay.
+    log.warning("amazon: AMAZON_GMAIL_TOKENS isn't JSON, so Amazon's emails won't be read")
+    AMAZON_GMAIL_TOKENS = {}
+GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+# Every hour reads the emails of the last few months that it hasn't read yet, so a mailbox linked
+# today brings its history with it.
+AMAZON_LOOKBACK_DAYS = int(os.environ.get("AMAZON_LOOKBACK_DAYS", "120"))
+AMAZON_QUERY = ('from:amazon.com {subject:Ordered subject:Shipped subject:"Your Amazon.com order" subject:"Your Amazon order"}'
+                f" newer_than:{AMAZON_LOOKBACK_DAYS}d")
+AMAZON_MAX_EMAILS = 400
+AMAZON_SYNCED_KEY = "amazon_synced"
+# A charge comes the day of the order or after it, up to a month later for one that waited for
+# stock; a shipment's charge within a few days of its email either way.
+AMAZON_ORDER_WINDOW = (-1, 30)
+AMAZON_SHIPMENT_WINDOW = (-2, 3)
+# How many of an order's charges a split is looked for among, and how many it may be split into.
+AMAZON_SPLIT_CANDIDATES = 10
+AMAZON_SPLIT_MOST = 4
+AMAZON_NEEDS = ("essential", "discretionary")
+# What the model is asked about at once.
+AMAZON_MODEL_BATCH = 20
+_amazon_lock = threading.Lock()
+_gmail_access: dict[str, tuple[str, float]] = {}
+
+_AMAZON_ORDER_ID = re.compile(r"\b((?:\d{3}|D\d{2})-\d{7}-\d{7})\b")
+_AMAZON_QUANTITY = re.compile(r"^\s*(?:quantity|qty)\s*:?\s*(\d{1,3})\b", re.IGNORECASE)
+_AMAZON_PRICE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})")
+_AMAZON_TOTAL = re.compile(r"\b(grand total|order total|(?<!sub)(?<!sub )total)\b[^$\n]{0,30}(?:\n\s*)?\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})", re.IGNORECASE)
+_AMAZON_SHIPMENT_TOTAL = re.compile(r"\bshipment total\b[^$\n]{0,30}(?:\n\s*)?\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})", re.IGNORECASE)
+_AMAZON_SUBJECT_TITLE = re.compile(r"[\"“](.+?)[\"”]")
+# A line of an email that is never an item's title.
+_AMAZON_NOT_TITLE = re.compile(
+    r"^(order\s*#|quantity|qty|sold by|seller|condition|arriving|delivered|shipped|ship to|estimated|track|view|buy it again|"
+    r"\$|total|subtotal|item\(s\)|shipping|tax|grand total|order total|payment|visa|mastercard|amex|discover|gift card|promotion|your )",
+    re.IGNORECASE,
+)
+# The charges that aren't orders: AWS, the Prime membership, Prime Video, Kindle Unlimited and Audible.
+_AMAZON_CHARGE = re.compile(r"amazon|amzn", re.IGNORECASE)
+_AMAZON_NOT_ORDER = re.compile(r"web services|\baws\b|\bprime\b|kindle (unlimited|unltd)|audible", re.IGNORECASE)
+# What the word lists sort on their own: the first that has a word of the title's decides. Anything
+# else goes to the model. Clothes, kitchenware and chargers are left to it: either can be true.
+_AMAZON_NEED_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = tuple((need, re.compile(rf"\b({words})", re.IGNORECASE)) for need, words in (
+    ("discretionary", r"lego|toys?\b|board game|puzzle|video game|playstation|ps5|xbox|nintendo|gift card|jewel|necklace|earring|"
+                      r"costume|decor|poster|figurine|collectible|drone|headphone|earbud|airpods|speaker|smart ?watch|gaming"),
+    ("essential", r"paper towel|toilet paper|bath tissue|facial tissue|kleenex|detergent|dishwasher|dish soap|hand soap|body wash|shampoo|"
+                  r"conditioner|toothpaste|toothbrush|floss|mouthwash|deodorant|razor|diaper|wipes|baby formula|infant|tampon|"
+                  r"pads\b|vitamin|supplement|ibuprofen|acetaminophen|tylenol|advil|allergy|antacid|bandage|first aid|thermometer|"
+                  r"prescription|contact lens|dog food|cat food|kibble|cat litter|litter|trash bags?|garbage bags?|cleaner|cleaning|"
+                  r"disinfect|bleach|sponge|air filter|water filter|furnace filter|light bulb|batter(y|ies)|coffee|milk|eggs|cereal|"
+                  r"snacks?|rice|pasta|olive oil|flour|sugar|organic|grocer"),
+))
+
+
+def amazon_on() -> bool:
+    return bool(AMAZON_GMAIL_CLIENT_ID and AMAZON_GMAIL_CLIENT_SECRET and AMAZON_GMAIL_TOKENS)
+
+
+def html_text(markup: str) -> str:
+    """An HTML email as the lines a person reads: tags gone, a new line wherever a block ends, entities undone."""
+    markup = re.sub(r"(?is)<(style|script|head)\b.*?</\1>", "", markup)
+    markup = re.sub(r"(?i)<br\s*/?>|</(p|div|tr|td|th|li|h[1-6]|table)>", "\n", markup)
+    text = html.unescape(re.sub(r"<[^>]+>", "", markup)).replace(" ", " ").replace("‌", "")
+    return "\n".join(line for line in (" ".join(raw.split()) for raw in text.splitlines()) if line)
+
+
+def amazon_money(text: str) -> float:
+    return float(text.replace(",", ""))
+
+
+def parse_amazon_email(subject: str, text: str) -> dict[str, Any] | None:
+    """
+    What one of Amazon's emails says: `kind` "ordered" or "shipped", the order numbers in it,
+    each item (title, quantity, price when given), the order's total, and a shipment's total.
+    None for an email that isn't about an order (a delivery, a refund, an ad). Amazon changes
+    these emails' layout now and then, so it reads loosely: an item is whatever line comes
+    before a "Quantity", with the nearest price; failing that, the title quoted in the subject.
+    """
+    head = subject.strip().lower()
+    if head.startswith(("delivered", "refund", "your refund", "return", "cancel")) or "refund" in head:
+        return None
+    orders = list(dict.fromkeys(_AMAZON_ORDER_ID.findall(subject + "\n" + text)))
+    if not orders:
+        return None
+    kind = "shipped" if head.startswith("shipped") or "has shipped" in head or "shipment" in head else "ordered"
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    items: list[dict[str, Any]] = []
+    for i, line in enumerate(lines):
+        quantity = _AMAZON_QUANTITY.match(line)
+        if not quantity:
+            continue
+        title = next((lines[j] for j in range(i - 1, max(-1, i - 4), -1)
+                      if not _AMAZON_NOT_TITLE.match(lines[j]) and not _AMAZON_PRICE.fullmatch(lines[j].strip()) and len(lines[j]) > 3), None)
+        if title is None:
+            continue
+        # The price beside it, on the same line or the next two (or just before, in an older layout).
+        near = [line[quantity.end():]] + lines[i + 1:i + 3] + [lines[i - 1]]
+        price = next((amazon_money(m.group(1)) for part in near for m in [_AMAZON_PRICE.search(part)] if m and not _AMAZON_TOTAL.search(part)), None)
+        items.append({"title": title, "quantity": int(quantity.group(1)), "price": price})
+    if not items:
+        items = [{"title": title, "quantity": 1, "price": None} for title in _AMAZON_SUBJECT_TITLE.findall(subject)[:1]]
+    totals = [(m.group(1).lower(), amazon_money(m.group(2))) for m in _AMAZON_TOTAL.finditer(text)]
+    # A grand total beats an order total beats a plain one; the last of them, which comes after any subtotals.
+    total = next((amount for rank in ("grand total", "order total") for label, amount in reversed(totals) if label == rank),
+                 totals[-1][1] if totals else None)
+    shipment = _AMAZON_SHIPMENT_TOTAL.search(text)
+    return {"kind": kind, "orders": orders, "items": items, "total": None if kind == "shipped" else total,
+            "shipment_total": amazon_money(shipment.group(1)) if shipment else (total if kind == "shipped" else None)}
+
+
+def gmail_parts(payload: dict[str, Any]) -> tuple[str, str]:
+    """A Gmail message's text: its plain part and its HTML part, each "" when it has none."""
+    import base64
+
+    found = {"text/plain": "", "text/html": ""}
+    stack = [payload]
+    while stack:
+        part = stack.pop()
+        stack.extend(part.get("parts") or [])
+        mime, data = part.get("mimeType"), (part.get("body") or {}).get("data")
+        if mime in found and data and not found[mime]:
+            found[mime] = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("utf-8", "replace")
+    return found["text/plain"], found["text/html"]
+
+
+def gmail_header(payload: dict[str, Any], name: str) -> str:
+    return next((h.get("value") or "" for h in payload.get("headers") or [] if (h.get("name") or "").lower() == name), "")
+
+
+def gmail_token(mailbox: str, now: float) -> str:
+    """An access token for one mailbox, from its refresh token, kept until a minute before it expires."""
+    held = _gmail_access.get(mailbox)
+    if held and held[1] > now + 60:
+        return held[0]
+    r = requests.post(GOOGLE_TOKEN_URL, data={"client_id": AMAZON_GMAIL_CLIENT_ID, "client_secret": AMAZON_GMAIL_CLIENT_SECRET,
+                                              "refresh_token": AMAZON_GMAIL_TOKENS[mailbox], "grant_type": "refresh_token"}, timeout=15)
+    if r.status_code != 200:
+        raise RuntimeError(f"Google refused the refresh token ({r.status_code} {_google_json(r).get('error')})")
+    answer = r.json()
+    _gmail_access[mailbox] = (answer["access_token"], now + float(answer.get("expires_in") or 3600))
+    return answer["access_token"]
+
+
+def gmail_get(mailbox: str, path: str, now: float, **params: Any) -> dict[str, Any]:
+    r = requests.get(f"{GMAIL_API}{path}", params=params, headers={"Authorization": f"Bearer {gmail_token(mailbox, now)}"}, timeout=20)
+    if r.status_code != 200:
+        raise RuntimeError(f"Gmail answered {r.status_code} for {path.split('/')[1]}")
+    return r.json()
+
+
+def amazon_store(mailbox: str, message_id: str, day: str, parsed: dict[str, Any] | None, now: float) -> None:
+    """
+    Keeps what one email said. An order email sets the order's day, total and items; a shipment
+    email adds its total as a shipment, and the items when no order email has been read (it
+    names them too). Items whose title is unchanged keep how they were sorted.
+    """
+    def write(c: sqlite3.Connection) -> None:
+        c.execute("INSERT OR REPLACE INTO amazon_emails VALUES (?,?,?,?)", (message_id, mailbox, now, parsed["kind"] if parsed else None))
+        if parsed is None:
+            c.commit()
+            return
+        # An email about several orders at once can't say which item is whose: the items go to the first.
+        first = parsed["orders"][0]
+        for order_id in parsed["orders"]:
+            known = c.execute("SELECT ordered FROM amazon_orders WHERE order_id=?", (order_id,)).fetchone()
+            ordered = day if parsed["kind"] == "ordered" or not known else min(known[0], day)
+            total = parsed["total"] if order_id == first and len(parsed["orders"]) == 1 else None
+            c.execute("INSERT INTO amazon_orders VALUES (?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET ordered=?, total=COALESCE(?, total), updated=?",
+                      (order_id, mailbox, ordered, total, now, ordered, total, now))
+        has = c.execute("SELECT COUNT(*) FROM amazon_items WHERE order_id=?", (first,)).fetchone()[0]
+        if parsed["items"] and (parsed["kind"] == "ordered" or not has):
+            sorted_before = {title: (need, by) for title, need, by in c.execute("SELECT title, need, need_by FROM amazon_items WHERE order_id=?", (first,))}
+            c.execute("DELETE FROM amazon_items WHERE order_id=?", (first,))
+            for pos, item in enumerate(parsed["items"]):
+                need, by = sorted_before.get(item["title"], (None, None))
+                c.execute("INSERT INTO amazon_items VALUES (?,?,?,?,?,?,?)", (first, pos, item["title"], item["quantity"], item["price"], need, by))
+        if parsed["kind"] == "shipped" and parsed["shipment_total"] is not None:
+            c.execute("INSERT OR REPLACE INTO amazon_shipments VALUES (?,?,?,?)", (message_id, first, day, parsed["shipment_total"]))
+        c.commit()
+
+    with_db(write)
+
+
+def amazon_read_mailbox(mailbox: str, now: float) -> int:
+    """Reads one mailbox's Amazon emails that haven't been read yet; how many there were."""
+    zone = household_zone() or timezone.utc
+    ids: list[str] = []
+    page: str | None = None
+    while len(ids) < AMAZON_MAX_EMAILS:
+        listed = gmail_get(mailbox, "/messages", now, q=AMAZON_QUERY, maxResults=100, **({"pageToken": page} if page else {}))
+        ids += [m["id"] for m in listed.get("messages") or []]
+        page = listed.get("nextPageToken")
+        if not page:
+            break
+    seen = {row[0] for row in with_db(lambda c: c.execute("SELECT message_id FROM amazon_emails").fetchall())}
+    fresh = [message_id for message_id in ids if message_id not in seen]
+    for message_id in fresh:
+        message = gmail_get(mailbox, f"/messages/{message_id}", now, format="full")
+        payload = message.get("payload") or {}
+        plain, markup = gmail_parts(payload)
+        subject = gmail_header(payload, "subject")
+        parsed = parse_amazon_email(subject, plain) if plain else None
+        if markup and (parsed is None or not parsed["items"] or parsed["items"][0]["price"] is None):
+            parsed = parse_amazon_email(subject, html_text(markup)) or parsed
+        day = datetime.fromtimestamp(int(message.get("internalDate") or now * 1000) / 1000, zone).date().isoformat()
+        amazon_store(mailbox, message_id, day, parsed, now)
+    return len(fresh)
+
+
+def amazon_need_by_words(title: str) -> str | None:
+    """What the word lists make of an item's title, or None when they don't know."""
+    return next((need for need, words in _AMAZON_NEED_WORDS if words.search(title)), None)
+
+
+AMAZON_MODEL_PROMPT = (
+    "Each line is something a household bought on Amazon. For each, in order, say whether it is essential "
+    "(groceries and food, household and cleaning supplies, toiletries, medicine and health, baby and pet necessities, "
+    "repairs or replacements of things the home needs) or discretionary (wants rather than needs: electronics, toys, "
+    "games, hobbies, decor, entertainment, fashion, gifts, upgrades). Answer with one word per line in `needs`.\n\n"
+)
+AMAZON_MODEL_SCHEMA = {"type": "object", "properties": {"needs": {"type": "array", "items": {"type": "string", "enum": list(AMAZON_NEEDS)}}}, "required": ["needs"]}
+
+
+def amazon_ask_model(titles: list[str]) -> list[str] | None:
+    """The box's model's verdict on each title, in order, or None when it isn't there or answers something else."""
+    if not OLLAMA or not titles:
+        return None
+    r = requests.post(f"{OLLAMA}/api/chat", json={
+        "model": VLM_MODEL,
+        "messages": [{"role": "user", "content": AMAZON_MODEL_PROMPT + "\n".join(f"{i + 1}. {t}" for i, t in enumerate(titles))}],
+        "format": AMAZON_MODEL_SCHEMA,
+        "stream": False,
+        "keep_alive": "24h",
+        "options": {"temperature": 0, "num_ctx": 4096, "num_gpu": 99},
+    }, timeout=120)
+    r.raise_for_status()
+    needs = json.loads(r.json()["message"]["content"]).get("needs")
+    return needs if isinstance(needs, list) and len(needs) == len(titles) and all(n in AMAZON_NEEDS for n in needs) else None
+
+
+def amazon_sort_items(ask: Callable[[list[str]], list[str] | None] | None = None) -> int:
+    """Sorts every item not sorted yet: by the word lists, then the rest by the model, a batch at a time. How many were sorted."""
+    ask = ask or amazon_ask_model
+    rows = with_db(lambda c: c.execute("SELECT order_id, pos, title FROM amazon_items WHERE need IS NULL ORDER BY order_id, pos").fetchall())
+    verdicts: list[tuple[str, str, str, int]] = []
+    left = []
+    for order_id, pos, title in rows:
+        need = amazon_need_by_words(title)
+        if need:
+            verdicts.append((need, "rule", order_id, pos))
+        else:
+            left.append((order_id, pos, title))
+    for start in range(0, len(left), AMAZON_MODEL_BATCH):
+        batch = left[start:start + AMAZON_MODEL_BATCH]
+        try:
+            needs = ask([title for _, _, title in batch])
+        except Exception as e:
+            log.warning("amazon: the model couldn't sort %d items: %s", len(batch), e)
+            break
+        if needs is None:
+            break
+        verdicts += [(need, "model", order_id, pos) for need, (order_id, pos, _) in zip(needs, batch)]
+    with_db(lambda c: (c.executemany("UPDATE amazon_items SET need=?, need_by=? WHERE order_id=? AND pos=? AND need IS NULL", verdicts), c.commit()))
+    return len(verdicts)
+
+
+def amazon_sync(now: float | None = None) -> None:
+    """Every mailbox's new Amazon emails, then sorting what they ordered. A mailbox that fails is logged and the next read tries again."""
+    if not amazon_on() or not _amazon_lock.acquire(blocking=False):
+        return
+    now = time.time() if now is None else now
+    try:
+        read, failed = 0, []
+        for mailbox in sorted(AMAZON_GMAIL_TOKENS):
+            try:
+                read += amazon_read_mailbox(mailbox, now)
+            except Exception as e:
+                log.warning("amazon: couldn't read %s: %s", mailbox, e)
+                failed.append(mailbox)
+        sorted_now = amazon_sort_items()
+        state_set(AMAZON_SYNCED_KEY, {"at": now, "emails": read, "failed": failed})
+        log.info("amazon: read %d new emails, sorted %d items, %d mailboxes failed", read, sorted_now, len(failed))
+    finally:
+        _amazon_lock.release()
+
+
+def is_amazon_order_charge(name: str | None, merchant: str | None) -> bool:
+    """Whether a card's purchase is one of Amazon's shipments (not AWS, Prime, Kindle Unlimited or Audible)."""
+    text = f"{merchant or ''} {name or ''}"
+    return bool(_AMAZON_CHARGE.search(text)) and not _AMAZON_NOT_ORDER.search(text)
+
+
+def _days_between(first: str, then: str) -> int:
+    return (datetime.fromisoformat(then) - datetime.fromisoformat(first)).days
+
+
+def _cents(amount: float) -> int:
+    return round(amount * 100)
+
+
+def amazon_match(charges: list[tuple[str, str, float]], orders: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """
+    Which order each Amazon charge paid for, by charge id: {"order", "match"}. Charges are (id,
+    day, amount); each order has its `id`, `date`, `total` (or None) and `shipments` [(day,
+    total)]. In this order, each charge and each order or shipment used at most once:
+
+    1. "shipment": a shipment's email gave its total, and a charge of exactly that came within a
+       few days of it.
+    2. "order": a charge of exactly the order's total came within a month of it.
+    3. "split": two to four charges in that month add up to exactly the order's total (Amazon
+       charges each shipment of a bigger order on its own).
+
+    Where more than one fits, the charge nearest the email's day.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    free = sorted(charges, key=lambda c: c[1])
+
+    def fitting(day: str, window: tuple[int, int], cents: int | None = None) -> list[tuple[str, str, float]]:
+        return [c for c in free if c[0] not in found and window[0] <= _days_between(day, c[1]) <= window[1] and (cents is None or _cents(c[2]) == cents)]
+
+    def nearest(day: str, candidates: list[tuple[str, str, float]]) -> tuple[str, str, float]:
+        return min(candidates, key=lambda c: (abs(_days_between(day, c[1])), c[1], c[0]))
+
+    for order in orders:
+        for day, total in order.get("shipments") or []:
+            candidates = fitting(day, AMAZON_SHIPMENT_WINDOW, _cents(total))
+            if candidates:
+                found[nearest(day, candidates)[0]] = {"order": order["id"], "match": "shipment"}
+    paid = {match["order"] for match in found.values()}
+    waiting = [o for o in orders if o.get("total") is not None and o["id"] not in paid]
+    for order in waiting:
+        candidates = fitting(order["date"], AMAZON_ORDER_WINDOW, _cents(order["total"]))
+        if candidates:
+            found[nearest(order["date"], candidates)[0]] = {"order": order["id"], "match": "order"}
+            paid.add(order["id"])
+    from itertools import combinations
+
+    for order in (o for o in waiting if o["id"] not in paid):
+        candidates = [c for c in fitting(order["date"], AMAZON_ORDER_WINDOW) if 0 < _cents(c[2]) < _cents(order["total"])]
+        candidates = sorted(candidates, key=lambda c: abs(_days_between(order["date"], c[1])))[:AMAZON_SPLIT_CANDIDATES]
+        best = None
+        for size in range(2, AMAZON_SPLIT_MOST + 1):
+            for group in combinations(candidates, size):
+                if sum(_cents(c[2]) for c in group) == _cents(order["total"]):
+                    distance = sum(abs(_days_between(order["date"], c[1])) for c in group)
+                    if best is None or distance < best[0]:
+                        best = (distance, group)
+            if best:
+                break
+        if best:
+            for charge in best[1]:
+                found[charge[0]] = {"order": order["id"], "match": "split"}
+    return found
+
+
+def amazon_orders_near(first: str, last: str) -> list[dict[str, Any]]:
+    """The orders whose charges may fall between two days, with their items and shipments."""
+    start = (datetime.fromisoformat(first) - timedelta(days=AMAZON_ORDER_WINDOW[1])).date().isoformat()
+    end = (datetime.fromisoformat(last) + timedelta(days=-AMAZON_ORDER_WINDOW[0])).date().isoformat()
+
+    def read(c: sqlite3.Connection) -> list[dict[str, Any]]:
+        orders = {order_id: {"id": order_id, "date": ordered, "total": total, "items": [], "shipments": []}
+                  for order_id, ordered, total in c.execute("SELECT order_id, ordered, total FROM amazon_orders WHERE ordered >= ? AND ordered <= ? ORDER BY ordered, order_id", (start, end))}
+        for order_id, pos, title, quantity, price, need, by in c.execute("SELECT order_id, pos, title, quantity, price, need, need_by FROM amazon_items ORDER BY order_id, pos"):
+            if order_id in orders:
+                orders[order_id]["items"].append({"pos": pos, "title": title, "quantity": quantity, "price": price, "need": need, "need_by": by})
+        for order_id, shipped, total in c.execute("SELECT order_id, shipped, total FROM amazon_shipments ORDER BY shipped"):
+            if order_id in orders:
+                orders[order_id]["shipments"].append((shipped, total))
+        return list(orders.values())
+
+    return with_db(read)
+
+
+def amazon_split(amount: float, items: list[dict[str, Any]]) -> dict[str, float]:
+    """
+    A charge shared out between essential, discretionary and unsorted, in proportion to its order's
+    item prices. Items without prices share it evenly. It is the order's mix, not the shipment's
+    own: a shipment's email rarely says which items it carried.
+    """
+    split = {"essential": 0.0, "discretionary": 0.0, "unsorted": 0.0}
+    if not items:
+        split["unsorted"] = amount
+        return split
+    weights = [(item["price"] or 0.0) * item["quantity"] for item in items]
+    if not any(weights):
+        weights = [1.0] * len(items)
+    whole = sum(weights)
+    for item, weight in zip(items, weights):
+        split[item["need"] if item["need"] in AMAZON_NEEDS else "unsorted"] += amount * weight / whole
+    return {need: round(share, 2) for need, share in split.items()}
+
+
+def amazon_attach(purchases: list[dict[str, Any]], charges: set[str], first: str, last: str) -> None:
+    """
+    Marks each of the budget's purchases whose id is in `charges` (Amazon's) `from_amazon`, and
+    adds what its order says (`amazon`), or that none was found (`amazon` None). Other purchases
+    get neither.
+    """
+    mine = [p for p in purchases if p["id"] in charges]
+    if not mine:
+        return
+    orders = amazon_orders_near(first, last)
+    matched = amazon_match([(p["id"], p["date"], p["amount"]) for p in mine], orders)
+    by_id = {o["id"]: o for o in orders}
+    for p in mine:
+        p["from_amazon"] = True
+        match = matched.get(p["id"])
+        if match is None:
+            p["amazon"] = None
+            continue
+        order = by_id[match["order"]]
+        p["amazon"] = {"order": order["id"], "match": match["match"], "ordered": order["date"],
+                       "items": [{k: item[k] for k in ("pos", "title", "quantity", "price", "need", "need_by")} for item in order["items"]],
+                       **amazon_split(p["amount"], order["items"])}
+
+
+def amazon_month(purchases: list[dict[str, Any]]) -> dict[str, Any]:
+    """The month's Amazon charges summed up: how much was essential, discretionary, not sorted yet, and not matched to an order."""
+    mine = [p for p in purchases if "amazon" in p]
+    synced = state_get(AMAZON_SYNCED_KEY) or {}
+    return {
+        "configured": amazon_on(),
+        "read_at": synced.get("at"),
+        "failed": synced.get("failed") or [],
+        "charges": len(mine),
+        **{need: round(sum((p.get("amazon") or {}).get(need, 0.0) for p in mine), 2) for need in (*AMAZON_NEEDS, "unsorted")},
+        "unmatched": round(sum(p["amount"] for p in mine if p.get("amazon") is None), 2),
+    }
+
+
+class AmazonNeed(BaseModel):
+    # "essential", "discretionary", or null to let it sort itself again.
+    need: str | None = None
+
+
+@app.put("/finance/budget/amazon/{order_id}/items/{pos}")
+def put_amazon_item(order_id: str, pos: int, body: AmazonNeed, request: Request, response: Response) -> dict[str, Any]:
+    """Says by hand whether one item of an Amazon order was essential, or takes that back."""
+    user = require_bank(request, response)
+    if body.need is not None and body.need not in AMAZON_NEEDS:
+        raise HTTPException(400, {"error": "bad_need", "message": "need is essential, discretionary or null"})
+
+    def write(c: sqlite3.Connection) -> int:
+        changed = c.execute("UPDATE amazon_items SET need=?, need_by=? WHERE order_id=? AND pos=?",
+                            (body.need, f"user:{user}" if body.need else None, order_id, pos)).rowcount
+        c.commit()
+        return changed
+
+    if not with_db(write):
+        raise HTTPException(404, {"error": "no_item", "message": "No such item in that order"})
+    if body.need is None:
+        threading.Thread(target=amazon_sort_items, name="amazon-sort", daemon=True).start()
+    return budget_month()
 
 
 # ---------------------------------------------------------------- Tesla

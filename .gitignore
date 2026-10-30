@@ -30,6 +30,9 @@ relay/plaid.env
 relay/tesla.env
 relay/timeline.env
 relay/apns.env
+# Gmail refresh tokens for the Amazon orders (relay/gmail_link.py writes it), and the OAuth client it came from
+relay/amazon.env
+relay/client_secret*.json
 # relay.db, timeline.db (where one person has been) and sheet-fill.json (which names the household's accounts) live here on the box
 relay/data/
 # The Zigbee network's key and paired devices, the stick's device path, and the pairing page's token (docs/doors.md)

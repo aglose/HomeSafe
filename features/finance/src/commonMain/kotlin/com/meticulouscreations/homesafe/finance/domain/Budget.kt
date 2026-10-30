@@ -211,8 +211,71 @@ data class Purchase(
     val lineSource: LineSource = LineSource.NONE,
     /** Its merchant's purchases always go in the same line (or in none). */
     val lineRemembered: Boolean = false,
+    /** One of Amazon's charges for an order (not AWS, Prime and the like), whether or not its order was found. */
+    val fromAmazon: Boolean = false,
+    /** The Amazon order it paid for, once the relay matched it to one of the order emails. */
+    val amazon: AmazonOrder? = null,
 ) {
     val isRefund: Boolean get() = amount < 0
+}
+
+/** Whether something bought is a need or a want. [wire] is the relay's name for it (`AMAZON_NEEDS` in `relay/relay.py`). */
+enum class AmazonNeed(val wire: String) {
+    ESSENTIAL("essential"),
+    DISCRETIONARY("discretionary"),
+    ;
+
+    companion object {
+        fun ofWire(wire: String?): AmazonNeed? = entries.firstOrNull { it.wire == wire }
+    }
+}
+
+/** Who sorted an item: someone by hand, the relay's word lists, the box's model, or nobody yet. */
+enum class NeedSource { USER, RULE, MODEL, NONE }
+
+/** How a charge was matched to its order: a shipment's total, the order's total, or several charges adding up to it. */
+enum class AmazonMatch { SHIPMENT, ORDER, SPLIT }
+
+/** One line of an Amazon order. [title] is Amazon's, data shown as written; [price] is each one's, when the email said. */
+@Immutable
+@Serializable
+data class AmazonItem(val position: Int, val title: String, val quantity: Int, val price: Double?, val need: AmazonNeed?, val sortedBy: NeedSource)
+
+/**
+ * The Amazon order a charge paid for, and the charge shared out by the order's item prices:
+ * [essential], [discretionary], and [unsorted] for items nobody has sorted yet.
+ */
+@Immutable
+@Serializable
+data class AmazonOrder(
+    val orderId: String,
+    val match: AmazonMatch,
+    /** The day it was ordered, `YYYY-MM-DD`. */
+    val ordered: String,
+    val items: List<AmazonItem>,
+    val essential: Double,
+    val discretionary: Double,
+    val unsorted: Double,
+)
+
+/**
+ * The month's Amazon charges, summed: shared out between [essential], [discretionary] and
+ * [unsorted], and [unmatched] for charges no order email was found for. [configured] is whether
+ * the relay reads anyone's order emails at all; [failedMailboxes] are those its last read couldn't.
+ */
+@Immutable
+@Serializable
+data class AmazonSummary(
+    val configured: Boolean,
+    val readAtEpochSeconds: Long?,
+    val failedMailboxes: List<String>,
+    val charges: Int,
+    val essential: Double,
+    val discretionary: Double,
+    val unsorted: Double,
+    val unmatched: Double,
+) {
+    val total: Double get() = essential + discretionary + unsorted + unmatched
 }
 
 /** The month's limits. A person with no entry, or a null, has none. */
@@ -334,6 +397,8 @@ data class Budget(
     val purchases: List<Purchase>,
     /** The months before this one, the oldest first. */
     val history: List<BudgetPastMonth>,
+    /** What the month's Amazon charges were for, from the order emails; null from a relay that doesn't read them. */
+    val amazon: AmazonSummary? = null,
 ) {
     /** The cards whose purchases count. */
     val budgetCards: List<BudgetCard> get() = cards.filter { it.role != CardRole.Unset && it.role != CardRole.Ignore }
@@ -361,6 +426,9 @@ interface BudgetRepository {
     suspend fun tagLine(purchaseId: String, line: LinePick, remember: Boolean): Result<Budget>
 
     suspend fun forgetLineRule(merchantKey: String): Result<Budget>
+
+    /** Says whether one item of an Amazon order was essential or discretionary; null lets it sort itself again. */
+    suspend fun sayNeed(orderId: String, position: Int, need: AmazonNeed?): Result<Budget>
 
     /** Asks the relay to read the cards now; the answer says whether that has begun. */
     suspend fun syncNow(): Result<Budget>

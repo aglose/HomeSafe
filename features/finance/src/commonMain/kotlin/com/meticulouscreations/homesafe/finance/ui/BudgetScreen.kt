@@ -70,6 +70,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.finance.BudgetUiState
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
+import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BucketId
 import com.meticulouscreations.homesafe.finance.domain.BucketSource
@@ -107,6 +108,9 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_try_again
+import homesafe.shared.generated.resources.fin_amazon_filter
+import homesafe.shared.generated.resources.fin_amazon_subtitle
+import homesafe.shared.generated.resources.fin_amazon_title
 import homesafe.shared.generated.resources.fin_bank_problem_signed_out_body
 import homesafe.shared.generated.resources.fin_bank_problem_signed_out_title
 import homesafe.shared.generated.resources.fin_budget_action_settings
@@ -268,6 +272,9 @@ private const val CATEGORY_FILTER = "cat:"
 /** A budget line in the filter: this before the line's name, or alone for the purchases in none (`line:Groceries`). */
 private const val LINE_FILTER = "line:"
 
+/** The list's filter for Amazon's charges. */
+private const val AMAZON_FILTER = "amazon"
+
 /** How far a line's usual month has to be from its plan before the page says so: a tenth of the plan, and never under this. */
 private const val USUAL_GAP_MIN = 25.0
 
@@ -282,10 +289,12 @@ private val Purchase.categoryKey: String get() = category?.takeIf { it.isNotEmpt
 
 /**
  * Whether [purchase] is in the list under [filter]: everything, one bucket's (by key), one
- * category's (`cat:` and its name), or one budget line's (`line:` and its name, or nothing for none).
+ * category's (`cat:` and its name), one budget line's (`line:` and its name, or nothing for none),
+ * or Amazon's ([AMAZON_FILTER]).
  */
 private fun matchesFilter(purchase: Purchase, filter: String?): Boolean = when {
     filter == null -> true
+    filter == AMAZON_FILTER -> purchase.fromAmazon
     filter.startsWith(CATEGORY_FILTER) -> purchase.categoryKey == filter.removePrefix(CATEGORY_FILTER)
     filter.startsWith(LINE_FILTER) -> purchase.line.orEmpty() == filter.removePrefix(LINE_FILTER)
     else -> purchase.bucket.key == filter
@@ -315,6 +324,7 @@ internal fun BudgetRoute(
         contentPadding = contentPadding,
         onTag = viewModel::tag,
         onTagLine = viewModel::tagLine,
+        onSayNeed = viewModel::sayNeed,
         onSetRole = { card, role -> viewModel.save(BudgetConfigPatch(roles = mapOf(card to role))) },
         onSetHolder = { card, mark, person -> viewModel.save(BudgetConfigPatch(holders = mapOf(card to mapOf(mark to person)))) },
         onShowMonth = viewModel::showMonth,
@@ -347,6 +357,7 @@ fun BudgetScreen(
     onRetry: () -> Unit,
     onOpenLinkedAccounts: () -> Unit,
     onOpenSettings: () -> Unit,
+    onSayNeed: (purchaseId: String, orderId: String, position: Int, need: AmazonNeed?) -> Unit = { _, _, _, _ -> },
 ) {
     val budget = state.budget
     // Which bucket's purchases the list shows (by key), and the purchase whose sheet is up (by id).
@@ -465,6 +476,13 @@ fun BudgetScreen(
                             }
                         }
                     }
+                    val amazon = budget.amazon
+                    if (amazon != null && amazon.configured && amazon.charges > 0) {
+                        item(key = "amazon-h") { SectionHeader(stringResource(Res.string.fin_amazon_title), subtitle = stringResource(Res.string.fin_amazon_subtitle)) }
+                        item(key = "amazon") {
+                            AmazonBlock(amazon, selected = filter == AMAZON_FILTER, onClick = { showInList(if (filter == AMAZON_FILTER) null else AMAZON_FILTER) })
+                        }
+                    }
                     item(key = "who-h") { SectionHeader(stringResource(Res.string.fin_budget_who_title), subtitle = stringResource(Res.string.fin_budget_who_subtitle)) }
                     items(budget.buckets.filter { it.id != BucketId.Unassigned || it.count > 0 }, key = { "who-${it.id.key}" }, contentType = { "bucket" }) { bucket ->
                         BucketCard(bucket, budget, selected = filter == bucket.id.key, onClick = { showInList(if (filter == bucket.id.key) null else bucket.id.key) })
@@ -521,6 +539,8 @@ fun BudgetScreen(
             card = budget.cards.firstOrNull { it.key == picked.cardKey },
             people = budget.config.people,
             lines = budget.lines.map { it.name },
+            busy = picked.id in state.tagging,
+            onSayNeed = { orderId, position, need -> onSayNeed(picked.id, orderId, position, need) },
             onPick = { bucket, remember ->
                 tagging = null
                 onTag(picked.id, bucket, remember)
@@ -1233,6 +1253,7 @@ private fun FilterChips(budget: Budget, selected: String?, onSelect: (String?) -
         add(null to stringResource(Res.string.fin_budget_filter_all))
         if (category != null && categoryName != null) add(category to categoryName)
         if (line != null && lineName != null) add(line to lineName)
+        if (budget.purchases.any { it.fromAmazon } && budget.amazon?.configured == true) add(AMAZON_FILTER to stringResource(Res.string.fin_amazon_filter))
         budget.buckets.forEach { bucket -> if (bucket.id != BucketId.Unassigned || bucket.count > 0) add(bucket.id.key to bucket.id.label()) }
     }
     LazyRow(Modifier.fillMaxWidth().selectableGroup(), contentPadding = PaddingValues(horizontal = PageGutter), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1306,8 +1327,9 @@ private fun PurchaseRow(purchase: Purchase, budget: Budget, busy: Boolean, onCli
             Text(purchase.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val about = listOfNotNull(
                 card?.name,
-                // The budget line it is in says more than Plaid's broad category, which is for those in none.
-                purchase.line ?: purchase.category?.let { stringResource(categoryLabel(it)) },
+                // What the Amazon order had in it says most; then the budget line it is in, which says
+                // more than Plaid's broad category, which is for those in none.
+                purchase.amazon?.let { amazonItemsLine(it) } ?: purchase.line ?: purchase.category?.let { stringResource(categoryLabel(it)) },
                 if (purchase.pending) stringResource(Res.string.fin_budget_purchase_pending) else null,
             )
             Text(about.joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1343,6 +1365,8 @@ private fun TagSheet(
     card: BudgetCard?,
     people: List<String>,
     lines: List<String>,
+    busy: Boolean,
+    onSayNeed: (orderId: String, position: Int, need: AmazonNeed?) -> Unit,
     onPick: (BucketId, Boolean) -> Unit,
     onPickLine: (LinePick, Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -1365,6 +1389,11 @@ private fun TagSheet(
                 Text(about.joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary)
                 Spacer(Modifier.height(4.dp))
                 Text(stringResource(sourceNote(purchase.source)), style = FinanceTheme.type.label, color = colors.textTertiary)
+            }
+            if (purchase.fromAmazon) {
+                Hairline(Modifier.padding(horizontal = PageGutter, vertical = 10.dp))
+                AmazonOrderSection(purchase, busy, onSayNeed)
+                Hairline(Modifier.padding(horizontal = PageGutter, vertical = 10.dp))
             }
             Spacer(Modifier.height(10.dp))
             val options = people.map { BucketId.Person(it) } + BucketId.Family + listOfNotNull(BucketId.Unassigned.takeIf { purchase.source == BucketSource.MANUAL })
@@ -1521,6 +1550,18 @@ private fun FinanceBudgetLinesPreview() {
                 BudgetLine("Pets", null, 63.40, 2),
             ).forEachIndexed { index, line -> LineCard(line, index, budget, selected = index == 1, onClick = {}) }
             OutsideLinesRow(budget, selected = false, onClick = {})
+        }
+    }
+}
+
+@Preview(name = "Budget · Amazon purchases in the list", widthDp = 412, heightDp = 260)
+@Composable
+private fun FinanceBudgetAmazonRowsPreview() {
+    val budget = BudgetFixtures.withAmazon
+    FinanceStage {
+        Column(Modifier.padding(top = 8.dp)) {
+            FilterChips(budget, selected = AMAZON_FILTER, onSelect = {})
+            BudgetFixtures.amazonPurchases.forEach { PurchaseRow(it, budget, busy = false, onClick = {}) }
         }
     }
 }

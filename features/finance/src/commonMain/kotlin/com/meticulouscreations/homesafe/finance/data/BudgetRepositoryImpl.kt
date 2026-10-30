@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
 import com.meticulouscreations.homesafe.finance.domain.BucketId
@@ -60,6 +61,8 @@ class BudgetRepositoryImpl(
     override suspend fun tagLine(purchaseId: String, line: LinePick, remember: Boolean): Result<Budget> = change { relay.tagLine(it, purchaseId, line, remember) }
 
     override suspend fun forgetLineRule(merchantKey: String): Result<Budget> = change { relay.forgetLineRule(it, merchantKey) }
+
+    override suspend fun sayNeed(orderId: String, position: Int, need: AmazonNeed?): Result<Budget> = change { relay.sayNeed(it, orderId, position, need) }
 
     override suspend fun syncNow(): Result<Budget> = change { relay.syncNow(it) }
 

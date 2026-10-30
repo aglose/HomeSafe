@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="fin_amazon_title">Amazon</string>
+    <string name="fin_amazon_subtitle">Lo que dicen los correos de los pedidos sobre cada cargo</string>
+    <string name="fin_amazon_headline">%1$s de %2$s fue imprescindible</string>
+    <string name="fin_amazon_essential">Imprescindible</string>
+    <string name="fin_amazon_discretionary">Prescindible</string>
+    <string name="fin_amazon_unsorted">Sin clasificar</string>
+    <string name="fin_amazon_unmatched">Sin pedido todavía</string>
+    <string name="fin_amazon_open">Toca para ver las compras de Amazon</string>
+    <string name="fin_amazon_failed">La última vez no se pudieron leer los correos de los pedidos de %1$s</string>
+    <string name="fin_amazon_filter">Amazon</string>
+    <plurals name="fin_amazon_items_more">
+        <item quantity="one">%1$s y %2$d más</item>
+        <item quantity="other">%1$s y %2$d más</item>
+    </plurals>
+    <string name="fin_amazon_sheet_title">Qué había dentro</string>
+    <string name="fin_amazon_sheet_order">Pedido %1$s · pedido el %2$s</string>
+    <string name="fin_amazon_match_shipment">Emparejado con un envío de exactamente este importe.</string>
+    <string name="fin_amazon_match_order">Emparejado con un pedido de exactamente este importe.</string>
+    <string name="fin_amazon_match_split">Uno de los cargos que suman este pedido, repartido según sus precios.</string>
+    <string name="fin_amazon_sheet_unmatched">Aún no hay un correo de pedido que coincida con este cargo. Los correos se leen cada hora.</string>
+    <string name="fin_amazon_item_price">%1$d × %2$s</string>
+    <string name="fin_amazon_sorted_user">Lo dijiste tú</string>
+    <string name="fin_amazon_sorted_rule">Clasificado por su nombre</string>
+    <string name="fin_amazon_sorted_model">Clasificado por el servidor de casa</string>
+    <string name="fin_amazon_sorted_none">Sin clasificar</string>
+    <string name="fin_amazon_let_it_sort">Que se clasifique solo</string>
+    <string name="fin_amazon_charge_split">%1$s imprescindible · %2$s prescindible</string>
+    <string name="fin_amazon_charge_split_unsorted">%1$s imprescindible · %2$s prescindible · %3$s sin clasificar</string>
+    <string name="fin_budget_error_amazon_item_gone">Ese artículo ya no está en el pedido</string>
+</resources>

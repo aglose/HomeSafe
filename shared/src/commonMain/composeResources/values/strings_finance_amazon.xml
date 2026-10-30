@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Budget tab's Amazon orders (features/finance BudgetAmazon.kt): what each Amazon charge paid for, from the order emails. -->
+<resources>
+    <string name="fin_amazon_title">Amazon</string>
+    <string name="fin_amazon_subtitle">What the order emails say the charges were for</string>
+    <string name="fin_amazon_headline">%1$s of %2$s was essential</string>
+    <string name="fin_amazon_essential">Essential</string>
+    <string name="fin_amazon_discretionary">Discretionary</string>
+    <string name="fin_amazon_unsorted">Not sorted yet</string>
+    <string name="fin_amazon_unmatched">No order found yet</string>
+    <string name="fin_amazon_open">Tap to see the Amazon purchases</string>
+    <string name="fin_amazon_failed">Couldn't read the order emails for %1$s last time</string>
+    <string name="fin_amazon_filter">Amazon</string>
+    <plurals name="fin_amazon_items_more">
+        <item quantity="one">%1$s and %2$d more</item>
+        <item quantity="other">%1$s and %2$d more</item>
+    </plurals>
+    <string name="fin_amazon_sheet_title">What was in it</string>
+    <string name="fin_amazon_sheet_order">Order %1$s · ordered %2$s</string>
+    <string name="fin_amazon_match_shipment">Matched to a shipment of exactly this amount.</string>
+    <string name="fin_amazon_match_order">Matched to an order of exactly this amount.</string>
+    <string name="fin_amazon_match_split">One of the charges that add up to this order, shared out by its prices.</string>
+    <string name="fin_amazon_sheet_unmatched">No order email matches this charge yet. The emails are read every hour.</string>
+    <string name="fin_amazon_item_price">%1$d × %2$s</string>
+    <string name="fin_amazon_sorted_user">You said</string>
+    <string name="fin_amazon_sorted_rule">Sorted by its name</string>
+    <string name="fin_amazon_sorted_model">Sorted by the home server</string>
+    <string name="fin_amazon_sorted_none">Not sorted yet</string>
+    <string name="fin_amazon_let_it_sort">Let it sort itself</string>
+    <string name="fin_amazon_charge_split">%1$s essential · %2$s discretionary</string>
+    <string name="fin_amazon_charge_split_unsorted">%1$s essential · %2$s discretionary · %3$s not sorted</string>
+    <string name="fin_budget_error_amazon_item_gone">That item isn't in the order any more</string>
+</resources>

@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.finance
 
+import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
 import com.meticulouscreations.homesafe.finance.domain.BucketId
@@ -57,6 +58,7 @@ class BudgetViewModelTest {
         val tagged = mutableListOf<Triple<String, BucketId, Boolean>>()
         val forgotten = mutableListOf<String>()
         val linesTagged = mutableListOf<Triple<String, LinePick, Boolean>>()
+        val needsSaid = mutableListOf<Triple<String, Int, AmazonNeed?>>()
         var syncs = 0
 
         override suspend fun budget(month: String?): Result<Budget> {
@@ -86,6 +88,11 @@ class BudgetViewModelTest {
 
         override suspend fun forgetLineRule(merchantKey: String): Result<Budget> {
             forgotten += merchantKey
+            return changed
+        }
+
+        override suspend fun sayNeed(orderId: String, position: Int, need: AmazonNeed?): Result<Budget> {
+            needsSaid += Triple(orderId, position, need)
             return changed
         }
 
@@ -346,6 +353,23 @@ class BudgetViewModelTest {
         vm.forgetLineRule("warehouse club")
         runCurrent()
         assertEquals(listOf("warehouse club"), repo.forgotten)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun sortingAnAmazonItemHoldsItsPurchaseUntilTheMonthComesBack() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = shown(repo)
+        val sorted = october.copy(spent = october.spent + 1)
+        repo.changed = Result.success(sorted)
+        vm.sayNeed("p-1-0", "112-1234567-7654321", 1, AmazonNeed.ESSENTIAL)
+        // A second tap while the first is out is the same purchase's, so it waits.
+        vm.sayNeed("p-1-0", "112-1234567-7654321", 0, AmazonNeed.DISCRETIONARY)
+        assertEquals(setOf("p-1-0"), vm.uiState.value.tagging)
+        runCurrent()
+        assertEquals(listOf(Triple("112-1234567-7654321", 1, AmazonNeed.ESSENTIAL as AmazonNeed?)), repo.needsSaid)
+        assertEquals(emptySet(), vm.uiState.value.tagging)
+        assertEquals(sorted, vm.uiState.value.budget)
         vm.setActive(false)
     }
 

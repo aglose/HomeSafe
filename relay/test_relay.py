@@ -5744,6 +5744,226 @@ class BudgetRoutesTest(_Budget):
         self.assertEqual([self.PLATINUM], [card["key"] for card in self.month()["cards"]])
 
 
+# Made-up Amazon emails in the shapes Amazon sends: an order's plain text, the same order as HTML,
+# and a shipment's.
+AMAZON_ORDERED_TEXT = """Amazon.com
+Hello Sam,
+Thanks for your order. We'll let you know once your items have shipped.
+Order #
+112-1234567-7654321
+Arriving Friday, October 9
+Ship to
+Sam Rivera
+Kirkland Signature Paper Towels, 12 Big Rolls
+Quantity: 1
+$24.99
+LEGO Star Wars X-Wing Starfighter Building Set
+Quantity: 2
+$39.99
+Item(s) Subtotal: $104.97
+Shipping & Handling: $0.00
+Total before tax: $104.97
+Estimated tax to be collected: $8.66
+Grand Total:
+$113.63
+"""
+AMAZON_ORDERED_HTML = """<html><head><style>td { color: #111 }</style></head><body><table>
+<tr><td>Order #</td></tr><tr><td><a href="https://www.amazon.com/gp/your-account/order-details?orderID=113-7654321-1234567">113-7654321-1234567</a></td></tr>
+<tr><td><img src="x.jpg"></td><td><a href="https://www.amazon.com/dp/B0">Purina Pro Plan Adult Dog Food, 35 lb</a><br>Quantity:&nbsp;1</td><td>$64.98</td></tr>
+<tr><td>Order Total:</td><td>$70.34</td></tr>
+</table></body></html>"""
+AMAZON_SHIPPED_TEXT = """Your package was shipped!
+Order #114-1111111-2222222
+Bluey Family Home Playset
+Quantity: 1
+Shipment total: $32.47
+"""
+
+
+class AmazonEmailTest(unittest.TestCase):
+    """Reading Amazon's emails: what was ordered, what it cost, and the emails that are about nothing to keep."""
+
+    def test_an_order_email_gives_its_items_prices_and_grand_total(self):
+        parsed = relay.parse_amazon_email('Ordered: "Kirkland Signature Paper Towels..." and 1 more item', AMAZON_ORDERED_TEXT)
+        self.assertEqual({"kind": "ordered", "orders": ["112-1234567-7654321"], "total": 113.63, "shipment_total": None,
+                          "items": [{"title": "Kirkland Signature Paper Towels, 12 Big Rolls", "quantity": 1, "price": 24.99},
+                                    {"title": "LEGO Star Wars X-Wing Starfighter Building Set", "quantity": 2, "price": 39.99}]}, parsed)
+
+    def test_an_html_order_email_reads_the_same_once_its_tags_are_gone(self):
+        text = relay.html_text(AMAZON_ORDERED_HTML)
+        self.assertNotIn("color", text)
+        parsed = relay.parse_amazon_email("Your Amazon.com order #113-7654321-1234567", text)
+        self.assertEqual((["113-7654321-1234567"], 70.34), (parsed["orders"], parsed["total"]))
+        self.assertEqual([{"title": "Purina Pro Plan Adult Dog Food, 35 lb", "quantity": 1, "price": 64.98}], parsed["items"])
+
+    def test_a_shipment_email_gives_the_shipment_s_total_not_the_order_s(self):
+        parsed = relay.parse_amazon_email('Shipped: "Bluey Family Home Playset"', AMAZON_SHIPPED_TEXT)
+        self.assertEqual(("shipped", None, 32.47), (parsed["kind"], parsed["total"], parsed["shipment_total"]))
+        self.assertEqual(["Bluey Family Home Playset"], [i["title"] for i in parsed["items"]])
+
+    def test_without_a_quantity_the_subject_s_title_is_the_item(self):
+        parsed = relay.parse_amazon_email('Ordered: "Gorilla Glue Clear, 1.75 oz..."', "Order #112-0000000-0000001\nArriving tomorrow")
+        self.assertEqual([{"title": "Gorilla Glue Clear, 1.75 oz...", "quantity": 1, "price": None}], parsed["items"])
+        self.assertIsNone(parsed["total"])
+
+    def test_deliveries_refunds_and_emails_without_an_order_are_not_kept(self):
+        self.assertIsNone(relay.parse_amazon_email("Delivered: your package", "Order #112-1234567-7654321"))
+        self.assertIsNone(relay.parse_amazon_email("Your refund for Bluey Playset", "Order #112-1234567-7654321\nRefund total: $32.47"))
+        self.assertIsNone(relay.parse_amazon_email('Ordered: "Something"', "Deals picked for you"))
+
+    def test_which_charges_are_orders(self):
+        self.assertTrue(relay.is_amazon_order_charge("AMZN Mktp US*2K1AB3CD4", "Amazon"))
+        self.assertTrue(relay.is_amazon_order_charge("Amazon.com*RT4YU8", None))
+        for name in ("Amazon Prime*1A2B3", "Prime Video*Channels", "AMAZON WEB SERVICES", "Audible*AB12", "Kindle Unltd*12", "COSTCO WHSE #0123"):
+            self.assertFalse(relay.is_amazon_order_charge(name, None), name)
+
+    def test_the_word_lists_sort_what_they_know_and_leave_the_rest(self):
+        self.assertEqual("essential", relay.amazon_need_by_words("Charmin Ultra Soft Toilet Paper, 24 Mega Rolls"))
+        self.assertEqual("discretionary", relay.amazon_need_by_words("LEGO Star Wars X-Wing Starfighter"))
+        self.assertEqual("essential", relay.amazon_need_by_words("Purina Pro Plan Adult Dog Food, 35 lb"))
+        self.assertIsNone(relay.amazon_need_by_words("Men's Crew Neck T-Shirt, 3 Pack"))
+
+
+class AmazonMatchTest(unittest.TestCase):
+    """Which order each Amazon charge paid for."""
+
+    def order(self, order_id, date, total=None, shipments=()):
+        return {"id": order_id, "date": date, "total": total, "shipments": list(shipments)}
+
+    def test_a_charge_of_the_order_s_total_pays_for_it_and_the_nearest_wins(self):
+        found = relay.amazon_match([("early", "2026-10-03", 113.63), ("late", "2026-10-20", 113.63)], [self.order("A", "2026-10-02", 113.63)])
+        self.assertEqual({"early": {"order": "A", "match": "order"}}, found)
+
+    def test_a_shipment_s_total_finds_its_charge_before_any_order_does(self):
+        found = relay.amazon_match([("c", "2026-10-04", 32.47)], [self.order("A", "2026-10-01", 32.47), self.order("B", "2026-10-01", None, [("2026-10-03", 32.47)])])
+        self.assertEqual({"c": {"order": "B", "match": "shipment"}}, found)
+
+    def test_an_order_charged_shipment_by_shipment_is_found_by_its_charges_adding_up(self):
+        charges = [("one", "2026-10-02", 20.0), ("two", "2026-10-06", 30.0), ("other", "2026-10-04", 7.0)]
+        found = relay.amazon_match(charges, [self.order("A", "2026-10-01", 50.0)])
+        self.assertEqual({"one": {"order": "A", "match": "split"}, "two": {"order": "A", "match": "split"}}, found)
+
+    def test_a_charge_long_after_the_order_or_before_it_is_not_it(self):
+        found = relay.amazon_match([("before", "2026-09-20", 10.0), ("after", "2026-11-15", 10.0)], [self.order("A", "2026-10-01", 10.0)])
+        self.assertEqual({}, found)
+
+    def test_each_charge_pays_for_one_order(self):
+        found = relay.amazon_match([("c", "2026-10-02", 10.0)], [self.order("A", "2026-10-01", 10.0), self.order("B", "2026-10-02", 10.0)])
+        self.assertEqual(1, len(found))
+
+    def test_a_charge_is_shared_out_by_its_order_s_item_prices(self):
+        items = [{"price": 24.99, "quantity": 1, "need": "essential"}, {"price": 39.99, "quantity": 2, "need": "discretionary"}]
+        self.assertEqual({"essential": 27.05, "discretionary": 86.58, "unsorted": 0.0}, relay.amazon_split(113.63, items))
+        self.assertEqual({"essential": 5.0, "discretionary": 0.0, "unsorted": 5.0},
+                         relay.amazon_split(10.0, [{"price": None, "quantity": 1, "need": "essential"}, {"price": None, "quantity": 1, "need": None}]))
+        self.assertEqual({"essential": 0.0, "discretionary": 0.0, "unsorted": 12.0}, relay.amazon_split(12.0, []))
+
+
+def _gmail_message(message_id, subject, plain=None, markup=None, at="2026-10-03T15:00:00+00:00"):
+    import base64
+
+    def part(mime, text):
+        return {"mimeType": mime, "body": {"data": base64.urlsafe_b64encode(text.encode()).decode().rstrip("=")}}
+
+    parts = [part("text/plain", plain)] if plain is not None else []
+    parts += [part("text/html", markup)] if markup is not None else []
+    return {"id": message_id, "internalDate": str(int(relay.datetime.fromisoformat(at).timestamp() * 1000)),
+            "payload": {"mimeType": "multipart/alternative", "headers": [{"name": "Subject", "value": subject}], "parts": parts}}
+
+
+class AmazonBudgetTest(_Budget):
+    """Amazon's emails read from Gmail, kept, sorted, and set beside the month's Amazon charges."""
+
+    NAMES = _Budget.NAMES + ("gmail_get", "AMAZON_GMAIL_CLIENT_ID", "AMAZON_GMAIL_CLIENT_SECRET", "AMAZON_GMAIL_TOKENS", "amazon_ask_model")
+
+    def setUp(self):
+        super().setUp()
+        relay.AMAZON_GMAIL_CLIENT_ID, relay.AMAZON_GMAIL_CLIENT_SECRET, relay.AMAZON_GMAIL_TOKENS = "client", "secret", {"sam": "refresh"}
+        self.mail = {"o1": _gmail_message("o1", 'Ordered: "Kirkland Signature Paper Towels..." and 1 more item', plain=AMAZON_ORDERED_TEXT),
+                     "o2": _gmail_message("o2", "Your Amazon.com order #113-7654321-1234567", markup=AMAZON_ORDERED_HTML, at="2026-10-01T15:00:00+00:00"),
+                     "s1": _gmail_message("s1", 'Shipped: "Bluey Family Home Playset"', plain=AMAZON_SHIPPED_TEXT, at="2026-10-04T15:00:00+00:00"),
+                     "d1": _gmail_message("d1", "Delivered: your package", plain="Order #112-1234567-7654321")}
+        self.fetched = []
+
+        def gmail(mailbox, path, now, **params):
+            if path == "/messages":
+                return {"messages": [{"id": m} for m in self.mail]}
+            self.fetched.append(path.rsplit("/", 1)[1])
+            return self.mail[path.rsplit("/", 1)[1]]
+
+        relay.gmail_get = gmail
+        self.asked = []
+        relay.amazon_ask_model = lambda titles: (self.asked.append(titles), ["discretionary"] * len(titles))[1]
+
+    def amazon(self):
+        return {t["id"]: t.get("amazon", "absent") for t in self.month()["transactions"]}
+
+    def test_each_email_is_read_once_and_its_items_sorted(self):
+        relay.amazon_sync(self.NOW)
+        self.assertEqual(["o1", "o2", "s1", "d1"], self.fetched)
+        relay.amazon_sync(self.NOW)
+        self.assertEqual(4, len(self.fetched))
+        items = relay.with_db(lambda c: c.execute("SELECT order_id, title, need, need_by FROM amazon_items ORDER BY order_id, pos").fetchall())
+        self.assertEqual([("112-1234567-7654321", "Kirkland Signature Paper Towels, 12 Big Rolls", "essential", "rule"),
+                          ("112-1234567-7654321", "LEGO Star Wars X-Wing Starfighter Building Set", "discretionary", "rule"),
+                          ("113-7654321-1234567", "Purina Pro Plan Adult Dog Food, 35 lb", "essential", "rule"),
+                          ("114-1111111-2222222", "Bluey Family Home Playset", "discretionary", "model")], items)
+        self.assertEqual([["Bluey Family Home Playset"]], self.asked)
+        self.assertEqual([("114-1111111-2222222", "2026-10-04", 32.47)], relay.with_db(lambda c: c.execute("SELECT order_id, shipped, total FROM amazon_shipments").fetchall()))
+
+    def test_amazon_s_charges_say_what_was_ordered_and_how_much_was_essential(self):
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"),
+                   _txn("dog", 70.34, date="2026-10-02", name="Amazon.com*RT4YU8", merchant="Amazon"),
+                   _txn("toy", 32.47, date="2026-10-05", name="AMZN Mktp US*9Z8Y7X", merchant="Amazon"),
+                   _txn("mystery", 15.0, date="2026-10-06", name="AMZN Mktp US*111", merchant="Amazon"),
+                   _txn("prime", 14.99, date="2026-10-01", name="Amazon Prime*1A2B3", merchant="Amazon Prime"),
+                   _txn("costco", 80.0))
+        found = self.amazon()
+        self.assertEqual(("absent", "absent", None), (found["prime"], found["costco"], found["mystery"]))
+        self.assertEqual(("112-1234567-7654321", "order", 27.05, 86.58), tuple(found["big"][k] for k in ("order", "match", "essential", "discretionary")))
+        self.assertEqual(("order", 70.34), (found["dog"]["match"], found["dog"]["essential"]))
+        self.assertEqual(("shipment", 32.47), (found["toy"]["match"], found["toy"]["discretionary"]))
+        summary = self.month()["amazon"]
+        self.assertEqual({"configured": True, "read_at": self.NOW, "failed": [], "charges": 4, "essential": 97.39, "discretionary": 119.05, "unsorted": 0.0, "unmatched": 15.0}, summary)
+
+    def test_an_item_said_by_hand_stays_said_and_taking_it_back_sorts_it_again(self):
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"))
+        relay.put_amazon_item("112-1234567-7654321", 1, types.SimpleNamespace(need="essential"), object(), self.response)
+        self.assertEqual((113.63, "user:alex"), (self.amazon()["big"]["essential"], self.amazon()["big"]["items"][1]["need_by"]))
+        # A later email about the same order keeps it.
+        relay.amazon_store("sam", "o1-again", "2026-10-03", relay.parse_amazon_email("Ordered", AMAZON_ORDERED_TEXT), self.NOW)
+        self.assertEqual("user:alex", self.amazon()["big"]["items"][1]["need_by"])
+        relay.put_amazon_item("112-1234567-7654321", 1, types.SimpleNamespace(need=None), object(), self.response)
+        relay.amazon_sort_items()
+        self.assertEqual(("discretionary", "rule"), tuple(self.amazon()["big"]["items"][1][k] for k in ("need", "need_by")))
+        with self.assertRaises(relay.HTTPException) as bad:
+            relay.put_amazon_item("112-1234567-7654321", 1, types.SimpleNamespace(need="fun"), object(), self.response)
+        self.assertEqual(400, bad.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as missing:
+            relay.put_amazon_item("112-1234567-7654321", 9, types.SimpleNamespace(need="essential"), object(), self.response)
+        self.assertEqual(404, missing.exception.status_code)
+
+    def test_a_mailbox_that_fails_is_named_and_the_model_being_away_leaves_items_unsorted(self):
+        def broken(mailbox, path, now, **params):
+            raise RuntimeError("Gmail answered 401 for messages")
+
+        relay.gmail_get = broken
+        relay.amazon_sync(self.NOW)
+        self.assertEqual(["sam"], self.month()["amazon"]["failed"])
+        relay.amazon_ask_model = lambda titles: None
+        relay.amazon_store("sam", "s1", "2026-10-04", relay.parse_amazon_email('Shipped: "Bluey Family Home Playset"', AMAZON_SHIPPED_TEXT), self.NOW)
+        relay.amazon_sort_items()
+        self.assertEqual([(None, None)], relay.with_db(lambda c: c.execute("SELECT need, need_by FROM amazon_items").fetchall()))
+
+    def test_off_without_a_mailbox(self):
+        relay.AMAZON_GMAIL_TOKENS = {}
+        relay.amazon_sync(self.NOW)
+        self.assertEqual([], self.fetched)
+        self.assertFalse(self.month()["amazon"]["configured"])
+
+
 class DeviceOwnerTest(_ScratchDb):
     """Whose phone a registration says it is: what a push about the money goes by."""
 
