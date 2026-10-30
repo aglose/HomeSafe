@@ -8737,6 +8737,14 @@ class ParkingTest(_FakeFrigate):
         self.assertEqual((self.WED_7PM, True, False), (cars["sarahs_car"]["last"]["at"], cars["sarahs_car"]["last"]["moving"],
                                                        cars["sarahs_car"]["last"]["home"]), "driven off since the camera saw it home")
 
+    def test_a_starting_state_home_is_no_arrival(self):
+        far = {**self.fix(-2000, 8000, 330, self.WED_7PM), "moving": False}
+        relay.state_set(relay.PARKING_KEY, {"sarahs_car": {"last": far, "asleep": True}})
+        # Started home from a sighting from before the fix: `since` is when presence started, not when it arrived.
+        relay.state_set(relay.CAR_PRESENCE_KEY, {"sarahs_car": {"here": True, "since": self.WED_7PM + 600, "known": False}})
+        sarah = next(c for c in relay.parking_status(self.WED_7PM + 900)["cars"] if c["car"] == "sarahs_car")
+        self.assertEqual((self.WED_7PM, False), (sarah["last"]["at"], sarah["last"]["home"]))
+
     def test_a_car_known_only_by_its_spot_is_last_seen_there(self):
         saved = {"andrews_tesla": {"spot": {**self.fix(60, 5, 270, self.WED_7PM), "since": self.WED_7PM, "street": "Elm St", "side": "north"}}}
         relay.state_set(relay.PARKING_KEY, saved)

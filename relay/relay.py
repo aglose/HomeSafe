@@ -12049,8 +12049,9 @@ def parking_status(now: float) -> dict[str, Any]:
         # away, though the camera saw it arrive (Sarah's, 2026-10-29: four hours 8 km off while in
         # the driveway). Arrived after that fix, it is home, at the house: the driveway is all the
         # camera's car zones cover. A car Tesla found home stays at its own fix, the curb's included.
+        # Only a change car presence saw counts: a starting state's `since` is when it started, not an arrival.
         seen = presence.get(name) or {}
-        arrived = float(seen.get("since") or 0) if seen.get("here") else 0.0
+        arrived = float(seen.get("since") or 0) if seen.get("here") and seen.get("known") else 0.0
         if home and not spot and arrived and not at_home and arrived > float((last or {}).get("at") or 0):
             last, at_home = {"lat": float(home["lat"]), "lng": float(home["lng"]), "heading": None, "at": arrived, "moving": False}, True
         cars.append({
