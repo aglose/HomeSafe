@@ -30,6 +30,8 @@ time.sleep(6)
 for n in range(ROUNDS * 2):
     tap("shell_menu")
     time.sleep(0.8)
+    # Home's cards are taken down as Finance opens over them: `trace_report.py teardown` reads these.
+    adb("shell", "log", "-t", "HomeSafeJourney", f"open_finance:{n}")
     tap("drawer_finance")
     time.sleep(AWAY)
     how = "button" if n % 2 == 0 else "swipe"

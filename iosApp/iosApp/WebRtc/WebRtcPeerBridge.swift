@@ -19,6 +19,15 @@ import Shared
 /// pressed pause. Detached renderers keep what they last drew, and re-attaching shows the very
 /// next decoded frame, which is what lets the shared holder keep a peer on standby and swap it
 /// back in without a new join.
+///
+/// So that a peer nobody draws stops decoding, the shared adapter also asks it to stop receiving
+/// its video once it has been disabled for a few seconds (`setVideoReceiving`). This build of
+/// libwebrtc has no switch for a track's receive stream (Android's `setShouldReceive`), so the
+/// peer renegotiates the video transceiver to inactive, which stops the stream, decoder and all.
+/// Only locally: the server has already answered, and an answer is all the renegotiation
+/// needs, so the peer applies the server's own answer with its video section marked inactive.
+/// The server goes on sending, and nothing it sees changes. Receiving again is the same with the
+/// answer as it came, and the picture moves again at the stream's next keyframe.
 final class WebRtcPeerBridgeFactory: NSObject, IosWebRtcPeerFactory {
 
     static let shared = WebRtcPeerBridgeFactory()
@@ -53,6 +62,22 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
     private var muted = true
     private var closed = false
 
+    private var videoTransceiver: RTCRtpTransceiver?
+
+    /// The server's answer as it came, which every local renegotiation answers itself with.
+    private var answerSdp: String?
+
+    /// Whether the video should be received, whether it is, and whether a renegotiation is on its way there.
+    private var receiveWanted = true
+    private var receiving = true
+    private var renegotiating = false
+
+    /// Bumped by each resume, so only the latest one's watch can report the video missing.
+    private var resumeWatch = 0
+
+    /// Tells one peer's log lines from another's.
+    private lazy var logId = String(UInt(bitPattern: ObjectIdentifier(self).hashValue) & 0xFFFF, radix: 16)
+
     init(factory: RTCPeerConnectionFactory, audio: Bool, listener: IosWebRtcPeerListener) {
         self.listener = listener
         super.init()
@@ -66,7 +91,7 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
         connection = factory.peerConnection(with: config, constraints: constraints, delegate: self)
         let recvOnly = RTCRtpTransceiverInit()
         recvOnly.direction = .recvOnly
-        connection.addTransceiver(of: .video, init: recvOnly)
+        videoTransceiver = connection.addTransceiver(of: .video, init: recvOnly)
         if audio { connection.addTransceiver(of: .audio, init: recvOnly) }
         frameCounter.onFirstFrame = { [weak self] in
             DispatchQueue.main.async { self?.listener.onFirstFrame() }
@@ -102,8 +127,11 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
     }
 
     func setAnswer(sdp: String, completion: @escaping (String?) -> Void) {
-        connection.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { error in
-            DispatchQueue.main.async { completion(error?.localizedDescription) }
+        connection.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { [weak self] error in
+            DispatchQueue.main.async {
+                if error == nil { self?.answerSdp = sdp }
+                completion(error?.localizedDescription)
+            }
         }
     }
 
@@ -138,6 +166,110 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
         for entry in renderers.values {
             if enabled { track.add(entry.view) } else { track.remove(entry.view) }
         }
+    }
+
+    func setVideoReceiving(receiving: Bool) {
+        receiveWanted = receiving
+        renegotiateReceiving()
+    }
+
+    /// Renegotiates the video transceiver towards `receiveWanted`, one renegotiation at a time; see the class doc.
+    private func renegotiateReceiving() {
+        guard !closed, !renegotiating, receiving != receiveWanted,
+              let transceiver = videoTransceiver, let answer = answerSdp else { return }
+        let receive = receiveWanted
+        guard let remoteSdp = receive ? answer : Self.withVideoInactive(answer) else {
+            // An answer with no direction to turn: leave the video running, as it always was.
+            NSLog("HomeSafeLive: no video direction in the answer; video keeps decoding")
+            answerSdp = nil
+            return
+        }
+        renegotiating = true
+        var directionError: NSError?
+        transceiver.setDirection(receive ? .recvOnly : .inactive, error: &directionError)
+        if let directionError {
+            finishRenegotiating(receive: receive, error: directionError.localizedDescription, offerApplied: false)
+            return
+        }
+        let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+        connection.offer(for: constraints) { [weak self] sdp, error in
+            guard let self else { return }
+            guard let sdp else {
+                DispatchQueue.main.async {
+                    self.finishRenegotiating(receive: receive, error: error?.localizedDescription ?? "offer failed", offerApplied: false)
+                }
+                return
+            }
+            self.connection.setLocalDescription(sdp) { error in
+                if let error {
+                    DispatchQueue.main.async {
+                        self.finishRenegotiating(receive: receive, error: error.localizedDescription, offerApplied: false)
+                    }
+                    return
+                }
+                self.connection.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: remoteSdp)) { error in
+                    DispatchQueue.main.async {
+                        self.finishRenegotiating(receive: receive, error: error?.localizedDescription, offerApplied: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func finishRenegotiating(receive: Bool, error: String?, offerApplied: Bool) {
+        renegotiating = false
+        guard !closed else { return }
+        guard let error else {
+            receiving = receive
+            NSLog("HomeSafeLive: peer %@ video receive %@", logId, receive ? "resumed" : "paused")
+            if receive { watchForFrameAfterResume() }
+            renegotiateReceiving()
+            return
+        }
+        NSLog("HomeSafeLive: video receive renegotiation failed: %@", error)
+        if receive {
+            // The video would stay still for good: report the peer lost, and the holder joins again.
+            listener.onFailed(reason: "video could not be resumed: \(error)")
+            return
+        }
+        // Stopping is only a saving: put things back as they were and leave the video running.
+        answerSdp = nil
+        receiveWanted = true
+        var ignored: NSError?
+        videoTransceiver?.setDirection(.recvOnly, error: &ignored)
+        if offerApplied {
+            connection.setLocalDescription(RTCSessionDescription(type: .rollback, sdp: "")) { _ in }
+        }
+    }
+
+    /// A resumed stream moves again at its next keyframe, a second or two at most. One with nothing
+    /// by `resumeFrameTimeout` is reported failed, so the holder joins again rather than leaving the
+    /// card still (or black) for good.
+    private func watchForFrameAfterResume() {
+        resumeWatch += 1
+        let watch = resumeWatch
+        frameCounter.reportNextFrame(as: "peer \(logId) video moving again")
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.resumeFrameTimeout) { [weak self] in
+            guard let self, !self.closed, watch == self.resumeWatch, self.receiving, self.receiveWanted,
+                  self.frameCounter.isAwaitingFrame else { return }
+            NSLog("HomeSafeLive: peer %@ has had no video since resuming", self.logId)
+            self.listener.onFailed(reason: "no video after resuming")
+        }
+    }
+
+    private static let resumeFrameTimeout: TimeInterval = 8
+
+    /// `sdp` with its video section's direction turned to inactive, or nil when it states none.
+    static func withVideoInactive(_ sdp: String) -> String? {
+        var inVideo = false
+        var turned = false
+        let lines = sdp.components(separatedBy: "\r\n").map { line -> String in
+            if line.hasPrefix("m=") { inVideo = line.hasPrefix("m=video") }
+            guard inVideo, ["a=sendonly", "a=sendrecv", "a=recvonly"].contains(line) else { return line }
+            turned = true
+            return "a=inactive"
+        }
+        return turned ? lines.joined(separator: "\r\n") : nil
     }
 
     func setMuted(muted: Bool) {
@@ -204,6 +336,7 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.closed else { return }
             if let video = track as? RTCVideoTrack {
+                NSLog("HomeSafeLive: peer %@ video track %@", self.logId, self.videoTrack == nil ? "added" : "added again")
                 self.videoTrack = video
                 // Always counting, so a peer nobody is drawing still reports its first frame.
                 video.add(self.frameCounter)
@@ -232,11 +365,33 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
 private final class FrameCounter: NSObject, RTCVideoRenderer {
     var onFirstFrame: (() -> Void)?
     private var seenFrame = false
+    private let lock = NSLock()
+    private var nextFrameMessage: String?
+
+    /// Logs `message` when the next frame is decoded: the moment a resumed stream is moving again.
+    func reportNextFrame(as message: String) {
+        lock.lock()
+        nextFrameMessage = message
+        lock.unlock()
+    }
+
+    /// True from `reportNextFrame` until that frame comes.
+    var isAwaitingFrame: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return nextFrameMessage != nil
+    }
 
     func setSize(_ size: CGSize) {}
 
     func renderFrame(_ frame: RTCVideoFrame?) {
-        guard frame != nil, !seenFrame else { return }
+        guard frame != nil else { return }
+        lock.lock()
+        let message = nextFrameMessage
+        nextFrameMessage = nil
+        lock.unlock()
+        if let message { NSLog("HomeSafeLive: %@", message) }
+        guard !seenFrame else { return }
         seenFrame = true
         onFirstFrame?()
     }

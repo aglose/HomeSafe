@@ -12,6 +12,8 @@
                                                               spans by total time, and instants (clock ticks) per second per step
     trace_report.py back    <prefix>                          after each back_<how>:<n> mark (back_to_home.py): when Home's
                                                               cameras were drawing again, and when each one was moving
+    trace_report.py teardown <prefix>                         after each open_finance:<n> mark (back_to_home.py): the longest
+                                                              frame and the players' teardown sections as Home's cards go
 
 <prefix> is what record.sh was given: <prefix>.pftrace, and <prefix>.inproc.pftrace for `inproc`.
 Uses the `perfetto` Python package (pip install perfetto), which fetches trace_processor itself.
@@ -153,6 +155,49 @@ def cmd_inproc(prefix):
                 print(f"  {name:24} " + ", ".join(f"{k} {v / ((e - s) / 1e9):.0f}/s" for k, v in counts.most_common()))
 
 
+def cmd_teardown(prefix):
+    """
+    Home's cards being taken down as Finance opens over them (back_to_home.py's `open_finance:<n>`
+    marks): over the 2 s after each, the main thread's longest frame and its time in the players'
+    teardown sections (from the in-process file), and over the whole recording, what the renderers'
+    own copies of their pictures cost their libwebrtc render threads.
+    """
+    sys_tp, q = open_trace(prefix + ".pftrace")
+    upid, main, _ = app_process(q)
+    marks = [(r.ts, r.msg) for r in q("select ts, msg from android_logs where tag = 'HomeSafeJourney' and msg like 'open_finance:%' order by ts")]
+    frames = {}
+    for at, msg in marks:
+        frames[msg] = q(f"""select coalesce(max(s.dur), 0) / 1e6 d from slice s join thread_track tt on s.track_id = tt.id
+                            where tt.utid = {main} and s.name like 'Choreographer#doFrame%' and s.ts > {at} and s.ts < {at + 2_000_000_000}""")[0].d
+    first = q("select min(ts) t, max(ts + dur) e from sched")[0]
+    egl = cpu_ms(q, f"t.upid = {upid} and t.name = 'EglThread'", first.t, first.e)
+    seconds = (first.e - first.t) / 1e9
+    sys_tp.close()
+    _, iq = open_trace(prefix + ".inproc.pftrace")
+    teardown = ("live.keepFrame", "live.renderer.release", "live.renderer.releaseEglSurface", "live.unbindRenderer", "live.unbindSurface")
+    names = ",".join(f"'{n}'" for n in teardown)
+    worst = []
+    for at, msg in marks:
+        spans = [(r.name, r.ts, r.ts + r.dur) for r in iq(
+            f"select name, ts, dur from slice where name in ({names}) and ts > {at} and ts < {at + 2_000_000_000} order by ts")]
+        keeps = [e - s for n, s, e in spans if n == "live.keepFrame"]
+        # The sections nest (an unbind runs keepFrame inside it), so the total is the time any of them was open.
+        covered, reach = 0, None
+        for _, s, e in spans:
+            if reach is None or s > reach:
+                covered += e - s
+                reach = e
+            elif e > reach:
+                covered += e - reach
+                reach = e
+        worst.append(frames[msg])
+        print(f"{msg:16} longest frame {frames[msg]:6.1f} ms; keepFrame {len(keeps)}× {sum(keeps) / 1e6:5.1f} ms; "
+              f"teardown sections {covered / 1e6:5.1f} ms")
+    if worst:
+        print(f"longest frame opening Finance: median {pct(worst, 0.5):.1f} ms, worst {max(worst):.1f} ms ({len(worst)} rounds)")
+    print(f"renderers' EGL threads: {egl:.0f} ms of CPU over {seconds:.0f} s ({egl / seconds:.1f} ms/s)")
+
+
 def cmd_back(prefix):
     """
     Zero is when Home starts drawing again under the closing app: its cards make their WebRTC
@@ -208,5 +253,7 @@ if __name__ == "__main__":
         cmd_inproc(args[0])
     elif cmd == "back":
         cmd_back(args[0])
+    elif cmd == "teardown":
+        cmd_teardown(args[0])
     else:
         sys.exit(__doc__)
