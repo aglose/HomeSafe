@@ -138,7 +138,7 @@ internal fun AmazonBlock(summary: AmazonSummary, selected: Boolean, onClick: () 
  * discretionary (and, once someone has said, letting it sort itself again).
  */
 @Composable
-internal fun AmazonOrderSection(purchase: Purchase, busy: Boolean, onSayNeed: (orderId: String, position: Int, need: AmazonNeed?) -> Unit, modifier: Modifier = Modifier) {
+internal fun AmazonOrderSection(purchase: Purchase, busy: Boolean, onSayNeed: (orderId: String, item: AmazonItem, need: AmazonNeed?) -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val order = purchase.amazon
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter).testTag("finance_budget_amazon_order")) {
@@ -172,7 +172,7 @@ internal fun AmazonOrderSection(purchase: Purchase, busy: Boolean, onSayNeed: (o
         )
         order.items.forEach { item ->
             Spacer(Modifier.height(12.dp))
-            AmazonItemRow(item, busy, onSay = { need -> onSayNeed(order.orderId, item.position, need) })
+            AmazonItemRow(item, busy, onSay = { need -> onSayNeed(order.orderId, item, need) })
         }
     }
 }

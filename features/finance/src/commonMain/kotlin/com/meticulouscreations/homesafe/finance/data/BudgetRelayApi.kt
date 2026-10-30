@@ -113,10 +113,16 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
         httpClient.delete(PushRelayApi.relayUrl(serverUrl, "/finance/budget/line-rules")) { parameter("merchant", merchantKey) }.answer()
     }
 
-    suspend fun sayNeed(serverUrl: String, orderId: String, position: Int, need: AmazonNeed?): Result<Budget> = suspendRunCatching {
-        httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/budget/amazon/$orderId/items/$position")) {
+    suspend fun sayNeed(serverUrl: String, orderId: String, item: AmazonItem, need: AmazonNeed?): Result<Budget> = suspendRunCatching {
+        httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/budget/amazon/$orderId/items/${item.position}")) {
             contentType(ContentType.Application.Json)
-            setBody(buildJsonObject { put("need", need?.wire) })
+            setBody(
+                buildJsonObject {
+                    put("need", need?.wire)
+                    // So a choice never lands on another item an order email has put at that place since.
+                    put("title", item.title)
+                },
+            )
         }.answer()
     }
 
@@ -144,7 +150,7 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
             return when (field("error")) {
                 "not_found" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_purchase_gone), technical)
 
-                "no_item" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_amazon_item_gone), technical)
+                "no_item", "item_changed" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_amazon_item_gone), technical)
 
                 "bad_bucket", "bad_line", "bad_budget", "bad_month", "bad_need" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_refused), technical)
 

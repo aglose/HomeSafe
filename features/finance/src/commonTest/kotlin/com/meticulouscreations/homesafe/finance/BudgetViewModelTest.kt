@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.finance
 
+import com.meticulouscreations.homesafe.finance.domain.AmazonItem
 import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
@@ -10,6 +11,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
 import com.meticulouscreations.homesafe.finance.domain.BudgetRepository
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
 import com.meticulouscreations.homesafe.finance.domain.LinePick
+import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.ui.BudgetFixtures
 import com.meticulouscreations.homesafe.finance.ui.FinanceFixtures
 import com.meticulouscreations.homesafe.text.UiText
@@ -58,7 +60,7 @@ class BudgetViewModelTest {
         val tagged = mutableListOf<Triple<String, BucketId, Boolean>>()
         val forgotten = mutableListOf<String>()
         val linesTagged = mutableListOf<Triple<String, LinePick, Boolean>>()
-        val needsSaid = mutableListOf<Triple<String, Int, AmazonNeed?>>()
+        val needsSaid = mutableListOf<Triple<String, AmazonItem, AmazonNeed?>>()
         var syncs = 0
 
         override suspend fun budget(month: String?): Result<Budget> {
@@ -91,8 +93,8 @@ class BudgetViewModelTest {
             return changed
         }
 
-        override suspend fun sayNeed(orderId: String, position: Int, need: AmazonNeed?): Result<Budget> {
-            needsSaid += Triple(orderId, position, need)
+        override suspend fun sayNeed(orderId: String, item: AmazonItem, need: AmazonNeed?): Result<Budget> {
+            needsSaid += Triple(orderId, item, need)
             return changed
         }
 
@@ -362,12 +364,13 @@ class BudgetViewModelTest {
         val vm = shown(repo)
         val sorted = october.copy(spent = october.spent + 1)
         repo.changed = Result.success(sorted)
-        vm.sayNeed("p-1-0", "112-1234567-7654321", 1, AmazonNeed.ESSENTIAL)
+        val towels = AmazonItem(0, "Paper Towels", 1, 24.99, null, NeedSource.NONE)
+        vm.sayNeed("p-1-0", "112-1234567-7654321", towels, AmazonNeed.ESSENTIAL)
         // A second tap while the first is out is the same purchase's, so it waits.
-        vm.sayNeed("p-1-0", "112-1234567-7654321", 0, AmazonNeed.DISCRETIONARY)
+        vm.sayNeed("p-1-0", "112-1234567-7654321", towels, AmazonNeed.DISCRETIONARY)
         assertEquals(setOf("p-1-0"), vm.uiState.value.tagging)
         runCurrent()
-        assertEquals(listOf(Triple("112-1234567-7654321", 1, AmazonNeed.ESSENTIAL as AmazonNeed?)), repo.needsSaid)
+        assertEquals(listOf(Triple("112-1234567-7654321", towels, AmazonNeed.ESSENTIAL as AmazonNeed?)), repo.needsSaid)
         assertEquals(emptySet(), vm.uiState.value.tagging)
         assertEquals(sorted, vm.uiState.value.budget)
         vm.setActive(false)

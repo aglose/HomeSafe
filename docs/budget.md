@@ -164,19 +164,25 @@ every hour, after the cards (Gmail, read-only), and puts each Amazon charge besi
 paid for:
 
 - **Matching.** Amazon charges the card once per shipment. A charge is matched to a shipment
-  whose email gave that exact total within a few days; otherwise to an order of exactly that
-  total within a month of it; otherwise two to four charges that month adding up to an order's
-  total are taken as its shipments. Where more than one fits, the charge nearest the email wins.
+  whose email gave that exact total within a few days; otherwise to an order that still owes
+  exactly that (its total, less its shipments matched so far) within a month of it; otherwise two
+  to four charges that month adding up to what an order still owes are taken as its shipments.
+  Where several charges and emails could pair up, the nearest pairs are taken first. Charges a
+  month either side of the month looked at are matched with it, so an order charged across the
+  turn of a month is found from both sides.
   A charge with no match says so (`amazon: null`). AWS, Prime, Prime Video, Kindle Unlimited and
   Audible are not orders and are left alone.
 - **Sorting.** Each item is *essential* (groceries, household and cleaning supplies, toiletries,
   medicine, the baby's and the pets' things) or *discretionary*. Word lists sort the obvious ones
   (`_AMAZON_NEED_WORDS`). The rest go to the box's own model through Ollama (`VLM_MODEL`), twenty
   at a time, so no titles leave the house. Without Ollama they stay unsorted. Anyone can say
-  otherwise for an item (`PUT /finance/budget/amazon/{order}/items/{pos}`), and a later email
-  about the same order keeps what they said.
+  otherwise for an item (`PUT /finance/budget/amazon/{order}/items/{pos}`, with the item's title,
+  so a choice can't land on another item an email has put at that place since: 409
+  `item_changed`), and a later email about the same order keeps what they said.
 - **The split.** A charge is shared out between essential, discretionary and unsorted by the
-  order's item prices. For a shipment that is the whole order's mix, since a shipment's email
+  order's item prices, in whole cents that add up to the charge. An item without a price weighs
+  what the priced ones do on average. Until the order's own email is read, its items are the ones
+  its shipment emails named. For a shipment that is the whole order's mix, since a shipment's email
   rarely says which items it carried.
 - **What the app gets.** Each Amazon purchase in `/finance/budget` carries `from_amazon` and
   `amazon`: the order, how it was matched, its items with their sorting, and the charge's

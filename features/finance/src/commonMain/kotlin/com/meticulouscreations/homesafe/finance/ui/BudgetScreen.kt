@@ -70,6 +70,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.finance.BudgetUiState
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
+import com.meticulouscreations.homesafe.finance.domain.AmazonItem
 import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BucketId
@@ -357,7 +358,7 @@ fun BudgetScreen(
     onRetry: () -> Unit,
     onOpenLinkedAccounts: () -> Unit,
     onOpenSettings: () -> Unit,
-    onSayNeed: (purchaseId: String, orderId: String, position: Int, need: AmazonNeed?) -> Unit = { _, _, _, _ -> },
+    onSayNeed: (purchaseId: String, orderId: String, item: AmazonItem, need: AmazonNeed?) -> Unit = { _, _, _, _ -> },
 ) {
     val budget = state.budget
     // Which bucket's purchases the list shows (by key), and the purchase whose sheet is up (by id).
@@ -540,7 +541,7 @@ fun BudgetScreen(
             people = budget.config.people,
             lines = budget.lines.map { it.name },
             busy = picked.id in state.tagging,
-            onSayNeed = { orderId, position, need -> onSayNeed(picked.id, orderId, position, need) },
+            onSayNeed = { orderId, item, need -> onSayNeed(picked.id, orderId, item, need) },
             onPick = { bucket, remember ->
                 tagging = null
                 onTag(picked.id, bucket, remember)
@@ -1366,7 +1367,7 @@ private fun TagSheet(
     people: List<String>,
     lines: List<String>,
     busy: Boolean,
-    onSayNeed: (orderId: String, position: Int, need: AmazonNeed?) -> Unit,
+    onSayNeed: (orderId: String, item: AmazonItem, need: AmazonNeed?) -> Unit,
     onPick: (BucketId, Boolean) -> Unit,
     onPickLine: (LinePick, Boolean) -> Unit,
     onDismiss: () -> Unit,

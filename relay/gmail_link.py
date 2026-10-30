@@ -41,6 +41,8 @@ def read_env(path: str) -> dict[str, str]:
 
 def write_env(path: str, values: dict[str, str]) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # The mode above is only for a file made now: one that was there already is narrowed too, before the tokens go in.
+    os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w") as f:
         f.writelines(f"{key}={value}\n" for key, value in values.items())
 

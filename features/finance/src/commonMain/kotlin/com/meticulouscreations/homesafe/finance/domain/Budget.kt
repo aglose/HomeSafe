@@ -427,8 +427,11 @@ interface BudgetRepository {
 
     suspend fun forgetLineRule(merchantKey: String): Result<Budget>
 
-    /** Says whether one item of an Amazon order was essential or discretionary; null lets it sort itself again. */
-    suspend fun sayNeed(orderId: String, position: Int, need: AmazonNeed?): Result<Budget>
+    /**
+     * Says whether one item of an Amazon order was essential or discretionary; null lets it sort
+     * itself again. The relay refuses it when [item] is no longer what is at its place.
+     */
+    suspend fun sayNeed(orderId: String, item: AmazonItem, need: AmazonNeed?): Result<Budget>
 
     /** Asks the relay to read the cards now; the answer says whether that has begun. */
     suspend fun syncNow(): Result<Budget>
