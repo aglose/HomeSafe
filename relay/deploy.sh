@@ -13,7 +13,8 @@
 #   - HEAD doesn't contain the commit the box runs. That commit is read from the record this script
 #     leaves on the box (DEPLOYED), or, the first time, found by matching the running relay.py
 #     against the relay.py of every commit in the repository. A branch deployed and then
-#     squash-merged counts as contained once HEAD has a commit with the same relay/ folder;
+#     squash-merged counts as contained once HEAD has a commit with the same relay/ folder as it, or
+#     as a later commit of its branch (the squash takes the branch's last relay/);
 #   - a relay file on the box is one no commit has had (edited by hand: find out why first);
 #   - another deploy holds the lock.
 # Then it backs the box's files up, copies the new ones, rebuilds only the relay container, waits
@@ -73,10 +74,12 @@ else
 fi
 if ! git merge-base --is-ancestor "$deployed" HEAD; then
   # Deployed from a branch that was squash-merged since: main has its relay/ under another commit.
+  # The branch may have gone on after the deploy, so the squash holds a later relay/: any commit
+  # that contains $deployed (the branch's tip, while this checkout still has it) will do.
   squashed=""
-  deployed_tree=$(git rev-parse "$deployed:relay")
+  later=$(for d in "$deployed" $(git rev-list --all --ancestry-path "$deployed..") ; do git rev-parse "$d:relay" 2>/dev/null; done | sort -u)
   for sha in $(git log --format=%H HEAD -- relay/); do
-    if [ "$(git rev-parse "$sha:relay")" = "$deployed_tree" ]; then squashed=$sha; break; fi
+    if grep -qx "$(git rev-parse "$sha:relay")" <<<"$later"; then squashed=$sha; break; fi
   done
   [ -n "$squashed" ] || fail "HEAD doesn't contain $deployed, which the box runs ($(git log -1 --format='%h %s' "$deployed")). Merge it first, so its changes aren't dropped."
   say "HEAD has the box's relay/ as $(git log -1 --format='%h %s' "$squashed")"
