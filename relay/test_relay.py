@@ -8710,6 +8710,33 @@ class ParkingTest(_FakeFrigate):
         relay.parking_tick(self.WED_7PM + 360, push=self.push)
         self.assertEqual(self.WED_7PM, relay.parking_status(self.WED_7PM + 400)["cars"][0]["last"]["at"])
 
+    def test_a_car_the_camera_saw_arrive_after_teslas_last_fix_is_home(self):
+        far = {**self.fix(-2000, 8000, 330, self.WED_7PM), "moving": False}
+        relay.state_set(relay.PARKING_KEY, {"andrews_tesla": {"last": far, "asleep": True}, "sarahs_car": {"last": far, "asleep": True}})
+        relay.state_set(relay.CAR_PRESENCE_KEY, {
+            "andrews_tesla": {"here": False, "since": self.WED_7PM + 600, "known": True},
+            "sarahs_car": {"here": True, "since": self.WED_7PM + 600, "known": True},
+        })
+        cars = {c["car"]: c for c in relay.parking_status(self.WED_7PM + 900)["cars"]}
+        sarah = cars["sarahs_car"]["last"]
+        self.assertEqual((self.HOME["lat"], self.HOME["lng"], self.WED_7PM + 600, False, True),
+                         (sarah["lat"], sarah["lng"], sarah["at"], sarah["moving"], sarah["home"]), "at the house, since it arrived")
+        self.assertEqual((self.WED_7PM, False), (cars["andrews_tesla"]["last"]["at"], cars["andrews_tesla"]["last"]["home"]), "away by the camera too")
+
+    def test_an_arrival_before_teslas_last_fix_or_a_fix_at_home_keeps_the_fix(self):
+        far = {**self.fix(-2000, 8000, 330, self.WED_7PM), "moving": True}
+        curb = {**self.fix(60, 5, 270, self.WED_7PM + 900), "moving": False}
+        relay.state_set(relay.PARKING_KEY, {"andrews_tesla": {"last": curb}, "sarahs_car": {"last": far}})
+        relay.state_set(relay.CAR_PRESENCE_KEY, {
+            "andrews_tesla": {"here": True, "since": self.WED_7PM + 1200, "known": True},
+            "sarahs_car": {"here": True, "since": self.WED_7PM - 600, "known": True},
+        })
+        cars = {c["car"]: c for c in relay.parking_status(self.WED_7PM + 1500)["cars"]}
+        self.assertEqual((self.WED_7PM + 900, True), (cars["andrews_tesla"]["last"]["at"], cars["andrews_tesla"]["last"]["home"]),
+                         "Tesla had it home, at its own spot")
+        self.assertEqual((self.WED_7PM, True, False), (cars["sarahs_car"]["last"]["at"], cars["sarahs_car"]["last"]["moving"],
+                                                       cars["sarahs_car"]["last"]["home"]), "driven off since the camera saw it home")
+
     def test_a_car_known_only_by_its_spot_is_last_seen_there(self):
         saved = {"andrews_tesla": {"spot": {**self.fix(60, 5, 270, self.WED_7PM), "since": self.WED_7PM, "street": "Elm St", "side": "north"}}}
         relay.state_set(relay.PARKING_KEY, saved)
