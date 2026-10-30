@@ -102,6 +102,8 @@
     <string name="fin_budget_pace_chart_description">The month's spending so far, day by day, against its limit</string>
     <string name="fin_budget_pace_legend_limit">Limit</string>
     <string name="fin_budget_pace_legend_savings">Savings line</string>
+    <string name="fin_budget_pace_legend_current">This month so far</string>
+    <string name="fin_budget_pace_caption_compare">%1$s day by day, with this month so far drawn over it</string>
     <string name="fin_budget_pace_stat_rate">A day costs</string>
     <string name="fin_budget_pace_stat_projected">Month ends near</string>
     <string name="fin_budget_pace_stat_allowance">Left per day</string>
@@ -151,7 +153,10 @@
     </plurals>
 
     <string name="fin_budget_months_title">Month by month</string>
-    <string name="fin_budget_months_subtitle">Tap a month to look back at it</string>
+    <string name="fin_budget_months_subtitle">Tap a month to set it beside this one</string>
+    <string name="fin_budget_compare_more">By %1$s, this month is at %2$s: %3$s more than %4$s by the same day (%5$s).</string>
+    <string name="fin_budget_compare_less">By %1$s, this month is at %2$s: %3$s less than %4$s by the same day (%5$s).</string>
+    <string name="fin_budget_compare_level">By %1$s, this month is at %2$s, level with %3$s by the same day.</string>
 
     <string name="fin_budget_purchases_title">Purchases</string>
     <string name="fin_budget_table_purchase">Purchase</string>

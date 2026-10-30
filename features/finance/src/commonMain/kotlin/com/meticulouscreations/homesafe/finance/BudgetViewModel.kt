@@ -46,6 +46,11 @@ data class BudgetUiState(
     val problemText: UiText? = null,
     /** An earlier month being looked back at, as `YYYY-MM`; null for the month under way. */
     val month: String? = null,
+    /**
+     * The month under way as last read, kept while an earlier one is looked back at: the months
+     * chart stays on the same months, and the earlier one is set beside it. Null until read.
+     */
+    val current: Budget? = null,
     /** "Sync now" was tapped and the relay hasn't answered yet. */
     val syncRequested: Boolean = false,
     /** The settings are being saved. */
@@ -123,18 +128,37 @@ class BudgetViewModel(
                 // Anything else (the server out of reach) leaves the month already shown in place.
                 _uiState.update { it.copy(loading = false, problem = (e as? BankSyncException)?.problem ?: BankProblem.OTHER, problemText = e.shown()) }
             }
+        readCurrent()
+    }
+
+    /**
+     * While an earlier month is up, the month under way kept beside it is read again too, so its
+     * bar and the comparison follow what the cards bring in. A failure leaves it as it was: the
+     * month on screen has already said what went wrong.
+     */
+    private suspend fun readCurrent() {
+        if (_uiState.value.month == null) return
+        repository.budget(null).onSuccess { budget ->
+            if (budget.isCurrentMonth) _uiState.update { it.copy(current = budget) }
+        }.onFailure { e -> if (e is CancellationException) throw e }
     }
 
     private fun show(budget: Budget) {
         if (budget.isCurrentMonth) currentMonth = budget.month
-        _uiState.update { it.copy(budget = budget, loading = false, problem = null, problemText = null, readAtEpochSeconds = clock.now().epochSeconds) }
+        _uiState.update { it.withBudget(budget).copy(loading = false, problem = null, problemText = null) }
         if (budget.syncing) followSync()
     }
+
+    private fun BudgetUiState.withBudget(budget: Budget) =
+        copy(budget = budget, current = if (budget.isCurrentMonth) budget else current, readAtEpochSeconds = clock.now().epochSeconds)
 
     /** The relay answers a change with a month: the one on screen is shown, any other means asking for the one that is. */
     private suspend fun applied(budget: Budget) {
         val shown = _uiState.value.month ?: currentMonth
-        if (shown == null || budget.month == shown) show(budget) else read()
+        if (shown == null || budget.month == shown) return show(budget)
+        // The month under way, answered while an earlier one is up: still what that is set beside.
+        if (budget.isCurrentMonth) _uiState.update { it.copy(current = budget) }
+        read()
     }
 
     /**
@@ -188,8 +212,8 @@ class BudgetViewModel(
                     if (shutOut(e)) return@launch
                 }
                 val budget = result.getOrNull() ?: continue
-                _uiState.update { it.copy(budget = budget, readAtEpochSeconds = clock.now().epochSeconds) }
-                if (!budget.syncing) return@launch
+                _uiState.update { it.withBudget(budget) }
+                if (!budget.syncing) return@launch readCurrent()
             }
             // Still at it after minutes: stop saying so; the next read shows how it ended.
             _uiState.update { s -> s.copy(budget = s.budget?.copy(syncing = false)) }

@@ -68,7 +68,10 @@ its curb spot:
 - `last`: where Tesla last saw it, wherever that was (`lat`, `lng`, `heading`, `at`, `moving`),
   and `home`, whether that is within the household's home radius (null with no home set). The
   relay keeps it with the car's parking state, so it survives a restart; a relay from before it
-  answers with the curb spot alone, and an asleep car keeps the last fix it gave.
+  answers with the curb spot alone, and an asleep car keeps the last fix it gave. A car the camera
+  saw arrive home (car presence) after a fix that had it away is at the house instead, `at` its
+  arrival, with no `heading`: a car that drove home and fell asleep between two checks isn't left
+  on the map where it was hours before.
 - `asleep`: Tesla said so the last time it was asked.
 - `window`: the deadline's window (`from`, `until`), so the phone can word "No parking 8–11 AM"
   on its own clock and in its own language.

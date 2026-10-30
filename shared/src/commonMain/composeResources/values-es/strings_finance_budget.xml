@@ -103,6 +103,8 @@
     <string name="fin_budget_pace_chart_description">El gasto del mes hasta ahora, día a día, frente a su límite</string>
     <string name="fin_budget_pace_legend_limit">Límite</string>
     <string name="fin_budget_pace_legend_savings">Línea de ahorros</string>
+    <string name="fin_budget_pace_legend_current">Lo que va de este mes</string>
+    <string name="fin_budget_pace_caption_compare">%1$s día a día, con lo que va de este mes encima</string>
     <string name="fin_budget_pace_stat_rate">Costo por día</string>
     <string name="fin_budget_pace_stat_projected">El mes cierra cerca de</string>
     <string name="fin_budget_pace_stat_allowance">Disponible por día</string>
@@ -148,7 +150,10 @@
     </plurals>
 
     <string name="fin_budget_months_title">Mes a mes</string>
-    <string name="fin_budget_months_subtitle">Toca un mes para revisarlo</string>
+    <string name="fin_budget_months_subtitle">Toca un mes para compararlo con este</string>
+    <string name="fin_budget_compare_more">Al %1$s, este mes va en %2$s: %3$s más que %4$s al mismo día (%5$s).</string>
+    <string name="fin_budget_compare_less">Al %1$s, este mes va en %2$s: %3$s menos que %4$s al mismo día (%5$s).</string>
+    <string name="fin_budget_compare_level">Al %1$s, este mes va en %2$s, a la par de %3$s al mismo día.</string>
 
     <string name="fin_budget_purchases_title">Compras</string>
     <string name="fin_budget_table_purchase">Compra</string>

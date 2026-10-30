@@ -17,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,6 +37,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -309,8 +312,8 @@ data class Bar(val label: String, val value: Double, val color: Color, val secon
 
 /**
  * Vertical bars that grow up from the baseline one after another when they appear. A bar's
- * [Bar.secondary] is drawn as a wider ghost behind it (income behind take-home). Tapping a bar
- * selects it, with the chart settings' haptic tick when that's a change.
+ * [Bar.secondary] is drawn as a wider ghost behind it (income behind take-home). Tapping a bar,
+ * or its label, selects it, with the chart settings' haptic tick when that's a change.
  */
 @Composable
 fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = null, onSelect: (Int) -> Unit = {}) {
@@ -325,8 +328,16 @@ fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = nu
     val type = FinanceTheme.type
     val haptics = LocalHapticFeedback.current
     val feel = FinanceTheme.chart.haptics
+    val pick = rememberUpdatedState { i: Int ->
+        if (i != selected) haptics.chartTick(feel)
+        onSelect(i)
+    }
     Column(modifier) {
-        Canvas(Modifier.fillMaxWidth().weight(1f)) {
+        // A tap anywhere in a bar's column picks it, not only on its label: a short bar is a small target.
+        val taps = Modifier.pointerInput(bars.size) {
+            detectTapGestures { at -> pick.value((at.x / size.width * bars.size).toInt().coerceIn(0, bars.lastIndex)) }
+        }
+        Canvas(Modifier.fillMaxWidth().weight(1f).then(taps)) {
             val n = bars.size
             val slot = size.width / n
             val barW = slot * 0.56f
@@ -366,10 +377,7 @@ fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = nu
                     maxLines = 1,
                     modifier = Modifier
                         .weight(1f)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                            if (i != selected) haptics.chartTick(feel)
-                            onSelect(i)
-                        },
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { pick.value(i) },
                 )
             }
         }

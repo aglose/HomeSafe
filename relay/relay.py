@@ -12032,6 +12032,7 @@ def parking_status(now: float) -> dict[str, Any]:
     stretches = parking_stretches(config, home, now) if config.get("streets") else []
     zone = parking_zone(config)
     saved = state_get(PARKING_KEY) or {}
+    presence = state_get(CAR_PRESENCE_KEY) or {}
     cars = []
     for name in TESLA_CARS:
         car = saved.get(name) or {}
@@ -12044,6 +12045,15 @@ def parking_status(now: float) -> dict[str, Any]:
         if last and home:
             d = haversine_metres((float(last["lat"]), float(last["lng"])), (float(home["lat"]), float(home["lng"])))
             at_home = d <= float(home.get("radius_m") or 150) + TESLA_HOME_MARGIN_METRES
+        # A car that drove home and fell asleep between two answers is still where Tesla last had it,
+        # away, though the camera saw it arrive (Sarah's, 2026-10-29: four hours 8 km off while in
+        # the driveway). Arrived after that fix, it is home, at the house: the driveway is all the
+        # camera's car zones cover. A car Tesla found home stays at its own fix, the curb's included.
+        # Only a change car presence saw counts: a starting state's `since` is when it started, not an arrival.
+        seen = presence.get(name) or {}
+        arrived = float(seen.get("since") or 0) if seen.get("here") and seen.get("known") else 0.0
+        if home and not spot and arrived and not at_home and arrived > float((last or {}).get("at") or 0):
+            last, at_home = {"lat": float(home["lat"]), "lng": float(home["lng"]), "heading": None, "at": arrived, "moving": False}, True
         cars.append({
             "car": name, "name": display_name(name), "asked": car.get("asked"),
             "street": match and match["street"], "side": match and match["side"], "how": match and match["how"],

@@ -93,18 +93,37 @@ object BudgetFixtures {
         Shop("Hilltop Hardware", "HOME_IMPROVEMENT", TRAVEL, alex, BucketSource.RULE, 96.30),
     )
 
+    /** The five months before October, the oldest first. */
+    private val pastMonths = listOf(
+        BudgetPastMonth("2026-05", 3_910.0, 31),
+        BudgetPastMonth("2026-06", 4_720.0, 30),
+        BudgetPastMonth("2026-07", 4_180.0, 31),
+        BudgetPastMonth("2026-08", 5_260.0, 31),
+        BudgetPastMonth("2026-09", 4_050.0, 30),
+    )
+
     /**
      * The month on its [day]th day, with every purchase [scale] times its listed size: about 0.4
-     * is a month comfortably under [limit], 0.6 one that ends well over it.
+     * is a month comfortably under [limit], 0.6 one that ends well over it. October, the month
+     * under way, unless [yearMonth] says another.
      */
-    fun month(day: Int = 12, scale: Double = 0.42, limit: Double? = 4_500.0, sandbox: Boolean = false, cards: List<BudgetCard> = this.cards): Budget {
+    fun month(
+        day: Int = 12,
+        scale: Double = 0.42,
+        limit: Double? = 4_500.0,
+        sandbox: Boolean = false,
+        cards: List<BudgetCard> = this.cards,
+        yearMonth: String = "2026-10",
+        daysInMonth: Int = 31,
+        history: List<BudgetPastMonth> = pastMonths,
+    ): Budget {
         val purchases = (1..day).flatMap { d ->
             // Two or three purchases a day, walking round the shops, the newest day first.
             (0 until 2 + d % 2).map { n ->
                 val shop = shops[(d * 3 + n * 5) % shops.size]
                 Purchase(
                     id = "p-$d-$n",
-                    date = "2026-10-${d.toString().padStart(2, '0')}",
+                    date = "$yearMonth-${d.toString().padStart(2, '0')}",
                     amount = ((shop.amount * scale) * 100).toLong() / 100.0,
                     name = shop.name,
                     category = shop.category,
@@ -124,10 +143,10 @@ object BudgetFixtures {
         return Budget(
             configured = true,
             sandbox = sandbox,
-            month = "2026-10",
-            isCurrentMonth = true,
+            month = yearMonth,
+            isCurrentMonth = yearMonth == "2026-10",
             day = day,
-            daysInMonth = 31,
+            daysInMonth = daysInMonth,
             syncedAtEpochSeconds = now - 12 * 60,
             changedAtEpochSeconds = now - 5 * 3_600,
             syncing = false,
@@ -155,13 +174,7 @@ object BudgetFixtures {
             categories = purchases.groupBy { it.category.orEmpty() }.map { (name, list) -> BudgetSlice(name, list.sumOf { it.amount }, list.size) }.sortedByDescending { it.spent },
             merchants = purchases.groupBy { it.name }.map { (name, list) -> BudgetSlice(name, list.sumOf { it.amount }, list.size) }.sortedByDescending { it.spent }.take(8),
             purchases = purchases,
-            history = listOf(
-                BudgetPastMonth("2026-05", 3_910.0, 31),
-                BudgetPastMonth("2026-06", 4_720.0, 30),
-                BudgetPastMonth("2026-07", 4_180.0, 31),
-                BudgetPastMonth("2026-08", 5_260.0, 31),
-                BudgetPastMonth("2026-09", 4_050.0, 30),
-            ),
+            history = history,
         )
     }
 
@@ -236,7 +249,19 @@ object BudgetFixtures {
     /** On the 12th with the Amazon order emails read. */
     val withAmazon = onPace.let { it.copy(purchases = (it.purchases + amazonPurchases).sortedByDescending { p -> p.date }, amazon = amazonSummary) }
 
+    /** September, over and looked back at, a lighter month than October is shaping up to be. */
+    val september = month(day = 30, scale = 0.32, yearMonth = "2026-09", daysInMonth = 30, history = listOf(BudgetPastMonth("2026-04", 4_330.0, 30)) + pastMonths.dropLast(1))
+
     fun state(budget: Budget) = BudgetUiState(budget = budget, loading = false, readAtEpochSeconds = now)
+
+    /** September looked back at, with October (on its 12th) kept beside it, its September bar what September came to. */
+    val lookingBack = BudgetUiState(
+        budget = september,
+        current = onPace.copy(history = pastMonths.dropLast(1) + BudgetPastMonth(september.month, september.spent, 30)),
+        month = september.month,
+        loading = false,
+        readAtEpochSeconds = now,
+    )
 }
 
 @Composable
@@ -259,11 +284,24 @@ private fun FinanceDeskBudgetPreview() {
     BudgetDeskPreview(BudgetFixtures.state(BudgetFixtures.withAmazon))
 }
 
+@Preview(name = "Desk · Budget, September beside October", widthDp = 1200, heightDp = 1500)
+@Composable
+private fun FinanceDeskBudgetLookingBackPreview() {
+    BudgetDeskPreview(BudgetFixtures.lookingBack)
+}
+
 @Preview(name = "Budget · on pace", widthDp = 412, heightDp = 3400)
 @Preview(name = "Budget · on pace, in Spanish", widthDp = 412, heightDp = 3400, locale = "es")
 @Composable
 private fun FinanceBudgetPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.onPace))
+}
+
+@Preview(name = "Budget · September beside October", widthDp = 412, heightDp = 1700)
+@Preview(name = "Budget · September beside October, in Spanish", widthDp = 412, heightDp = 1700, locale = "es")
+@Composable
+private fun FinanceBudgetLookingBackPreview() {
+    BudgetPreview(BudgetFixtures.lookingBack)
 }
 
 @Preview(name = "Budget · with Amazon orders", widthDp = 412, heightDp = 3700)
