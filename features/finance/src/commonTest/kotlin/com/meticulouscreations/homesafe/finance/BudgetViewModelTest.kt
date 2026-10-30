@@ -51,9 +51,13 @@ class BudgetViewModelTest {
     private val october = BudgetFixtures.onPace
     private val september = october.copy(month = "2026-09", isCurrentMonth = false, day = 30, daysInMonth = 30)
 
-    /** Answers a month from [months] (the last one repeating), and each change with [changed]; keeps what it was asked. */
+    /**
+     * Answers a month from [byMonth] when it has that one, else from [months] (the last one
+     * repeating), and each change with [changed]; keeps what it was asked.
+     */
     private inner class FakeRepository : BudgetRepository {
         val months = ArrayDeque<Result<Budget>>()
+        val byMonth = mutableMapOf<String?, Result<Budget>>()
         var changed: Result<Budget> = Result.success(october)
         val asked = mutableListOf<String?>()
         val saved = mutableListOf<BudgetConfigPatch>()
@@ -65,6 +69,7 @@ class BudgetViewModelTest {
 
         override suspend fun budget(month: String?): Result<Budget> {
             asked += month
+            byMonth[month]?.let { return it }
             return if (months.size > 1) months.removeFirst() else months.first()
         }
 
@@ -215,14 +220,15 @@ class BudgetViewModelTest {
         vm.showMonth("2026-09")
         assertTrue(vm.uiState.value.loading)
         runCurrent()
-        assertEquals(listOf(null, "2026-09"), repo.asked)
+        // The month under way is read again beside it, for the chart and the comparison.
+        assertEquals(listOf(null, "2026-09", null), repo.asked)
         assertEquals("2026-09", vm.uiState.value.budget?.month)
 
         // The relay answers a saved setting with the month under way, which isn't the one being looked at.
         vm.save(BudgetConfigPatch(limits = BudgetLimits(total = 4_000.0)))
         runCurrent()
         assertEquals("2026-09", vm.uiState.value.budget?.month)
-        assertEquals(listOf(null, "2026-09", "2026-09"), repo.asked)
+        assertEquals(listOf(null, "2026-09", null, "2026-09", null), repo.asked)
         assertFalse(vm.uiState.value.saving)
 
         // Asking for the month under way by name is the same as going back to it.
@@ -255,6 +261,38 @@ class BudgetViewModelTest {
         runCurrent()
         assertEquals("2026-09", vm.uiState.value.budget?.month)
         assertEquals(tagged, vm.uiState.value.current)
+
+        // Each read of September reads October again, so what the cards brought in reaches its bar.
+        val later = october.copy(spent = october.spent + 25)
+        repo.byMonth[null] = Result.success(later)
+        advanceTimeBy(BudgetViewModel.POLL_MS)
+        runCurrent()
+        assertEquals("2026-09", vm.uiState.value.budget?.month)
+        assertEquals(later, vm.uiState.value.current)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun aSyncFinishedWhileLookingBackReadsTheMonthUnderWayAgain() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = shown(repo)
+        repo.months.clear()
+        repo.months += Result.success(september)
+        vm.showMonth("2026-09")
+        runCurrent()
+
+        // The relay starts reading the cards; September follows the read until it is done.
+        repo.changed = Result.success(september.copy(syncing = true))
+        repo.months.clear()
+        repo.months += Result.success(september)
+        vm.syncNow()
+        runCurrent()
+        val synced = october.copy(spent = october.spent + 40)
+        repo.byMonth[null] = Result.success(synced)
+        advanceTimeBy(BudgetViewModel.SYNC_POLL_MS)
+        runCurrent()
+        assertEquals("2026-09", vm.uiState.value.budget?.month)
+        assertEquals(synced, vm.uiState.value.current)
         vm.setActive(false)
     }
 

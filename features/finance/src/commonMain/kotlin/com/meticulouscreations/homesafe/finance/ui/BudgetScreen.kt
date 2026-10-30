@@ -1267,7 +1267,7 @@ private fun MonthsBlock(current: Budget, showing: String, shown: Budget, onShowM
             onSelect = { index -> months.getOrNull(index)?.first?.let { month -> onShowMonth(month.takeIf { it != current.month }) } },
         )
         // Only once the month tapped is the one read, so the line never speaks of the month before it.
-        val compare = remember(shown, current) { shown.takeIf { it.month == showing }?.let { BudgetCompare.of(it, current) } }
+        val compare = remember(shown, current, showing) { shown.takeIf { it.month == showing }?.let { BudgetCompare.of(it, current) } }
         if (compare != null) {
             val day = FinanceFormat.dayOfMonth(current.month, compare.day).resolve()
             val then = FinanceFormat.month(shown.month).resolve()

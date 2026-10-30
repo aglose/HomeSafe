@@ -64,6 +64,16 @@ class BudgetCompareTest {
     }
 
     @Test
+    fun twoMonthsWithNothingSpentOrTheSameRefundsAreLevel() {
+        val quiet = budget("2026-10", List(12) { 0.0 }, current = true)
+        assertTrue(BudgetCompare.of(budget("2026-09", List(30) { 0.0 }, current = false, daysInMonth = 30), quiet)!!.level)
+        // Both months net refunds, $1 apart on $120 back.
+        val refunded = budget("2026-10", List(12) { -10.0 }, current = true)
+        val alsoRefunded = budget("2026-09", List(30) { if (it == 0) -121.0 else 0.0 }, current = false, daysInMonth = 30)
+        assertTrue(BudgetCompare.of(alsoRefunded, refunded)!!.level)
+    }
+
+    @Test
     fun onlyAnEarlierMonthAgainstTheOneUnderWayIsCompared() {
         assertNull(BudgetCompare.of(october, october))
         val september = budget("2026-09", List(30) { 80.0 }, current = false, daysInMonth = 30)

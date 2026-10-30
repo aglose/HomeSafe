@@ -128,6 +128,19 @@ class BudgetViewModel(
                 // Anything else (the server out of reach) leaves the month already shown in place.
                 _uiState.update { it.copy(loading = false, problem = (e as? BankSyncException)?.problem ?: BankProblem.OTHER, problemText = e.shown()) }
             }
+        readCurrent()
+    }
+
+    /**
+     * While an earlier month is up, the month under way kept beside it is read again too, so its
+     * bar and the comparison follow what the cards bring in. A failure leaves it as it was: the
+     * month on screen has already said what went wrong.
+     */
+    private suspend fun readCurrent() {
+        if (_uiState.value.month == null) return
+        repository.budget(null).onSuccess { budget ->
+            if (budget.isCurrentMonth) _uiState.update { it.copy(current = budget) }
+        }.onFailure { e -> if (e is CancellationException) throw e }
     }
 
     private fun show(budget: Budget) {
@@ -200,7 +213,7 @@ class BudgetViewModel(
                 }
                 val budget = result.getOrNull() ?: continue
                 _uiState.update { it.withBudget(budget) }
-                if (!budget.syncing) return@launch
+                if (!budget.syncing) return@launch readCurrent()
             }
             // Still at it after minutes: stop saying so; the next read shows how it ended.
             _uiState.update { s -> s.copy(budget = s.budget?.copy(syncing = false)) }

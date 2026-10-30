@@ -20,8 +20,8 @@ data class BudgetCompare(
     /** How far the month under way is ahead of the earlier one (behind, below zero). */
     val difference: Double get() = now - then
 
-    /** Within a fiftieth of each other: too near to call either more. */
-    val level: Boolean get() = abs(difference) < max(then, now) * LEVEL_SHARE
+    /** The same, or within a fiftieth of the larger (refunds count by their size): too near to call either more. */
+    val level: Boolean get() = difference == 0.0 || abs(difference) < max(abs(then), abs(now)) * LEVEL_SHARE
 
     companion object {
         private const val LEVEL_SHARE = 0.02
