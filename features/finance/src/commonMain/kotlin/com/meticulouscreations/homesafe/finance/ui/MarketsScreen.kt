@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -290,9 +290,12 @@ private fun MarketsDesk(
                             if (state.watchEntries.size > 1) {
                                 ChipRow(sorts, sort, { stringResource(it.label) }, FinanceTheme.colors.accent, onSort, Modifier.padding(bottom = 6.dp))
                             }
-                            state.holdings.forEach { HoldingsCard(it) }
-                            sortWatchEntries(state.watchEntries, state.quotes, sort).forEach { entry ->
-                                key(entry.symbol) {
+                            // A list of its own, scrolled in the rail, that composes only the rows in view: the
+                            // sheet's tickers and every one added in the app, as many as those come to.
+                            val entries = remember(state.watchEntries, state.quotes, sort) { sortWatchEntries(state.watchEntries, state.quotes, sort) }
+                            LazyColumn(Modifier.fillMaxWidth().heightIn(max = WATCHLIST_RAIL_HEIGHT)) {
+                                items(state.holdings, key = { "holdings-${it.currency}" }) { HoldingsCard(it) }
+                                items(entries, key = { it.symbol }) { entry ->
                                     QuoteRow(
                                         entry.symbol,
                                         state.quotes[entry.symbol],
@@ -318,6 +321,9 @@ private fun MarketsDesk(
         }
     }
 }
+
+/** How tall the desk's watchlist grows before it scrolls in the rail: about a laptop window's height, a dozen rows. */
+private val WATCHLIST_RAIL_HEIGHT = 860.dp
 
 /**
  * A symbol's price and chart, Robinhood's top of page: the rolling price, the change over the

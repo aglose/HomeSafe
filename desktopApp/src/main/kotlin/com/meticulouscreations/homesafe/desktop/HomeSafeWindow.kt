@@ -51,8 +51,10 @@ import kotlinx.coroutines.flow.debounce
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import java.awt.Dimension
-import java.awt.GraphicsEnvironment
 import java.awt.Taskbar
+import java.awt.Toolkit
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import kotlin.math.roundToInt
 
 /**
@@ -83,14 +85,27 @@ fun ApplicationScope.HomeSafeWindow(graph: AppGraph, state: WindowState, visible
         icon = icon,
     ) {
         // In the window's points, which zoom turns into fewer of the app's dp: scaled with it, so
-        // zooming in never narrows the app past the sidebar's width. No larger than the screen
-        // the window is on, which a zoomed-in minimum on a small laptop's would otherwise be.
-        LaunchedEffect(window, zoom.scale) {
-            val screen = GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
-            window.minimumSize = Dimension(
-                (MIN_WIDTH * zoom.scale).roundToInt().coerceAtMost(screen.width),
-                (MIN_HEIGHT * zoom.scale + TITLE_BAR_HEIGHT.value).roundToInt().coerceAtMost(screen.height),
-            )
+        // zooming in never narrows the app past the sidebar's width. No larger than the usable
+        // part of the screen the window is on, which a zoomed-in minimum on a small laptop's (or
+        // a smaller second display's) would otherwise be; worked out again as the window moves
+        // to another screen.
+        DisposableEffect(window, zoom.scale) {
+            fun fitMinimum() {
+                val config = window.graphicsConfiguration ?: return
+                val insets = Toolkit.getDefaultToolkit().getScreenInsets(config)
+                val usable = config.bounds
+                val minimum = Dimension(
+                    (MIN_WIDTH * zoom.scale).roundToInt().coerceAtMost(usable.width - insets.left - insets.right),
+                    (MIN_HEIGHT * zoom.scale + TITLE_BAR_HEIGHT.value).roundToInt().coerceAtMost(usable.height - insets.top - insets.bottom),
+                )
+                if (window.minimumSize != minimum) window.minimumSize = minimum
+            }
+            fitMinimum()
+            val onMove = object : ComponentAdapter() {
+                override fun componentMoved(e: ComponentEvent) = fitMinimum()
+            }
+            window.addComponentListener(onMove)
+            onDispose { window.removeComponentListener(onMove) }
         }
         LaunchedEffect(window) {
             if (isMacOs) {

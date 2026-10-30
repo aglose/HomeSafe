@@ -523,6 +523,13 @@ internal fun LazyListScope.walletTopicDeskItems(topic: WalletTopic, finance: Per
     }
 }
 
+/** The key of the desk item that holds [topic]'s sections, where a checkup's jump to one of them lands: see [walletTopicDeskItems]. */
+internal fun walletTopicDeskKey(topic: WalletTopic, finance: PersonalFinance, state: FinanceUiState): Any? {
+    if (topic == WalletTopic.SHEET_CHARTS) return null
+    val first = topicSections(topic, finance, state, flash = null).firstOrNull() ?: return null
+    return first.headerKey ?: first.key
+}
+
 /** A topic's section as a desk's panel: its heading at the top, its block in it. */
 @Composable
 private fun TopicPanel(section: TopicSection, modifier: Modifier = Modifier) {

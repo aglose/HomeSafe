@@ -316,7 +316,8 @@ private fun FinanceAppContent(
             val deskGutter = appPageGutter(maxWidth, reserved = DESK_MARGIN * 2, maxWidth = DESK_MAX_WIDTH) + DESK_MARGIN
             val top = status.calculateTopPadding() + if (desk) 68.dp else 60.dp
             val padding = if (desk) {
-                PaddingValues(start = deskGutter, end = deskGutter, top = top, bottom = nav.calculateBottomPadding() + 40.dp)
+                // Clear of the floating tabs where they still show: an iPad's host lists no app sections in a sidebar.
+                PaddingValues(start = deskGutter, end = deskGutter, top = top, bottom = nav.calculateBottomPadding() + if (inSidebar) 40.dp else 104.dp)
             } else {
                 PaddingValues(
                     start = (if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp) + gutter,

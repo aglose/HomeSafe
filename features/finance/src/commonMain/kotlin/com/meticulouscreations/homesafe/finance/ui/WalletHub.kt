@@ -418,6 +418,7 @@ internal fun WalletTopicScreen(
     listState: LazyListState = rememberLazyListState(),
 ) {
     val finance = state.finance
+    val desk = LocalFinanceDesk.current
     var flash by remember { mutableStateOf<WalletSection?>(null) }
     var jumped by rememberSaveable { mutableStateOf(false) }
     if (focus != null && finance != null) {
@@ -426,13 +427,13 @@ internal fun WalletTopicScreen(
             // A page just pushed may not be measured yet; with no viewport the search below can't step.
             snapshotFlow { listState.layoutInfo.viewportSize.height }.first { it > 0 }
             jumped = true
-            listState.scrollToKey(focus.key)
+            // On a desk a page's sections share one item, keyed by the first's header: that is where the jump lands.
+            listState.scrollToKey(if (desk) walletTopicDeskKey(topic, finance, state) ?: focus.key else focus.key)
             flash = focus
             delay(1_400)
             flash = null
         }
     }
-    val desk = LocalFinanceDesk.current
     LazyColumn(modifier.testTag("wallet_topic_page"), state = listState, contentPadding = contentPadding) {
         if (finance == null) {
             item(key = "loading") { WalletSkeleton() }
