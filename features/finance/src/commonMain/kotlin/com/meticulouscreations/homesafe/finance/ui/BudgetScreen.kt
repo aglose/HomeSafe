@@ -78,6 +78,7 @@ import com.meticulouscreations.homesafe.finance.domain.BucketSource
 import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.BudgetBucket
 import com.meticulouscreations.homesafe.finance.domain.BudgetCard
+import com.meticulouscreations.homesafe.finance.domain.BudgetCompare
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetLine
 import com.meticulouscreations.homesafe.finance.domain.BudgetPace
@@ -140,6 +141,9 @@ import homesafe.shared.generated.resources.fin_budget_category_shopping
 import homesafe.shared.generated.resources.fin_budget_category_transport
 import homesafe.shared.generated.resources.fin_budget_category_travel
 import homesafe.shared.generated.resources.fin_budget_category_utilities
+import homesafe.shared.generated.resources.fin_budget_compare_less
+import homesafe.shared.generated.resources.fin_budget_compare_level
+import homesafe.shared.generated.resources.fin_budget_compare_more
 import homesafe.shared.generated.resources.fin_budget_filter_all
 import homesafe.shared.generated.resources.fin_budget_flow_bills
 import homesafe.shared.generated.resources.fin_budget_flow_cards
@@ -186,7 +190,9 @@ import homesafe.shared.generated.resources.fin_budget_months_title
 import homesafe.shared.generated.resources.fin_budget_not_ready
 import homesafe.shared.generated.resources.fin_budget_open_linked_accounts
 import homesafe.shared.generated.resources.fin_budget_pace_caption
+import homesafe.shared.generated.resources.fin_budget_pace_caption_compare
 import homesafe.shared.generated.resources.fin_budget_pace_chart_description
+import homesafe.shared.generated.resources.fin_budget_pace_legend_current
 import homesafe.shared.generated.resources.fin_budget_pace_legend_limit
 import homesafe.shared.generated.resources.fin_budget_pace_legend_savings
 import homesafe.shared.generated.resources.fin_budget_pace_scrub
@@ -450,8 +456,15 @@ fun BudgetScreen(
                             }
                         }
                     }
+                    // The month under way, kept while an earlier one is up: the bars stay on the same months, and the two are set side by side.
+                    val current = state.current?.takeIf { it.isCurrentMonth } ?: budget
+                    val compareTo = current.takeIf { it.month != budget.month }
+                    if (current.history.any { it.spent > 0 }) {
+                        item(key = "months-h") { SectionHeader(stringResource(Res.string.fin_budget_months_title), subtitle = stringResource(Res.string.fin_budget_months_subtitle)) }
+                        item(key = "months") { MonthsBlock(current, showing = state.month ?: current.month, shown = budget, onShowMonth = onShowMonth) }
+                    }
                     item(key = "pace-h") { SectionHeader(stringResource(Res.string.fin_budget_pace_title), info = "budgetpace") }
-                    item(key = "pace") { PaceBlock(budget, pace) }
+                    item(key = "pace") { PaceBlock(budget, pace, compareTo) }
                     if (budget.config.cardPaidLines.isEmpty()) {
                         // Only for the month under way: an earlier one is looked back at, not set up.
                         if (budget.isCurrentMonth) {
@@ -499,10 +512,6 @@ fun BudgetScreen(
                     if (budget.merchants.isNotEmpty()) {
                         item(key = "where-h") { SectionHeader(stringResource(Res.string.fin_budget_where_title)) }
                         item(key = "where") { MerchantBlock(budget) }
-                    }
-                    if (budget.history.any { it.spent > 0 }) {
-                        item(key = "months-h") { SectionHeader(stringResource(Res.string.fin_budget_months_title), subtitle = stringResource(Res.string.fin_budget_months_subtitle)) }
-                        item(key = "months") { MonthsBlock(budget, onShowMonth) }
                     }
                     item(key = LIST_HEADER_KEY) {
                         SectionHeader(stringResource(Res.string.fin_budget_purchases_title), trailing = pluralStringResource(Res.plurals.fin_budget_purchases_count, shown.size, shown.size))
@@ -912,26 +921,19 @@ private fun SortRow(purchase: Purchase, people: List<String>, busy: Boolean, onP
     }
 }
 
-/** The month so far as a line, against the even pace that would end it at the limit and where this pace ends it instead. */
+/**
+ * The month so far as a line, against the even pace that would end it at the limit and where this
+ * pace ends it instead. An earlier month looked back at has the month under way, [current], drawn
+ * over it, day for day.
+ */
 @Composable
-private fun PaceBlock(budget: Budget, pace: BudgetPace) {
+private fun PaceBlock(budget: Budget, pace: BudgetPace, current: Budget?) {
     val colors = FinanceTheme.colors
     val tint = heatColor(pace.heat, colors.gain, colors.watch, colors.loss)
     val limit = pace.limit
     var scrub by remember { mutableStateOf<Int?>(null) }
-    // Day numbers as the chart's time axis: day 0 is the month's start, at nothing spent.
-    val soFar = remember(budget.daily) {
-        var total = 0.0
-        Series.of(
-            buildList {
-                add(0L to 0.0)
-                budget.daily.forEachIndexed { index, spent ->
-                    total += spent
-                    add(index + 1L to total)
-                }
-            },
-        )
-    }
+    val soFar = remember(budget.daily) { runningTotal(budget.daily) }
+    val currentLine = remember(current?.daily) { current?.daily?.let(::runningTotal) }
     // Remembered, so a scrub's recomposition hands the chart the same series and it doesn't redraw its geometry.
     val evenLine = remember(limit, budget.daysInMonth) { limit?.let { Series.of(listOf(0L to 0.0, budget.daysInMonth.toLong() to it)) } }
     val projectedLine = remember(budget.isCurrentMonth, pace.daysLeft, budget.day, budget.spent, budget.daysInMonth, pace.projected) {
@@ -941,8 +943,9 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
         add(ChartLine(soFar, tint, fill = true, width = 3f))
         if (evenLine != null) add(ChartLine(evenLine, colors.textTertiary, width = 1.5f, dashed = true))
         if (projectedLine != null) add(ChartLine(projectedLine, tint.copy(alpha = 0.7f), width = 2f, dashed = true))
+        if (currentLine != null) add(ChartLine(currentLine, colors.accent, width = 2.5f))
     }
-    val top = maxOf(limit ?: 0.0, pace.projected, budget.spent)
+    val top = maxOf(limit ?: 0.0, pace.projected, budget.spent, current?.spent ?: 0.0)
     // What a month has come to on average, from the months before this one that spent anything; one alone is no "usual".
     val usualMonth = remember(budget.history) { budget.history.map { it.spent }.filter { it > 0 }.takeIf { it.size >= 2 }?.average() }
     val rules = buildList {
@@ -956,6 +959,8 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
         Text(
             if (scrubbed != null) {
                 stringResource(Res.string.fin_budget_pace_scrub, FinanceFormat.dayOfMonth(budget.month, scrubbed).resolve(), FinanceFormat.money(soFar.values[scrubbed], 0))
+            } else if (current != null) {
+                stringResource(Res.string.fin_budget_pace_caption_compare, FinanceFormat.month(budget.month).resolve())
             } else {
                 stringResource(Res.string.fin_budget_pace_caption)
             },
@@ -976,6 +981,7 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
             listOfNotNull(
                 limit?.let { Triple(stringResource(Res.string.fin_budget_pace_legend_limit), FinanceFormat.money(it, 0), colors.textSecondary) },
                 pace.savingsLine?.let { Triple(stringResource(Res.string.fin_budget_pace_legend_savings), FinanceFormat.money(it, 0), colors.loss) },
+                current?.let { Triple(stringResource(Res.string.fin_budget_pace_legend_current), FinanceFormat.money(it.spent, 0), colors.accent) },
             ),
         )
         StatGrid(
@@ -991,6 +997,20 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
             },
         )
     }
+}
+
+/** Each day's spending added up, as the pace chart's line: day 0 is the month's start, at nothing spent. */
+private fun runningTotal(daily: List<Double>): Series {
+    var total = 0.0
+    return Series.of(
+        buildList {
+            add(0L to 0.0)
+            daily.forEachIndexed { index, spent ->
+                total += spent
+                add(index + 1L to total)
+            }
+        },
+    )
 }
 
 /** One bucket: what it has spent against its limit, as a meter that heats as the limit nears. Tapping it filters the purchases to it. */
@@ -1226,20 +1246,45 @@ private fun MerchantBlock(budget: Budget) {
     }
 }
 
-/** The months before this one as bars, each against the limit behind it. Tapping one looks back at it. */
+/**
+ * The month under way and the five before it as bars, each against the limit behind it. Tapping
+ * one looks back at it, and the same months stay on the chart while it is up; with an earlier
+ * month [shown], a line under the bars says how the month under way stands against it.
+ */
 @Composable
-private fun MonthsBlock(budget: Budget, onShowMonth: (String?) -> Unit) {
+private fun MonthsBlock(current: Budget, showing: String, shown: Budget, onShowMonth: (String?) -> Unit) {
     val colors = FinanceTheme.colors
-    val limit = budget.config.limits.total?.takeIf { it > 0 }
-    val months = budget.history.map { it.month to it.spent } + (budget.month to budget.spent)
-    BarChart(
-        bars = months.map { (month, spent) ->
-            Bar(FinanceFormat.month(month).resolve(), spent, if (limit != null && spent > limit) colors.loss else colors.gain, secondary = limit, secondaryColor = colors.hairline)
-        },
-        modifier = Modifier.fillMaxWidth().padding(horizontal = PageGutter).height(150.dp),
-        selected = months.lastIndex,
-        onSelect = { index -> months.getOrNull(index)?.first?.takeIf { it != budget.month }?.let(onShowMonth) },
-    )
+    val limit = current.config.limits.total?.takeIf { it > 0 }
+    val months = current.history.map { it.month to it.spent } + (current.month to current.spent)
+    Column(Modifier.fillMaxWidth()) {
+        BarChart(
+            bars = months.map { (month, spent) ->
+                Bar(FinanceFormat.month(month).resolve(), spent, if (limit != null && spent > limit) colors.loss else colors.gain, secondary = limit, secondaryColor = colors.hairline)
+            },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = PageGutter).height(150.dp).testTag("finance_budget_months"),
+            // The month tapped, straight away: the page catches up once it is read.
+            selected = months.indexOfFirst { it.first == showing }.takeIf { it >= 0 },
+            onSelect = { index -> months.getOrNull(index)?.first?.let { month -> onShowMonth(month.takeIf { it != current.month }) } },
+        )
+        // Only once the month tapped is the one read, so the line never speaks of the month before it.
+        val compare = remember(shown, current, showing) { shown.takeIf { it.month == showing }?.let { BudgetCompare.of(it, current) } }
+        if (compare != null) {
+            val day = FinanceFormat.dayOfMonth(current.month, compare.day).resolve()
+            val then = FinanceFormat.month(shown.month).resolve()
+            val now = FinanceFormat.money(compare.now, 0)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                when {
+                    compare.level -> stringResource(Res.string.fin_budget_compare_level, day, now, then)
+                    compare.difference > 0 -> stringResource(Res.string.fin_budget_compare_more, day, now, FinanceFormat.money(compare.difference, 0), then, FinanceFormat.money(compare.then, 0))
+                    else -> stringResource(Res.string.fin_budget_compare_less, day, now, FinanceFormat.money(-compare.difference, 0), then, FinanceFormat.money(compare.then, 0))
+                },
+                style = FinanceTheme.type.body,
+                color = colors.textPrimary,
+                modifier = Modifier.padding(horizontal = PageGutter).testTag("finance_budget_compare"),
+            )
+        }
+    }
 }
 
 @Composable
