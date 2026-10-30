@@ -78,6 +78,17 @@ interface WebRtcPeer {
     fun close()
 }
 
+/**
+ * How long a peer's video may stay disabled ([WebRtcPeer.setVideoEnabled]) before the engine
+ * stops receiving and decoding it. libwebrtc decodes a track nobody draws, so without this a
+ * Home grid left under a drawer app decoded every camera for the whole idle window
+ * (docs/perf-tracing.md); a glance away and back inside the grace never pauses.
+ */
+internal const val RECEIVE_GRACE_MS = 5_000L
+
+/** How often a stop the grace asked for, but that had no track or first frame to act on, is tried again. */
+internal const val RECEIVE_RETRY_MS = 1_000L
+
 fun interface WebRtcPeerFactory {
     /** A new peer that will offer to receive video, and audio too when [audio]. */
     fun create(audio: Boolean): WebRtcPeer

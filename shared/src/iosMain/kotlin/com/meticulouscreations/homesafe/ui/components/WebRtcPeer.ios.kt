@@ -1,8 +1,13 @@
 package com.meticulouscreations.homesafe.ui.components
 
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSNumber
 import platform.UIKit.UIView
@@ -55,6 +60,14 @@ interface IosWebRtcPeer {
 
     fun setVideoEnabled(enabled: Boolean)
 
+    /**
+     * Stops receiving the remote video, decoder and all, or starts it again, with the connection
+     * kept up; restarted, the picture moves again at the stream's next keyframe. Only asked of a
+     * peer whose answer is applied and whose first frame has come. A restart that fails reports
+     * [IosWebRtcPeerListener.onFailed], since the video would otherwise stay still for good.
+     */
+    fun setVideoReceiving(receiving: Boolean)
+
     fun setMuted(muted: Boolean)
 
     /** Asks the engine for its statistics report; [completion] gets it, or null from a peer that is closed. */
@@ -74,7 +87,14 @@ object IosWebRtc {
     var peerFactory: IosWebRtcPeerFactory? = null
 }
 
-/** [WebRtcPeer] over a Swift-side [IosWebRtcPeer], turning its callbacks into the state the common join logic reads. */
+/**
+ * [WebRtcPeer] over a Swift-side [IosWebRtcPeer], turning its callbacks into the state the common join logic reads.
+ *
+ * Video left disabled for [RECEIVE_GRACE_MS] stops being received and decoded
+ * ([IosWebRtcPeer.setVideoReceiving]) until it is enabled again, as on Android: libwebrtc decodes
+ * a track nobody draws, so Home's cameras would otherwise decode under every other screen for
+ * the whole idle window. Not before the first frame: a join waits for that.
+ */
 internal class IosWebRtcPeerAdapter(factory: IosWebRtcPeerFactory, audio: Boolean) : WebRtcPeer {
 
     private val _state = MutableStateFlow<WebRtcPeerState>(WebRtcPeerState.Connecting)
@@ -87,6 +107,13 @@ internal class IosWebRtcPeerAdapter(factory: IosWebRtcPeerFactory, audio: Boolea
     override val hasAudio: StateFlow<Boolean> = _hasAudio.asStateFlow()
 
     private var closed = false
+
+    private val scope = MainScope()
+    private var videoEnabled = true
+
+    /** Whether the bridge was last told to receive the video; see the class doc. */
+    private var receiving = true
+    private var stopReceivingJob: Job? = null
 
     private val listener = object : IosWebRtcPeerListener {
         override fun onConnected() {
@@ -138,7 +165,33 @@ internal class IosWebRtcPeerAdapter(factory: IosWebRtcPeerFactory, audio: Boolea
         if (!closed) peer.detachRenderer(container)
     }
 
-    override fun setVideoEnabled(enabled: Boolean) = peer.setVideoEnabled(enabled)
+    override fun setVideoEnabled(enabled: Boolean) {
+        if (closed) return
+        peer.setVideoEnabled(enabled)
+        if (videoEnabled == enabled) return
+        videoEnabled = enabled
+        stopReceivingJob?.cancel()
+        stopReceivingJob = null
+        if (enabled) {
+            setReceiving(true)
+        } else {
+            stopReceivingJob = scope.launch {
+                delay(RECEIVE_GRACE_MS)
+                // A first frame still to come once the grace is up: try again until it has come,
+                // or until enabling the video or closing the peer cancels this.
+                while (!setReceiving(false)) delay(RECEIVE_RETRY_MS)
+            }
+        }
+    }
+
+    /** Tells the bridge to start or stop receiving the video; false when it can't be stopped yet (no first frame). */
+    private fun setReceiving(receive: Boolean): Boolean {
+        if (closed || receiving == receive) return true
+        if (!receive && !_firstFrameReceived.value) return false
+        receiving = receive
+        peer.setVideoReceiving(receive)
+        return true
+    }
 
     override fun setMuted(muted: Boolean) = peer.setMuted(muted)
 
@@ -157,6 +210,7 @@ internal class IosWebRtcPeerAdapter(factory: IosWebRtcPeerFactory, audio: Boolea
     override fun close() {
         if (closed) return
         closed = true
+        scope.cancel()
         peer.close()
         _state.value = WebRtcPeerState.Closed
     }

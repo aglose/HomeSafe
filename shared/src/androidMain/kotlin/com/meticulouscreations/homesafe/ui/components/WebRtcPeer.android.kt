@@ -31,12 +31,6 @@ import kotlin.coroutines.resumeWithException
 
 private const val LOG_TAG = "HomeSafeLive"
 
-/** How long a peer's video may go undrawn before its receive stream (and decoder) is stopped; see [AndroidWebRtcPeer]. */
-internal const val RECEIVE_GRACE_MS = 5_000L
-
-/** How often a stop the grace asked for, but that had no track or first frame to act on, is tried again. */
-private const val RECEIVE_RETRY_MS = 1_000L
-
 /**
  * A receive-only libwebrtc peer connection, exposed to the common join logic as [WebRtcPeer].
  *

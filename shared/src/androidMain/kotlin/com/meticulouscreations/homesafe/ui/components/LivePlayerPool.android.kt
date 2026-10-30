@@ -230,9 +230,12 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
             surface === boundSurface && boundSurfaceHasFrame
         }
         if (!showing || !surface.isAvailable) return
-        val frame = traceSection("live.keepFrame", { "$key ${surface.width}x${surface.height}" }) {
-            (surface as? WebRtcTextureRenderer)?.snapshot() ?: runCatching { surface.bitmap }.getOrNull()
-        } ?: return
+        // A renderer's own recent copy costs nothing now; reading the layer back waits on the render thread.
+        val frame = (surface as? WebRtcTextureRenderer)?.recentFrame()
+            ?: traceSection("live.keepFrame", { "$key ${surface.width}x${surface.height}" }) {
+                (surface as? WebRtcTextureRenderer)?.snapshot() ?: runCatching { surface.bitmap }.getOrNull()
+            }
+            ?: return
         keptFrame = frame
         keptFrameGeneration = generation
     }

@@ -555,6 +555,8 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         dropStandby()
         renderers.keys.forEach(old::removeRenderer)
         old.setMuted(true)
+        // Nobody draws a standby: after the peer's grace it stops decoding until it is adopted again.
+        old.setVideoEnabled(false)
         val parked = StandbyPeer(old, endpoint)
         parked.watchJob = scope.launch {
             old.state.first { it != WebRtcPeerState.Connected }

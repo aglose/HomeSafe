@@ -39,7 +39,7 @@ screen for the GPU. Nothing here claims a 10× on every number.
 
 ## The findings
 
-### 1. Home's cameras kept decoding behind every other screen (fixed)
+### 1. Home's cameras kept decoding behind every other screen (fixed on Android and iOS)
 
 The trace's busiest threads over a tour of the app were not the app's UI threads but video: the
 H.264 decoder threads (in the media HAL on an emulator), libwebrtc's `decoder-texture` (each frame
@@ -74,9 +74,24 @@ coming back after more than 5 s away now shows still pictures for up to about a 
 where it used to move at once: that is the price of the CPU saved, and `RECEIVE_GRACE_MS` and the
 cameras' keyframe intervals are the knobs.
 
-Not done: iOS presumably has the same behaviour (its WebRTC is libwebrtc too); not measured.
+iOS had the same behaviour (its WebRTC is libwebrtc too), but its build of libwebrtc (the
+`stasel/WebRTC` package) has no `shouldReceive`. So after the same grace (`RECEIVE_GRACE_MS`, now
+common, with the timing in `IosWebRtcPeerAdapter`) the Swift bridge renegotiates the video
+transceiver to inactive, which stops the receive stream and its decoder in the same way. The
+renegotiation is local only: it applies the server's own answer with the video section marked
+`a=inactive`, so go2rtc never sees a change and goes on sending. Resuming applies the answer as
+it came. A resume that fails, or that brings no frame within 8 s, reports the peer failed, so
+the holder joins again rather than leaving a still (or black) card. iOS's standby peer is also
+disabled now, as Android's is.
 
-### 2. Tearing Home down waits on the GPU, three times (smaller now, not fixed)
+Checked on an iOS 26.1 simulator against the real server (2026-10-29): leaving Home for Settings,
+a camera's detail screen or a drawer app pauses each peer 5 s later; coming back, each
+renegotiates in under 20 ms and decodes again 0.06–1.84 s later (the bridge logs `video moving
+again`), and a promoted standby comes back the same way. Not measured: what the pause saves on
+iOS. Decoding is in hardware there (VideoToolbox), and on the simulator the app's CPU can't be
+separated from the screen it is showing; a real phone and Instruments would answer it.
+
+### 2. Tearing Home down waits on the GPU, three times (the largest wait fixed)
 
 Opening Weather on a fresh install once took a **1,043 ms** frame. `trace_report.py drill` on it:
 `Compose:applyChanges` 1,017 ms on the main thread, asleep for 992 ms of it. Removing Home's
@@ -89,8 +104,30 @@ thread, and the RenderThread was compiling the weather sky's shaders at that mom
 The app's own sections (`live.keepFrame`, `live.renderer.releaseEglSurface`, `live.renderer.release`,
 `live.unbindRenderer`) now put names on those waits. With the decoder off the GPU (finding 1) the
 worst frame opening any drawer app on a fresh install was 153 ms; a warm teardown's sections total
-about 50 ms. What would remove the rest: take `keepFrame`'s picture without a synchronous read-back
-(libwebrtc's `EglRenderer.addFrameListener` hands over a scaled bitmap on its own thread).
+about 50 ms. Of those, `live.keepFrame` was the largest: 3.7–4.5 ms a camera on average and up to
+15.6 ms, against under 1 ms for releasing the EGL surface (`back-pr` and `final-a` traces).
+
+Fixed for WebRTC: each `WebRtcTextureRenderer` now copies what it draws about once a second
+(`FRAME_COPY_INTERVAL_NS`) through libwebrtc's `EglRenderer.addFrameListener`, which reads the
+frame back on libwebrtc's render thread, at the view's width. `keepFrame` keeps that copy and
+reads the layer back only when there is none yet, so `live.keepFrame` now shows up only for HLS
+and in a renderer's first second. The kept picture can be up to a second older than the last one
+shown, which is invisible on a card that has been away long enough for its stream to pause.
+
+Measured with `scripts/perf/back_to_home.py` (it now marks each `open_finance:<n>`) and
+`trace_report.py teardown`, the same benchmarkRelease build with and without the change, CiApi34,
+`-gpu host`, three cameras on WebRTC, rounds 1–5 (round 0 is the first open after an install, and
+in each build its longest frame was a first-time cost: shader compiles before, Finance's first
+layout after):
+
+| Opening Finance over Home | Before | After |
+| --- | --- | --- |
+| `live.keepFrame` on the main thread | 3 calls, 8–34 ms | none |
+| All the players' teardown sections (median) | 28.6 ms | 10.9 ms |
+| Longest frame (median) | 48.3 ms | 34.0 ms |
+| The renderers' `EglThread`s over the whole run | 35.4 ms CPU/s | 32.5 ms CPU/s |
+
+The copies cost nothing that shows on the renderers' threads.
 
 ### 3. Shader compiles on first use (mostly the emulator)
 
@@ -293,7 +330,8 @@ python3 scripts/perf/trace_report.py steps build/perf/tour --top 10
 The first `tour.py` run records where everything is; `record.sh … --replay` is the measured run.
 For the at-rest walk: `tour.py <package> --replay --steps none`, then
 `JOURNEY=scripts/perf/idle.py scripts/perf/record.sh build/perf/idle`; for the return to Home,
-`JOURNEY=scripts/perf/back_to_home.py` and `trace_report.py back`. Compare like with like: a
+`JOURNEY=scripts/perf/back_to_home.py`, then `trace_report.py back` (cameras moving again) and
+`trace_report.py teardown` (Home being taken down as Finance opens). Compare like with like: a
 first run after an install (no shader cache) against another, later runs against later runs.
 
 ## Carrying this to another project
