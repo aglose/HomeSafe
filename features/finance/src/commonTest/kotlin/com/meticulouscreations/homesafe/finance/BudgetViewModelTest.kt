@@ -236,6 +236,29 @@ class BudgetViewModelTest {
     }
 
     @Test
+    fun theMonthUnderWayIsKeptBesideAnEarlierOneAndFollowsChangesMadeThere() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = shown(repo)
+        assertEquals(october, vm.uiState.value.current)
+        repo.months.clear()
+        repo.months += Result.success(september)
+        vm.showMonth("2026-09")
+        runCurrent()
+        // September on screen, October still at hand for the chart and the comparison.
+        assertEquals("2026-09", vm.uiState.value.budget?.month)
+        assertEquals(october, vm.uiState.value.current)
+
+        // A tag answered with October as it now stands is kept as that, while September stays up.
+        val tagged = october.copy(spent = october.spent + 10)
+        repo.changed = Result.success(tagged)
+        vm.tag("p-1-0", BucketId.Family, remember = false)
+        runCurrent()
+        assertEquals("2026-09", vm.uiState.value.budget?.month)
+        assertEquals(tagged, vm.uiState.value.current)
+        vm.setActive(false)
+    }
+
+    @Test
     fun askingForTheCardsToBeReadFollowsTheReadUntilItIsDone() = runTest(dispatcher) {
         val repo = FakeRepository()
         val vm = shown(repo)
