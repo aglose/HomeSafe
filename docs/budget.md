@@ -209,7 +209,9 @@ was made. The app is unverified, so sign-in shows Google's "hasn't verified this
 2. Nothing more to do on the consent screen. The relay asks only for `gmail.readonly`.
 3. On the Mac: `python3 relay/gmail_link.py --client relay/client_secret.json --mailbox andrew --out relay/amazon.env`,
    and sign in as that mailbox's owner. Run it again with another `--mailbox` for each mailbox.
-   The tokens go into the file and are never printed.
+   The tokens go into the file and are never printed. A python.org Python that never ran its
+   "Install Certificates" step fails the last call with `CERTIFICATE_VERIFY_FAILED`: run it with
+   macOS's own `/usr/bin/python3` instead.
 4. Copy `relay/amazon.env` next to the relay's `docker-compose.yml` on the box and recreate the
    container. The first read brings the last `AMAZON_LOOKBACK_DAYS` (120) days of emails.
 
