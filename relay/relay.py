@@ -10052,10 +10052,13 @@ AMAZON_QUERY = ('from:amazon.com {subject:Ordered subject:Shipped subject:"Your 
 # search's pages it lists to find them.
 AMAZON_MAX_EMAILS = 400
 AMAZON_MAX_PAGES = 30
+# Between one email and the next, so a first read of months of them stays under Gmail's rate.
+AMAZON_FETCH_GAP = 0.3
 AMAZON_SYNCED_KEY = "amazon_synced"
 # Bumped when the emails are read differently, so the ones read already are read again (see
 # `amazon_reread`). 2: Amazon's own categories, since its emails stopped naming the items (2026).
-AMAZON_PARSER = 2
+# 3: an email confirming several orders gives each its own categories and total.
+AMAZON_PARSER = 3
 AMAZON_PARSER_KEY = "amazon_parser"
 # A charge comes the day of the order or after it, up to a month later for one that waited for
 # stock; a shipment's charge within a few days of its email either way.
@@ -10066,7 +10069,9 @@ AMAZON_SPLIT_CANDIDATES = 10
 AMAZON_SPLIT_MOST = 4
 AMAZON_NEEDS = ("essential", "discretionary")
 # What the model is asked about at once.
-AMAZON_MODEL_BATCH = 20
+# Twenty at once, the box's model miscounted; eight it answers. A batch it still answers wrongly is
+# asked about one at a time.
+AMAZON_MODEL_BATCH = 8
 _amazon_lock = threading.Lock()
 _gmail_access: dict[str, tuple[str, float]] = {}
 
@@ -10079,8 +10084,8 @@ _AMAZON_SUBJECT_TITLE = re.compile(r"[\"“](.+?)[\"”]")
 # The marks Amazon puts round order numbers and counts to keep their direction, which no reader sees.
 _AMAZON_INVISIBLE = re.compile("[\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 # Amazon's emails since 2026 name no items, only how many there were and Amazon's categories for
-# them: "1 Hardware item", "2 Home and Tools items", "2 items: 1 Hardware, 1 Vitamins", and in the
-# subject "Ordered 2 items: Beverages, Dairy".
+# them: "1 Kitchen item", "2 Kitchen and Dining items", "2 items: 1 Kitchen, 1 Coffee", and in the
+# subject "Ordered 2 items: Pasta, Spices".
 _AMAZON_COUNTED_CATEGORIES = re.compile(r"^(\d{1,3}) items?:\s*(.+)$", re.IGNORECASE)
 _AMAZON_CATEGORIES_LINE = re.compile(r"^(\d{1,3}) (.+?) items?$", re.IGNORECASE)
 _AMAZON_SUBJECT_CATEGORIES = re.compile(r"^(?:ordered|shipped)(?: \d{1,3} items?)?:\s*(.+)$", re.IGNORECASE)
@@ -10092,9 +10097,9 @@ _AMAZON_NOT_TITLE = re.compile(
     r"\$|total|subtotal|item\(s\)|shipping|tax|grand total|order total|payment|visa|mastercard|amex|discover|gift card|promotion|your )",
     re.IGNORECASE,
 )
-# The charges that aren't orders: AWS, the Prime membership, Prime Video, Kindle Unlimited and Audible.
+# The charges that aren't orders: AWS, the Prime membership, Prime Video, Kindle (books and Unlimited) and Audible.
 _AMAZON_CHARGE = re.compile(r"amazon|amzn", re.IGNORECASE)
-_AMAZON_NOT_ORDER = re.compile(r"web services|\baws\b|\bprime\b|kindle (unlimited|unltd)|audible", re.IGNORECASE)
+_AMAZON_NOT_ORDER = re.compile(r"web services|\baws\b|\bprime\b|kindle|audible", re.IGNORECASE)
 # What the word lists sort on their own: the first that has a word of the title's decides. Anything
 # else goes to the model. Clothes, kitchenware and chargers are left to it: either can be true.
 _AMAZON_NEED_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = tuple((need, re.compile(rf"\b({words})", re.IGNORECASE)) for need, words in (
@@ -10111,7 +10116,8 @@ _AMAZON_NEED_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = tuple((need, re.co
                   r"snacks?|rice|pasta|olive oil|flour|sugar|organic|grocer|"
                   # Amazon's categories, which its emails name in place of the items.
                   r"beverages|dairy|snack foods|pantry|gourmet|breakfast|produce|bakery|frozen|meat|nutrition|"
-                  r"hair care|oral care|skin care|health care|health & household|household supplies|personal care|baby|pet supplies|medical"),
+                  r"hair care|oral care|skin care|health care|health & household|household supplies|personal care|baby|pet supplies|medical|"
+                  r"drugstore|sunscreen|sunblock|peanut butter|spread\b"),
 ))
 
 
@@ -10131,8 +10137,15 @@ def amazon_money(text: str) -> float:
     return float(text.replace(",", ""))
 
 
+def amazon_total(text: str) -> float | None:
+    """What an email (or one order's part of it) says was paid: a grand total beats an order total beats a plain one; the last of them, which comes after any subtotals."""
+    totals = [(m.group(1).lower(), amazon_money(m.group(2))) for m in _AMAZON_TOTAL.finditer(text)]
+    return next((amount for rank in ("grand total", "order total") for label, amount in reversed(totals) if label == rank),
+                totals[-1][1] if totals else None)
+
+
 def amazon_category_names(text: str) -> list[str]:
-    """Amazon's list of categories as names: "Home and Tools" is two, "Travel Gear, and more" one."""
+    """Amazon's list of categories as names: "Kitchen and Dining" is two, "Camping Gear, and more" one."""
     names = re.split(r",\s*(?:and\s+)?|\s+and\s+", text.strip())
     return [n.strip() for n in names if n.strip() and n.strip().lower() not in ("more", "other", "others")]
 
@@ -10150,8 +10163,14 @@ def amazon_categories(subject: str, lines: list[str]) -> list[dict[str, Any]]:
     for line in lines:
         counted = _AMAZON_COUNTED_CATEGORIES.match(line)
         if counted:
-            parts = [re.match(r"^(\d{1,3}) (.+)$", part.strip()) for part in counted.group(2).split(",")]
-            items = [{"title": m.group(2).strip(), "quantity": int(m.group(1)), "price": None} for m in parts if m and m.group(2).strip().lower() not in ("other", "others", "other items")]
+            parts = [part.strip() for part in counted.group(2).split(",") if part.strip()]
+            items = []
+            for part in parts:
+                # "2 items: 1 Kitchen, 1 Coffee" counts each; "1 item: Pasta" counts only the whole.
+                each = re.match(r"^(\d{1,3}) (.+)$", part)
+                title, quantity = (each.group(2).strip(), int(each.group(1))) if each else (part, int(counted.group(1)) if len(parts) == 1 else 1)
+                if title.lower() not in ("other", "others", "other items") and not title.lower().startswith("and "):
+                    items.append({"title": title, "quantity": quantity, "price": None})
             if items:
                 return items
         named = _AMAZON_CATEGORIES_LINE.match(line)
@@ -10175,7 +10194,7 @@ def parse_amazon_email(subject: str, text: str) -> dict[str, Any] | None:
     the subject; failing that (Amazon's emails since 2026 name no items), Amazon's categories.
     """
     subject = _AMAZON_INVISIBLE.sub("", subject)
-    # Plain text writes amounts "24.35 USD" where the HTML has "$24.35".
+    # Plain text writes amounts "19.80 USD" where the HTML has "$19.80".
     text = re.sub(r"(?<![\d$.])(\d{1,3}(?:,\d{3})*\.\d{2})\s?USD\b", r"$\1", _AMAZON_INVISIBLE.sub("", text))
     head = subject.strip().lower()
     # Only an order's or a shipment's own email: "Included with your Amazon order" and the like
@@ -10208,13 +10227,32 @@ def parse_amazon_email(subject: str, text: str) -> dict[str, Any] | None:
         items = [{"title": title, "quantity": 1, "price": None} for title in _AMAZON_SUBJECT_TITLE.findall(subject)[:1]]
     if not items:
         items = amazon_categories(subject, lines)
-    totals = [(m.group(1).lower(), amazon_money(m.group(2))) for m in _AMAZON_TOTAL.finditer(text)]
-    # A grand total beats an order total beats a plain one; the last of them, which comes after any subtotals.
-    total = next((amount for rank in ("grand total", "order total") for label, amount in reversed(totals) if label == rank),
-                 totals[-1][1] if totals else None)
+    total = amazon_total(text)
     shipment = _AMAZON_SHIPMENT_TOTAL.search(text)
-    return {"kind": kind, "orders": orders, "items": items, "total": None if kind == "shipped" else total,
-            "shipment_total": amazon_money(shipment.group(1)) if shipment else (total if kind == "shipped" else None)}
+    parsed = {"kind": kind, "orders": orders, "items": items, "total": None if kind == "shipped" else total,
+              "shipment_total": amazon_money(shipment.group(1)) if shipment else (total if kind == "shipped" else None)}
+    if len(orders) > 1:
+        parsed["per_order"] = amazon_order_blocks(lines)
+    return parsed
+
+
+def amazon_order_blocks(lines: list[str]) -> dict[str, dict[str, Any]]:
+    """
+    What an email about several orders at once ("Ordered 17 items: …") says of each, by order
+    number: its block's categories, which come just before its "Order #", and its total, just
+    after it. An order can have more than one block (shipped in parts), and they add up.
+    """
+    marks = [(i, m.group(1)) for i, line in enumerate(lines) for m in [_AMAZON_ORDER_ID.search(line)] if m]
+    blocks: dict[str, dict[str, Any]] = {}
+    for k, (at, order_id) in enumerate(marks):
+        before = lines[marks[k - 1][0] + 1 if k else 0:at]
+        after = "\n".join(lines[at + 1:marks[k + 1][0] if k + 1 < len(marks) else len(lines)])
+        block = blocks.setdefault(order_id, {"items": [], "total": None})
+        block["items"] += amazon_categories("", list(reversed(before)))
+        total = amazon_total(after)
+        if total is not None and block["total"] is None:
+            block["total"] = total
+    return blocks
 
 
 def gmail_parts(payload: dict[str, Any]) -> tuple[str, str]:
@@ -10251,8 +10289,9 @@ def gmail_token(mailbox: str, now: float) -> str:
 
 
 def gmail_get(mailbox: str, path: str, now: float, **params: Any) -> dict[str, Any]:
-    # Gmail answers 403 or 429 for a burst over its per-user rate; that passes in seconds.
-    for wait in (2, 5, 0):
+    # Gmail answers 403 or 429 for a burst over its per-user rate. Reading a few hundred emails in a
+    # row brings that on (2026-10-29), and it passes within a minute.
+    for wait in (5, 20, 60, 0):
         r = requests.get(f"{GMAIL_API}{path}", params=params, headers={"Authorization": f"Bearer {gmail_token(mailbox, now)}"}, timeout=20)
         if r.status_code not in (403, 429) or "rate" not in r.text.lower() or not wait:
             break
@@ -10262,15 +10301,25 @@ def gmail_get(mailbox: str, path: str, now: float, **params: Any) -> dict[str, A
     return r.json()
 
 
-def amazon_store(mailbox: str, message_id: str, day: str, parsed: dict[str, Any] | None, now: float) -> None:
+def amazon_store(mailbox: str, message_id: str, day: str, parsed: dict[str, Any] | None, now: float, record: bool = True) -> None:
     """
     Keeps what one email said. An order email sets the order's day, total and items; a shipment
     email adds its total as a shipment and, until the order's own email is read, the items it
     names that the order doesn't have yet (each shipment can carry different ones). Items whose
     title is unchanged keep how they were sorted.
     """
+    if parsed is not None and parsed.get("per_order"):
+        # Each order of an email about several as though it had its own email; a shipment's total is kept per order.
+        with_db(lambda c: (c.execute("INSERT OR REPLACE INTO amazon_emails VALUES (?,?,?,?)", (message_id, mailbox, now, parsed["kind"])), c.commit()))
+        for order_id, block in parsed["per_order"].items():
+            one = {"kind": parsed["kind"], "orders": [order_id], "items": block["items"],
+                   "total": block["total"] if parsed["kind"] == "ordered" else None, "shipment_total": block["total"] if parsed["kind"] == "shipped" else None}
+            amazon_store(mailbox, f"{message_id}:{order_id}", day, one, now, record=False)
+        return
+
     def write(c: sqlite3.Connection) -> None:
-        c.execute("INSERT OR REPLACE INTO amazon_emails VALUES (?,?,?,?)", (message_id, mailbox, now, parsed["kind"] if parsed else None))
+        if record:
+            c.execute("INSERT OR REPLACE INTO amazon_emails VALUES (?,?,?,?)", (message_id, mailbox, now, parsed["kind"] if parsed else None))
         if parsed is None:
             c.commit()
             return
@@ -10321,6 +10370,7 @@ def amazon_read_mailbox(mailbox: str, now: float) -> int:
             break
     fresh = fresh[:AMAZON_MAX_EMAILS]
     for message_id in fresh:
+        time.sleep(AMAZON_FETCH_GAP)
         message = gmail_get(mailbox, f"/messages/{message_id}", now, format="full")
         payload = message.get("payload") or {}
         plain, markup = gmail_parts(payload)
@@ -10381,12 +10431,12 @@ def amazon_sort_items(ask: Callable[[list[str]], list[str] | None] | None = None
         batch = left[start:start + AMAZON_MODEL_BATCH]
         try:
             needs = ask([title for _, _, title in batch])
+            if needs is None:
+                needs = [(ask([title]) or [None])[0] for _, _, title in batch]
         except Exception as e:
             log.warning("amazon: the model couldn't sort %d items: %s", len(batch), e)
             break
-        if needs is None:
-            break
-        verdicts += [(need, "model", order_id, pos, title) for need, (order_id, pos, title) in zip(needs, batch)]
+        verdicts += [(need, "model", order_id, pos, title) for need, (order_id, pos, title) in zip(needs, batch) if need]
     # By title too: an email read meanwhile may have put another item at that place, which this verdict isn't about.
     with_db(lambda c: (c.executemany("UPDATE amazon_items SET need=?, need_by=? WHERE order_id=? AND pos=? AND title=? AND need IS NULL", verdicts), c.commit()))
     return len(verdicts)
@@ -10462,7 +10512,9 @@ def amazon_match(charges: list[tuple[str, str, float]], orders: list[dict[str, A
     total)]. In this order, each charge and each shipment used at most once:
 
     1. "shipment": a shipment's email gave its total, and a charge of exactly that came within a
-       few days of it.
+       few days of it; or two or three shipments' totals add up to a charge (Amazon charges
+       shipments that go out together at once), those of one order first. Such a charge says
+       which orders it paid toward and how much of it each (`parts`, in cents).
     2. "order": a charge of exactly what the order still owes (its total, less the shipments
        matched to it) came within a month of it; "split" when shipments had paid some of it.
     3. "split": two to four charges in that month add up to exactly what it still owes (Amazon
@@ -10493,8 +10545,34 @@ def amazon_match(charges: list[tuple[str, str, float]], orders: list[dict[str, A
             found[charge_id] = {"order": order_id, "match": "shipment"}
             shipped.add((order_id, n))
 
+    # Every charge's every group of two or three shipments adding up to it, ranked together and
+    # taken best first, as the single shipments were: one order's shipments before several
+    # orders', then the nearest, whichever charge they are for.
+    left = [(order["id"], n, day, _cents(total)) for order in orders for n, (day, total) in enumerate(order.get("shipments") or []) if (order["id"], n) not in shipped]
+    groups = []
+    for charge in (c for c in charges if c[0] not in found):
+        near = sorted((s for s in left if within(s[2], AMAZON_SHIPMENT_WINDOW, charge) and 0 < s[3] < _cents(charge[2])),
+                      key=lambda s: (abs(_days_between(s[2], charge[1])), s[0], s[1]))[:AMAZON_SPLIT_CANDIDATES]
+        for size in (2, 3):
+            for group in combinations(near, size):
+                if sum(s[3] for s in group) == _cents(charge[2]):
+                    groups.append(((len({s[0] for s in group}), sum(abs(_days_between(s[2], charge[1])) for s in group), charge[1], charge[0]), charge, group))
+    for _, charge, group in sorted(groups, key=lambda g: g[0]):
+        if charge[0] in found or any((s[0], s[1]) in shipped for s in group):
+            continue
+        parts: dict[str, int] = {}
+        for order_id, n, _, cents in group:
+            parts[order_id] = parts.get(order_id, 0) + cents
+            shipped.add((order_id, n))
+        found[charge[0]] = {"order": max(parts, key=lambda o: (parts[o], o)), "match": "shipment", "parts": parts}
+
+    def paid(match: dict[str, Any], order_id: str, charge: tuple[str, str, float]) -> int:
+        if "parts" in match:
+            return match["parts"].get(order_id, 0)
+        return _cents(charge[2]) if match.get("order") == order_id else 0
+
     def owed(order: dict[str, Any]) -> int:
-        return _cents(order["total"]) - sum(_cents(c[2]) for c in charges if found.get(c[0], {}).get("order") == order["id"])
+        return _cents(order["total"]) - sum(paid(found[c[0]], order["id"], c) for c in charges if c[0] in found)
 
     waiting = {o["id"]: owed(o) for o in orders if o.get("total") is not None}
     pairs = sorted(
@@ -10504,7 +10582,7 @@ def amazon_match(charges: list[tuple[str, str, float]], orders: list[dict[str, A
     )
     for _, _, charge_id, order_id in pairs:
         if charge_id not in found and waiting[order_id] > 0:
-            part = any(m["order"] == order_id for m in found.values())
+            part = any(m["order"] == order_id or order_id in m.get("parts", {}) for m in found.values())
             found[charge_id] = {"order": order_id, "match": "split" if part else "order"}
             waiting[order_id] = 0
 
@@ -10601,9 +10679,15 @@ def amazon_attach(purchases: list[dict[str, Any]], charges: set[str], first: str
             p["amazon"] = None
             continue
         order = by_id[match["order"]]
+        parts = match.get("parts") or {order["id"]: _cents(p["amount"])}
+        # A charge for several orders' shipments: each order's share by its own items, the items all listed.
+        shares = [amazon_split(cents / 100, by_id[order_id]["items"]) for order_id, cents in sorted(parts.items())]
         p["amazon"] = {"order": order["id"], "match": match["match"], "ordered": order["date"],
-                       "items": [{k: item[k] for k in ("pos", "title", "quantity", "price", "need", "need_by")} for item in order["items"]],
-                       **amazon_split(p["amount"], order["items"])}
+                       "items": [{"order": order_id, **{k: item[k] for k in ("pos", "title", "quantity", "price", "need", "need_by")}}
+                                 for order_id in sorted(parts, key=lambda o: o != order["id"]) for item in by_id[order_id]["items"]],
+                       **{need: round(sum(share[need] for share in shares), 2) for need in (*AMAZON_NEEDS, "unsorted")}}
+        if len(parts) > 1:
+            p["amazon"]["orders"] = sorted(parts)
 
 
 def amazon_month(purchases: list[dict[str, Any]]) -> dict[str, Any]:

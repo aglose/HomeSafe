@@ -236,10 +236,22 @@ enum class NeedSource { USER, RULE, MODEL, NONE }
 /** How a charge was matched to its order: a shipment's total, the order's total, or several charges adding up to it. */
 enum class AmazonMatch { SHIPMENT, ORDER, SPLIT }
 
-/** One line of an Amazon order. [title] is Amazon's, data shown as written; [price] is each one's, when the email said. */
+/**
+ * One line of an Amazon order: a product, or (as Amazon's emails mostly say now) Amazon's
+ * category for it. [title] is Amazon's, data shown as written; [price] is each one's, when the
+ * email said. [orderId] is the order it is in, when a charge paid toward more than one.
+ */
 @Immutable
 @Serializable
-data class AmazonItem(val position: Int, val title: String, val quantity: Int, val price: Double?, val need: AmazonNeed?, val sortedBy: NeedSource)
+data class AmazonItem(
+    val position: Int,
+    val title: String,
+    val quantity: Int,
+    val price: Double?,
+    val need: AmazonNeed?,
+    val sortedBy: NeedSource,
+    val orderId: String? = null,
+)
 
 /**
  * The Amazon order a charge paid for, and the charge shared out by the order's item prices:

@@ -164,25 +164,29 @@ every hour, after the cards (Gmail, read-only), and puts each Amazon charge besi
 paid for:
 
 - **Matching.** Amazon charges the card once per shipment. A charge is matched to a shipment
-  whose email gave that exact total within a few days; otherwise to an order that still owes
+  whose email gave that exact total within a few days, or two or three shipments that add up to
+  it (Amazon charges shipments that go out together at once, even from different orders: such a
+  charge lists every order's items and shares out by each); otherwise to an order that still owes
   exactly that (its total, less its shipments matched so far) within a month of it; otherwise two
   to four charges that month adding up to what an order still owes are taken as its shipments.
   Where several charges and emails could pair up, the nearest pairs are taken first. Charges a
   month either side of the month looked at are matched with it, so an order charged across the
   turn of a month is found from both sides.
-  A charge with no match says so (`amazon: null`). AWS, Prime, Prime Video, Kindle Unlimited and
-  Audible are not orders and are left alone.
+  A charge with no match says so (`amazon: null`). AWS, Prime, Prime Video, Kindle (books and
+  Unlimited) and Audible are not orders and are left alone.
 - **What the emails say.** Since 2026 Amazon's emails name no items. They give how many there
-  were and Amazon's category for them ("1 Hardware item", "2 items: 1 Hardware, 1 Vitamins",
-  "Ordered 2 items: Beverages, Dairy"), and the order's Grand Total or the shipment's Total. So
+  were and Amazon's category for them ("1 Kitchen item", "2 items: 1 Kitchen, 1 Coffee",
+  "Ordered 2 items: Pasta, Spices"), and the order's Grand Total or the shipment's Total. So
   an order's items are mostly its categories, each as many as Amazon counted. Older emails that
-  quote a product's name in the subject still give that name. The HTML part is read first: the
-  plain part leaves out the categories and writes amounts "24.35 USD". When the emails are read
+  quote a product's name in the subject still give that name. One email can confirm several
+  orders ("Ordered 17 items: …"), each with its own categories, order number and Grand Total,
+  and each is kept as its own order. The HTML part is read first: the
+  plain part leaves out the categories and writes amounts "19.80 USD". When the emails are read
   differently (`AMAZON_PARSER`), every one is read again and what someone said about an item is kept.
 - **Sorting.** Each item is *essential* (groceries, household and cleaning supplies, toiletries,
   medicine, the baby's and the pets' things) or *discretionary*. Word lists sort the obvious ones
-  (`_AMAZON_NEED_WORDS`). The rest go to the box's own model through Ollama (`VLM_MODEL`), twenty
-  at a time, so no titles leave the house. Without Ollama they stay unsorted. Anyone can say
+  (`_AMAZON_NEED_WORDS`). The rest go to the box's own model through Ollama (`VLM_MODEL`), eight
+  at a time (it miscounted twenty), one at a time when it still miscounts, so no titles leave the house. Without Ollama they stay unsorted. Anyone can say
   otherwise for an item (`PUT /finance/budget/amazon/{order}/items/{pos}`, with the item's title,
   so a choice can't land on another item an email has put at that place since: 409
   `item_changed`), and a later email about the same order keeps what they said.
@@ -226,7 +230,8 @@ was made. The app is unverified, so sign-in shows Google's "hasn't verified this
    "Install Certificates" step fails the last call with `CERTIFICATE_VERIFY_FAILED`: run it with
    macOS's own `/usr/bin/python3` instead.
 4. Copy `relay/amazon.env` next to the relay's `docker-compose.yml` on the box and recreate the
-   container. The first read brings the last `AMAZON_LOOKBACK_DAYS` (120) days of emails.
+   container. The first read brings the last `AMAZON_LOOKBACK_DAYS` (120) days of emails,
+   a third of a second apart: read faster, Gmail refuses (403) after a couple of hundred.
 
 ## How it's built
 
