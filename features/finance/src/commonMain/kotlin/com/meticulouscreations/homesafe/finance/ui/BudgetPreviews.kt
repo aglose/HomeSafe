@@ -4,6 +4,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.meticulouscreations.homesafe.finance.BudgetUiState
+import com.meticulouscreations.homesafe.finance.domain.AmazonItem
+import com.meticulouscreations.homesafe.finance.domain.AmazonMatch
+import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
+import com.meticulouscreations.homesafe.finance.domain.AmazonOrder
+import com.meticulouscreations.homesafe.finance.domain.AmazonSummary
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BucketId
 import com.meticulouscreations.homesafe.finance.domain.BucketSource
@@ -21,6 +26,7 @@ import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.LineRule
 import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
+import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
@@ -179,6 +185,57 @@ object BudgetFixtures {
     /** No line of the sheet ticked as paid by card yet, so nothing is sorted into lines. */
     val noLines = onPace.let { it.copy(config = it.config.copy(cardPaidLines = emptyList(), lineRules = emptyList()), lines = emptyList(), purchases = it.purchases.map { p -> p.copy(line = null, lineSource = LineSource.NONE) }) }
 
+    /** Three Amazon charges: an order of a need and a want, a want that came as its own shipment, and one no order email was found for. */
+    val amazonPurchases = listOf(
+        Purchase(
+            id = "amz-1", date = "2026-10-09", amount = 113.63, name = "Amazon", category = "GENERAL_MERCHANDISE", pending = false, cardKey = FAMILY,
+            bucket = BucketId.Family, source = BucketSource.ACCOUNT, remembered = false, fromAmazon = true,
+            amazon = AmazonOrder(
+                orderId = "112-0000000-0000001",
+                match = AmazonMatch.ORDER,
+                ordered = "2026-10-08",
+                items = listOf(
+                    AmazonItem(0, "Ridgeline Paper Towels, 12 Big Rolls", 1, 24.99, AmazonNeed.ESSENTIAL, NeedSource.RULE),
+                    AmazonItem(1, "Starfighter Brick Building Set", 2, 39.99, AmazonNeed.DISCRETIONARY, NeedSource.USER),
+                ),
+                essential = 27.05,
+                discretionary = 86.58,
+                unsorted = 0.0,
+            ),
+        ),
+        Purchase(
+            id = "amz-2", date = "2026-10-07", amount = 70.34, name = "Amazon", category = "GENERAL_MERCHANDISE", pending = false, cardKey = TRAVEL,
+            bucket = BucketId.Person("Sam"), source = BucketSource.BANK, remembered = false, fromAmazon = true,
+            amazon = AmazonOrder(
+                orderId = "113-0000000-0000002",
+                match = AmazonMatch.SHIPMENT,
+                ordered = "2026-10-05",
+                items = listOf(AmazonItem(0, "Meadow Brand Adult Dog Food, 35 lb", 1, 64.98, null, NeedSource.NONE)),
+                essential = 0.0,
+                discretionary = 0.0,
+                unsorted = 70.34,
+            ),
+        ),
+        Purchase(
+            id = "amz-3", date = "2026-10-06", amount = 15.0, name = "Amazon", category = "GENERAL_MERCHANDISE", pending = false, cardKey = TRAVEL,
+            bucket = BucketId.Person("Alex"), source = BucketSource.BANK, remembered = false, fromAmazon = true,
+        ),
+    )
+
+    val amazonSummary = AmazonSummary(
+        configured = true,
+        readAtEpochSeconds = now - 20 * 60,
+        failedMailboxes = emptyList(),
+        charges = 3,
+        essential = 27.05,
+        discretionary = 86.58,
+        unsorted = 70.34,
+        unmatched = 15.0,
+    )
+
+    /** On the 12th with the Amazon order emails read. */
+    val withAmazon = onPace.let { it.copy(purchases = (it.purchases + amazonPurchases).sortedByDescending { p -> p.date }, amazon = amazonSummary) }
+
     fun state(budget: Budget) = BudgetUiState(budget = budget, loading = false, readAtEpochSeconds = now)
 }
 
@@ -194,6 +251,12 @@ private fun BudgetPreview(state: BudgetUiState) {
 @Composable
 private fun FinanceBudgetPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.onPace))
+}
+
+@Preview(name = "Budget · with Amazon orders", widthDp = 412, heightDp = 3700)
+@Composable
+private fun FinanceBudgetAmazonScreenPreview() {
+    BudgetPreview(BudgetFixtures.state(BudgetFixtures.withAmazon))
 }
 
 @Preview(name = "Budget · close to the limit", widthDp = 412, heightDp = 1500)

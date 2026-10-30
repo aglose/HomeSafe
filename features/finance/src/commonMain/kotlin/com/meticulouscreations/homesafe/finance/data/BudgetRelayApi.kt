@@ -1,5 +1,10 @@
 package com.meticulouscreations.homesafe.finance.data
 
+import com.meticulouscreations.homesafe.finance.domain.AmazonItem
+import com.meticulouscreations.homesafe.finance.domain.AmazonMatch
+import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
+import com.meticulouscreations.homesafe.finance.domain.AmazonOrder
+import com.meticulouscreations.homesafe.finance.domain.AmazonSummary
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
 import com.meticulouscreations.homesafe.finance.domain.BucketId
@@ -21,11 +26,13 @@ import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.domain.LineRule
 import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
+import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_budget_error_amazon_item_gone
 import homesafe.shared.generated.resources.fin_budget_error_purchase_gone
 import homesafe.shared.generated.resources.fin_budget_error_refused
 import homesafe.shared.generated.resources.fin_budget_error_relay_outdated
@@ -106,6 +113,19 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
         httpClient.delete(PushRelayApi.relayUrl(serverUrl, "/finance/budget/line-rules")) { parameter("merchant", merchantKey) }.answer()
     }
 
+    suspend fun sayNeed(serverUrl: String, orderId: String, item: AmazonItem, need: AmazonNeed?): Result<Budget> = suspendRunCatching {
+        httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/budget/amazon/$orderId/items/${item.position}")) {
+            contentType(ContentType.Application.Json)
+            setBody(
+                buildJsonObject {
+                    put("need", need?.wire)
+                    // So a choice never lands on another item an order email has put at that place since.
+                    put("title", item.title)
+                },
+            )
+        }.answer()
+    }
+
     suspend fun syncNow(serverUrl: String): Result<Budget> = suspendRunCatching {
         httpClient.post(PushRelayApi.relayUrl(serverUrl, "/finance/budget/sync")) {
             timeout { requestTimeoutMillis = 40_000 }
@@ -130,7 +150,9 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
             return when (field("error")) {
                 "not_found" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_purchase_gone), technical)
 
-                "bad_bucket", "bad_line", "bad_budget", "bad_month" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_refused), technical)
+                "no_item", "item_changed" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_amazon_item_gone), technical)
+
+                "bad_bucket", "bad_line", "bad_budget", "bad_month", "bad_need" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_refused), technical)
 
                 else -> BankSyncRelayApi.problemFrom(status, body).let { problem ->
                     if (problem.problem == BankProblem.RELAY_OUTDATED) BankSyncException(BankProblem.RELAY_OUTDATED, UiText.of(Res.string.fin_budget_error_relay_outdated), "HTTP 404") else problem
@@ -207,6 +229,7 @@ internal data class RelayBudget(
     val merchants: List<RelayBudgetMerchant> = emptyList(),
     val transactions: List<RelayPurchase> = emptyList(),
     val history: List<RelayBudgetPastMonth> = emptyList(),
+    val amazon: RelayAmazonSummary? = null,
 ) {
     fun toDomain() = Budget(
         configured = configured,
@@ -279,9 +302,23 @@ internal data class RelayBudget(
                     else -> LineSource.NONE
                 },
                 lineRemembered = txn.lineRemembered,
+                fromAmazon = txn.fromAmazon,
+                amazon = txn.amazon?.toDomain(),
             )
         },
         history = history.map { BudgetPastMonth(it.month, it.spent, it.days) },
+        amazon = amazon?.let {
+            AmazonSummary(
+                configured = it.configured,
+                readAtEpochSeconds = it.readAt?.toLong(),
+                failedMailboxes = it.failed,
+                charges = it.charges,
+                essential = it.essential,
+                discretionary = it.discretionary,
+                unsorted = it.unsorted,
+                unmatched = it.unmatched,
+            )
+        },
     )
 }
 
@@ -363,6 +400,71 @@ internal data class RelayPurchase(
     val line: String? = null,
     @SerialName("line_source") val lineSource: String = "none",
     @SerialName("line_remembered") val lineRemembered: Boolean = false,
+    @SerialName("from_amazon") val fromAmazon: Boolean = false,
+    val amazon: RelayAmazonOrder? = null,
+)
+
+/** What an Amazon charge paid for (`amazon_attach` in relay.py). */
+@Serializable
+internal data class RelayAmazonOrder(
+    val order: String = "",
+    val match: String = "order",
+    val ordered: String = "",
+    val items: List<RelayAmazonItem> = emptyList(),
+    val essential: Double = 0.0,
+    val discretionary: Double = 0.0,
+    val unsorted: Double = 0.0,
+) {
+    fun toDomain() = AmazonOrder(
+        orderId = order,
+        match = when (match) {
+            "shipment" -> AmazonMatch.SHIPMENT
+            "split" -> AmazonMatch.SPLIT
+            else -> AmazonMatch.ORDER
+        },
+        ordered = ordered,
+        items = items.map { item ->
+            val need = AmazonNeed.ofWire(item.need)
+            AmazonItem(
+                position = item.pos,
+                title = item.title,
+                quantity = item.quantity,
+                price = item.price,
+                need = need,
+                sortedBy = when {
+                    need == null -> NeedSource.NONE
+                    item.needBy?.startsWith("user:") == true -> NeedSource.USER
+                    item.needBy == "model" -> NeedSource.MODEL
+                    else -> NeedSource.RULE
+                },
+            )
+        },
+        essential = essential,
+        discretionary = discretionary,
+        unsorted = unsorted,
+    )
+}
+
+@Serializable
+internal data class RelayAmazonItem(
+    val pos: Int = 0,
+    val title: String = "",
+    val quantity: Int = 1,
+    val price: Double? = null,
+    val need: String? = null,
+    @SerialName("need_by") val needBy: String? = null,
+)
+
+@Serializable
+internal data class RelayAmazonSummary(
+    val configured: Boolean = false,
+    @SerialName("read_at") val readAt: Double? = null,
+    val failed: List<String> = emptyList(),
+    val charges: Int = 0,
+    val essential: Double = 0.0,
+    val discretionary: Double = 0.0,
+    val unsorted: Double = 0.0,
+    val unmatched: Double = 0.0,
 )
 
 @Serializable

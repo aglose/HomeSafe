@@ -155,6 +155,79 @@ Under **Limits and cards → Alerts** (and in Settings → Notifications) are fo
 5. Anyone who should see the budget must be a Frigate admin or listed in `FINANCE_USERS`
    (`finance.env` on the box).
 
+## Amazon orders
+
+A card shows an Amazon purchase as "AMZN Mktp US*2K1AB3CD4" and an amount, so groceries look just
+like a new game. Amazon has no API for a household's own orders, but it emails every order
+("Ordered: …") and shipment ("Shipped: …"). Once a mailbox is linked, the relay reads those emails
+every hour, after the cards (Gmail, read-only), and puts each Amazon charge beside the order it
+paid for:
+
+- **Matching.** Amazon charges the card once per shipment. A charge is matched to a shipment
+  whose email gave that exact total within a few days; otherwise to an order that still owes
+  exactly that (its total, less its shipments matched so far) within a month of it; otherwise two
+  to four charges that month adding up to what an order still owes are taken as its shipments.
+  Where several charges and emails could pair up, the nearest pairs are taken first. Charges a
+  month either side of the month looked at are matched with it, so an order charged across the
+  turn of a month is found from both sides.
+  A charge with no match says so (`amazon: null`). AWS, Prime, Prime Video, Kindle Unlimited and
+  Audible are not orders and are left alone.
+- **What the emails say.** Since 2026 Amazon's emails name no items. They give how many there
+  were and Amazon's category for them ("1 Hardware item", "2 items: 1 Hardware, 1 Vitamins",
+  "Ordered 2 items: Beverages, Dairy"), and the order's Grand Total or the shipment's Total. So
+  an order's items are mostly its categories, each as many as Amazon counted. Older emails that
+  quote a product's name in the subject still give that name. The HTML part is read first: the
+  plain part leaves out the categories and writes amounts "24.35 USD". When the emails are read
+  differently (`AMAZON_PARSER`), every one is read again and what someone said about an item is kept.
+- **Sorting.** Each item is *essential* (groceries, household and cleaning supplies, toiletries,
+  medicine, the baby's and the pets' things) or *discretionary*. Word lists sort the obvious ones
+  (`_AMAZON_NEED_WORDS`). The rest go to the box's own model through Ollama (`VLM_MODEL`), twenty
+  at a time, so no titles leave the house. Without Ollama they stay unsorted. Anyone can say
+  otherwise for an item (`PUT /finance/budget/amazon/{order}/items/{pos}`, with the item's title,
+  so a choice can't land on another item an email has put at that place since: 409
+  `item_changed`), and a later email about the same order keeps what they said.
+- **The split.** A charge is shared out between essential, discretionary and unsorted by the
+  order's item prices, in whole cents that add up to the charge. An item without a price weighs
+  what the priced ones do on average. Until the order's own email is read, its items are the ones
+  its shipment emails named. For a shipment that is the whole order's mix, since a shipment's email
+  rarely says which items it carried.
+- **What the app gets.** Each Amazon purchase in `/finance/budget` carries `from_amazon` and
+  `amazon`: the order, how it was matched, its items with their sorting, and the charge's
+  `essential`, `discretionary` and `unsorted` shares. The month carries `amazon` too: those three
+  summed, `unmatched`, when the mailboxes were last read and which failed.
+- **In the app.** Under the budget lines, an **Amazon** card has the month's Amazon charges as one
+  bar ("$27 of $199 was essential"), split into essential, discretionary, not sorted yet and no
+  order found. Tapping it lists the Amazon purchases, each row naming what was in the order. A
+  purchase's sheet says which order it was and how it was matched, and gives each item
+  **Essential** and **Discretionary**, plus **Let it sort itself** once someone has chosen.
+
+Everything is kept in `relay.db` (`amazon_emails`, `amazon_orders`, `amazon_items`,
+`amazon_shipments`). Email bodies aren't kept, and the relay never sends or changes mail.
+
+### Linking a mailbox
+
+The mailbox is whichever one the Amazon account emails. Each person with their own Amazon account
+links their own.
+
+Done once already (2026-10-29), in Google Cloud project `homesafe-percysafe`: the **Gmail API** is
+enabled; the Google Auth Platform app "HomeSafe" is External and **In production**, with the home
+page and privacy policy published from the `gh-pages` branch (`https://aglose.github.io/HomeSafe/`,
+authorized domain `aglose.github.io`); and the Desktop OAuth client "HomeSafe relay Amazon orders"
+was made. The app is unverified, so sign-in shows Google's "hasn't verified this app" screen
+(**Advanced → Go to HomeSafe**), and at most 100 accounts can ever link it. An app left in
+*Testing* would have its refresh tokens die after seven days.
+
+1. Have the client's JSON as `relay/client_secret.json` (gitignored). Google shows a client's
+   secret only once, when it's made: a lost one means **Add secret** on the client's page.
+2. Nothing more to do on the consent screen. The relay asks only for `gmail.readonly`.
+3. On the Mac: `python3 relay/gmail_link.py --client relay/client_secret.json --mailbox andrew --out relay/amazon.env`,
+   and sign in as that mailbox's owner. Run it again with another `--mailbox` for each mailbox.
+   The tokens go into the file and are never printed. A python.org Python that never ran its
+   "Install Certificates" step fails the last call with `CERTIFICATE_VERIFY_FAILED`: run it with
+   macOS's own `/usr/bin/python3` instead.
+4. Copy `relay/amazon.env` next to the relay's `docker-compose.yml` on the box and recreate the
+   container. The first read brings the last `AMAZON_LOOKBACK_DAYS` (120) days of emails.
+
 ## How it's built
 
 - `relay/relay.py`, "budget": `plaid_transactions_pull` / `plaid_transactions_store` (the hourly
@@ -162,6 +235,13 @@ Under **Limits and cards → Alerts** (and in Settings → Notifications) are fo
   it is in), `budget_month` (the page's answer), `budget_check` (the alerts), and the
   `/finance/budget…` routes. Tests: `BudgetSyncTest`, `BudgetMonthTest`, `BudgetLinesTest`,
   `BudgetAlertsTest`, `BudgetRoutesTest`, `DeviceOwnerTest` in `relay/test_relay.py`.
+- `relay/relay.py`, "Amazon orders": `parse_amazon_email` (one email), `amazon_store`,
+  `amazon_sort_items` (word lists, then Ollama), `amazon_match` (charges to orders),
+  `amazon_split`, and `amazon_attach` / `amazon_month` (the budget's answer).
+  `relay/gmail_link.py` links a mailbox. Tests: `AmazonEmailTest`, `AmazonMatchTest`,
+  `AmazonBudgetTest`, on made-up emails. In the app, `BudgetAmazon.kt` (`AmazonBlock`, the
+  sheet's `AmazonOrderSection`) draws what `BudgetRelayApi` reads into `Purchase.amazon` and
+  `Budget.amazon`; `BudgetViewModel.sayNeed` sorts an item.
 - Alerts on Android: `HomeSafeMessagingService` hands a `budget=1` push to
   `BudgetNotificationPoster` (`BudgetAlert` reads the push's data); the tap is
   `homesafe://finance?tab=budget` (`FinanceDeepLink`), which `ShellNavigation` opens.

@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.finance
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.finance.domain.AmazonItem
+import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
 import com.meticulouscreations.homesafe.finance.domain.BucketId
@@ -217,6 +219,20 @@ class BudgetViewModel(
         viewModelScope.launch {
             // In turn with the buckets' tags, for the same reason.
             tagOrder.withLock { repository.tagLine(purchaseId, line, remember) }
+                .onSuccess { budget ->
+                    _uiState.update { it.copy(tagging = it.tagging - purchaseId) }
+                    applied(budget)
+                }
+                .onFailure { e -> failed(e) { it.copy(tagging = it.tagging - purchaseId) } }
+        }
+    }
+
+    /** Says whether one item of the Amazon order behind [purchaseId] was essential or discretionary; null lets it sort itself again. */
+    fun sayNeed(purchaseId: String, orderId: String, item: AmazonItem, need: AmazonNeed?) {
+        if (purchaseId in _uiState.value.tagging) return
+        _uiState.update { it.copy(tagging = it.tagging + purchaseId, notice = null) }
+        viewModelScope.launch {
+            tagOrder.withLock { repository.sayNeed(orderId, item, need) }
                 .onSuccess { budget ->
                     _uiState.update { it.copy(tagging = it.tagging - purchaseId) }
                     applied(budget)

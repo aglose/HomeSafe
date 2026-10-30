@@ -73,6 +73,11 @@ services:
       # (relay.py, "sheet fill"), only on the box as well.
       - path: plaid.env
         required: false
+      # AMAZON_GMAIL_CLIENT_ID, AMAZON_GMAIL_CLIENT_SECRET and AMAZON_GMAIL_TOKENS (relay.py,
+      # "Amazon orders"; docs/budget.md), written by relay/gmail_link.py, only on the box.
+      # Without them Amazon's charges say nothing of what was ordered.
+      - path: amazon.env
+        required: false
       # TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_CARS (docs/tesla.md), only on the box.
       - path: tesla.env
         required: false
