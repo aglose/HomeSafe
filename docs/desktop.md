@@ -77,14 +77,22 @@ in an Android desktop window and on a Mac.
   Fitness and Finance, each shown beside it as on the iPad. The open app's own tabs are listed
   under its row (`publishAppSections` in `ui/AppSections.kt`), and it draws neither its pill nor
   its close button. The assistant has a row at the foot, as there is no nav to hold. View → Hide
-  Sidebar (⌃⌘S), or the button beside the title, gives the page the whole window. A window
-  narrowed past 840dp goes back to the phone's shell, carrying an open app back over it.
+  Sidebar (⌃⌘S), or the button beside the title, gives the page the whole window. The Mac's
+  window goes no narrower than 880dp (scaled with ⌘+ and ⌘−, and no larger than the screen), so
+  it keeps the sidebar; an Android window narrowed past 840dp goes back to the phone's shell,
+  carrying an open app back over it.
 - **Two panes** where the content area (the window less the sidebar) is 800dp or more: Settings'
   list beside the page a row opens, and a camera's activity beside its video.
 - **Columns**: lists and cards keep to a readable width (`READABLE_CONTENT_WIDTH`), and Home's
   cameras fill the width in a grid.
+- **Dashboards**: from 940dp of page, Finance lays its tabs out as a desk's dashboards rather than
+  the phone's column (`FinanceDesk.kt`): the headline chart beside a rail of figures, the rest in
+  panels side by side, a quote's and an indicator's page with their stats in a rail, and the
+  Budget's purchases as a table. Its forms and settings stay at a reading width. Every block is
+  the phone's own, set in `DeskPanel`s; a preview named "Desk · …" draws each at a laptop's size.
 - **Pointers**: icon buttons say what they do in a tooltip (`WithTooltip`), with their shortcut
-  where there is one, and what acts on a click shows the hand (`handCursor()`).
+  where there is one, and what acts on a click shows the hand (`handCursor()`). A chart is read
+  by passing the mouse over it, no drag needed.
 
 ## Keyboard
 

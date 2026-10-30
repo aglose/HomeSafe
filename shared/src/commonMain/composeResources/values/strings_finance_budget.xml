@@ -154,6 +154,15 @@
     <string name="fin_budget_months_subtitle">Tap a month to look back at it</string>
 
     <string name="fin_budget_purchases_title">Purchases</string>
+    <string name="fin_budget_table_purchase">Purchase</string>
+    <string name="fin_budget_table_line">Line or category</string>
+    <string name="fin_budget_table_card">Card</string>
+    <string name="fin_budget_table_whose">Whose</string>
+    <string name="fin_budget_table_amount">Amount</string>
+    <string name="fin_budget_kpi_of_limit">of a %1$s limit</string>
+    <string name="fin_budget_kpi_left">Left to spend</string>
+    <string name="fin_budget_kpi_per_day">%1$s a day</string>
+    <string name="fin_budget_kpi_of_take_home">of %1$s take-home</string>
     <plurals name="fin_budget_purchases_count">
         <item quantity="one">%1$d purchase</item>
         <item quantity="other">%1$d purchases</item>

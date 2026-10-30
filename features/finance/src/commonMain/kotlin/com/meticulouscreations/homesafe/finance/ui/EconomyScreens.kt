@@ -9,10 +9,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -43,6 +45,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
@@ -70,6 +73,7 @@ import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.finance.ui.components.StressRing
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.finance_callout_for_you
@@ -205,6 +209,10 @@ internal fun EconomyScreen(
 ) {
     val colors = FinanceTheme.colors
     val briefing = remember(state.readings, state.quotes, state.tone) { Narrator.briefing(state.readings, state.stress, state.quotes, state.tone) }
+    if (LocalFinanceDesk.current) {
+        EconomyDesk(state, briefing, listState, contentPadding, onOpenIndicator, onOpenConnections, onToneChange)
+        return
+    }
     LazyColumn(state = listState, contentPadding = contentPadding) {
         item(key = "tone") {
             // The same choice as in Settings, where it's explained; here so the other voice is a tap away.
@@ -212,96 +220,162 @@ internal fun EconomyScreen(
         }
         item(key = "weather") { CascadeIn(0) { EconomyWeatherCard(briefing) } }
         item(key = "connect") { CascadeIn(1) { ConnectionsEntryCard(onOpenConnections, Modifier.padding(top = 12.dp)) } }
-        item(key = "inflation-h") {
-            SectionHeader(stringResource(Res.string.finance_econ_inflation_title), subtitle = stringResource(Res.string.finance_econ_inflation_subtitle), info = "cpi")
-        }
+        item(key = "inflation-h") { EconSection.INFLATION.Header() }
         item(key = "inflation") { InflationBlock(state) }
-        item(key = "jobs-h") {
-            SectionHeader(stringResource(Res.string.finance_econ_jobs_title), subtitle = stringResource(Res.string.finance_econ_jobs_subtitle), info = "u6")
-        }
-        item(key = "jobs") {
-            CascadeIn(0) {
-                Column {
-                    val u3 = state.readings[IndicatorCatalog.unemployment.id]
-                    val u6 = state.readings[IndicatorCatalog.u6.id]
-                    OverlayBlock(
-                        lines = listOf(Triple(stringResource(Res.string.finance_econ_jobs_u3), u3, colors.cool), Triple(stringResource(Res.string.finance_econ_jobs_u6), u6, colors.loss)),
-                        rules = emptyList(),
-                        defaultRange = EconRange.Y10,
-                        howToRead = stringResource(Res.string.finance_econ_jobs_how_to_read),
-                    )
-                    IndicatorCatalog.labor.forEach { ind ->
-                        IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) }
-                    }
-                }
-            }
-        }
-        item(key = "curve-h") {
-            SectionHeader(stringResource(Res.string.finance_econ_curve_title), subtitle = stringResource(Res.string.finance_econ_curve_subtitle), info = "yieldcurve")
-        }
+        item(key = "jobs-h") { EconSection.JOBS.Header() }
+        item(key = "jobs") { CascadeIn(0) { JobsBlock(state, onOpenIndicator) } }
+        item(key = "curve-h") { EconSection.CURVE.Header() }
         item(key = "curve") { CascadeIn(0) { YieldCurveBlock(state) } }
-        item(key = "yields-h") {
-            SectionHeader(stringResource(Res.string.finance_econ_yields_title), subtitle = stringResource(Res.string.finance_econ_yields_subtitle), info = "treasuries")
-        }
-        item(key = "yields") {
-            CascadeIn(1) {
-                OverlayBlock(
-                    lines = listOf(
-                        Triple(stringResource(Res.string.finance_econ_yield_2y), state.readings[IndicatorCatalog.twoYear.id], colors.cool),
-                        Triple(stringResource(Res.string.finance_econ_yield_10y), state.readings[IndicatorCatalog.tenYear.id], colors.accent),
-                        Triple(stringResource(Res.string.finance_econ_yield_30y), state.readings[IndicatorCatalog.thirtyYear.id], colors.violet),
-                    ),
-                    rules = emptyList(),
-                    defaultRange = EconRange.Y5,
-                    howToRead = stringResource(Res.string.finance_econ_yields_how_to_read),
-                )
-            }
-        }
-        item(key = "real-h") {
-            SectionHeader(stringResource(Res.string.finance_econ_real_title), subtitle = stringResource(Res.string.finance_econ_real_subtitle), info = "realrate")
-        }
-        item(key = "real") {
-            CascadeIn(2) {
-                val ff = state.readings[IndicatorCatalog.fedFunds.id]
-                val cpi = state.readings[IndicatorCatalog.cpi.id]
-                Column {
-                    val real = if (ff?.latest != null && cpi?.latest != null) ff.latest!! - cpi.latest!! else null
-                    if (real != null) {
-                        Text(
-                            stringResource(Res.string.finance_econ_real_value, FinanceFormat.grouped(real, 2)),
-                            style = FinanceTheme.type.title,
-                            color = if (real >= 0) colors.gain else colors.loss,
-                            modifier = Modifier.padding(horizontal = PageGutter),
-                        )
+        item(key = "yields-h") { EconSection.YIELDS.Header() }
+        item(key = "yields") { CascadeIn(1) { YieldsBlock(state) } }
+        item(key = "real-h") { EconSection.REAL.Header() }
+        item(key = "real") { CascadeIn(2) { RealRateBlock(state) } }
+        item(key = "rates-h") { EconSection.RATES.Header() }
+        item(key = "rates") { RatesBlock(state, onOpenIndicator) }
+        item(key = "fine") { FinePrint(stringResource(Res.string.finance_econ_fine_print)) }
+    }
+}
+
+/** The Economy tab's sections, by their headings: a heading over its block on the phone, a panel's on a desk. */
+private enum class EconSection(val title: StringResource, val subtitle: StringResource, val info: String) {
+    INFLATION(Res.string.finance_econ_inflation_title, Res.string.finance_econ_inflation_subtitle, "cpi"),
+    JOBS(Res.string.finance_econ_jobs_title, Res.string.finance_econ_jobs_subtitle, "u6"),
+    CURVE(Res.string.finance_econ_curve_title, Res.string.finance_econ_curve_subtitle, "yieldcurve"),
+    YIELDS(Res.string.finance_econ_yields_title, Res.string.finance_econ_yields_subtitle, "treasuries"),
+    REAL(Res.string.finance_econ_real_title, Res.string.finance_econ_real_subtitle, "realrate"),
+    RATES(Res.string.finance_econ_rates_title, Res.string.finance_econ_rates_subtitle, "dff"),
+    ;
+
+    @Composable
+    fun Header() = SectionHeader(stringResource(title), subtitle = stringResource(subtitle), info = info)
+
+    /** The section as a desk's panel, its heading at the top. */
+    @Composable
+    fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
+        DeskPanel(modifier, title = stringResource(title), subtitle = stringResource(subtitle), info = info, content = content)
+}
+
+/**
+ * The Economy tab on a desk: the inflation chart as the headline beside the briefing on where the
+ * economy stands, then the other sections as panels in two columns.
+ */
+@Composable
+private fun EconomyDesk(
+    state: FinanceUiState,
+    briefing: Briefing,
+    listState: LazyListState,
+    contentPadding: PaddingValues,
+    onOpenIndicator: (String) -> Unit,
+    onOpenConnections: () -> Unit,
+    onToneChange: (EconomyTone) -> Unit,
+) {
+    LazyColumn(state = listState, contentPadding = contentPadding) {
+        item(key = "desk") {
+            DeskPage {
+                Column(verticalArrangement = Arrangement.spacedBy(DeskGap)) {
+                    ChipRow(EconomyTone.entries, state.tone, { stringResource(it.label) }, FinanceTheme.colors.accent, onToneChange, Modifier.padding(top = 4.dp))
+                    DeskRow {
+                        DeskColumn(1.5f) {
+                            EconSection.INFLATION.Panel { InflationBlock(state, chartHeight = DESK_HERO_CHART) }
+                        }
+                        DeskColumn(1f) {
+                            CascadeIn(0) { EconomyWeatherCard(briefing) }
+                            CascadeIn(1) { ConnectionsEntryCard(onOpenConnections) }
+                        }
                     }
-                    OverlayBlock(
-                        lines = listOf(
-                            Triple(stringResource(Res.string.finance_econ_fed_funds), ff, colors.accent),
-                            Triple(stringResource(Res.string.finance_econ_cpi_inflation), cpi, colors.loss),
-                        ),
-                        rules = listOf(ChartRule(0.0, colors.textTertiary)),
-                        defaultRange = EconRange.Y10,
-                        howToRead = stringResource(Res.string.finance_econ_real_how_to_read),
-                    )
+                    DeskRow {
+                        DeskColumn(1f) {
+                            EconSection.JOBS.Panel { CascadeIn(0) { JobsBlock(state, onOpenIndicator) } }
+                            EconSection.RATES.Panel { RatesBlock(state, onOpenIndicator) }
+                        }
+                        DeskColumn(1f) {
+                            EconSection.CURVE.Panel { CascadeIn(0) { YieldCurveBlock(state) } }
+                            EconSection.YIELDS.Panel { CascadeIn(1) { YieldsBlock(state) } }
+                            EconSection.REAL.Panel { CascadeIn(2) { RealRateBlock(state) } }
+                        }
+                    }
                 }
             }
         }
-        item(key = "rates-h") {
-            SectionHeader(stringResource(Res.string.finance_econ_rates_title), subtitle = stringResource(Res.string.finance_econ_rates_subtitle), info = "dff")
+        item(key = "fine") { FinePrint(stringResource(Res.string.finance_econ_fine_print), Modifier.padding(top = 12.dp)) }
+    }
+}
+
+/** Unemployment, headline and broad, and the labour readings under it. */
+@Composable
+private fun JobsBlock(state: FinanceUiState, onOpenIndicator: (String) -> Unit) {
+    val colors = FinanceTheme.colors
+    Column {
+        val u3 = state.readings[IndicatorCatalog.unemployment.id]
+        val u6 = state.readings[IndicatorCatalog.u6.id]
+        OverlayBlock(
+            lines = listOf(Triple(stringResource(Res.string.finance_econ_jobs_u3), u3, colors.cool), Triple(stringResource(Res.string.finance_econ_jobs_u6), u6, colors.loss)),
+            rules = emptyList(),
+            defaultRange = EconRange.Y10,
+            howToRead = stringResource(Res.string.finance_econ_jobs_how_to_read),
+        )
+        IndicatorCatalog.labor.forEach { ind ->
+            IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) }
         }
-        item(key = "rates") {
-            val rates = listOf(IndicatorCatalog.fedFunds, IndicatorCatalog.twoYear, IndicatorCatalog.tenYear, IndicatorCatalog.thirtyYear, IndicatorCatalog.mortgage, IndicatorCatalog.corePce)
-            Column {
-                rates.forEach { ind -> IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) } }
-            }
+    }
+}
+
+/** The 2-, 10- and 30-year Treasury yields over time. */
+@Composable
+private fun YieldsBlock(state: FinanceUiState) {
+    val colors = FinanceTheme.colors
+    OverlayBlock(
+        lines = listOf(
+            Triple(stringResource(Res.string.finance_econ_yield_2y), state.readings[IndicatorCatalog.twoYear.id], colors.cool),
+            Triple(stringResource(Res.string.finance_econ_yield_10y), state.readings[IndicatorCatalog.tenYear.id], colors.accent),
+            Triple(stringResource(Res.string.finance_econ_yield_30y), state.readings[IndicatorCatalog.thirtyYear.id], colors.violet),
+        ),
+        rules = emptyList(),
+        defaultRange = EconRange.Y5,
+        howToRead = stringResource(Res.string.finance_econ_yields_how_to_read),
+    )
+}
+
+/** The Fed's rate less inflation: what borrowing really costs. */
+@Composable
+private fun RealRateBlock(state: FinanceUiState) {
+    val colors = FinanceTheme.colors
+    val ff = state.readings[IndicatorCatalog.fedFunds.id]
+    val cpi = state.readings[IndicatorCatalog.cpi.id]
+    Column {
+        val real = if (ff?.latest != null && cpi?.latest != null) ff.latest!! - cpi.latest!! else null
+        if (real != null) {
+            Text(
+                stringResource(Res.string.finance_econ_real_value, FinanceFormat.grouped(real, 2)),
+                style = FinanceTheme.type.title,
+                color = if (real >= 0) colors.gain else colors.loss,
+                modifier = Modifier.padding(horizontal = PageGutter),
+            )
         }
-        item(key = "fine") { FinePrint(stringResource(Res.string.finance_econ_fine_print)) }
+        OverlayBlock(
+            lines = listOf(
+                Triple(stringResource(Res.string.finance_econ_fed_funds), ff, colors.accent),
+                Triple(stringResource(Res.string.finance_econ_cpi_inflation), cpi, colors.loss),
+            ),
+            rules = listOf(ChartRule(0.0, colors.textTertiary)),
+            defaultRange = EconRange.Y10,
+            howToRead = stringResource(Res.string.finance_econ_real_how_to_read),
+        )
+    }
+}
+
+/** The rates a household meets, a row each. */
+@Composable
+private fun RatesBlock(state: FinanceUiState, onOpenIndicator: (String) -> Unit) {
+    val rates = listOf(IndicatorCatalog.fedFunds, IndicatorCatalog.twoYear, IndicatorCatalog.tenYear, IndicatorCatalog.thirtyYear, IndicatorCatalog.mortgage, IndicatorCatalog.corePce)
+    Column {
+        rates.forEach { ind -> IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) } }
     }
 }
 
 /** The headline: CPI inflation, with core CPI and core PCE overlaid against the Fed's 2% target. */
 @Composable
-private fun InflationBlock(state: FinanceUiState) {
+private fun InflationBlock(state: FinanceUiState, chartHeight: Dp = 230.dp) {
     val colors = FinanceTheme.colors
     val cpi = state.readings[IndicatorCatalog.cpi.id]
     val core = state.readings[IndicatorCatalog.coreCpi.id]
@@ -352,7 +426,7 @@ private fun InflationBlock(state: FinanceUiState) {
                     periods = recessionBands,
                     contentDescription = stringResource(Res.string.finance_econ_inflation_chart),
                     onScrub = { scrub = it },
-                    modifier = Modifier.fillMaxWidth().height(230.dp),
+                    modifier = Modifier.fillMaxWidth().height(chartHeight),
                 )
                 Legend(
                     lines.map { line ->
@@ -365,7 +439,7 @@ private fun InflationBlock(state: FinanceUiState) {
                 }
                 HowToRead(stringResource(Res.string.finance_econ_inflation_how_to_read))
             } else {
-                Shimmer(Modifier.fillMaxWidth().height(230.dp).padding(horizontal = PageGutter), corner = 14.dp)
+                Shimmer(Modifier.fillMaxWidth().height(chartHeight).padding(horizontal = PageGutter), corner = 14.dp)
             }
             Spacer(Modifier.height(8.dp))
             RangeSelector(EconRange.entries, range, { stringResource(it.label) }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
@@ -585,86 +659,29 @@ internal fun IndicatorRow(indicator: Indicator, reading: IndicatorReading?, fail
 @Composable
 internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, contentPadding: PaddingValues, onOpenIndicator: (String) -> Unit) {
     val colors = FinanceTheme.colors
-    val stress = state.stress
     val readings = IndicatorCatalog.radar.mapNotNull { state.readings[it.id] }
+    val flashing = readings.filter { it.signal == Signal.DANGER || it.signal == Signal.WATCH }.sortedByDescending { it.stress ?: 0.0 }
+    if (LocalFinanceDesk.current) {
+        RiskDesk(state, readings, flashing, listState, contentPadding, onOpenIndicator)
+        return
+    }
     LazyColumn(state = listState, contentPadding = contentPadding) {
-        item(key = "gauge") {
-            val level = (stress?.score ?: 0.0) / 100.0
-            val tint = when {
-                stress == null -> colors.textTertiary
-                stress.score >= 50 -> colors.loss
-                stress.score >= 30 -> colors.watch
-                else -> colors.gain
-            }
-            Box(Modifier.fillMaxWidth()) {
-                AuroraBackground(tint, Modifier.matchParentSize(), secondary = colors.violet, intensity = if (stress != null) 1f else 0.3f)
-                Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(260.dp), contentAlignment = Alignment.Center) {
-                        StressRing(level.toFloat(), Modifier.matchParentSize())
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(Res.string.finance_risk_stress), style = FinanceTheme.type.micro, color = colors.textSecondary)
-                                InfoButton("stress", size = 14.dp)
-                            }
-                            RollingNumber(stress?.score?.roundToInt()?.toString() ?: "0", FinanceTheme.type.hero, colors.textPrimary)
-                            Text(stringResource(stress?.label ?: Res.string.finance_risk_reading), style = FinanceTheme.type.bodyStrong, color = tint)
-                        }
-                    }
-                    if (stress != null) {
-                        Text(
-                            stringResource(Res.string.finance_risk_counts, stress.dangers, stress.watches, stress.counted - stress.dangers - stress.watches),
-                            style = FinanceTheme.type.label,
-                            color = colors.textSecondary,
-                        )
-                    }
-                    if (state.economyLoading) {
-                        Text(stringResource(Res.string.finance_risk_loading, readings.size, IndicatorCatalog.radar.size), style = FinanceTheme.type.micro, color = colors.textTertiary)
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    StressScale(stress)
-                }
-            }
-        }
+        item(key = "gauge") { StressGauge(state, readings.size) }
         item(key = "risk-read") {
             HowToRead(stringResource(Res.string.finance_risk_how_to_read), Modifier.padding(top = 8.dp))
         }
-        val flashing = readings.filter { it.signal == Signal.DANGER || it.signal == Signal.WATCH }.sortedByDescending { it.stress ?: 0.0 }
         if (flashing.isNotEmpty()) {
             item(key = "flash-h") {
                 SectionHeader(stringResource(Res.string.finance_risk_flashing_title), subtitle = stringResource(Res.string.finance_risk_flashing_subtitle))
             }
-            item(key = "flash") {
-                FlowRow(
-                    Modifier.fillMaxWidth().padding(horizontal = PageGutter),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    flashing.forEach { r ->
-                        val c = colors.signal(r.signal)
-                        Row(
-                            Modifier
-                                .clip(CircleShape)
-                                .background(c.copy(alpha = 0.14f))
-                                .clickable { onOpenIndicator(r.indicator.id) }
-                                .padding(horizontal = 12.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(Modifier.size(7.dp).clip(CircleShape).background(c))
-                            Spacer(Modifier.width(6.dp))
-                            Text(Narrator.plainTitle(r.indicator.id).resolve(), style = FinanceTheme.type.label, color = colors.textPrimary)
-                            Spacer(Modifier.width(6.dp))
-                            Text(r.latest?.let { FinanceFormat.indicator(it, r.indicator.unit) } ?: "", style = FinanceTheme.type.label, color = c)
-                        }
-                    }
-                }
-            }
+            item(key = "flash") { FlashingChips(flashing, onOpenIndicator) }
         }
         IndicatorGroup.entries.forEach { group ->
             item(key = "group-${group.name}") { SectionHeader(stringResource(group.title), subtitle = stringResource(group.blurb)) }
             val members = IndicatorCatalog.radar.filter { it.group == group }
             items(members, key = { "risk-${it.id}" }) { ind ->
                 CascadeIn(members.indexOf(ind)) {
-                    RiskCard(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) }
+                    RiskCard(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id), onClick = { onOpenIndicator(ind.id) })
                 }
                 Spacer(Modifier.height(10.dp))
             }
@@ -681,11 +698,140 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
     }
 }
 
+/**
+ * The Risk tab on a desk: the gauge beside the lights flashing now, then each group's warning
+ * lights three across, so the whole board can be read in a glance or two.
+ */
+@Composable
+private fun RiskDesk(
+    state: FinanceUiState,
+    readings: List<IndicatorReading>,
+    flashing: List<IndicatorReading>,
+    listState: LazyListState,
+    contentPadding: PaddingValues,
+    onOpenIndicator: (String) -> Unit,
+) {
+    LazyColumn(state = listState, contentPadding = contentPadding) {
+        item(key = "top") {
+            DeskPage {
+                DeskRow(Modifier.padding(top = 8.dp)) {
+                    DeskColumn(1f) {
+                        DeskPanel(top = 0.dp) {
+                            StressGauge(state, readings.size)
+                            HowToRead(stringResource(Res.string.finance_risk_how_to_read), Modifier.padding(top = 8.dp))
+                        }
+                    }
+                    DeskColumn(1.25f) {
+                        if (flashing.isNotEmpty()) {
+                            DeskPanel(title = stringResource(Res.string.finance_risk_flashing_title), subtitle = stringResource(Res.string.finance_risk_flashing_subtitle)) {
+                                FlashingChips(flashing, onOpenIndicator)
+                            }
+                        }
+                        DeskPanel(title = stringResource(Res.string.finance_risk_how_title), info = "stress") {
+                            Text(
+                                stringResource(Res.string.finance_risk_how_body),
+                                style = FinanceTheme.type.body,
+                                color = FinanceTheme.colors.textSecondary,
+                                modifier = Modifier.padding(horizontal = PageGutter),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        IndicatorGroup.entries.forEach { group ->
+            val members = IndicatorCatalog.radar.filter { it.group == group }
+            item(key = "group-${group.name}") {
+                DeskPage {
+                    Column(Modifier.padding(top = 24.dp)) {
+                        DeskHeading(stringResource(group.title), subtitle = stringResource(group.blurb))
+                        DeskGrid(members, columns = 3, gap = 16.dp, equalHeights = true) { ind ->
+                            RiskCard(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id), onClick = { onOpenIndicator(ind.id) }, Modifier.fillMaxHeight())
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The stress gauge: the blended score in a ring, its word, how many lights are on, and the scale it sits on. */
+@Composable
+private fun StressGauge(state: FinanceUiState, readCount: Int) {
+    val colors = FinanceTheme.colors
+    val stress = state.stress
+    val level = (stress?.score ?: 0.0) / 100.0
+    val tint = when {
+        stress == null -> colors.textTertiary
+        stress.score >= 50 -> colors.loss
+        stress.score >= 30 -> colors.watch
+        else -> colors.gain
+    }
+    Box(Modifier.fillMaxWidth()) {
+        AuroraBackground(tint, Modifier.matchParentSize(), secondary = colors.violet, intensity = if (stress != null) 1f else 0.3f)
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(260.dp), contentAlignment = Alignment.Center) {
+                StressRing(level.toFloat(), Modifier.matchParentSize())
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(Res.string.finance_risk_stress), style = FinanceTheme.type.micro, color = colors.textSecondary)
+                        InfoButton("stress", size = 14.dp)
+                    }
+                    RollingNumber(stress?.score?.roundToInt()?.toString() ?: "0", FinanceTheme.type.hero, colors.textPrimary)
+                    Text(stringResource(stress?.label ?: Res.string.finance_risk_reading), style = FinanceTheme.type.bodyStrong, color = tint)
+                }
+            }
+            if (stress != null) {
+                Text(
+                    stringResource(Res.string.finance_risk_counts, stress.dangers, stress.watches, stress.counted - stress.dangers - stress.watches),
+                    style = FinanceTheme.type.label,
+                    color = colors.textSecondary,
+                )
+            }
+            if (state.economyLoading) {
+                Text(stringResource(Res.string.finance_risk_loading, readCount, IndicatorCatalog.radar.size), style = FinanceTheme.type.micro, color = colors.textTertiary)
+            }
+            Spacer(Modifier.height(16.dp))
+            StressScale(stress)
+        }
+    }
+}
+
+/** The lights past their watch or danger line, each a chip that opens its page. */
+@Composable
+private fun FlashingChips(flashing: List<IndicatorReading>, onOpenIndicator: (String) -> Unit) {
+    val colors = FinanceTheme.colors
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = PageGutter),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        flashing.forEach { r ->
+            val c = colors.signal(r.signal)
+            Row(
+                Modifier
+                    .clip(CircleShape)
+                    .background(c.copy(alpha = 0.14f))
+                    .handCursor()
+                    .clickable { onOpenIndicator(r.indicator.id) }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(c))
+                Spacer(Modifier.width(6.dp))
+                Text(Narrator.plainTitle(r.indicator.id).resolve(), style = FinanceTheme.type.label, color = colors.textPrimary)
+                Spacer(Modifier.width(6.dp))
+                Text(r.latest?.let { FinanceFormat.indicator(it, r.indicator.unit) } ?: "", style = FinanceTheme.type.label, color = c)
+            }
+        }
+    }
+}
+
 /** One warning light: value, signal, five-year sparkline, and a track showing where it sits against its lines. */
 @Composable
-private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: Boolean, onClick: () -> Unit) {
+private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
-    FinanceCard(onClick = onClick) {
+    FinanceCard(modifier, onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(Narrator.plainTitle(indicator.id).resolve(), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
@@ -716,6 +862,8 @@ private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: B
                 VerdictText(reading)
                 indicator.thresholds?.let { th ->
                     Spacer(Modifier.height(12.dp))
+                    // In a desk's row of cards stretched to the tallest, the tracks line up along the foot.
+                    Spacer(Modifier.weight(1f))
                     ThresholdTrack(th, reading.latest!!, reading.history.within(EconRange.Y10))
                 }
             }
@@ -783,124 +931,158 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
     val tint = colors.signal(reading?.signal).takeIf { reading?.signal != null } ?: colors.cool
     val shown = scrub?.let { i -> series?.takeIf { i in 0 until it.size }?.let { it.times[i] to it.values[i] } }
 
-    LazyColumn(contentPadding = contentPadding) {
-        item {
-            Box(Modifier.fillMaxWidth()) {
-                AuroraBackground(tint, Modifier.matchParentSize(), intensity = if (reading != null) 1f else 0.3f)
-                Column(Modifier.padding(top = 12.dp)) {
-                    HeroNumber(
-                        caption = listOf(Narrator.plainTitle(indicator.id).resolve(), stringResource(indicator.title)).joinToString(stringResource(Res.string.common_dot_separator)),
-                        value = (shown?.second ?: reading?.latest)?.let { FinanceFormat.indicator(it, indicator.unit) } ?: "—",
-                        change = when {
-                            shown != null -> FinanceFormat.date(shown.first).resolve()
+    val hero: @Composable (Dp) -> Unit = { height ->
+        Box(Modifier.fillMaxWidth()) {
+            AuroraBackground(tint, Modifier.matchParentSize(), intensity = if (reading != null) 1f else 0.3f)
+            Column(Modifier.padding(top = 12.dp)) {
+                HeroNumber(
+                    caption = listOf(Narrator.plainTitle(indicator.id).resolve(), stringResource(indicator.title)).joinToString(stringResource(Res.string.common_dot_separator)),
+                    value = (shown?.second ?: reading?.latest)?.let { FinanceFormat.indicator(it, indicator.unit) } ?: "—",
+                    change = when {
+                        shown != null -> FinanceFormat.date(shown.first).resolve()
 
-                            reading?.yearChange != null -> stringResource(
-                                Res.string.finance_indicator_change,
-                                FinanceFormat.indicatorChange(reading.yearChange!!, indicator.unit).resolve(),
-                                reading.latestEpochSeconds?.let { FinanceFormat.date(it).resolve() } ?: "",
-                            )
-
-                            else -> " "
-                        },
-                        changeColor = tint,
-                        trailing = {
-                            if (reading != null && indicator.thresholds != null) SignalChip(reading.signal)
-                            InfoButton(indicator.id)
-                        },
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (series != null && series.size > 1) {
-                        LineChart(
-                            lines = listOf(ChartLine(series, tint, fill = true)),
-                            zones = zonesFor(indicator, colors),
-                            rules = listOfNotNull(indicator.referenceLine?.let { ChartRule(it, colors.textSecondary, indicator.referenceLabel?.let { label -> stringResource(label) }.orEmpty()) }),
-                            timeAxis = true,
-                            axis = ChartAxis({ FinanceFormat.indicator(it, indicator.unit) }, { dates.monthYear(it) }),
-                            fitZones = true,
-                            periods = recessionBands,
-                            contentDescription = stringResource(Res.string.finance_indicator_chart_description, stringResource(indicator.title)),
-                            onScrub = { scrub = it },
-                            modifier = Modifier.fillMaxWidth().height(260.dp),
+                        reading?.yearChange != null -> stringResource(
+                            Res.string.finance_indicator_change,
+                            FinanceFormat.indicatorChange(reading.yearChange!!, indicator.unit).resolve(),
+                            reading.latestEpochSeconds?.let { FinanceFormat.date(it).resolve() } ?: "",
                         )
-                    } else {
-                        Shimmer(Modifier.fillMaxWidth().height(260.dp).padding(horizontal = PageGutter), corner = 14.dp)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    RangeSelector(EconRange.entries, range, { stringResource(it.label) }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
-                    val reference = indicator.referenceLabel?.takeIf { indicator.referenceLine != null }?.let { stringResource(it).lowercase() }
-                    HowToRead(
-                        when {
-                            indicator.thresholds != null && reference != null -> stringResource(Res.string.finance_indicator_how_to_read_zones_reference, reference)
-                            indicator.thresholds != null -> stringResource(Res.string.finance_indicator_how_to_read_zones)
-                            reference != null -> stringResource(Res.string.finance_indicator_how_to_read_reference, reference)
-                            else -> stringResource(Res.string.finance_indicator_how_to_read)
-                        },
+
+                        else -> " "
+                    },
+                    changeColor = tint,
+                    trailing = {
+                        if (reading != null && indicator.thresholds != null) SignalChip(reading.signal)
+                        InfoButton(indicator.id)
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+                if (series != null && series.size > 1) {
+                    LineChart(
+                        lines = listOf(ChartLine(series, tint, fill = true)),
+                        zones = zonesFor(indicator, colors),
+                        rules = listOfNotNull(indicator.referenceLine?.let { ChartRule(it, colors.textSecondary, indicator.referenceLabel?.let { label -> stringResource(label) }.orEmpty()) }),
+                        timeAxis = true,
+                        axis = ChartAxis({ FinanceFormat.indicator(it, indicator.unit) }, { dates.monthYear(it) }),
+                        fitZones = true,
+                        periods = recessionBands,
+                        contentDescription = stringResource(Res.string.finance_indicator_chart_description, stringResource(indicator.title)),
+                        onScrub = { scrub = it },
+                        modifier = Modifier.fillMaxWidth().height(height),
                     )
+                } else {
+                    Shimmer(Modifier.fillMaxWidth().height(height).padding(horizontal = PageGutter), corner = 14.dp)
                 }
+                Spacer(Modifier.height(8.dp))
+                RangeSelector(EconRange.entries, range, { stringResource(it.label) }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+                val reference = indicator.referenceLabel?.takeIf { indicator.referenceLine != null }?.let { stringResource(it).lowercase() }
+                HowToRead(
+                    when {
+                        indicator.thresholds != null && reference != null -> stringResource(Res.string.finance_indicator_how_to_read_zones_reference, reference)
+                        indicator.thresholds != null -> stringResource(Res.string.finance_indicator_how_to_read_zones)
+                        reference != null -> stringResource(Res.string.finance_indicator_how_to_read_reference, reference)
+                        else -> stringResource(Res.string.finance_indicator_how_to_read)
+                    },
+                )
             }
         }
-        val explainer = Explainers.byId(id)
-        item {
-            Column(Modifier.padding(horizontal = PageGutter)) {
-                if (reading?.latest != null) {
-                    Callout(stringResource(Res.string.finance_indicator_right_now), Narrator.rightNow(reading, state.tone).resolve(), tint, Icons.AutoMirrored.Filled.TrendingUp)
-                    Narrator.perspective(reading, state.tone)?.let { PerspectiveCallout(it, state.tone) }
-                }
-                Narrator.forYou(id, state.readings, state.quotes, state.finance)?.let { mine ->
-                    Callout(stringResource(Res.string.finance_callout_for_you), mine.resolve(), colors.accent, Icons.Filled.Person)
-                }
-                explainer?.analogy?.let { Callout(stringResource(Res.string.finance_indicator_analogy), stringResource(it), colors.violet, Icons.Outlined.Lightbulb) }
+    }
+    val explainer = Explainers.byId(id)
+    val callouts: @Composable () -> Unit = {
+        Column(Modifier.padding(horizontal = PageGutter)) {
+            if (reading?.latest != null) {
+                Callout(stringResource(Res.string.finance_indicator_right_now), Narrator.rightNow(reading, state.tone).resolve(), tint, Icons.AutoMirrored.Filled.TrendingUp)
+                Narrator.perspective(reading, state.tone)?.let { PerspectiveCallout(it, state.tone) }
             }
+            Narrator.forYou(id, state.readings, state.quotes, state.finance)?.let { mine ->
+                Callout(stringResource(Res.string.finance_callout_for_you), mine.resolve(), colors.accent, Icons.Filled.Person)
+            }
+            explainer?.analogy?.let { Callout(stringResource(Res.string.finance_indicator_analogy), stringResource(it), colors.violet, Icons.Outlined.Lightbulb) }
         }
-        item { SectionHeader(stringResource(Res.string.finance_indicator_why)) }
-        item { Text(stringResource(explainer?.whyYou ?: indicator.why), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
-        explainer?.normal?.let { normal ->
-            item { SectionHeader(stringResource(Res.string.finance_indicator_normal)) }
-            item { Text(stringResource(normal), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
-        }
-        indicator.dangerNote?.let { dangerNote ->
-            item { SectionHeader(stringResource(Res.string.finance_indicator_danger_line_title)) }
-            item { Text(stringResource(dangerNote), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
-        }
-        explainer?.howItWorks?.let { how ->
-            item { SectionHeader(stringResource(Res.string.finance_indicator_how_it_works)) }
-            item { Text(stringResource(how), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
-        }
-        if (reading != null && reading.latest != null) {
+    }
+    // What it is and why it matters, a heading over a paragraph each.
+    val notes = listOfNotNull(
+        Res.string.finance_indicator_why to (explainer?.whyYou ?: indicator.why),
+        explainer?.normal?.let { Res.string.finance_indicator_normal to it },
+        indicator.dangerNote?.let { Res.string.finance_indicator_danger_line_title to it },
+        explainer?.howItWorks?.let { Res.string.finance_indicator_how_it_works to it },
+    )
+    val note: @Composable (Pair<StringResource, StringResource>) -> Unit = { (title, body) ->
+        SectionHeader(stringResource(title))
+        Text(stringResource(body), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter))
+    }
+    val stats: (@Composable () -> Unit)? = if (reading != null && reading.latest != null) {
+        {
             val h = reading.history
             val t = reading.latestEpochSeconds!!
             val inRange = series ?: h
             val hiIdx = inRange.values.indices.maxByOrNull { inRange.values[it] }
             val loIdx = inRange.values.indices.minByOrNull { inRange.values[it] }
-            item { SectionHeader(stringResource(Res.string.finance_stats_title)) }
-            item {
-                val rangeLabel = stringResource(range.label)
-                StatGrid(
-                    listOfNotNull(
-                        stringResource(Res.string.finance_indicator_latest) to FinanceFormat.indicator(reading.latest!!, indicator.unit),
-                        stringResource(Res.string.finance_indicator_as_of) to FinanceFormat.date(t).resolve(),
-                        h.valueAtOrBefore(t - Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_year_ago) to FinanceFormat.indicator(it, indicator.unit) },
-                        h.valueAtOrBefore(t - 5 * Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_five_years_ago) to FinanceFormat.indicator(it, indicator.unit) },
-                        hiIdx?.let { stringResource(Res.string.finance_indicator_range_high, rangeLabel) to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
-                        loIdx?.let { stringResource(Res.string.finance_indicator_range_low, rangeLabel) to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
-                        indicator.thresholds?.let { stringResource(Res.string.finance_indicator_watch_line) to FinanceFormat.indicator(it.watch, indicator.unit) },
-                        indicator.thresholds?.let { stringResource(Res.string.finance_indicator_danger_line) to FinanceFormat.indicator(it.danger, indicator.unit) },
-                        stringResource(Res.string.finance_indicator_updated) to stringResource(indicator.cadence.label),
-                        stringResource(Res.string.finance_indicator_source) to stringResource(Res.string.finance_indicator_source_value, indicator.fredIds.joinToString(" / ")),
-                    ),
-                )
-            }
-        }
-        item {
-            Text(
-                stringResource(Res.string.finance_indicator_open_fred),
-                style = FinanceTheme.type.bodyStrong,
-                color = colors.accent,
-                modifier = Modifier
-                    .padding(horizontal = PageGutter, vertical = 20.dp)
-                    .clickable { uriHandler.openUri("https://fred.stlouisfed.org/series/${indicator.fredIds.first()}") },
+            SectionHeader(stringResource(Res.string.finance_stats_title))
+            val rangeLabel = stringResource(range.label)
+            StatGrid(
+                listOfNotNull(
+                    stringResource(Res.string.finance_indicator_latest) to FinanceFormat.indicator(reading.latest!!, indicator.unit),
+                    stringResource(Res.string.finance_indicator_as_of) to FinanceFormat.date(t).resolve(),
+                    h.valueAtOrBefore(t - Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_year_ago) to FinanceFormat.indicator(it, indicator.unit) },
+                    h.valueAtOrBefore(t - 5 * Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_five_years_ago) to FinanceFormat.indicator(it, indicator.unit) },
+                    hiIdx?.let { stringResource(Res.string.finance_indicator_range_high, rangeLabel) to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
+                    loIdx?.let { stringResource(Res.string.finance_indicator_range_low, rangeLabel) to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
+                    indicator.thresholds?.let { stringResource(Res.string.finance_indicator_watch_line) to FinanceFormat.indicator(it.watch, indicator.unit) },
+                    indicator.thresholds?.let { stringResource(Res.string.finance_indicator_danger_line) to FinanceFormat.indicator(it.danger, indicator.unit) },
+                    stringResource(Res.string.finance_indicator_updated) to stringResource(indicator.cadence.label),
+                    stringResource(Res.string.finance_indicator_source) to stringResource(Res.string.finance_indicator_source_value, indicator.fredIds.joinToString(" / ")),
+                ),
             )
         }
+    } else {
+        null
+    }
+    val fredLink: @Composable () -> Unit = {
+        Text(
+            stringResource(Res.string.finance_indicator_open_fred),
+            style = FinanceTheme.type.bodyStrong,
+            color = colors.accent,
+            modifier = Modifier
+                .padding(horizontal = PageGutter, vertical = 20.dp)
+                .handCursor()
+                .clickable { uriHandler.openUri("https://fred.stlouisfed.org/series/${indicator.fredIds.first()}") },
+        )
+    }
+
+    if (LocalFinanceDesk.current) {
+        // An indicator's page on a desk: the chart with what it means under it, two notes across,
+        // and what it reads now, its stats and where it comes from down a rail beside it.
+        LazyColumn(contentPadding = contentPadding) {
+            item {
+                DeskPage {
+                    DeskRow(Modifier.padding(top = 8.dp)) {
+                        DeskColumn(DESK_MAIN_WEIGHT) {
+                            DeskPanel(top = 0.dp) { hero(DESK_HERO_CHART + 20.dp) }
+                            DeskMasonry(notes, columns = 2) { DeskPanel(top = 0.dp) { note(it) } }
+                        }
+                        DeskColumn(1f) {
+                            CascadeIn(0) { callouts() }
+                            if (stats != null) {
+                                DeskPanel(top = 0.dp, bottom = 0.dp) {
+                                    stats()
+                                    fredLink()
+                                }
+                            } else {
+                                fredLink()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+    LazyColumn(contentPadding = contentPadding) {
+        item { hero(260.dp) }
+        item { callouts() }
+        notes.forEach { item { Column { note(it) } } }
+        stats?.let { item { Column { it() } } }
+        item { fredLink() }
     }
 }
 

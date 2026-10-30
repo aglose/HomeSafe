@@ -67,6 +67,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
+import com.meticulouscreations.homesafe.finance.ui.LocalFinanceDesk
+import com.meticulouscreations.homesafe.ui.handCursor
 import kotlinx.coroutines.CoroutineScope
 import kotlin.math.abs
 import kotlin.math.max
@@ -189,6 +191,9 @@ fun Sparkline(series: Series, color: Color, modifier: Modifier = Modifier, basel
     }
 }
 
+/** How wide a range button is on a desk. */
+val DESK_RANGE_SLOT = 58.dp
+
 /**
  * Robinhood's row of range buttons under a chart: the chosen one sits in a filled pill (in the
  * chart's colour) that slides to the next pick.
@@ -198,8 +203,10 @@ fun <T> RangeSelector(options: List<T>, selected: T, label: @Composable (T) -> S
     val haptics = LocalHapticFeedback.current
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
+    // On a desk the buttons keep a button's width at the start of the row rather than spreading across a wide chart.
+    val desk = LocalFinanceDesk.current
     BoxWithConstraints(modifier.fillMaxWidth().height(36.dp)) {
-        val slot = maxWidth / options.size
+        val slot = if (desk) minOf(maxWidth / options.size, DESK_RANGE_SLOT) else maxWidth / options.size
         val index = options.indexOf(selected).coerceAtLeast(0)
         val pillX by animateDpAsState(slot * index, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium), label = "rangePill")
         val pillColor by animateColorAsState(color, tween(350), label = "rangePillColor")
@@ -220,6 +227,7 @@ fun <T> RangeSelector(options: List<T>, selected: T, label: @Composable (T) -> S
                         .width(slot)
                         .height(36.dp)
                         .clip(RoundedCornerShape(8.dp))
+                        .handCursor()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,

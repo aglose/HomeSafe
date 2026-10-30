@@ -51,7 +51,9 @@ import kotlinx.coroutines.flow.debounce
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import java.awt.Dimension
+import java.awt.GraphicsEnvironment
 import java.awt.Taskbar
+import kotlin.math.roundToInt
 
 /**
  * The app's window: [App] as the phones have it, in a window that comes back where it was left,
@@ -80,8 +82,17 @@ fun ApplicationScope.HomeSafeWindow(graph: AppGraph, state: WindowState, visible
         title = stringResource(Res.string.desktop_app_name),
         icon = icon,
     ) {
+        // In the window's points, which zoom turns into fewer of the app's dp: scaled with it, so
+        // zooming in never narrows the app past the sidebar's width. No larger than the screen
+        // the window is on, which a zoomed-in minimum on a small laptop's would otherwise be.
+        LaunchedEffect(window, zoom.scale) {
+            val screen = GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
+            window.minimumSize = Dimension(
+                (MIN_WIDTH * zoom.scale).roundToInt().coerceAtMost(screen.width),
+                (MIN_HEIGHT * zoom.scale + TITLE_BAR_HEIGHT.value).roundToInt().coerceAtMost(screen.height),
+            )
+        }
         LaunchedEffect(window) {
-            window.minimumSize = Dimension(MIN_WIDTH, MIN_HEIGHT)
             if (isMacOs) {
                 window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
                 window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
@@ -218,9 +229,14 @@ private val TITLE_BAR_HEIGHT = 28.dp
 private const val DEFAULT_WIDTH = 1280f
 private const val DEFAULT_HEIGHT = 840f
 
-/** As narrow as a phone held upright, which the app is laid out for already; no narrower. */
-private const val MIN_WIDTH = 400
-private const val MIN_HEIGHT = 560
+/**
+ * The smallest the window's page goes, in the app's dp: a little past where the shell lists
+ * everything in a sidebar (840dp, `showsSidebar()`), so a computer's window is never laid out as
+ * a phone's, with a nav floating over the foot of the page, and still half of a 1920-point screen,
+ * for two windows side by side. Tall enough for the sidebar's rows and a page under its title.
+ */
+private const val MIN_WIDTH = 880f
+private const val MIN_HEIGHT = 600f
 
 private const val DOCK_ICON_PX = 512f
 private const val SAVE_DELAY_MS = 500L

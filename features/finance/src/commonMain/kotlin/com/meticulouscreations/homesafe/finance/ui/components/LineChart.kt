@@ -30,6 +30,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -172,27 +174,53 @@ fun LineChart(
     // The aurora drifts, so it needs a frame clock; everything else is still unless live.
     val clock = rememberShaderClock(running = live || (style.shader == ChartShader.AURORA && fillShader != null))
 
+    // Puts the hairline at the point nearest [x] across a chart [w] wide, and says which it is.
+    fun scrubTo(x: Float, w: Float) {
+        val primary = currentPrimary ?: return
+        if (primary.size < 2 || w <= 0f) return
+        val clamped = x.coerceIn(0f, w)
+        val idx = indexAt(clamped / w, primary, currentTarget, currentTimeAxis, currentExtent)
+        scrubX = xOfIndex(idx, primary, currentTarget, currentTimeAxis, currentExtent) * w
+        if (idx != scrubIndex) {
+            val landmark = passedLandmark(primary, scrubIndex, idx, currentExtremes, currentBaseline)
+            scrubIndex = idx
+            haptics.chartTick(currentFeel, landmark)
+            currentOnScrub(idx)
+        }
+    }
+
     Canvas(
         modifier
             .semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription }
             // One gesture handler for the chart's life, reading the data as it stands: new data
             // landing mid-scrub (the day's chart refreshes every minute) mustn't cancel the
             // gesture and leave the finger's hairline stuck on the chart.
+            // A mouse reads the chart by passing over it, as a finger reads it by sliding along it.
             .pointerInput(Unit) {
-                fun report(x: Float) {
-                    val primary = currentPrimary ?: return
-                    if (primary.size < 2) return
-                    val w = size.width.toFloat()
-                    val clamped = x.coerceIn(0f, w)
-                    val idx = indexAt(clamped / w, primary, currentTarget, currentTimeAxis, currentExtent)
-                    scrubX = xOfIndex(idx, primary, currentTarget, currentTimeAxis, currentExtent) * w
-                    if (idx != scrubIndex) {
-                        val landmark = passedLandmark(primary, scrubIndex, idx, currentExtremes, currentBaseline)
-                        scrubIndex = idx
-                        haptics.chartTick(currentFeel, landmark)
-                        currentOnScrub(idx)
+                awaitPointerEventScope {
+                    var hovering = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: continue
+                        if (change.type != PointerType.Mouse || change.pressed) continue
+                        when (event.type) {
+                            PointerEventType.Move, PointerEventType.Enter -> {
+                                hovering = true
+                                scrubTo(change.position.x, size.width.toFloat())
+                            }
+
+                            PointerEventType.Exit -> if (hovering) {
+                                hovering = false
+                                scrubX = null
+                                scrubIndex = -1
+                                currentOnScrub(null)
+                            }
+                        }
                     }
                 }
+            }
+            .pointerInput(Unit) {
+                fun report(x: Float) = scrubTo(x, size.width.toFloat())
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     // Checked after the touch, not before: returning without awaiting one would

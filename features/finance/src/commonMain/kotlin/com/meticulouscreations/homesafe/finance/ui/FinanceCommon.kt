@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,14 +59,21 @@ import com.meticulouscreations.homesafe.finance.ui.components.RollingNumber
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.finance_range_52_week
 import homesafe.shared.generated.resources.finance_signal_none
 import homesafe.shared.generated.resources.watchlist_in_sheet
 import org.jetbrains.compose.resources.stringResource
 
-/** Horizontal padding every finance page uses. */
-internal val PageGutter = 20.dp
+/**
+ * Horizontal padding every finance block keeps from the edge of what holds it: the page's on a
+ * phone, a panel's on a desk ([DeskPanel]), and none for a block standing in a desk's column,
+ * whose page keeps the margin instead.
+ */
+internal val PageGutter: Dp
+    @Composable @ReadOnlyComposable
+    get() = LocalPageGutter.current
 
 /** A page section's heading, with an optional trailing note or [action] (a button) at its end. */
 @Composable
@@ -76,8 +84,10 @@ internal fun SectionHeader(
     subtitle: String? = null,
     info: String? = null,
     action: (@Composable () -> Unit)? = null,
+    // Less above a heading at the top of a desk's panel, whose own edge sets it apart.
+    top: Dp = if (LocalInPanel.current) 18.dp else 28.dp,
 ) {
-    Column(modifier.fillMaxWidth().padding(horizontal = PageGutter).padding(top = 28.dp, bottom = 10.dp)) {
+    Column(modifier.fillMaxWidth().padding(horizontal = PageGutter).padding(top = top, bottom = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary)
             // The ⓘ sits right after the title, where the question comes up.
@@ -93,9 +103,19 @@ internal fun SectionHeader(
     }
 }
 
-/** A raised card on the black page. */
+/** A raised card on the black page; inside a desk's panel, which is the card there, its content lies flat on the panel. */
 @Composable
 internal fun FinanceCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, padding: Dp = 16.dp, content: @Composable ColumnScope.() -> Unit) {
+    if (LocalInPanel.current) {
+        Column(
+            modifier
+                .fillMaxWidth()
+                .let { m -> if (onClick != null) m.clickable(onClick = onClick) else m }
+                .padding(horizontal = PageGutter, vertical = padding),
+            content = content,
+        )
+        return
+    }
     val shape = RoundedCornerShape(18.dp)
     Column(
         modifier
@@ -129,7 +149,20 @@ internal fun StatTile(label: String, value: String, modifier: Modifier = Modifie
 
 /** Two stat tiles a row, ruled between rows, Robinhood's "Stats" block. */
 @Composable
-internal fun StatGrid(stats: List<Pair<String, String>>, modifier: Modifier = Modifier) {
+internal fun StatGrid(stats: List<Pair<String, String>>, modifier: Modifier = Modifier, deskColumns: Int = 2) {
+    // On a desk the stats share a panel: the label goes over its figure, so neither crowds the other, [deskColumns] across.
+    if (LocalFinanceDesk.current) {
+        Column(modifier.fillMaxWidth().padding(horizontal = PageGutter)) {
+            stats.chunked(deskColumns).forEachIndexed { i, row ->
+                if (i > 0) Hairline()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    row.forEach { (label, value) -> StatTile(label, value, Modifier.weight(1f).padding(vertical = 2.dp)) }
+                    repeat(deskColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+        return
+    }
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter)) {
         stats.chunked(2).forEachIndexed { i, row ->
             if (i > 0) Hairline()
@@ -184,8 +217,9 @@ internal fun QuoteRow(
     Row(
         modifier
             .fillMaxWidth()
+            .handCursor()
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = ripple(), onClick = onClick)
-            .padding(horizontal = PageGutter, vertical = 14.dp),
+            .padding(horizontal = PageGutter, vertical = if (LocalFinanceDesk.current) 11.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

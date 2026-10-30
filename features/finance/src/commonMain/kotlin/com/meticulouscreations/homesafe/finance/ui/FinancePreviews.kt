@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.finance.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -66,6 +67,7 @@ import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
 import com.meticulouscreations.homesafe.finance.domain.YieldCurve
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
+import com.meticulouscreations.homesafe.ui.appPageGutter
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import homesafe.shared.generated.resources.Res
@@ -339,6 +341,83 @@ private object PreviewClock : Clock {
 }
 
 internal val previewPadding = PaddingValues(top = 24.dp, bottom = 24.dp)
+
+/** A desk's window, the size of a laptop's beside the shell's sidebar: the pages laid out as dashboards (see FinanceDesk). */
+@Composable
+internal fun FinanceDeskStage(content: @Composable (PaddingValues) -> Unit) {
+    FinanceStage {
+        CompositionLocalProvider(LocalFinanceDesk provides true, LocalPageGutter provides 0.dp) {
+            // Centred as FinanceApp centres a dashboard, under the toolbar it leaves out.
+            BoxWithConstraints {
+                val gutter = appPageGutter(maxWidth, reserved = DESK_MARGIN * 2, maxWidth = DESK_MAX_WIDTH) + DESK_MARGIN
+                content(PaddingValues(start = gutter, end = gutter, top = 24.dp, bottom = 32.dp))
+            }
+        }
+    }
+}
+
+@Preview(name = "Desk · Wallet", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1180)
+@Composable
+private fun FinanceDeskWalletPreview() {
+    FinanceDeskStage { WalletScreen(FinanceFixtures.state, rememberLazyListState(), it, onRetrySheet = {}, budget = BudgetFixtures.month()) }
+}
+
+@Preview(name = "Desk · Markets", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1250)
+@Composable
+private fun FinanceDeskMarketsPreview() {
+    FinanceDeskStage { MarketsScreen(FinanceFixtures.state, rememberLazyListState(), it, { _, _ -> }, {}, {}) }
+}
+
+@Preview(name = "Desk · Economy", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1900)
+@Composable
+private fun FinanceDeskEconomyPreview() {
+    FinanceDeskStage { EconomyScreen(FinanceFixtures.state, rememberLazyListState(), it, onOpenIndicator = {}) }
+}
+
+@Preview(name = "Desk · Risk", widthDp = DESK_PREVIEW_WIDTH, heightDp = 2000)
+@Composable
+private fun FinanceDeskRiskPreview() {
+    FinanceDeskStage { RiskScreen(FinanceFixtures.state, rememberLazyListState(), it) {} }
+}
+
+@Preview(name = "Desk · a quote", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1300)
+@Composable
+private fun FinanceDeskQuotePreview() {
+    FinanceDeskStage { QuoteDetailScreen("MSFT", FinanceFixtures.state, it, { _, _ -> }, {}, {}, { _, _ -> }) }
+}
+
+@Preview(name = "Desk · an indicator", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1300)
+@Composable
+private fun FinanceDeskIndicatorPreview() {
+    FinanceDeskStage { IndicatorDetailScreen(IndicatorCatalog.sahm.id, FinanceFixtures.state, it) }
+}
+
+@Preview(name = "Desk · Wallet, accounts", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1100)
+@Composable
+private fun FinanceDeskAccountsPreview() {
+    FinanceDeskStage { WalletTopicScreen(WalletTopic.ACCOUNTS, focus = null, FinanceFixtures.state, it) }
+}
+
+@Preview(name = "Desk · Wallet, home", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1100)
+@Composable
+private fun FinanceDeskHomePreview() {
+    FinanceDeskStage { WalletTopicScreen(WalletTopic.HOME, focus = null, FinanceFixtures.state, it) }
+}
+
+@Preview(name = "Desk · Wallet, debt", widthDp = DESK_PREVIEW_WIDTH, heightDp = 800)
+@Composable
+private fun FinanceDeskDebtPreview() {
+    FinanceDeskStage { WalletTopicScreen(WalletTopic.DEBT, focus = null, FinanceFixtures.state, it) }
+}
+
+@Preview(name = "Desk · Wallet, sheet charts", widthDp = DESK_PREVIEW_WIDTH, heightDp = 1500)
+@Composable
+private fun FinanceDeskSheetChartsPreview() {
+    FinanceDeskStage { WalletTopicScreen(WalletTopic.SHEET_CHARTS, focus = null, FinanceFixtures.state, it) }
+}
+
+/** A 14-inch laptop's window less the shell's sidebar. */
+internal const val DESK_PREVIEW_WIDTH = 1200
 
 @Preview(widthDp = 412, heightDp = 1800)
 @Composable

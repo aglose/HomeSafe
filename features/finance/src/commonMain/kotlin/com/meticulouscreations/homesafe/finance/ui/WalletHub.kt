@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.finance.ui
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,7 +46,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -59,6 +65,7 @@ import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.ui.components.Meter
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.finance_wallet_accounts_title
@@ -112,9 +119,16 @@ internal fun homeOwnedFraction(finance: PersonalFinance): Double? {
     return (1 - owed / value).coerceIn(0.0, 1.0)
 }
 
-/** "Your money": a row per topic, its figure and a small picture of it, each opening the topic's page. */
+/**
+ * "Your money": a row per topic, its figure and a small picture of it, each opening the topic's
+ * page; on a desk, a grid of tiles, [columns] across.
+ */
 @Composable
-internal fun WalletHub(finance: PersonalFinance, topics: List<WalletTopic>, onOpen: (WalletTopic) -> Unit, modifier: Modifier = Modifier) {
+internal fun WalletHub(finance: PersonalFinance, topics: List<WalletTopic>, onOpen: (WalletTopic) -> Unit, modifier: Modifier = Modifier, columns: Int = 1) {
+    if (columns > 1) {
+        DeskGrid(topics, columns, modifier, gap = 14.dp) { topic -> TopicRow(finance, topic, onClick = { onOpen(topic) }, tile = true) }
+        return
+    }
     val colors = FinanceTheme.colors
     val shape = RoundedCornerShape(18.dp)
     Column(
@@ -133,7 +147,7 @@ internal fun WalletHub(finance: PersonalFinance, topics: List<WalletTopic>, onOp
 }
 
 @Composable
-private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -> Unit) {
+private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -> Unit, tile: Boolean = false) {
     val colors = FinanceTheme.colors
     val dot = stringResource(Res.string.common_dot_separator)
     when (topic) {
@@ -145,6 +159,7 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
                 figure = FinanceFormat.compactMoney(finance.totalAssets ?: finance.accounts.sumOf { it.balance }),
                 note = pluralStringResource(Res.plurals.finance_wallet_topic_accounts_note, finance.accounts.size, finance.accounts.size, FinanceFormat.compactMoney(invested)),
                 onClick = onClick,
+                tile = tile,
             ) {
                 SplitBar(finance.accounts.groupBy { it.category }.map { (cat, list) -> list.sumOf { it.balance } to categoryColor(cat, colors) }.sortedByDescending { it.first })
             }
@@ -160,6 +175,7 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
                 figureColor = net?.let { colors.direction(it) } ?: colors.textPrimary,
                 note = finance.savingsRate?.let { stringResource(Res.string.finance_wallet_topic_flow_note, FinanceFormat.fractionPercent(it, 0)) },
                 onClick = onClick,
+                tile = tile,
             ) {
                 if (income != null && income > 0 && finance.expenses.isNotEmpty()) {
                     // Take-home cut as the Cash flow page's bar is: the biggest costs, the rest, and what's left (white).
@@ -185,6 +201,7 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
                     mortgage?.let { stringResource(Res.string.finance_wallet_topic_mortgage_note, FinanceFormat.compactMoney(it)) },
                 ).joinToString(dot),
                 onClick = onClick,
+                tile = tile,
             ) {
                 if (history.size > 2) Sparkline(history, colors.loss, Modifier.fillMaxWidth().height(28.dp))
             }
@@ -199,6 +216,7 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
                 figureColor = colors.gain,
                 note = owned?.let { stringResource(Res.string.finance_wallet_home_owned, FinanceFormat.fractionPercent(it, 0)) },
                 onClick = onClick,
+                tile = tile,
             ) {
                 owned?.let { Meter(it.toFloat(), colors.gain, height = 6.dp) }
             }
@@ -218,6 +236,13 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
                     year?.effectiveRate?.let { stringResource(Res.string.finance_wallet_topic_tax_note, year.year.toString(), FinanceFormat.fractionPercent(it, 0)) },
                 ).joinToString(dot),
                 onClick = onClick,
+                tile = tile,
+                // A tile has the room for when each vest falls against today.
+                picture = if (tile && finance.vesting.any { it.epochSeconds != null }) {
+                    { VestStrip(finance, now) }
+                } else {
+                    null
+                },
             )
         }
 
@@ -227,6 +252,11 @@ private fun TopicRow(finance: PersonalFinance, topic: WalletTopic, onClick: () -
             figure = null,
             note = pluralStringResource(Res.plurals.finance_wallet_topic_charts_note, finance.charts.size, finance.charts.size),
             onClick = onClick,
+            tile = tile,
+            // A tile has the room for a glance at the first chart the sheet has.
+            picture = finance.charts.firstNotNullOfOrNull { c -> c.series.firstOrNull()?.values?.filterNotNull()?.takeIf { it.size > 2 } }?.takeIf { tile }?.let { values ->
+                { MiniBars(values) }
+            },
         )
     }
 }
@@ -240,8 +270,13 @@ private fun TopicRowLayout(
     note: String?,
     onClick: () -> Unit,
     figureColor: Color = FinanceTheme.colors.textPrimary,
+    tile: Boolean = false,
     picture: (@Composable () -> Unit)? = null,
 ) {
+    if (tile) {
+        TopicTile(icon, topic, figure, note, onClick, figureColor, picture)
+        return
+    }
     val colors = FinanceTheme.colors
     Column(
         Modifier
@@ -267,6 +302,91 @@ private fun TopicRowLayout(
         }
         if (picture != null) {
             Box(Modifier.padding(start = 46.dp, end = 20.dp, top = 10.dp)) { picture() }
+        }
+    }
+}
+
+/**
+ * [TopicRowLayout] as a desk's tile: the icon and title over the figure in large type, the note,
+ * and the picture along the foot, every tile the same height so a grid of them lines up.
+ */
+@Composable
+private fun TopicTile(
+    icon: ImageVector,
+    topic: WalletTopic,
+    figure: String?,
+    note: String?,
+    onClick: () -> Unit,
+    figureColor: Color,
+    picture: (@Composable () -> Unit)?,
+) {
+    val colors = FinanceTheme.colors
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(TOPIC_TILE_HEIGHT)
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(colors.surfaceRaised.copy(alpha = 0.55f), colors.surface)))
+            .border(1.dp, colors.hairline, shape)
+            .testTag("wallet_topic_${topic.name.lowercase()}")
+            .handCursor()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(18.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(30.dp).clip(CircleShape).background(colors.surfaceRaised), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(stringResource(topic.title), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, modifier = Modifier.weight(1f))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.height(14.dp))
+        if (figure != null) Text(figure, style = FinanceTheme.type.title, color = figureColor, maxLines = 1)
+        if (!note.isNullOrEmpty()) Text(note, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.weight(1f))
+        picture?.invoke()
+    }
+}
+
+private val TOPIC_TILE_HEIGHT = 172.dp
+
+/** The vests along a line from the first to the last, today marked across it: those behind dimmed, those to come lit. */
+@Composable
+private fun VestStrip(finance: PersonalFinance, now: Long) {
+    val colors = FinanceTheme.colors
+    val times = finance.vesting.mapNotNull { it.epochSeconds }
+    val from = minOf(times.min(), now)
+    val to = maxOf(times.max(), now)
+    Canvas(Modifier.fillMaxWidth().height(16.dp)) {
+        val span = (to - from).coerceAtLeast(1).toFloat()
+        fun x(t: Long) = 5.dp.toPx() + (size.width - 10.dp.toPx()) * ((t - from) / span)
+        val mid = size.height / 2
+        drawLine(colors.hairline, Offset(0f, mid), Offset(size.width, mid), 2.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(colors.accent.copy(alpha = 0.5f), Offset(x(now), mid), Offset(size.width, mid), 2.dp.toPx(), cap = StrokeCap.Round)
+        times.forEach { t -> drawCircle(if (t >= now) colors.accent else colors.textTertiary, 5.dp.toPx(), Offset(x(t), mid)) }
+        drawLine(colors.textPrimary, Offset(x(now), 0f), Offset(x(now), size.height), 2.dp.toPx(), cap = StrokeCap.Round)
+    }
+}
+
+/** [values] as a row of small bars on a shared zero: a chart's shape at a glance. */
+@Composable
+private fun MiniBars(values: List<Double>) {
+    val colors = FinanceTheme.colors
+    val shown = values.takeLast(24)
+    val top = shown.maxOf { kotlin.math.abs(it) }.takeIf { it > 0 } ?: return
+    Canvas(Modifier.fillMaxWidth().height(32.dp)) {
+        val slot = size.width / shown.size
+        val barW = (slot * 0.62f).coerceAtLeast(2f)
+        shown.forEachIndexed { i, v ->
+            val h = (size.height * (kotlin.math.abs(v) / top)).toFloat().coerceAtLeast(2f)
+            drawRoundRect(
+                colors.cool.copy(alpha = 0.35f + 0.65f * (i + 1) / shown.size),
+                topLeft = Offset(i * slot + (slot - barW) / 2, size.height - h),
+                size = Size(barW, h),
+                cornerRadius = CornerRadius(barW / 3),
+            )
         }
     }
 }
@@ -312,11 +432,12 @@ internal fun WalletTopicScreen(
             flash = null
         }
     }
+    val desk = LocalFinanceDesk.current
     LazyColumn(modifier.testTag("wallet_topic_page"), state = listState, contentPadding = contentPadding) {
         if (finance == null) {
             item(key = "loading") { WalletSkeleton() }
         } else {
-            walletTopicItems(topic, finance, state, flash)
+            if (desk) walletTopicDeskItems(topic, finance, state, flash) else walletTopicItems(topic, finance, state, flash)
             item(key = "source") { SourceFooter(finance) }
         }
     }

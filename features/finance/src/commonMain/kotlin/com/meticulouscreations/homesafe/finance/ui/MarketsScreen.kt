@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -60,6 +63,7 @@ import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.finance_callout_for_you
 import homesafe.shared.generated.resources.finance_change_at
@@ -133,6 +137,10 @@ fun MarketsScreen(
     val sorts = if (state.watchEntries.any { it.position != null }) WatchSort.entries else WatchSort.entries - WatchSort.HELD
     val sort = sorts.firstOrNull { it.name == sortName } ?: WatchSort.LIST
 
+    if (LocalFinanceDesk.current) {
+        MarketsDesk(state, listState, contentPadding, selected, { selected = it }, range, { range = it }, sorts, sort, { sortName = it.name }, onRequestHistory, onAddSymbol, onOpenQuote)
+        return
+    }
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxWidth()) {
         item(key = "tape") { TickerTape(state.quotes, onOpenQuote) }
         item(key = "hero") {
@@ -156,34 +164,14 @@ fun MarketsScreen(
                 modifier = Modifier.padding(top = 18.dp),
             ) {
                 items(MarketCatalog.indices, key = { it.symbol }) { meta ->
-                    IndexCard(meta.symbol, state.quotes[meta.symbol], meta.symbol == selected) { selected = meta.symbol }
+                    IndexCard(meta.symbol, state.quotes[meta.symbol], meta.symbol == selected, onClick = { selected = meta.symbol }, Modifier.width(148.dp))
                 }
             }
         }
         item(key = "stats-h") {
             SectionHeader(stringResource(Res.string.finance_stats_title), trailing = MarketCatalog.lookup(selected).shortName.resolve(), info = "prevclose")
         }
-        item(key = "stats") {
-            val q = state.quotes[selected]
-            val kind = MarketCatalog.lookup(selected).kind
-            CascadeIn(0) {
-                Column {
-                    StatGrid(
-                        listOf(
-                            stringResource(Res.string.finance_markets_prev_close) to (q?.previousClose?.let { FinanceFormat.price(it, kind) } ?: "—"),
-                            stringResource(Res.string.finance_markets_volume) to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
-                            stringResource(Res.string.finance_markets_day_high) to (q?.dayHigh?.let { FinanceFormat.price(it, kind) } ?: "—"),
-                            stringResource(Res.string.finance_markets_day_low) to (q?.dayLow?.let { FinanceFormat.price(it, kind) } ?: "—"),
-                        ),
-                    )
-                    val hi = q?.fiftyTwoWeekHigh
-                    val lo = q?.fiftyTwoWeekLow
-                    if (q != null && hi != null && lo != null) {
-                        RangeBar(lo, hi, q.price, FinanceFormat.price(lo, kind), FinanceFormat.price(hi, kind))
-                    }
-                }
-            }
-        }
+        item(key = "stats") { CascadeIn(0) { IndexStats(selected, state) } }
         item(key = "alltime") { LongRunSection(selected, state, onRequestHistory) }
         item(key = "macro-h") {
             SectionHeader(stringResource(Res.string.finance_markets_macro_title), subtitle = stringResource(Res.string.finance_markets_macro_subtitle))
@@ -209,6 +197,128 @@ fun MarketsScreen(
     }
 }
 
+/** The day's figures for [symbol] and where it sits in its year's range. */
+@Composable
+private fun IndexStats(symbol: String, state: FinanceUiState) {
+    val q = state.quotes[symbol]
+    val kind = MarketCatalog.lookup(symbol).kind
+    Column {
+        StatGrid(
+            listOf(
+                stringResource(Res.string.finance_markets_prev_close) to (q?.previousClose?.let { FinanceFormat.price(it, kind) } ?: "—"),
+                stringResource(Res.string.finance_markets_volume) to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
+                stringResource(Res.string.finance_markets_day_high) to (q?.dayHigh?.let { FinanceFormat.price(it, kind) } ?: "—"),
+                stringResource(Res.string.finance_markets_day_low) to (q?.dayLow?.let { FinanceFormat.price(it, kind) } ?: "—"),
+            ),
+        )
+        val hi = q?.fiftyTwoWeekHigh
+        val lo = q?.fiftyTwoWeekLow
+        if (q != null && hi != null && lo != null) {
+            RangeBar(lo, hi, q.price, FinanceFormat.price(lo, kind), FinanceFormat.price(hi, kind))
+        }
+    }
+}
+
+/**
+ * The Markets tab on a desk, laid out as a broker's web page is: the chosen index's price and
+ * chart with every index side by side under it, its day's stats beside its long run, and the
+ * watchlist and the other big signals down a rail at the side, always in view beside the chart.
+ */
+@Composable
+private fun MarketsDesk(
+    state: FinanceUiState,
+    listState: LazyListState,
+    contentPadding: PaddingValues,
+    selected: String,
+    onSelect: (String) -> Unit,
+    range: ChartRange,
+    onRange: (ChartRange) -> Unit,
+    sorts: List<WatchSort>,
+    sort: WatchSort,
+    onSort: (WatchSort) -> Unit,
+    onRequestHistory: (String, ChartRange) -> Unit,
+    onAddSymbol: () -> Unit,
+    onOpenQuote: (String) -> Unit,
+) {
+    LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxWidth()) {
+        item(key = "tape") { TickerTape(state.quotes, onOpenQuote) }
+        item(key = "desk") {
+            DeskPage {
+                DeskRow(Modifier.padding(top = 16.dp)) {
+                    DeskColumn(DESK_MAIN_WEIGHT) {
+                        DeskPanel(top = 0.dp) {
+                            PriceHeroAndChart(
+                                symbol = selected,
+                                state = state,
+                                range = range,
+                                onRange = onRange,
+                                onRequestHistory = onRequestHistory,
+                                verdictPeers = IndexSymbols,
+                                chartHeight = DESK_HERO_CHART,
+                                trailing = {
+                                    MarketStatus(state.quotes[MarketCatalog.SP500.symbol])
+                                    Explainers.forSymbol(selected)?.let { InfoButton(it) }
+                                },
+                            )
+                            Row(Modifier.padding(horizontal = PageGutter).padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                MarketCatalog.indices.forEach { meta ->
+                                    IndexCard(meta.symbol, state.quotes[meta.symbol], meta.symbol == selected, onClick = { onSelect(meta.symbol) }, Modifier.weight(1f))
+                                }
+                            }
+                        }
+                        DeskRow {
+                            DeskColumn(1f) {
+                                DeskPanel(title = stringResource(Res.string.finance_stats_title), trailing = MarketCatalog.lookup(selected).shortName.resolve(), info = "prevclose") {
+                                    CascadeIn(0) { IndexStats(selected, state) }
+                                }
+                            }
+                            DeskColumn(1f) {
+                                DeskPanel(top = 0.dp, bottom = 4.dp) { LongRunSection(selected, state, onRequestHistory) }
+                            }
+                        }
+                        DeskPanel(title = stringResource(Res.string.finance_markets_macro_title), subtitle = stringResource(Res.string.finance_markets_macro_subtitle), bottom = 8.dp) {
+                            DeskGrid(MarketCatalog.macro, columns = 2, gap = 0.dp) { meta -> QuoteRow(meta.symbol, state.quotes[meta.symbol], onClick = { onOpenQuote(meta.symbol) }) }
+                        }
+                    }
+                    DeskColumn(1f) {
+                        DeskPanel(
+                            title = stringResource(Res.string.finance_markets_watchlist_title),
+                            subtitle = stringResource(watchlistSubtitle(state)),
+                            action = { AddSymbolButton(onAddSymbol) },
+                            bottom = 8.dp,
+                        ) {
+                            if (state.watchEntries.size > 1) {
+                                ChipRow(sorts, sort, { stringResource(it.label) }, FinanceTheme.colors.accent, onSort, Modifier.padding(bottom = 6.dp))
+                            }
+                            state.holdings.forEach { HoldingsCard(it) }
+                            sortWatchEntries(state.watchEntries, state.quotes, sort).forEach { entry ->
+                                key(entry.symbol) {
+                                    QuoteRow(
+                                        entry.symbol,
+                                        state.quotes[entry.symbol],
+                                        onClick = { onOpenQuote(entry.symbol) },
+                                        inSheet = entry.inSheet,
+                                        position = entry.position,
+                                        fallbackName = state.watchedSymbol(entry.symbol)?.name,
+                                        fallbackKind = state.watchedSymbol(entry.symbol)?.kind,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item(key = "fine") {
+            FinePrint(
+                state.quotesError?.let { stringResource(Res.string.finance_markets_fine_print_error, it.resolve()) }
+                    ?: stringResource(Res.string.finance_markets_fine_print),
+                Modifier.padding(top = 12.dp),
+            )
+        }
+    }
+}
+
 /**
  * A symbol's price and chart, Robinhood's top of page: the rolling price, the change over the
  * chosen range, the chart under an aurora tinted by direction, and the range row. Scrubbing the
@@ -224,6 +334,7 @@ internal fun PriceHeroAndChart(
     modifier: Modifier = Modifier,
     /** Symbols this one is switched between in place (the Markets tab's index cards); see the verdict below. */
     verdictPeers: List<String> = emptyList(),
+    chartHeight: Dp = 240.dp,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val colors = FinanceTheme.colors
@@ -308,14 +419,14 @@ internal fun PriceHeroAndChart(
                     live = live,
                     contentDescription = stringResource(Res.string.finance_markets_chart_description, name, caption),
                     onScrub = { scrub = it },
-                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                    modifier = Modifier.fillMaxWidth().height(chartHeight),
                 )
             } else if (load?.error != null) {
-                Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(chartHeight), contentAlignment = Alignment.Center) {
                     Text(load.error.resolve(), style = FinanceTheme.type.label, color = colors.textSecondary)
                 }
             } else {
-                Shimmer(Modifier.fillMaxWidth().height(240.dp).padding(horizontal = PageGutter), corner = 14.dp)
+                Shimmer(Modifier.fillMaxWidth().height(chartHeight).padding(horizontal = PageGutter), corner = 14.dp)
             }
             Spacer(Modifier.height(10.dp))
             RangeSelector(PriceRanges, range, { stringResource(it.label) }, lineColor, onRange, Modifier.padding(horizontal = PageGutter - 4.dp))
@@ -392,14 +503,14 @@ private fun MarketStatus(sp: Quote?) {
 
 /** A card per index under the hero: tap to put that index's chart up. */
 @Composable
-private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick: () -> Unit) {
+private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val meta = MarketCatalog.lookup(symbol)
     val dir = colors.direction(quote?.change ?: 0.0)
     val shape = RoundedCornerShape(16.dp)
     Column(
-        Modifier
-            .width(148.dp)
+        modifier
+            .handCursor()
             .clip(shape)
             .background(if (selected) dir.copy(alpha = 0.10f) else colors.surface)
             .border(1.dp, if (selected) dir.copy(alpha = 0.7f) else colors.hairline, shape)
@@ -411,7 +522,7 @@ private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick:
         Text(shortName, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1)
         // What it is, in plain words ("Small companies").
         Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }?.title?.let { stringResource(it) }?.takeIf { it != shortName }?.let {
-            Text(it, style = FinanceTheme.type.micro, color = colors.textTertiary, maxLines = 1)
+            Text(it, style = FinanceTheme.type.micro, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(2.dp))
         if (quote != null) {
@@ -472,18 +583,18 @@ internal fun QuoteDetailScreen(
     var range by rememberSaveable(symbol) { mutableStateOf(ChartRange.DAY) }
     val q = state.quotes[symbol]
     val meta = state.meta(symbol)
-    LazyColumn(contentPadding = contentPadding) {
-        item {
-            PriceHeroAndChart(symbol, state, range, { range = it }, onRequestHistory, trailing = { Explainers.forSymbol(symbol)?.let { InfoButton(it) } })
-        }
-        item { WatchStatusRow(symbol, state, onFollow = { onFollow(symbol) }, onUnfollow = { onUnfollow(symbol) }) }
-        if (meta.kind.isHoldable()) {
-            item { PositionSection(symbol, state) { onSetPosition(symbol, it) } }
-        }
-        val explainer = Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }
-        if (explainer != null) {
-            item { SectionHeader(stringResource(Res.string.finance_markets_what_is_it), info = explainer.id) }
-            item {
+    val explainer = Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }
+    val hero: @Composable (Dp) -> Unit = { height ->
+        PriceHeroAndChart(symbol, state, range, { range = it }, onRequestHistory, chartHeight = height, trailing = { Explainers.forSymbol(symbol)?.let { InfoButton(it) } })
+    }
+    val holding: @Composable () -> Unit = {
+        WatchStatusRow(symbol, state, onFollow = { onFollow(symbol) }, onUnfollow = { onUnfollow(symbol) })
+        if (meta.kind.isHoldable()) PositionSection(symbol, state) { onSetPosition(symbol, it) }
+    }
+    val about: (@Composable () -> Unit)? = when {
+        explainer != null -> {
+            {
+                SectionHeader(stringResource(Res.string.finance_markets_what_is_it), info = explainer.id)
                 Column(Modifier.padding(horizontal = PageGutter)) {
                     Text(stringResource(explainer.oneLiner), style = FinanceTheme.type.body, color = FinanceTheme.colors.textPrimary)
                     Spacer(Modifier.height(10.dp))
@@ -495,9 +606,11 @@ internal fun QuoteDetailScreen(
                     }
                 }
             }
-        } else if (meta.about != null) {
-            item { SectionHeader(stringResource(Res.string.finance_markets_about)) }
-            item {
+        }
+
+        meta.about != null -> {
+            {
+                SectionHeader(stringResource(Res.string.finance_markets_about))
                 Text(
                     stringResource(meta.about),
                     style = FinanceTheme.type.body,
@@ -506,26 +619,57 @@ internal fun QuoteDetailScreen(
                 )
             }
         }
-        item { SectionHeader(stringResource(Res.string.finance_stats_title)) }
-        item {
-            StatGrid(
-                listOf(
-                    stringResource(Res.string.finance_markets_price) to (q?.price?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
-                    stringResource(Res.string.finance_markets_prev_close) to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
-                    stringResource(Res.string.finance_markets_day_high) to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
-                    stringResource(Res.string.finance_markets_day_low) to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
-                    stringResource(Res.string.finance_markets_52w_high) to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
-                    stringResource(Res.string.finance_markets_52w_low) to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
-                    stringResource(Res.string.finance_markets_volume) to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
-                    stringResource(Res.string.finance_markets_symbol) to symbol,
-                ),
-            )
-        }
+
+        else -> null
+    }
+    val stats: @Composable () -> Unit = {
+        SectionHeader(stringResource(Res.string.finance_stats_title))
+        StatGrid(
+            listOf(
+                stringResource(Res.string.finance_markets_price) to (q?.price?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                stringResource(Res.string.finance_markets_prev_close) to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                stringResource(Res.string.finance_markets_day_high) to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                stringResource(Res.string.finance_markets_day_low) to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                stringResource(Res.string.finance_markets_52w_high) to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                stringResource(Res.string.finance_markets_52w_low) to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                stringResource(Res.string.finance_markets_volume) to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
+                stringResource(Res.string.finance_markets_symbol) to symbol,
+            ),
+        )
         val hi = q?.fiftyTwoWeekHigh
         val lo = q?.fiftyTwoWeekLow
         if (q != null && hi != null && lo != null) {
-            item { RangeBar(lo, hi, q.price, FinanceFormat.price(lo, meta.kind, meta.currency), FinanceFormat.price(hi, meta.kind, meta.currency)) }
+            RangeBar(lo, hi, q.price, FinanceFormat.price(lo, meta.kind, meta.currency), FinanceFormat.price(hi, meta.kind, meta.currency))
         }
+    }
+    if (LocalFinanceDesk.current) {
+        // A quote's page on a desk: the chart with its long run under it, and what is held, what
+        // it is and the day's stats down a rail beside it.
+        LazyColumn(contentPadding = contentPadding) {
+            item {
+                DeskPage {
+                    DeskRow(Modifier.padding(top = 8.dp)) {
+                        DeskColumn(DESK_MAIN_WEIGHT) {
+                            DeskPanel(top = 0.dp) { hero(DESK_HERO_CHART + 20.dp) }
+                            DeskPanel(top = 0.dp, bottom = 4.dp) { LongRunSection(symbol, state, onRequestHistory, deskColumns = 4) }
+                        }
+                        DeskColumn(1f) {
+                            DeskPanel(bottom = 8.dp) { holding() }
+                            about?.let { DeskPanel(top = 0.dp) { it() } }
+                            DeskPanel(top = 0.dp) { stats() }
+                        }
+                    }
+                }
+            }
+            item { FinePrint(stringResource(Res.string.finance_markets_quote_fine_print), Modifier.padding(top = 12.dp)) }
+        }
+        return
+    }
+    LazyColumn(contentPadding = contentPadding) {
+        item { hero(240.dp) }
+        item { Column { holding() } }
+        about?.let { item { Column { it() } } }
+        item { Column { stats() } }
         item { LongRunSection(symbol, state, onRequestHistory) }
         item { FinePrint(stringResource(Res.string.finance_markets_quote_fine_print)) }
     }

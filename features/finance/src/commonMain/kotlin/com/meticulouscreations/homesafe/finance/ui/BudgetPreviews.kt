@@ -246,6 +246,19 @@ private fun BudgetPreview(state: BudgetUiState) {
     }
 }
 
+@Composable
+private fun BudgetDeskPreview(state: BudgetUiState) {
+    FinanceDeskStage { padding ->
+        BudgetScreen(state, rememberLazyListState(), padding, onTag = { _, _, _ -> }, onTagLine = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
+    }
+}
+
+@Preview(name = "Desk · Budget, with Amazon orders", widthDp = 1200, heightDp = 2600)
+@Composable
+private fun FinanceDeskBudgetPreview() {
+    BudgetDeskPreview(BudgetFixtures.state(BudgetFixtures.withAmazon))
+}
+
 @Preview(name = "Budget · on pace", widthDp = 412, heightDp = 3400)
 @Preview(name = "Budget · on pace, in Spanish", widthDp = 412, heightDp = 3400, locale = "es")
 @Composable

@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -45,8 +47,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -63,6 +68,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -105,6 +111,8 @@ import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.finance.ui.components.heatColor
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.handCursor
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
@@ -152,6 +160,7 @@ import homesafe.shared.generated.resources.fin_budget_fresh_never
 import homesafe.shared.generated.resources.fin_budget_fresh_read
 import homesafe.shared.generated.resources.fin_budget_fresh_read_changed
 import homesafe.shared.generated.resources.fin_budget_fresh_reading
+import homesafe.shared.generated.resources.fin_budget_headline_over
 import homesafe.shared.generated.resources.fin_budget_hero_day
 import homesafe.shared.generated.resources.fin_budget_hero_limit
 import homesafe.shared.generated.resources.fin_budget_hero_month
@@ -160,6 +169,10 @@ import homesafe.shared.generated.resources.fin_budget_holder_ending
 import homesafe.shared.generated.resources.fin_budget_holders_body
 import homesafe.shared.generated.resources.fin_budget_holders_title
 import homesafe.shared.generated.resources.fin_budget_how
+import homesafe.shared.generated.resources.fin_budget_kpi_left
+import homesafe.shared.generated.resources.fin_budget_kpi_of_limit
+import homesafe.shared.generated.resources.fin_budget_kpi_of_take_home
+import homesafe.shared.generated.resources.fin_budget_kpi_per_day
 import homesafe.shared.generated.resources.fin_budget_line_source_auto
 import homesafe.shared.generated.resources.fin_budget_line_source_manual
 import homesafe.shared.generated.resources.fin_budget_line_source_manual_none
@@ -228,6 +241,11 @@ import homesafe.shared.generated.resources.fin_budget_source_bank
 import homesafe.shared.generated.resources.fin_budget_source_manual
 import homesafe.shared.generated.resources.fin_budget_source_none
 import homesafe.shared.generated.resources.fin_budget_source_rule
+import homesafe.shared.generated.resources.fin_budget_table_amount
+import homesafe.shared.generated.resources.fin_budget_table_card
+import homesafe.shared.generated.resources.fin_budget_table_line
+import homesafe.shared.generated.resources.fin_budget_table_purchase
+import homesafe.shared.generated.resources.fin_budget_table_whose
 import homesafe.shared.generated.resources.fin_budget_tag_clear
 import homesafe.shared.generated.resources.fin_budget_tag_line_auto
 import homesafe.shared.generated.resources.fin_budget_tag_line_none
@@ -381,6 +399,7 @@ fun BudgetScreen(
         purchases.filter { matchesFilter(it, filter) && (needle.isEmpty() || it.name.contains(needle, ignoreCase = true)) }
     }
     val shownByDay = remember(shown) { shown.groupBy { it.date } }
+    val desk = LocalFinanceDesk.current
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.testTag("finance_budget")) {
         when {
             budget == null && state.loading -> item(key = "loading") { BudgetSkeleton() }
@@ -401,6 +420,29 @@ fun BudgetScreen(
                 )
             }
 
+            pace != null && desk -> {
+                budgetDeskItems(
+                    state,
+                    budget,
+                    pace,
+                    filter,
+                    query,
+                    shown.size,
+                    shownByDay,
+                    showInList = showInList,
+                    onFilter = { filter = it },
+                    onQuery = { query = it },
+                    onOpenTag = { tagging = it },
+                    onTag = onTag,
+                    onSetRole = onSetRole,
+                    onSetHolder = onSetHolder,
+                    onShowMonth = onShowMonth,
+                    onSyncNow = onSyncNow,
+                    onOpenLinkedAccounts = onOpenLinkedAccounts,
+                    onOpenSettings = onOpenSettings,
+                )
+            }
+
             pace != null -> {
                 val unset = budget.cards.filter { it.role == CardRole.Unset }
                 if (budget.budgetCards.isNotEmpty()) {
@@ -413,18 +455,7 @@ fun BudgetScreen(
                 // A shared card whose bank marks each purchase with the card that made it: said once, they sort themselves.
                 val unsaid = budget.cards.filter { it.unsaidHolders.isNotEmpty() }
                 if (unsaid.isNotEmpty() && budget.config.people.isNotEmpty()) {
-                    item(key = "holders") {
-                        FinanceCard(Modifier.padding(top = 16.dp).testTag("finance_budget_holders")) {
-                            Text(stringResource(Res.string.fin_budget_holders_title), style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary)
-                            Spacer(Modifier.height(6.dp))
-                            Text(stringResource(Res.string.fin_budget_holders_body), style = FinanceTheme.type.body, color = FinanceTheme.colors.textSecondary)
-                            unsaid.forEach { card ->
-                                Spacer(Modifier.height(14.dp))
-                                Text(cardLabel(card), style = FinanceTheme.type.bodyStrong, color = FinanceTheme.colors.textPrimary)
-                                CardHolders(card, budget.config.people, enabled = !state.saving, onSay = { mark, person -> onSetHolder(card.key, mark, person) })
-                            }
-                        }
-                    }
+                    item(key = "holders") { HoldersCard(unsaid, budget, state.saving, onSetHolder) }
                 }
                 if (budget.budgetCards.isNotEmpty()) {
                     val toSort = budget.unassigned
@@ -552,6 +583,562 @@ fun BudgetScreen(
             },
             onDismiss = { tagging = null },
         )
+    }
+}
+
+/** For a shared card whose bank marks each purchase with the card that made it: whose each mark is, said once. */
+@Composable
+private fun HoldersCard(unsaid: List<BudgetCard>, budget: Budget, saving: Boolean, onSetHolder: (cardKey: String, mark: String, person: String?) -> Unit) {
+    FinanceCard(Modifier.padding(top = 16.dp).testTag("finance_budget_holders")) {
+        Text(stringResource(Res.string.fin_budget_holders_title), style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary)
+        Spacer(Modifier.height(6.dp))
+        Text(stringResource(Res.string.fin_budget_holders_body), style = FinanceTheme.type.body, color = FinanceTheme.colors.textSecondary)
+        unsaid.forEach { card ->
+            Spacer(Modifier.height(14.dp))
+            Text(cardLabel(card), style = FinanceTheme.type.bodyStrong, color = FinanceTheme.colors.textPrimary)
+            CardHolders(card, budget.config.people, enabled = !saving, onSay = { mark, person -> onSetHolder(card.key, mark, person) })
+        }
+    }
+}
+
+/**
+ * The Budget tab on a desk: the month's headline and pace side by side; the budget lines and who
+ * spent what as cards two across beside a rail of what to sort and where the money went; then
+ * every purchase as a table, a column each for what it was, its line, its card, whose it is and
+ * what it cost, in one panel that stays a lazy list however long the month's gets.
+ */
+private fun LazyListScope.budgetDeskItems(
+    state: BudgetUiState,
+    budget: Budget,
+    pace: BudgetPace,
+    filter: String?,
+    query: String,
+    shownCount: Int,
+    shownByDay: Map<String, List<Purchase>>,
+    showInList: (String?) -> Unit,
+    onFilter: (String?) -> Unit,
+    onQuery: (String) -> Unit,
+    onOpenTag: (String) -> Unit,
+    onTag: (purchaseId: String, bucket: BucketId, remember: Boolean) -> Unit,
+    onSetRole: (cardKey: String, role: CardRole) -> Unit,
+    onSetHolder: (cardKey: String, mark: String, person: String?) -> Unit,
+    onShowMonth: (String?) -> Unit,
+    onSyncNow: () -> Unit,
+    onOpenLinkedAccounts: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val spending = budget.budgetCards.isNotEmpty()
+    // Where the reading stands and the two things to do about it, on one line over the page.
+    item(key = "desk-status") { DeskPage { BudgetDeskStatus(state, budget, onSyncNow, onOpenSettings, onOpenLinkedAccounts, onBackToNow = { onShowMonth(null) }) } }
+    // The month in four figures, each read at a glance.
+    if (spending) item(key = "desk-figures") { DeskPage { BudgetFigures(budget, pace, Modifier.padding(top = 12.dp)) } }
+    // What needs saying before the month can be read right, the width of the page.
+    val unset = budget.cards.filter { it.role == CardRole.Unset }
+    if (unset.isNotEmpty()) {
+        item(key = "roles") { DeskPage { RoleSetupCard(unset, saving = state.saving, onSetRole = onSetRole) } }
+    }
+    val unsaid = budget.cards.filter { it.unsaidHolders.isNotEmpty() }
+    if (unsaid.isNotEmpty() && budget.config.people.isNotEmpty()) {
+        item(key = "holders") { DeskPage { HoldersCard(unsaid, budget, state.saving, onSetHolder) } }
+    }
+    if (!spending) return
+    item(key = "desk") {
+        DeskPage {
+            DeskRow(Modifier.padding(top = DeskGap)) {
+                DeskColumn(DESK_MAIN_WEIGHT) {
+                    DeskPanel(title = stringResource(Res.string.fin_budget_pace_title), info = "budgetpace", bottom = 8.dp) { PaceBlock(budget, pace) }
+                    if (budget.config.cardPaidLines.isEmpty()) {
+                        if (budget.isCurrentMonth) {
+                            BudgetMessageCard(
+                                stringResource(Res.string.fin_budget_lines_setup_title),
+                                stringResource(Res.string.fin_budget_lines_setup_body),
+                                stringResource(Res.string.fin_budget_lines_setup_action),
+                                onOpenSettings,
+                                Modifier.testTag("finance_budget_lines_setup"),
+                            )
+                        }
+                    } else {
+                        DeskPanel(title = stringResource(Res.string.fin_budget_lines_title), bottom = 8.dp) {
+                            budget.lines.forEachIndexed { index, line ->
+                                val key = LINE_FILTER + line.name
+                                LinePlanRow(line, lineColor(index), budget, selected = filter == key, onClick = { showInList(if (filter == key) null else key) })
+                            }
+                            if (budget.outsideLines.count > 0) {
+                                PlanRow(
+                                    color = FinanceTheme.colors.textTertiary,
+                                    name = stringResource(Res.string.fin_budget_lines_outside),
+                                    spent = budget.outsideLines.spent,
+                                    plan = null,
+                                    share = if (budget.spent > 0) (budget.outsideLines.spent / budget.spent).toFloat() else 0f,
+                                    status = pluralStringResource(Res.plurals.fin_budget_purchases_count, budget.outsideLines.count, budget.outsideLines.count),
+                                    statusColor = FinanceTheme.colors.textSecondary,
+                                    selected = filter == LINE_FILTER,
+                                    onClick = { showInList(if (filter == LINE_FILTER) null else LINE_FILTER) },
+                                    modifier = Modifier.testTag("finance_budget_line_outside"),
+                                )
+                            }
+                        }
+                    }
+                    DeskPanel(title = stringResource(Res.string.fin_budget_who_title), bottom = 8.dp) {
+                        budget.buckets.filter { it.id != BucketId.Unassigned || it.count > 0 }.forEach { bucket ->
+                            BucketPlanRow(bucket, budget, selected = filter == bucket.id.key, onClick = { showInList(if (filter == bucket.id.key) null else bucket.id.key) })
+                        }
+                    }
+                    if (budget.history.any { it.spent > 0 }) {
+                        DeskPanel(title = stringResource(Res.string.fin_budget_months_title)) { MonthsBlock(budget, onShowMonth) }
+                    }
+                }
+                DeskColumn(1f) {
+                    val toSort = budget.unassigned
+                    if (toSort.isNotEmpty()) {
+                        DeskPanel(
+                            title = stringResource(Res.string.fin_budget_sort_title),
+                            trailing = pluralStringResource(Res.plurals.fin_budget_sort_count, toSort.size, toSort.size),
+                            bottom = 8.dp,
+                        ) {
+                            toSort.take(TO_SORT_SHOWN).forEach { purchase ->
+                                key(purchase.id) {
+                                    SortRow(purchase, budget.config.people, busy = purchase.id in state.tagging, onPick = { onTag(purchase.id, it, false) }, onOpen = { onOpenTag(purchase.id) })
+                                }
+                            }
+                            if (toSort.size > TO_SORT_SHOWN) {
+                                Text(
+                                    pluralStringResource(Res.plurals.fin_budget_sort_more, toSort.size - TO_SORT_SHOWN, toSort.size - TO_SORT_SHOWN),
+                                    style = FinanceTheme.type.bodyStrong,
+                                    color = FinanceTheme.colors.accent,
+                                    modifier = Modifier.padding(horizontal = PageGutter, vertical = 10.dp).handCursor().clickable(role = Role.Button) { showInList(UNSORTED_KEY) },
+                                )
+                            }
+                        }
+                    }
+                    if (budget.categories.isNotEmpty()) {
+                        DeskPanel(title = stringResource(Res.string.fin_budget_what_title)) { CategoryBlock(budget, selected = filter, onSelect = { showInList(it) }) }
+                    }
+                    if (budget.merchants.isNotEmpty()) {
+                        DeskPanel(title = stringResource(Res.string.fin_budget_where_title), bottom = 8.dp) { MerchantBlock(budget) }
+                    }
+                    val amazon = budget.amazon
+                    if (amazon != null && amazon.configured && amazon.charges > 0) {
+                        DeskPanel(title = stringResource(Res.string.fin_amazon_title), info = null) {
+                            AmazonBlock(amazon, selected = filter == AMAZON_FILTER, onClick = { showInList(if (filter == AMAZON_FILTER) null else AMAZON_FILTER) })
+                        }
+                    }
+                }
+            }
+        }
+    }
+    item(key = LIST_HEADER_KEY) {
+        DeskPage {
+            Column(Modifier.padding(top = 28.dp).deskPanelBand(PanelBand.TOP).padding(bottom = 4.dp)) {
+                CompositionLocalProvider(LocalPageGutter provides TABLE_GUTTER) {
+                    SectionHeader(
+                        stringResource(Res.string.fin_budget_purchases_title),
+                        trailing = pluralStringResource(Res.plurals.fin_budget_purchases_count, shownCount, shownCount),
+                        top = 18.dp,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { FilterChips(budget, filter, onSelect = onFilter) }
+                        if (budget.purchases.isNotEmpty()) PurchaseSearch(query, onQuery, Modifier.width(320.dp).padding(bottom = 10.dp))
+                    }
+                    PurchaseTableHeader(Modifier.padding(top = 12.dp))
+                }
+            }
+        }
+    }
+    if (shownCount == 0) {
+        item(key = "list-none") {
+            DeskPage {
+                FinePrint(
+                    stringResource(if (budget.purchases.isEmpty()) Res.string.fin_budget_purchases_none else Res.string.fin_budget_purchases_none_here),
+                    Modifier.deskPanelBand(PanelBand.MIDDLE).padding(horizontal = TABLE_GUTTER, vertical = 12.dp),
+                )
+            }
+        }
+    }
+    shownByDay.forEach { (day, onDay) ->
+        item(key = "day-$day", contentType = "day") {
+            Text(
+                FinanceFormat.dayOfMonth(day).resolve(),
+                style = FinanceTheme.type.label,
+                color = FinanceTheme.colors.textTertiary,
+                modifier = Modifier.fillMaxWidth().deskPanelBand(PanelBand.MIDDLE).padding(horizontal = TABLE_GUTTER).padding(top = 14.dp, bottom = 4.dp),
+            )
+        }
+        items(onDay, key = { "p-${it.id}" }, contentType = { "purchase" }) { purchase ->
+            PurchaseTableRow(purchase, budget, busy = purchase.id in state.tagging, onClick = { onOpenTag(purchase.id) }, Modifier.deskPanelBand(PanelBand.MIDDLE))
+        }
+    }
+    item(key = "how") {
+        DeskPage {
+            FinePrint(stringResource(Res.string.fin_budget_how), Modifier.deskPanelBand(PanelBand.BOTTOM).padding(horizontal = TABLE_GUTTER - PageGutter, vertical = 12.dp))
+        }
+    }
+}
+
+/**
+ * The desk's line over the Budget page: how fresh the month is and anything about the cards that
+ * needs doing, then the page's two actions at its end. The phone's [StatusBlock], laid along a line.
+ */
+@Composable
+private fun BudgetDeskStatus(state: BudgetUiState, budget: Budget, onSyncNow: () -> Unit, onOpenSettings: () -> Unit, onOpenLinkedAccounts: () -> Unit, onBackToNow: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val now = state.readAtEpochSeconds
+    val read = budget.syncedAtEpochSeconds
+    val changed = budget.changedAtEpochSeconds
+    val fresh = when {
+        state.syncing -> UiText.of(Res.string.fin_budget_fresh_reading)
+        read == null -> UiText.of(Res.string.fin_budget_fresh_never)
+        changed == null -> UiText.of(Res.string.fin_budget_fresh_read, FinanceFormat.ago(now, read))
+        else -> UiText.of(Res.string.fin_budget_fresh_read_changed, FinanceFormat.ago(now, read), FinanceFormat.ago(now, changed))
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (budget.cards.any { it.needsRelink }) colors.watch else colors.gain))
+                Spacer(Modifier.width(8.dp))
+                Text(fresh.resolve(), style = FinanceTheme.type.label, color = colors.textSecondary)
+            }
+            // Only what asks for something: a card to link again, one that reads no purchases, a sandbox, a notice.
+            val warnings = buildList<Pair<String, (() -> Unit)?>> {
+                if (!budget.ready) add(stringResource(Res.string.fin_budget_not_ready) to null)
+                if (budget.sandbox) add(stringResource(Res.string.fin_budget_sandbox) to null)
+                budget.cards.filter { it.needsRelink }.forEach { add(stringResource(Res.string.fin_budget_card_relink, it.institution) to onOpenLinkedAccounts) }
+                budget.cards.filter { !it.readsPurchases }.forEach { add(stringResource(Res.string.fin_budget_card_no_purchases, it.name) to onOpenLinkedAccounts) }
+            }
+            warnings.forEach { (text, onClick) ->
+                Text(
+                    text,
+                    style = FinanceTheme.type.label,
+                    color = colors.watch,
+                    modifier = Modifier.padding(start = 16.dp, top = 2.dp).let { m -> if (onClick != null) m.handCursor().clickable(role = Role.Button, onClick = onClick) else m },
+                )
+            }
+            state.notice?.let { notice ->
+                Text(notice.text.resolve(), style = FinanceTheme.type.label, color = if (notice.isError) colors.loss else colors.gain, modifier = Modifier.padding(start = 16.dp, top = 2.dp))
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!budget.isCurrentMonth) PillButton(stringResource(Res.string.fin_budget_back_to_now), colors.accent, onClick = onBackToNow)
+            PillButton(stringResource(if (state.syncing) Res.string.fin_budget_action_syncing else Res.string.fin_budget_action_sync), colors.textSecondary, onClick = onSyncNow)
+            PillButton(stringResource(Res.string.fin_budget_action_settings), colors.accent, onClick = onOpenSettings, modifier = Modifier.testTag("finance_budget_settings"))
+        }
+    }
+}
+
+/**
+ * The month in four figures across the page, each a big number over a few words: what has been
+ * spent against the limit, what is left to spend and at how much a day, where the month is
+ * heading, and what take-home has left once the bills and the cards are counted.
+ */
+@Composable
+private fun BudgetFigures(budget: Budget, pace: BudgetPace, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    val tint = heatColor(pace.heat, colors.gain, colors.watch, colors.loss)
+    val limit = pace.limit
+    val month = FinanceFormat.month(budget.month, year = true).resolve()
+    val figures = buildList {
+        add(
+            BudgetFigure(
+                label = if (budget.isCurrentMonth) stringResource(Res.string.fin_budget_hero_day, month, budget.day, budget.daysInMonth) else stringResource(Res.string.fin_budget_hero_month, month),
+                value = FinanceFormat.money(budget.spent, 0),
+                note = limit?.let { stringResource(Res.string.fin_budget_kpi_of_limit, FinanceFormat.money(it, 0)) } ?: stringResource(Res.string.fin_budget_hero_no_limit),
+                meter = limit?.let { pace.level } to tint,
+                testTag = "finance_budget_headline",
+            ),
+        )
+        if (limit != null) {
+            val left = limit - budget.spent
+            add(
+                if (left >= 0) {
+                    BudgetFigure(
+                        label = stringResource(Res.string.fin_budget_kpi_left),
+                        value = FinanceFormat.money(left, 0),
+                        note = pace.allowancePerDay?.takeIf { budget.isCurrentMonth && pace.daysLeft > 0 }?.let { stringResource(Res.string.fin_budget_kpi_per_day, FinanceFormat.money(it, 0)) },
+                    )
+                } else {
+                    BudgetFigure(label = stringResource(Res.string.fin_budget_headline_over), value = FinanceFormat.money(-left, 0), valueColor = colors.loss)
+                },
+            )
+        } else {
+            add(BudgetFigure(label = stringResource(Res.string.fin_budget_pace_stat_rate), value = FinanceFormat.money(pace.dailyRate, 0)))
+        }
+        add(
+            BudgetFigure(
+                label = stringResource(if (budget.isCurrentMonth) Res.string.fin_budget_pace_stat_projected else Res.string.fin_budget_pace_stat_rate),
+                value = FinanceFormat.money(if (budget.isCurrentMonth) pace.projected else pace.dailyRate, 0),
+                note = stringResource(BudgetNarrator.headline(pace.status, budget.isCurrentMonth)),
+                noteColor = statusColor(pace.status),
+                info = "budgetpace",
+            ),
+        )
+        budget.config.sheet.takeHome?.let { takeHome ->
+            val left = takeHome - (budget.config.sheet.billsOffCard ?: 0.0) - budget.spent
+            add(
+                BudgetFigure(
+                    label = stringResource(if (left >= 0) Res.string.fin_budget_flow_left else Res.string.fin_budget_flow_from_savings),
+                    value = FinanceFormat.money(kotlin.math.abs(left), 0),
+                    valueColor = if (left >= 0) colors.textPrimary else colors.loss,
+                    note = stringResource(Res.string.fin_budget_kpi_of_take_home, FinanceFormat.money(takeHome, 0)),
+                    info = "savingsline",
+                ),
+            )
+        }
+    }
+    DeskGrid(figures, columns = figures.size, modifier, gap = 16.dp, equalHeights = true) { FigureTile(it, Modifier.fillMaxHeight()) }
+}
+
+private data class BudgetFigure(
+    val label: String,
+    val value: String,
+    val note: String? = null,
+    val valueColor: Color? = null,
+    val noteColor: Color? = null,
+    val meter: Pair<Float?, Color>? = null,
+    val info: String? = null,
+    val testTag: String? = null,
+)
+
+@Composable
+private fun FigureTile(figure: BudgetFigure, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(colors.surfaceRaised.copy(alpha = 0.55f), colors.surface)))
+            .border(1.dp, colors.hairline, shape)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+    ) {
+        // The label's own height whether or not an ⓘ sits at its end (its touch target spills past it), so every tile's number starts on one line.
+        Row(Modifier.height(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(figure.label, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            figure.info?.let { InfoButton(it, Modifier.wrapContentHeight(unbounded = true), size = 15.dp) }
+        }
+        Spacer(Modifier.height(6.dp))
+        RollingNumber(figure.value, FinanceTheme.type.title, figure.valueColor ?: colors.textPrimary, Modifier.let { m -> figure.testTag?.let { m.testTag(it) } ?: m })
+        figure.note?.let { Text(it, style = FinanceTheme.type.label, color = figure.noteColor ?: colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        figure.meter?.let { (level, color) ->
+            if (level != null) {
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(10.dp))
+                Meter(level.coerceIn(0f, 1f), color)
+            }
+        }
+    }
+}
+
+/**
+ * A budget line or a person's spending as one row of a desk's table: its colour, its name, a bar
+ * of how far into its plan it is (or its share of the month without one), the figure against the
+ * plan, and a word on where it stands. What the phone's card says in sentences under it is in the
+ * row's tooltip. Clicking it filters the purchases to it, as the phone's card does.
+ */
+@Composable
+private fun PlanRow(
+    color: Color,
+    name: String,
+    spent: Double,
+    plan: Double?,
+    share: Float,
+    status: String?,
+    statusColor: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    detail: String? = null,
+) {
+    val colors = FinanceTheme.colors
+    val row: @Composable () -> Unit = {
+        Row(
+            modifier
+                .fillMaxWidth()
+                .handCursor()
+                .clickable(role = Role.Button, onClick = onClick)
+                .background(if (selected) colors.accent.copy(alpha = 0.08f) else Color.Transparent)
+                .padding(horizontal = PageGutter, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(12.dp))
+            // The name has the larger share: at a desk's narrowest a long one ("In no budget line") still fits beside its bar.
+            Text(name, style = FinanceTheme.type.bodyStrong, color = if (selected) colors.accent else colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.4f))
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.weight(1f)) {
+                if (plan != null) {
+                    val level = (spent / plan).toFloat().coerceAtLeast(0f)
+                    Meter(level.coerceAtMost(1f), heatColor(BudgetPace.heatOf(level), colors.gain, colors.watch, colors.loss))
+                } else {
+                    Meter(share.coerceIn(0f, 1f), color.copy(alpha = 0.7f))
+                }
+            }
+            Spacer(Modifier.width(16.dp))
+            Text(
+                if (plan != null) stringResource(Res.string.fin_budget_lines_of_planned, FinanceFormat.money(spent, 0), FinanceFormat.money(plan, 0)) else FinanceFormat.money(spent, 0),
+                style = FinanceTheme.type.bodyStrong,
+                color = colors.textPrimary,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                modifier = Modifier.width(PLAN_FIGURE_WIDTH),
+            )
+            Spacer(Modifier.width(14.dp))
+            Box(Modifier.width(PLAN_STATUS_WIDTH), contentAlignment = Alignment.CenterEnd) {
+                if (status != null) {
+                    Text(
+                        status,
+                        style = FinanceTheme.type.micro,
+                        color = statusColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clip(CircleShape).background(statusColor.copy(alpha = 0.12f)).padding(horizontal = 9.dp, vertical = 3.dp),
+                    )
+                }
+            }
+        }
+    }
+    if (detail != null) WithTooltip(detail) { row() } else row()
+}
+
+private val PLAN_FIGURE_WIDTH = 124.dp
+private val PLAN_STATUS_WIDTH = 120.dp
+
+/** [LineCard] as a desk's [PlanRow]: over, heading over or what's left as its word, how it usually runs in its tooltip. */
+@Composable
+private fun LinePlanRow(line: BudgetLine, color: Color, budget: Budget, selected: Boolean, onClick: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val planned = line.planned?.takeIf { it > 0 }
+    val heading = if (budget.isCurrentMonth && budget.day >= LINE_HEADING_FROM_DAY) line.spent / budget.day * budget.daysInMonth else null
+    val (status, statusColor) = when {
+        planned == null -> pluralStringResource(Res.plurals.fin_budget_purchases_count, line.count, line.count) to colors.textSecondary
+        line.spent > planned -> stringResource(Res.string.fin_budget_who_over, FinanceFormat.money(line.spent - planned, 0)) to colors.loss
+        heading != null && heading > planned -> stringResource(Res.string.fin_budget_lines_heading, FinanceFormat.money(heading, 0)) to colors.watch
+        else -> stringResource(Res.string.fin_budget_who_left, FinanceFormat.money(planned - line.spent, 0)) to colors.textSecondary
+    }
+    val detail = line.usual?.let { usualNote(it, planned).first }
+    PlanRow(
+        color = color,
+        name = line.name,
+        spent = line.spent,
+        plan = planned,
+        share = if (budget.spent > 0) (line.spent / budget.spent).toFloat() else 0f,
+        status = status,
+        statusColor = statusColor,
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.testTag("finance_budget_line_${line.name}"),
+        detail = detail,
+    )
+}
+
+/** How a line usually runs, and whether that is more than its plan: only a gap big enough to be worth changing the plan for is pointed out. */
+@Composable
+private fun usualNote(usual: Double, planned: Double?): Pair<String, Boolean> {
+    val gap = planned?.let { plan -> (usual - plan).takeIf { abs(it) >= maxOf(USUAL_GAP_MIN, plan * 0.1) } }
+    val usualText = FinanceFormat.money(usual, 0)
+    val plannedText = planned?.let { FinanceFormat.money(it, 0) }.orEmpty()
+    val text = when {
+        gap == null -> stringResource(Res.string.fin_budget_lines_usual, usualText)
+        gap > 0 -> stringResource(Res.string.fin_budget_lines_usual_more, usualText, plannedText)
+        else -> stringResource(Res.string.fin_budget_lines_usual_less, usualText, plannedText)
+    }
+    return text to (gap != null && gap > 0)
+}
+
+/** [BucketCard] as a desk's [PlanRow]. */
+@Composable
+private fun BucketPlanRow(bucket: BudgetBucket, budget: Budget, selected: Boolean, onClick: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val limit = bucket.limit?.takeIf { it > 0 }
+    val (status, statusColor) = when {
+        limit == null -> pluralStringResource(Res.plurals.fin_budget_purchases_count, bucket.count, bucket.count) to colors.textSecondary
+        bucket.spent > limit -> stringResource(Res.string.fin_budget_who_over, FinanceFormat.money(bucket.spent - limit, 0)) to colors.loss
+        else -> stringResource(Res.string.fin_budget_who_left, FinanceFormat.money(limit - bucket.spent, 0)) to colors.textSecondary
+    }
+    PlanRow(
+        color = bucketColor(bucket.id, budget.config.people),
+        name = bucket.id.label(),
+        spent = bucket.spent,
+        plan = limit,
+        share = if (budget.spent > 0) (bucket.spent / budget.spent).toFloat() else 0f,
+        status = status,
+        statusColor = statusColor,
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.testTag("finance_budget_bucket_${bucket.id.key}"),
+        detail = if (bucket.id == BucketId.Unassigned) stringResource(Res.string.fin_budget_who_unsorted_note) else null,
+    )
+}
+
+/** How far the purchases table keeps its columns from the panel's edges. */
+private val TABLE_GUTTER = 22.dp
+
+/** The purchases table's column widths, shared by its heading and its rows. */
+private const val TABLE_NAME_WEIGHT = 2.4f
+private const val TABLE_LINE_WEIGHT = 1.5f
+private const val TABLE_CARD_WEIGHT = 1.2f
+private val TABLE_WHOSE_WIDTH = 120.dp
+private val TABLE_AMOUNT_WIDTH = 116.dp
+
+/** The purchases table's column headings. */
+@Composable
+private fun PurchaseTableHeader(modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    val style = FinanceTheme.type.micro
+    Row(modifier.fillMaxWidth().padding(horizontal = TABLE_GUTTER, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(Res.string.fin_budget_table_purchase).uppercase(), style = style, color = colors.textTertiary, modifier = Modifier.weight(TABLE_NAME_WEIGHT))
+        Text(stringResource(Res.string.fin_budget_table_line).uppercase(), style = style, color = colors.textTertiary, modifier = Modifier.weight(TABLE_LINE_WEIGHT))
+        Text(stringResource(Res.string.fin_budget_table_card).uppercase(), style = style, color = colors.textTertiary, modifier = Modifier.weight(TABLE_CARD_WEIGHT))
+        Text(stringResource(Res.string.fin_budget_table_whose).uppercase(), style = style, color = colors.textTertiary, modifier = Modifier.width(TABLE_WHOSE_WIDTH))
+        Text(stringResource(Res.string.fin_budget_table_amount).uppercase(), style = style, color = colors.textTertiary, textAlign = TextAlign.End, modifier = Modifier.width(TABLE_AMOUNT_WIDTH))
+    }
+}
+
+/** [PurchaseRow] as a row of the desk's purchases table: what [PurchaseRow] says under the name has a column each. */
+@Composable
+private fun PurchaseTableRow(purchase: Purchase, budget: Budget, busy: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    val card = budget.cards.firstOrNull { it.key == purchase.cardKey }
+    Row(
+        modifier
+            .fillMaxWidth()
+            .handCursor()
+            .clickable(enabled = !busy, onClick = onClick)
+            .testTag("finance_budget_purchase_${purchase.id}")
+            .padding(horizontal = TABLE_GUTTER, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(TABLE_NAME_WEIGHT).padding(end = 12.dp)) {
+            Text(purchase.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            purchase.amazon?.let { amazonItemsLine(it) }?.let { Text(it, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+        Text(
+            purchase.line ?: purchase.category?.let { stringResource(categoryLabel(it)) } ?: "",
+            style = FinanceTheme.type.label,
+            color = colors.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(TABLE_LINE_WEIGHT).padding(end = 12.dp),
+        )
+        Text(card?.name ?: "", style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(TABLE_CARD_WEIGHT).padding(end = 12.dp))
+        Box(Modifier.width(TABLE_WHOSE_WIDTH)) {
+            val color = bucketColor(purchase.bucket, budget.config.people)
+            Text(
+                purchase.bucket.label(),
+                style = FinanceTheme.type.micro,
+                color = if (busy) colors.textTertiary else color,
+                maxLines = 1,
+                modifier = Modifier.clip(CircleShape).background(color.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 3.dp),
+            )
+        }
+        Column(Modifier.width(TABLE_AMOUNT_WIDTH), horizontalAlignment = Alignment.End) {
+            Text(
+                if (purchase.isRefund) stringResource(Res.string.fin_budget_purchase_refund, FinanceFormat.money(-purchase.amount)) else FinanceFormat.money(purchase.amount),
+                style = FinanceTheme.type.bodyStrong,
+                color = if (purchase.isRefund) colors.gain else colors.textPrimary,
+                maxLines = 1,
+            )
+            if (purchase.pending) Text(stringResource(Res.string.fin_budget_purchase_pending), style = FinanceTheme.type.micro, color = colors.textTertiary)
+        }
     }
 }
 
@@ -951,13 +1538,18 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
         // Kept in view only where it is near enough not to flatten the month under it.
         pace.savingsLine?.let { line -> add(ChartRule(line, colors.loss, always = top > 0 && line <= top * 1.6)) }
     }
+    // On a desk the figures over the page say where the month ends and what is left a day, and the ⓘ what the lines are.
+    val desk = LocalFinanceDesk.current
     Column(Modifier.fillMaxWidth()) {
         val scrubbed = scrub?.takeIf { it in 1..budget.daily.size }
         Text(
-            if (scrubbed != null) {
-                stringResource(Res.string.fin_budget_pace_scrub, FinanceFormat.dayOfMonth(budget.month, scrubbed).resolve(), FinanceFormat.money(soFar.values[scrubbed], 0))
-            } else {
-                stringResource(Res.string.fin_budget_pace_caption)
+            when {
+                scrubbed != null -> stringResource(Res.string.fin_budget_pace_scrub, FinanceFormat.dayOfMonth(budget.month, scrubbed).resolve(), FinanceFormat.money(soFar.values[scrubbed], 0))
+
+                // Kept as a line's height, so the chart doesn't jump when a hover writes the day in it.
+                desk -> " "
+
+                else -> stringResource(Res.string.fin_budget_pace_caption)
             },
             style = FinanceTheme.type.label,
             color = colors.textSecondary,
@@ -970,7 +1562,7 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
             timeAxis = true,
             contentDescription = stringResource(Res.string.fin_budget_pace_chart_description),
             onScrub = { scrub = it },
-            modifier = Modifier.fillMaxWidth().height(200.dp),
+            modifier = Modifier.fillMaxWidth().height(if (desk) 240.dp else 200.dp),
         )
         Legend(
             listOfNotNull(
@@ -981,25 +1573,26 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
         StatGrid(
             buildList {
                 add(stringResource(Res.string.fin_budget_pace_stat_rate) to FinanceFormat.money(pace.dailyRate, 0))
-                if (budget.isCurrentMonth) add(stringResource(Res.string.fin_budget_pace_stat_projected) to FinanceFormat.money(pace.projected, 0))
+                if (budget.isCurrentMonth && !desk) add(stringResource(Res.string.fin_budget_pace_stat_projected) to FinanceFormat.money(pace.projected, 0))
                 usualMonth?.let { add(stringResource(Res.string.fin_budget_pace_stat_usual) to FinanceFormat.money(it, 0)) }
-                pace.allowancePerDay?.takeIf { budget.isCurrentMonth && pace.daysLeft > 0 }?.let { add(stringResource(Res.string.fin_budget_pace_stat_allowance) to FinanceFormat.money(it, 0)) }
+                pace.allowancePerDay?.takeIf { budget.isCurrentMonth && pace.daysLeft > 0 && !desk }?.let { add(stringResource(Res.string.fin_budget_pace_stat_allowance) to FinanceFormat.money(it, 0)) }
                 if (limit != null) {
                     val day = pace.limitDay?.let { FinanceFormat.dayOfMonth(budget.month, it).resolve() }
                     add(stringResource(Res.string.fin_budget_pace_stat_limit_day) to (day ?: stringResource(Res.string.fin_budget_pace_stat_not_this_month)))
                 }
             },
+            deskColumns = 3,
         )
     }
 }
 
 /** One bucket: what it has spent against its limit, as a meter that heats as the limit nears. Tapping it filters the purchases to it. */
 @Composable
-private fun BucketCard(bucket: BudgetBucket, budget: Budget, selected: Boolean, onClick: () -> Unit) {
+private fun BucketCard(bucket: BudgetBucket, budget: Budget, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val color = bucketColor(bucket.id, budget.config.people)
     val limit = bucket.limit?.takeIf { it > 0 }
-    FinanceCard(Modifier.padding(bottom = 10.dp).testTag("finance_budget_bucket_${bucket.id.key}"), onClick = onClick, padding = 14.dp) {
+    FinanceCard(modifier.padding(bottom = 10.dp).testTag("finance_budget_bucket_${bucket.id.key}"), onClick = onClick, padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(color))
             Spacer(Modifier.width(10.dp))
@@ -1044,10 +1637,10 @@ private fun lineColor(index: Int): Color = FinanceTheme.colors.categorical[index
  * usually comes to, which says the plan wants changing. Tapping it filters the purchases to it.
  */
 @Composable
-private fun LineCard(line: BudgetLine, index: Int, budget: Budget, selected: Boolean, onClick: () -> Unit) {
+private fun LineCard(line: BudgetLine, index: Int, budget: Budget, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val planned = line.planned?.takeIf { it > 0 }
-    FinanceCard(Modifier.padding(bottom = 10.dp).testTag("finance_budget_line_${line.name}"), onClick = onClick, padding = 14.dp) {
+    FinanceCard(modifier.padding(bottom = 10.dp).testTag("finance_budget_line_${line.name}"), onClick = onClick, padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(lineColor(index)))
             Spacer(Modifier.width(10.dp))
@@ -1086,18 +1679,11 @@ private fun LineCard(line: BudgetLine, index: Int, budget: Budget, selected: Boo
             },
         )
         line.usual?.let { usual ->
-            // Only a gap big enough to be worth changing the plan for is pointed out.
-            val gap = planned?.let { plan -> (usual - plan).takeIf { abs(it) >= maxOf(USUAL_GAP_MIN, plan * 0.1) } }
-            val usualText = FinanceFormat.money(usual, 0)
-            val plannedText = planned?.let { FinanceFormat.money(it, 0) }.orEmpty()
+            val (text, more) = usualNote(usual, planned)
             Text(
-                when {
-                    gap == null -> stringResource(Res.string.fin_budget_lines_usual, usualText)
-                    gap > 0 -> stringResource(Res.string.fin_budget_lines_usual_more, usualText, plannedText)
-                    else -> stringResource(Res.string.fin_budget_lines_usual_less, usualText, plannedText)
-                },
+                text,
                 style = FinanceTheme.type.label,
-                color = if (gap != null && gap > 0) colors.watch else colors.textTertiary,
+                color = if (more) colors.watch else colors.textTertiary,
                 modifier = Modifier.padding(top = 2.dp).testTag("finance_budget_line_usual_${line.name}"),
             )
         }
@@ -1278,11 +1864,11 @@ private fun FilterChips(budget: Budget, selected: String?, onSelect: (String?) -
 
 /** A box that searches the month's purchases by name, with a clear button once something is typed. */
 @Composable
-private fun PurchaseSearch(query: String, onQuery: (String) -> Unit) {
+private fun PurchaseSearch(query: String, onQuery: (String) -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(horizontal = PageGutter)
             .padding(top = 10.dp)
