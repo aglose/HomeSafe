@@ -95,6 +95,9 @@ class BaseMaps(
     private val status = MutableStateFlow<GoogleMapsStatus>(GoogleMapsStatus.Unchecked)
     private val saveError = MutableStateFlow<UiText?>(null)
     private val sessionLock = Mutex()
+
+    /** Held while [status] is reset for a new key, or something is said about the one kept, so neither lands between the other's look and write. */
+    private val statusLock = Mutex()
     private var session: Pair<String, GoogleMapSession>? = null
 
     // Lives as long as the app: [current] is shared by every map on screen and outlasts each.
@@ -149,8 +152,10 @@ class BaseMaps(
         val kept = key?.trim()?.takeIf { it.isNotEmpty() }
         return keys.save(HouseholdKeys.GOOGLE_MAPS, kept)
             .onSuccess {
-                session = null
-                status.value = GoogleMapsStatus.Unchecked
+                statusLock.withLock {
+                    session = null
+                    status.value = GoogleMapsStatus.Unchecked
+                }
                 saveError.value = null
             }
             .onFailure { saveError.value = it.userMessage() }
@@ -191,22 +196,32 @@ class BaseMaps(
 
     private suspend fun session(key: String): GoogleMapSession? = sessionLock.withLock {
         if (hasSession(key)) return@withLock session?.second
-        status.value = GoogleMapsStatus.Checking
+        // Forgotten or replaced while this waited its turn: nothing to ask Google, or to say.
+        if (!report(key, GoogleMapsStatus.Checking)) return@withLock null
         val locale = Locale.current
         try {
             google.createSession(key, locale.toLanguageTag(), locale.region.takeIf { it.length == 2 } ?: FALLBACK_REGION).also {
                 session = key to it
-                status.value = GoogleMapsStatus.Working
+                report(key, GoogleMapsStatus.Working)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LocalizedException) {
-            status.value = GoogleMapsStatus.Failed(e.text)
+            report(key, GoogleMapsStatus.Failed(e.text))
             null
         } catch (_: Exception) {
-            status.value = GoogleMapsStatus.Failed(UiText.of(Res.string.maps_google_unreachable))
+            report(key, GoogleMapsStatus.Failed(UiText.of(Res.string.maps_google_unreachable)))
             null
         }
+    }
+
+    /**
+     * Says [outcome] about [key] if it is still the one kept; false, saying nothing, when it was
+     * forgotten or replaced meanwhile: [setGoogleKey] has cleared what was said about it, and a late
+     * answer mustn't undo that.
+     */
+    private suspend fun report(key: String, outcome: GoogleMapsStatus): Boolean = statusLock.withLock {
+        (keys.current(HouseholdKeys.GOOGLE_MAPS) == key).also { if (it) status.value = outcome }
     }
 
     private companion object {
