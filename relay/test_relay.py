@@ -5476,6 +5476,12 @@ class BudgetRecurringTest(_Budget):
                          sorted(((r["rhythm"], r["card"], r["next"]) for r in charges), key=lambda r: r[1]))
         self.assertEqual(19.98, self.recurring()["monthly"])
 
+    def test_one_of_two_overlapping_subscriptions_that_stops_is_listed_as_stopped(self):
+        self.store(*(_txn(f"a{i}", 9.99, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-06-01", "2026-07-01", "2026-08-01"))))
+        self.store(*(_txn(f"s{i}", 9.99, date=day, account="platinum", name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-15", "2026-08-15", "2026-09-15"))),
+                   item="amex")
+        self.assertEqual({(self.VENTURE, True), (self.PLATINUM, False)}, {(r["card"], r["stopped"]) for r in self.recurring()["charges"]})
+
     def test_two_prices_from_merchants_that_share_a_first_word_are_not_one_price_change(self):
         self.store(*(_txn(f"d{i}", 30.0, date=day, name="CLOUD DRIVE", merchant="Cloud Drive") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))),
                    *(_txn(f"m{i}", 32.0, date=day, name="CLOUD MUSIC", merchant="Cloud Music") for i, day in enumerate(("2026-07-28", "2026-08-28", "2026-09-28"))))

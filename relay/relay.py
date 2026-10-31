@@ -9816,7 +9816,8 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
     what it was before when its price changed at the last charge. One whose next charge is well
     overdue has `stopped`, and stays listed a while so a cancellation can be seen to have taken.
     A merchant can have more than one (a TV service and its add-on); a run that stopped where one
-    at the same price carries on is that one, its billing day moved. Amazon's shipments are
+    at the same price and rhythm took over from its last charge is that one, its billing day
+    moved. Amazon's shipments are
     shopping, not something charged again and again.
     """
     by_merchant: dict[str, list[dict[str, Any]]] = {}
@@ -9857,9 +9858,12 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
                 "count": len(chain), "first": chain[0]["date"], "last": last["date"], "next": None if stopped else due.isoformat(),
                 "stopped": stopped, "card": last["card"], "bucket": last["bucket"], "line": last["line"],
             })
-        # A subscription whose billing day moved is one still running, not one that stopped and another that started.
+        # A subscription whose billing day moved is one still running, not one that stopped and another that started:
+        # the same price at the same rhythm, starting after the other's last charge. One that ran alongside it (the
+        # same subscription on the other person's card) is another, and its stopping is said.
         going = [r for r in mine if not r["stopped"]]
-        found += [r for r in mine if not (r["stopped"] and any(_cents(g["amount"]) == _cents(r["amount"]) and g["last"] > r["last"] for g in going))]
+        found += [r for r in mine if not (r["stopped"] and any(
+            _cents(g["amount"]) == _cents(r["amount"]) and g["rhythm"] == r["rhythm"] and g["first"] > r["last"] for g in going))]
     running = sorted((r for r in found if not r["stopped"]), key=lambda r: (-r["monthly"], r["name"]))
     ended = sorted((r for r in found if r["stopped"]), key=lambda r: (r["last"], r["name"]), reverse=True)
     return {"monthly": round(sum(r["monthly"] for r in running), 2), "charges": running + ended}
