@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Budget tab's recurring charges (features/finance BudgetRecurring.kt): what the cards are charged every week or month. -->
+<resources>
+    <string name="fin_recurring_title">Cargos recurrentes</string>
+    <string name="fin_recurring_subtitle">Lo que se carga a las tarjetas cada semana o cada mes</string>
+    <string name="fin_recurring_headline">Unos %1$s al mes</string>
+    <plurals name="fin_recurring_running">
+        <item quantity="one">%1$d sigue activo</item>
+        <item quantity="other">%1$d siguen activos</item>
+    </plurals>
+    <string name="fin_recurring_monthly_next">Mensual · próximo: %1$s</string>
+    <string name="fin_recurring_weekly_next">Semanal · próximo: %1$s</string>
+    <string name="fin_recurring_bill_next">Factura mensual · próxima: %1$s</string>
+    <string name="fin_recurring_monthly_due">Mensual · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_weekly_due">Semanal · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_bill_due">Factura mensual · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_last">Último cargo: %1$s</string>
+    <string name="fin_recurring_up">Subió desde %1$s</string>
+    <string name="fin_recurring_down">Bajó desde %1$s</string>
+    <string name="fin_recurring_a_month">%1$s al mes</string>
+    <string name="fin_recurring_about">Unos %1$s</string>
+    <plurals name="fin_recurring_more">
+        <item quantity="one">%1$d más</item>
+        <item quantity="other">%1$d más</item>
+    </plurals>
+    <string name="fin_recurring_fewer">Ver menos</string>
+    <string name="fin_recurring_stopped">Detenidos</string>
+    <string name="fin_recurring_how">Se buscan en los últimos seis meses de las tarjetas: todo lo que se cobra cada semana o cada mes al mismo precio, y las facturas por lo que sumen. Algo cancelado pasa a Detenidos cuando su siguiente cargo lleva una semana de retraso.</string>
+</resources>

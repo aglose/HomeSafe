@@ -16,6 +16,8 @@ import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.domain.LineRule
 import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
+import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
+import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_budget_error_purchase_gone
@@ -154,6 +156,36 @@ class BudgetRelayApiTest {
         assertTrue(budget.lines.isEmpty())
         assertEquals(0, budget.outsideLines.count)
         assertEquals(LineSource.NONE, budget.purchases.first().lineSource)
+    }
+
+    @Test
+    fun aMonthReadsWhatTheCardsAreChargedAgainAndAgain() = runTest {
+        val withRecurring = month.replace(
+            """"history":""",
+            """"recurring":{"monthly":475.02,"charges":[
+                 {"merchant":"factor","name":"Factor","rhythm":"weekly","amount":105.93,"was":94.93,"monthly":459.03,"bill":false,"count":4,
+                  "first":"2026-09-14","last":"2026-10-05","next":"2026-10-12","stopped":false,"card":"Summit Bank Voyager 4410","bucket":"person:Alex","line":null},
+                 {"merchant":"lemonade","name":"Lemonade","rhythm":"monthly","amount":14.43,"was":null,"monthly":14.43,"bill":false,"count":2,
+                  "first":"2026-07-13","last":"2026-08-12","next":null,"stopped":true,"card":"Northwind Platinum 2207","bucket":"family","line":null}]},
+               "history":""",
+        )
+        val recurring = api(MockEngine { respond(withRecurring, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow().recurring!!
+        assertEquals(475.02, recurring.monthly)
+        val (factor, lemonade) = recurring.charges
+        assertEquals(
+            RecurringCharge(
+                "Factor", RecurringRhythm.WEEKLY, 105.93, was = 94.93, monthly = 459.03, bill = false, count = 4, first = "2026-09-14", last = "2026-10-05",
+                next = "2026-10-12", stopped = false, cardKey = "Summit Bank Voyager 4410", bucket = BucketId.Person("Alex"),
+            ),
+            factor,
+        )
+        assertEquals(Triple(RecurringRhythm.MONTHLY, null, BucketId.Family), Triple(lemonade.rhythm, lemonade.next, lemonade.bucket))
+        assertEquals(listOf(factor) to listOf(lemonade), recurring.running to recurring.stopped)
+    }
+
+    @Test
+    fun aMonthFromARelayBeforeRecurringChargesHasNone() = runTest {
+        assertNull(api(MockEngine { respond(month, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow().recurring)
     }
 
     @Test

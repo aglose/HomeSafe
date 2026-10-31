@@ -25,6 +25,8 @@ In the app: **Finance → Budget**. Its settings are behind **Limits and cards**
 - **Who spent what.** Each person and the family card against their own limits.
 - **Where take-home goes.** Take-home, minus the bills that aren't paid by card, minus the cards
   so far: what is left, or how much is coming out of savings.
+- **Recurring charges.** What the cards are charged every week or month, and what that comes to a
+  month (see below).
 - **What it went on, where it went, month by month**, and every purchase. Tap a month's bar to
   look back at it.
 
@@ -155,6 +157,33 @@ Under **Limits and cards → Alerts** (and in Settings → Notifications) are fo
 5. Anyone who should see the budget must be a Frigate admin or listed in `FINANCE_USERS`
    (`finance.env` on the box).
 
+## Recurring charges
+
+Under the budget lines, **Recurring charges** lists what the cards are charged again and again:
+subscriptions, memberships, a weekly meal box, and the bills paid by card. It is there to catch what
+nobody remembers paying for, such as a service the app replaced that is still being billed.
+
+- **What counts.** A merchant's charges that come a week or a month apart (a missed one in between
+  is allowed for) at the same price to the cent, three or more times. Two a month apart count too
+  when the price is to the cent and not a round sum ($49.99, not $15.00). A price may change once
+  along the way: the row says "Up from $32.99". A bill (Plaid's `RENT_AND_UTILITIES`: power, water,
+  the internet) may be any amount, as long as its charges are most of what that merchant charged
+  meanwhile, and costs what its last three came to on average. A coffee shop visited weekly is not
+  recurring (its amount is never the same twice), nor are Amazon's shipments.
+- **One merchant, two names.** Charges are grouped by the first word of the merchant's name, because
+  Plaid names the same one "Factor Inc." one week and "Factor75" the next. Two merchants that share
+  a first word still keep apart, by amount: YouTube TV and its NFL add-on are two rows.
+- **When the next is due.** A month after the last (the month's last day when it is shorter), or a
+  week. Past that, the row says it is due and not charged yet. A monthly one 8 days overdue (a
+  weekly one 4) has **stopped**, cancelled or moved off the cards, and is listed under Stopped for
+  120 days from its last charge, so a cancellation can be seen to have taken.
+- **A month's worth.** A monthly charge's last price, a weekly one's times 52 / 12. The headline is
+  the sum of those still running.
+- **Only the month under way.** It is worked out as of today from the six months the page reads, so
+  a month looked back at doesn't show it.
+- **Only the cards.** The relay keeps no bank account's transactions, so bills paid straight from
+  checking are not here; the budget sheet's bills are what plans for those.
+
 ## Amazon orders
 
 A card shows an Amazon purchase as "AMZN Mktp US*2K1AB3CD4" and an amount, so groceries look just
@@ -237,9 +266,11 @@ was made. The app is unverified, so sign-in shows Google's "hasn't verified this
 
 - `relay/relay.py`, "budget": `plaid_transactions_pull` / `plaid_transactions_store` (the hourly
   read), `budget_bucket` (whose a purchase is), `budget_line` / `budget_line_guess` (which line
-  it is in), `budget_month` (the page's answer), `budget_check` (the alerts), and the
-  `/finance/budget…` routes. Tests: `BudgetSyncTest`, `BudgetMonthTest`, `BudgetLinesTest`,
-  `BudgetAlertsTest`, `BudgetRoutesTest`, `DeviceOwnerTest` in `relay/test_relay.py`.
+  it is in), `budget_month` (the page's answer), `budget_recurring` (what is charged again and
+  again), `budget_check` (the alerts), and the `/finance/budget…` routes. Tests: `BudgetSyncTest`,
+  `BudgetMonthTest`, `BudgetLinesTest`, `BudgetRecurringTest`, `BudgetAlertsTest`,
+  `BudgetRoutesTest`, `DeviceOwnerTest` in `relay/test_relay.py`. In the app, `BudgetRecurring.kt`
+  (`RecurringBlock`) draws what `BudgetRelayApi` reads into `Budget.recurring`.
 - `relay/relay.py`, "Amazon orders": `parse_amazon_email` (one email), `amazon_store`,
   `amazon_sort_items` (word lists, then Ollama), `amazon_match` (charges to orders),
   `amazon_split`, and `amazon_attach` / `amazon_month` (the budget's answer).

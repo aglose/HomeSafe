@@ -28,6 +28,9 @@ import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
+import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
+import com.meticulouscreations.homesafe.finance.domain.RecurringCharges
+import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
@@ -230,6 +233,7 @@ internal data class RelayBudget(
     val transactions: List<RelayPurchase> = emptyList(),
     val history: List<RelayBudgetPastMonth> = emptyList(),
     val amazon: RelayAmazonSummary? = null,
+    val recurring: RelayRecurring? = null,
 ) {
     fun toDomain() = Budget(
         configured = configured,
@@ -319,6 +323,7 @@ internal data class RelayBudget(
                 unmatched = it.unmatched,
             )
         },
+        recurring = recurring?.toDomain(),
     )
 }
 
@@ -471,3 +476,45 @@ internal data class RelayAmazonSummary(
 
 @Serializable
 internal data class RelayBudgetPastMonth(val month: String = "", val spent: Double = 0.0, val days: Int = 30)
+
+/** What the cards are charged again and again (`budget_recurring` in relay.py). */
+@Serializable
+internal data class RelayRecurring(val monthly: Double = 0.0, val charges: List<RelayRecurringCharge> = emptyList()) {
+    fun toDomain() = RecurringCharges(
+        monthly = monthly,
+        charges = charges.map { charge ->
+            RecurringCharge(
+                name = charge.name,
+                rhythm = if (charge.rhythm == "weekly") RecurringRhythm.WEEKLY else RecurringRhythm.MONTHLY,
+                amount = charge.amount,
+                was = charge.was,
+                monthly = charge.monthly,
+                bill = charge.bill,
+                count = charge.count,
+                first = charge.first,
+                last = charge.last,
+                next = charge.next?.takeIf { it.isNotEmpty() },
+                stopped = charge.stopped,
+                cardKey = charge.card,
+                bucket = BucketId.ofWire(charge.bucket),
+            )
+        },
+    )
+}
+
+@Serializable
+internal data class RelayRecurringCharge(
+    val name: String = "",
+    val rhythm: String = "monthly",
+    val amount: Double = 0.0,
+    val was: Double? = null,
+    val monthly: Double = 0.0,
+    val bill: Boolean = false,
+    val count: Int = 0,
+    val first: String = "",
+    val last: String = "",
+    val next: String? = null,
+    val stopped: Boolean = false,
+    val card: String = "",
+    val bucket: String? = null,
+)

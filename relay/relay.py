@@ -9203,6 +9203,18 @@ BUDGET_LINE_GUESSES: tuple[tuple[re.Pattern[str], frozenset[str], re.Pattern[str
 BUDGET_TOTAL_PERCENTS = (80, 100)
 BUDGET_HISTORY_MONTHS = 6
 BUDGET_TOP_MERCHANTS = 8
+# What the cards are charged again and again (see `budget_recurring`): how many days apart the
+# charges of each rhythm fall (twice that when one was missed in between), how long past the day
+# the next one was due it is still taken to be running, and how long one that stopped stays listed.
+RECURRING_GAPS = {"weekly": (5, 9), "monthly": (26, 35)}
+RECURRING_GRACE_DAYS = {"weekly": 4, "monthly": 8}
+RECURRING_STOPPED_DAYS = 120
+# How far a price can move in one step and still be the same charge again: a share of the larger,
+# and never closer than a dollar. A bill (electricity, water, the internet) can be any amount, but
+# only counts when it is most of what the merchant charged meanwhile.
+RECURRING_DRIFT = 0.15
+RECURRING_ANY_AMOUNT = ("RENT_AND_UTILITIES",)
+RECURRING_SHARE = 0.6
 
 # "Sync now" on the Budget page, when it was last asked for (see `_sync_asked`).
 _txn_asked = {"at": 0.0}
@@ -9688,11 +9700,133 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     return purchases
 
 
+def _month_on(day: Any) -> Any:
+    """The same day a month later, or the month's last day when it is shorter."""
+    year, month = (day.year + 1, 1) if day.month == 12 else (day.year, day.month + 1)
+    return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[str, Any]]:
+    """
+    The longest run among a merchant's charges (oldest first) that came one `rhythm` apart, or two
+    when one was missed, each much the amount of the one before (a bill any amount); of runs as
+    long, the one that ran latest.
+    """
+    low, high = RECURRING_GAPS[rhythm]
+    days = [datetime.fromisoformat(c["date"]).date() for c in charges]
+    best: list[tuple[int, int | None]] = []
+    for i, charge in enumerate(charges):
+        best.append((1, None))
+        for j in range(i - 1, -1, -1):
+            gap = (days[i] - days[j]).days
+            if gap > 2 * high:
+                break
+            alike = _recurring_bill(charge) or abs(charge["amount"] - charges[j]["amount"]) <= max(1.0, RECURRING_DRIFT * max(charge["amount"], charges[j]["amount"]))
+            if (low <= gap <= high or 2 * low <= gap <= 2 * high) and alike and best[j][0] + 1 > best[i][0]:
+                best[i] = (best[j][0] + 1, j)
+    if not best:
+        return []
+    end = max(range(len(best)), key=lambda i: (best[i][0], i))
+    chain = []
+    at: int | None = end
+    while at is not None:
+        chain.append(charges[at])
+        at = best[at][1]
+    return chain[::-1]
+
+
+def _recurring_bill(charge: dict[str, Any]) -> bool:
+    """A bill (electricity, water, the internet), which comes every month at whatever it comes to."""
+    return (charge["category"] or "") in RECURRING_ANY_AMOUNT
+
+
+def _recurring_enough(chain: list[dict[str, Any]], rhythm: str, merchants: list[dict[str, Any]]) -> bool:
+    """
+    Whether a run of charges is something charged again and again. Three or more of the same
+    amount in cents, but for one change of price; or, a month apart, two of the very same amount
+    ($49.99, not $15.00: two round sums a month apart could be anything). A bill can be any amount,
+    three or more times, as long as they are most of what that merchant charged meanwhile.
+    """
+    cents = [_cents(c["amount"]) for c in chain]
+    if len(chain) == 2:
+        return rhythm == "monthly" and cents[0] == cents[1] and cents[0] % 100 != 0
+    if len(chain) < 3:
+        return False
+    if all(_recurring_bill(c) for c in chain):
+        meanwhile = [p for p in merchants if p["merchant"] == chain[-1]["merchant"] and chain[0]["date"] <= p["date"] <= chain[-1]["date"]]
+        return len(chain) >= RECURRING_SHARE * len(meanwhile)
+    return sum(a != b for a, b in zip(cents, cents[1:])) <= 1
+
+
+def recurring_merchant(purchase: dict[str, Any]) -> str:
+    """
+    What a recurring charge's merchant goes by: the first word of its name ("the" passed over).
+    Plaid names one merchant "Factor Inc." one week and "Factor75" the next, and hides a month's
+    "Google One" as "Google"; two merchants that share a first word still keep apart, by amount.
+    """
+    words = (purchase["merchant"] or purchase["name"].lower()).split()
+    return next((w for w in words if w != "the"), words[0] if words else "")
+
+
+def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, Any]:
+    """
+    What the cards are charged again and again: each merchant's charges that come every week or
+    every month at the same amount (a bill at any amount), from `purchases` as of `today`. Each
+    says what it is, when it last came and when the next is due, what it comes to a month, and
+    what it was before when its price changed at the last charge. One whose next charge is well
+    overdue has `stopped`, and stays listed a while so a cancellation can be seen to have taken.
+    A merchant can have more than one (a TV service and its add-on). Amazon's shipments are
+    shopping, not something charged again and again.
+    """
+    by_merchant: dict[str, list[dict[str, Any]]] = {}
+    for p in sorted(purchases, key=lambda p: (p["date"], p["id"])):
+        if p["kind"] == "spend" and p["amount"] > 0 and not is_amazon_order_charge(p["name"], None):
+            by_merchant.setdefault(recurring_merchant(p), []).append(p)
+    found = []
+    for charges in by_merchant.values():
+        left = list(charges)
+        while len(left) >= 2:
+            # Each amount's own run first, so a $9.99 subscription isn't lost among the same merchant's other charges.
+            amounts: dict[int, list[dict[str, Any]]] = {}
+            for c in left:
+                amounts.setdefault(_cents(c["amount"]), []).append(c)
+            runs = [(rhythm, _recurring_chain(group, rhythm)) for rhythm in RECURRING_GAPS for group in [left, *(g for g in amounts.values() if len(g) >= 2)]]
+            runs = [(rhythm, chain) for rhythm, chain in runs if _recurring_enough(chain, rhythm, charges)]
+            if not runs:
+                break
+            # A weekly charge also comes once in most months: the longest run is the rhythm. Of two as long, the
+            # one whose price never changed: a $9.99 subscription, not it and the Supercharger charge after it.
+            rhythm, chain = max(runs, key=lambda run: (len(run[1]), len({_cents(c["amount"]) for c in run[1]}) == 1, run[1][-1]["date"]))
+            ids = {c["id"] for c in chain}
+            left = [c for c in left if c["id"] not in ids]
+            last = chain[-1]
+            lastday = datetime.fromisoformat(last["date"]).date()
+            due = _month_on(lastday) if rhythm == "monthly" else lastday + timedelta(days=7)
+            stopped = (today - due).days > RECURRING_GRACE_DAYS[rhythm]
+            if stopped and (today - lastday).days > RECURRING_STOPPED_DAYS:
+                continue
+            bill = _recurring_bill(last)
+            # A bill's month is what its last few came to; anything else costs what it was last charged.
+            each = sum(c["amount"] for c in chain[-3:]) / len(chain[-3:]) if bill else last["amount"]
+            before = chain[-2]["amount"]
+            found.append({
+                "merchant": last["merchant"], "name": last["name"], "rhythm": rhythm, "amount": round(last["amount"], 2),
+                "was": round(before, 2) if not bill and _cents(before) != _cents(last["amount"]) else None,
+                "monthly": round(each * 52 / 12 if rhythm == "weekly" else each, 2), "bill": bill,
+                "count": len(chain), "first": chain[0]["date"], "last": last["date"], "next": None if stopped else due.isoformat(),
+                "stopped": stopped, "card": last["card"], "bucket": last["bucket"], "line": last["line"],
+            })
+    running = sorted((r for r in found if not r["stopped"]), key=lambda r: (-r["monthly"], r["name"]))
+    ended = sorted((r for r in found if r["stopped"]), key=lambda r: (r["last"], r["name"]), reverse=True)
+    return {"monthly": round(sum(r["monthly"] for r in running), 2), "charges": running + ended}
+
+
 def budget_month(month: str | None = None, now: float | None = None) -> dict[str, Any]:
     """
     What the app's Budget page shows for a month (this one when not said): the cards, the
     settings, what was spent in each bucket and on each day, on what and where, every purchase,
-    the months before it, and how fresh all of that is. Days are the household's.
+    the months before it, and how fresh all of that is; for the month under way, what the cards
+    are charged again and again (`budget_recurring`). Days are the household's.
     """
     now = time.time() if now is None else now
     today = datetime.fromtimestamp(now, household_zone() or timezone.utc).date()
@@ -9776,6 +9910,8 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
                     for m in (month_before(month, back) for back in range(BUDGET_HISTORY_MONTHS - 1, 0, -1))],
         "alerts_sent": sorted(alerts.get("sent") or {}) if alerts.get("month") == month else [],
         "amazon": amazon_month(purchases),
+        # What the cards are charged again and again, as of today: only for the month under way.
+        "recurring": budget_recurring([p for p in counted if p["date"] <= today.isoformat()], today) if month == this_month else None,
     }
 
 
