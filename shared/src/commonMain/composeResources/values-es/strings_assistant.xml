@@ -45,6 +45,7 @@
     <string name="assistant_tool_server">Revisando el servidor</string>
     <string name="assistant_tool_finance">Leyendo tus finanzas</string>
     <string name="assistant_tool_budget">Revisando tu presupuesto</string>
+    <string name="assistant_tool_transactions">Leyendo tus transacciones</string>
     <string name="assistant_tool_markets">Consultando precios del mercado</string>
     <string name="assistant_tool_weather">Consultando el pronóstico</string>
     <string name="assistant_tool_fitness">Mirando tu registro de entrenamiento</string>
