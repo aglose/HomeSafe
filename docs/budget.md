@@ -40,10 +40,12 @@ In the app: **Finance → Budget**. Its settings are behind **Limits and cards**
   way. It hands over only what changed since the last call. Banks pass purchases to Plaid a few
   times a day, so most hours find nothing new: the page says when the cards were last asked and
   when that last found anything. **Read the cards now** asks at once, at most once a minute.
-- **Only credit cards' transactions are kept**, in `relay.db` on the Frigate box, and never in
-  the relay's log, with one exception: what left a checking account linked the same way (see
-  "Recurring charges"). Nothing that came into it, and nothing of a savings account's. They stay
-  there for good, a card unlinked or closed included (see [What is kept](finance.md#what-is-kept)).
+- **Every card's and bank account's transactions are kept**, in `relay.db` on the Frigate box, and
+  never in the relay's log. Only a card's can count toward the budget: the rest are for what
+  checking pays every month (see "Recurring charges") and for the assistant to read
+  (`GET /finance/transactions`, its `bank_transactions` tool), along with what Plaid says beyond
+  the budget's needs, such as the bank's own description of a charge. They stay there for good, a
+  card unlinked or closed included (see [What is kept](finance.md#what-is-kept)).
 - **What counts.** Purchases, pending ones included (flagged, since they can still change). A
   refund comes off the month it arrives in. Paying the card off is not spending and is left out.
   The month is the household's calendar month, by the day the card was used.
@@ -196,7 +198,7 @@ is still being billed.
 - **Only the month under way.** It is worked out as of today from the six months the page reads, so
   a month looked back at doesn't show it.
 - **The checking account too.** A checking account linked as *A bank or credit card* (it comes
-  with the card at the same bank) has its withdrawals kept beside the cards' purchases: not what
+  with the card at the same bank) has its withdrawals listed beside the cards' purchases: not what
   comes in (pay), not its savings accounts', not money moved to the household's own accounts
   (Plaid's `TRANSFER_OUT_SAVINGS`, `_ACCOUNT_TRANSFER`, `_INVESTMENT_AND_RETIREMENT_FUNDS`), and
   not a card paid off. None of it counts toward the month's spending, the limits or the alerts:

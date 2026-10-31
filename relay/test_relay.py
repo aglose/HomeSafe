@@ -5100,6 +5100,7 @@ class _Budget(_ScratchDb):
         relay.budget_config_save({"people": ["Andrew", "Sarah"], "roles": {self.VENTURE: "split", self.PLATINUM: "family"}}, self.NOW)
         # The checking accounts' history was already read again from the start (see test_checking_s_history_is_read_again_once).
         relay.state_set(relay.TXN_CHECKING_READ_KEY, {"at": self.NOW})
+        relay.state_set(relay.TXN_EVERYTHING_READ_KEY, {"at": self.NOW})
 
     def link(self, item_id, products=("transactions",), source=None):
         name, accounts = self.CARDS[source or item_id]
@@ -5156,12 +5157,42 @@ class BudgetSyncTest(_Budget):
         with self.assertRaises(relay.PlaidError):
             relay.plaid_transactions_pull("access-cap", "start")
 
-    def test_only_the_cards_purchases_and_what_left_checking_are_kept(self):
-        relay.plaid_store("cap", self.CARDS["cap"][1] + [{"account_id": "savings", "name": "360 Savings", "mask": "7777", "type": "depository", "subtype": "savings",
-                                                           "balances": {"current": 9000.0}}], {}, [], {}, self.NOW)
+    def test_the_cards_and_the_bank_accounts_are_kept_and_nothing_else(self):
+        relay.plaid_store("cap", self.CARDS["cap"][1] + [{"account_id": "savings", "name": "360 Savings", "mask": "7777", "type": "depository", "subtype": "savings", "balances": {"current": 9000.0}},
+                                                          {"account_id": "broker", "name": "Brokerage", "mask": "8888", "type": "investment", "subtype": "brokerage", "balances": {"current": 1.0}}], {}, [], {}, self.NOW)
         self.store(_txn("t1", 54.2), _txn("paycheck", -3000.0, account="checking", name="ACME PAYROLL"), _txn("phone", 109.0, account="checking", name="T-MOBILE PCS SVC"),
-                   _txn("saved", 500.0, account="savings", name="TRANSFER FROM CHECKING"), {"transaction_id": "broken"})
-        self.assertEqual(["phone", "t1"], sorted(row[0] for row in relay.with_db(lambda c: c.execute("SELECT txn_id FROM plaid_transactions").fetchall())))
+                   _txn("saved", 500.0, account="savings", name="TRANSFER FROM CHECKING"), _txn("stock", 7.0, account="broker"), {"transaction_id": "broken"})
+        self.assertEqual(["paycheck", "phone", "saved", "t1"], sorted(row[0] for row in relay.with_db(lambda c: c.execute("SELECT txn_id FROM plaid_transactions").fetchall())))
+
+    def test_the_bank_s_own_description_is_asked_for_on_every_page(self):
+        plaid = relay.plaid_post = _PagedPlaid(transactions_sync=[{"next_cursor": "page-2", "has_more": True}, {"next_cursor": "end", "has_more": False}])
+        relay.plaid_transactions_pull("access-cap", None)
+        self.assertEqual([{"include_original_description": True}] * 2, [body["options"] for body in plaid.asked("/transactions/sync")])
+
+    def test_what_plaid_says_beyond_the_budget_is_kept(self):
+        self.store(_txn(
+            "t1", 528.8, name="AMERICAN ", merchant=None, original_description="AMERICAN AIR0012345678 FORT WORTH TX", payment_channel="online", website="aa.com",
+            location={"city": "Fort Worth", "region": "TX", "lat": 32.7}, counterparties=[{"name": "American Airlines", "type": "merchant"}, {"name": "Second"}],
+            personal_finance_category={"primary": "GENERAL_MERCHANDISE", "detailed": "GENERAL_MERCHANDISE_OTHER", "confidence_level": "LOW"},
+        ))
+        self.assertEqual(("AMERICAN AIR0012345678 FORT WORTH TX", "online", "aa.com", "Fort Worth", "TX", "American Airlines", "LOW"),
+                         relay.with_db(lambda c: c.execute("SELECT " + ", ".join(relay.TXN_DETAILS) + " FROM plaid_transactions").fetchone()))
+
+    def test_a_detail_in_a_shape_nobody_expected_costs_only_itself(self):
+        self.store(_txn("t1", 5.0, original_description=7, payment_channel=" ", website=None, location="here", counterparties={"name": "x"}))
+        self.assertEqual((None,) * 7, relay.with_db(lambda c: c.execute("SELECT " + ", ".join(relay.TXN_DETAILS) + " FROM plaid_transactions").fetchone()))
+
+    def test_everything_is_read_again_once_and_tags_and_notes_stay(self):
+        self.store(_txn("t1", 54.2))
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_transactions SET tag='family', tag_by='alex', line_tag='Food', note='a note'"), c.commit()))
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET txn_cursor='c9'"), c.commit()))
+        relay.state_set(relay.TXN_EVERYTHING_READ_KEY, None)
+        plaid = relay.plaid_post = _PagedPlaid(transactions_sync=[{"added": [_txn("t1", 54.2, original_description="COSTCO WHSE #0123 NY")], "next_cursor": "c10", "has_more": False}])
+        relay.plaid_transactions_sync(self.NOW)
+        self.assertEqual({"access-cap": None, "access-amex": None}, {body["access_token"]: body.get("cursor") for body in plaid.asked("/transactions/sync")})
+        self.assertEqual(("family", "alex", "Food", "a note", "COSTCO WHSE #0123 NY"), relay.with_db(lambda c: c.execute("SELECT tag, tag_by, line_tag, note, original FROM plaid_transactions").fetchone()))
+        relay.plaid_transactions_sync(self.NOW + 3600)
+        self.assertEqual({"access-cap": "c10", "access-amex": "c10"}, {body["access_token"]: body.get("cursor") for body in plaid.asked("/transactions/sync")[2:]})
 
     def test_checking_s_history_is_read_again_once(self):
         # Before checking's withdrawals were kept, the institution's cursor had already gone past them.
@@ -5970,6 +6001,128 @@ class BudgetRoutesTest(_Budget):
         relay.delete_bank_institution("cap", object(), self.response)
         self.assertEqual(["t1"], [p["id"] for p in self.month()["transactions"]])
         self.assertEqual([self.PLATINUM], [card["key"] for card in self.month()["cards"]])
+
+
+class FinanceTransactionsTest(_Budget):
+    """Every card and bank account's transactions read back, and the budget's sums none the wiser."""
+
+    def setUp(self):
+        super().setUp()
+        relay.plaid_post = _FakePlaid()
+        accounts = self.CARDS["cap"][1] + [
+            {"account_id": "savings", "name": "360 Savings", "mask": "7777", "type": "depository", "subtype": "savings", "balances": {"current": 9000.0}},
+            {"account_id": "redcard", "name": "RedCard", "mask": "3333", "type": "credit", "subtype": "credit card", "balances": {"current": 12.0}},
+            {"account_id": "unset", "name": "Store Card", "mask": "4444", "type": "credit", "subtype": "credit card", "balances": {"current": 1.0}},
+            {"account_id": "mortgage", "name": "Mortgage", "mask": "9999", "type": "loan", "subtype": "mortgage", "balances": {"current": 300000.0}},
+        ]
+        relay.plaid_store("cap", accounts, {}, [], {}, self.NOW)
+        self.keys = dict(relay.with_db(lambda c: c.execute("SELECT account_id, key FROM plaid_feed_keys").fetchall()))
+        relay.budget_config_save({"roles": {self.VENTURE: "split", self.PLATINUM: "family", self.keys["redcard"]: "ignore"}}, self.NOW)
+
+    def unlink(self, item="cap"):
+        relay.delete_bank_institution(item, object(), self.response)
+
+    def everything(self):
+        self.store(
+            _txn("fare", 528.8, date="2026-09-23", name="AMERICAN ", merchant=None, original_description="AMERICAN AIR0012345 FORT WORTH TX", payment_channel="online"),
+            _txn("costco", 54.2),
+            _txn("paid-card", 800.0, date="2026-10-02", account="checking", name="CAPITAL ONE PAYMENT", merchant=None, category="LOAN_PAYMENTS", detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"),
+            _txn("pay", -3000.0, date="2026-10-01", account="checking", name="ACME PAYROLL", merchant=None, category="INCOME", detailed="INCOME_WAGES"),
+            _txn("interest", -4.5, date="2026-09-30", account="savings", name="INTEREST PAID", merchant=None, category="INCOME", detailed="INCOME_INTEREST_EARNED"),
+            _txn("moved", 500.0, date="2026-10-03", account="savings", name="WITHDRAWAL TO CHECKING", merchant=None, category="TRANSFER_OUT", detailed="TRANSFER_OUT_ACCOUNT_TRANSFER"),
+            _txn("ignored", 20.0, account="redcard", name="TARGET", merchant="Target"),
+            _txn("unset-role", 30.0, account="unset", name="SHOE STORE", merchant="Shoe Store"),
+        )
+
+    def ask(self, **asked):
+        return relay.finance_transactions(start=asked.pop("start", "2026-09-01"), end=asked.pop("end", "2026-10-31"), now=self.NOW, **asked)
+
+    def names(self, **asked):
+        return [t["name"] for t in self.ask(**asked)["transactions"]]
+
+    def test_every_card_and_bank_account_is_read_back_the_newest_first(self):
+        self.everything()
+        answer = self.ask()
+        self.assertEqual(8, answer["count"])
+        self.assertEqual(["Costco", "Shoe Store", "Target", "WITHDRAWAL TO CHECKING", "CAPITAL ONE PAYMENT", "ACME PAYROLL", "INTEREST PAID", "AMERICAN "], [t["name"] for t in answer["transactions"]])
+        self.assertEqual((3004.5, round(528.8 + 54.2 + 800 + 500 + 20 + 30, 2)), (answer["money_in"], answer["money_out"]))
+
+    def test_none_of_what_was_added_changes_the_budget(self):
+        self.store(_txn("fare", 528.8, date="2026-09-23"), _txn("costco", 54.2))
+        cards_only = (self.month()["spent"], [t["id"] for t in self.month()["transactions"]], self.month("2026-09")["spent"], self.month()["recurring"])
+        self.everything()
+        self.assertEqual(cards_only, (self.month()["spent"], [t["id"] for t in self.month()["transactions"]], self.month("2026-09")["spent"], self.month()["recurring"]))
+        self.unlink()
+        self.assertEqual(cards_only[:3], (self.month()["spent"], [t["id"] for t in self.month()["transactions"]], self.month("2026-09")["spent"]), "nor once they are all that is left of the bank")
+
+    def test_a_search_finds_what_only_the_bank_says(self):
+        self.everything()
+        (fare,) = self.ask(search="air001")["transactions"]
+        self.assertEqual(("AMERICAN ", "AMERICAN AIR0012345 FORT WORTH TX", "online", self.VENTURE, "credit card"),
+                         (fare["name"], fare["description"], fare["channel"], fare["account"], fare["account_type"]))
+        self.assertEqual(528.8, self.ask(search="AMERICAN")["money_out"])
+
+    def test_a_merchant_s_cleaned_up_name_leaves_the_bank_s_as_the_description(self):
+        self.store(_txn("t1", 5.0, name="COSTCO WHSE #0123", merchant="Costco"), _txn("t2", 6.0, name="COFFEE", merchant=None))
+        self.assertEqual({"Costco": "COSTCO WHSE #0123", "COFFEE": None}, {t["name"]: t["description"] for t in self.ask()["transactions"]})
+
+    def test_it_keeps_to_a_category_an_account_a_direction_and_its_days(self):
+        self.everything()
+        self.assertEqual(["ACME PAYROLL", "INTEREST PAID"], self.names(category="income"))
+        self.assertEqual(["CAPITAL ONE PAYMENT"], self.names(category="credit card payment"))
+        self.assertEqual(["WITHDRAWAL TO CHECKING", "INTEREST PAID"], self.names(account="savings"))
+        self.assertEqual(["CAPITAL ONE PAYMENT", "ACME PAYROLL"], self.names(account="checking"))
+        self.assertEqual(["Target"], self.names(account="3333"))
+        self.assertEqual(["ACME PAYROLL", "INTEREST PAID"], self.names(direction="in"))
+        self.assertEqual(["ACME PAYROLL"], self.names(start="2026-10-01", end="2026-10-01"))
+
+    def test_the_totals_are_of_every_match_past_what_is_listed(self):
+        self.store(*[_txn(f"t{i}", 1.0) for i in range(5)])
+        limit, relay.TXN_LIST_MAX = relay.TXN_LIST_MAX, 2
+        self.addCleanup(setattr, relay, "TXN_LIST_MAX", limit)
+        answer = self.ask()
+        self.assertEqual((5, 5.0, 2), (answer["count"], answer["money_out"], len(answer["transactions"])))
+
+    def test_each_account_says_what_becomes_of_it_and_how_far_back_it_goes(self):
+        self.everything()
+        accounts = {a["name"]: a for a in self.ask()["accounts"]}
+        fields = ("reads_transactions", "in_budget", "count", "first", "last")
+        self.assertEqual((True, True, 2, "2026-09-23", "2026-10-05"), tuple(accounts["Venture"][f] for f in fields))
+        self.assertEqual((True, False, 1, "2026-10-05", "2026-10-05"), tuple(accounts["RedCard"][f] for f in fields), "set to be no part of the budget")
+        self.assertEqual((True, False, 1, "2026-10-05", "2026-10-05"), tuple(accounts["Store Card"][f] for f in fields), "no role yet")
+        self.assertEqual((True, False, 2, "2026-10-01", "2026-10-02"), tuple(accounts["360 Checking"][f] for f in fields))
+        self.assertEqual((False, False, 0, None, None), tuple(accounts["Mortgage"][f] for f in fields))
+
+    def test_what_an_unlinked_account_left_is_still_read_back(self):
+        self.everything()
+        self.unlink()
+        accounts = {t["name"]: t["account"] for t in self.ask()["transactions"]}
+        self.assertEqual(self.VENTURE, accounts["Costco"])
+        self.assertEqual("Capital One 360 Checking 5555", accounts["ACME PAYROLL"])
+
+    def test_a_pending_one_gives_way_to_what_posted_and_one_plaid_took_back_goes(self):
+        self.store(_txn("was-pending", 9.0, name="PENDING", merchant=None, pending=True), _txn("gone", 8.0, name="GONE", merchant=None))
+        self.store(_txn("posted", 9.0, name="POSTED", merchant=None, pending_transaction_id="was-pending"), removed=["gone"])
+        self.assertEqual(["POSTED"], self.names())
+
+    def test_it_is_asked_for_by_the_day(self):
+        for bad in ({"start": "2026-09"}, {"end": "October"}, {"start": "2026-02-31"}, {"direction": "sideways"}):
+            with self.assertRaises(relay.HTTPException):
+                self.ask(**bad)
+
+    def test_left_alone_it_is_the_last_thirty_days(self):
+        self.store(_txn("in", 1.0, date="2026-09-08"), _txn("out", 2.0, date="2026-09-06"))
+        answer = relay.finance_transactions(now=self.NOW)
+        self.assertEqual(("2026-09-07", "2026-10-07", 1), (answer["start"], answer["end"], answer["count"]))
+
+    def test_the_route_is_for_the_finance_users_and_never_cached(self):
+        self.store(_txn("t1", 5.0))
+        answer = relay.get_finance_transactions(object(), self.response, start="2026-10-01", end="2026-10-31")
+        self.assertEqual(1, answer["count"])
+        self.assertEqual(relay.FINANCE_CACHE_CONTROL, self.response.headers["Cache-Control"])
+        relay.require_finance_user = lambda request: (_ for _ in ()).throw(relay.HTTPException(403, {"error": "not_allowed"}))
+        with self.assertRaises(relay.HTTPException):
+            relay.get_finance_transactions(object(), self.response)
 
 
 class FinanceHistoryTest(_Budget):

@@ -7,6 +7,9 @@ import com.meticulouscreations.homesafe.finance.domain.AmazonOrder
 import com.meticulouscreations.homesafe.finance.domain.AmazonSummary
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
+import com.meticulouscreations.homesafe.finance.domain.BankTransaction
+import com.meticulouscreations.homesafe.finance.domain.BankTransactionQuery
+import com.meticulouscreations.homesafe.finance.domain.BankTransactions
 import com.meticulouscreations.homesafe.finance.domain.BucketId
 import com.meticulouscreations.homesafe.finance.domain.BucketSource
 import com.meticulouscreations.homesafe.finance.domain.Budget
@@ -25,6 +28,7 @@ import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.domain.LineRule
 import com.meticulouscreations.homesafe.finance.domain.LineSource
+import com.meticulouscreations.homesafe.finance.domain.LinkedAccount
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
@@ -75,6 +79,19 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
 
     suspend fun budget(serverUrl: String, month: String?): Result<Budget> = suspendRunCatching {
         httpClient.get(PushRelayApi.relayUrl(serverUrl, "/finance/budget")) { month?.let { parameter("month", it) } }.answer()
+    }
+
+    /** Every card's and bank account's transactions the relay kept (`finance_transactions` in `relay/relay.py`), budget or no budget. */
+    suspend fun transactions(serverUrl: String, query: BankTransactionQuery): Result<BankTransactions> = suspendRunCatching {
+        val response = httpClient.get(PushRelayApi.relayUrl(serverUrl, "/finance/transactions")) {
+            query.start?.let { parameter("start", it) }
+            query.end?.let { parameter("end", it) }
+            query.search?.let { parameter("search", it) }
+            query.category?.let { parameter("category", it) }
+            query.account?.let { parameter("account", it) }
+            query.direction?.let { parameter("direction", it.wire) }
+        }
+        if (response.status.isSuccess()) response.body<RelayBankTransactions>().toDomain() else throw problemFrom(response.status, response.bodyAsText())
     }
 
     suspend fun save(serverUrl: String, patch: BudgetConfigPatch): Result<Budget> = suspendRunCatching {
@@ -172,6 +189,68 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
         }
     }
 }
+
+@Serializable
+internal data class RelayBankTransactions(
+    val start: String = "",
+    val end: String = "",
+    val count: Int = 0,
+    @SerialName("money_out") val moneyOut: Double = 0.0,
+    @SerialName("money_in") val moneyIn: Double = 0.0,
+    val accounts: List<RelayLinkedAccount> = emptyList(),
+    val transactions: List<RelayBankTransaction> = emptyList(),
+) {
+    fun toDomain() = BankTransactions(
+        start = start,
+        end = end,
+        count = count,
+        moneyOut = moneyOut,
+        moneyIn = moneyIn,
+        accounts = accounts.map { LinkedAccount(it.key, it.institution, it.type, it.subtype, it.balance, it.readsTransactions, it.needsRelink, it.inBudget, it.count, it.first, it.last) },
+        transactions = transactions.map {
+            BankTransaction(
+                it.date, it.amount, it.name, it.description, it.category, it.categoryDetail, it.confidence, it.pending, it.kind, it.account, it.accountType, it.channel, it.website, it.city,
+                it.region, it.counterparty, it.note,
+            )
+        },
+    )
+}
+
+@Serializable
+internal data class RelayLinkedAccount(
+    val key: String = "",
+    val institution: String = "",
+    val type: String? = null,
+    val subtype: String? = null,
+    val balance: Double? = null,
+    @SerialName("reads_transactions") val readsTransactions: Boolean = false,
+    @SerialName("needs_relink") val needsRelink: Boolean = false,
+    @SerialName("in_budget") val inBudget: Boolean = false,
+    val count: Int = 0,
+    val first: String? = null,
+    val last: String? = null,
+)
+
+@Serializable
+internal data class RelayBankTransaction(
+    val date: String = "",
+    val amount: Double = 0.0,
+    val name: String = "",
+    val description: String? = null,
+    val category: String? = null,
+    @SerialName("category_detail") val categoryDetail: String? = null,
+    val confidence: String? = null,
+    val pending: Boolean = false,
+    val kind: String? = null,
+    val account: String = "",
+    @SerialName("account_type") val accountType: String? = null,
+    val channel: String? = null,
+    val website: String? = null,
+    val city: String? = null,
+    val region: String? = null,
+    val counterparty: String? = null,
+    val note: String? = null,
+)
 
 /** Only what is being changed is sent; inside the limits a null is sent as one, which takes that limit away. */
 internal fun BudgetConfigPatch.toJson(): JsonObject = buildJsonObject {
