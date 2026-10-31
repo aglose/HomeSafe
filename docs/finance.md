@@ -222,7 +222,7 @@ The months are meant to be set side by side for years, so the relay keeps its ow
 
 | What | Where | How often |
 |---|---|---|
-| Every card purchase, with Plaid's category and whatever was tagged | `plaid_transactions` | As read, hourly |
+| Every card's and bank account's transactions, with Plaid's category, the bank's own description, how and where it was paid, and whatever was tagged | `plaid_transactions` | As read, hourly |
 | Each account's balances | `plaid_balance_days` | One row per account per day |
 | Each investment's quantity, price and value | `plaid_holding_days` | One row per holding per day |
 | Stock plan vests | `plaid_stock_events` | Past Plaid's two years they stay as read |
@@ -248,8 +248,9 @@ The months are meant to be set side by side for years, so the relay keeps its ow
   counting since nothing will settle it.
 - **Amazon's emails read again.** When the relay learns to read them differently, it forgets only
   what its search still reaches (`AMAZON_LOOKBACK_DAYS`). Older orders stay as they were first read.
-- **Only credit cards.** A bank account's transactions are read and dropped (see
-  [budget.md](budget.md)), so rent or a mortgage paid from checking is known only from the sheet.
+- **The budget is only credit cards.** A bank account's transactions are kept, and the assistant
+  can read them, but they never count toward the budget (see [budget.md](budget.md)). What is
+  planned for rent or a mortgage paid from checking still comes from the sheet.
 
 ### The nightly copy
 

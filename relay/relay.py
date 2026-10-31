@@ -240,6 +240,10 @@ def sentence(item: dict[str, Any], required_zones: list[str]) -> tuple[str, str]
 
 # ---------------------------------------------------------------- storage
 
+# The columns of `plaid_transactions` that `txn_details` fills, in its order.
+TXN_DETAILS = ("original", "channel", "website", "city", "region", "counterparty", "confidence")
+
+
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     # The current shape, for a fresh database. A device is known by `device_id` — a UUID the app
@@ -372,6 +376,10 @@ def db() -> sqlite3.Connection:
             conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} {declaration}")
     conn.execute("UPDATE plaid_transactions SET card=(SELECT key FROM plaid_feed_keys k WHERE k.account_id = plaid_transactions.account_id) WHERE card IS NULL")
     conn.execute("CREATE INDEX IF NOT EXISTS plaid_transactions_card ON plaid_transactions (card, date)")
+    # What else Plaid says of a transaction, for reading it back rather than for the budget's sums (see `txn_details`).
+    for column in TXN_DETAILS:
+        if column not in columns:
+            conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} TEXT")
     # What the relay would otherwise overwrite (see "finance history"): each account's balances and
     # each investment's holding as they stood on each of the household's days, the budget's plan as
     # it stood in each month, and the budget sheet on each day it differed from the day before
@@ -9320,6 +9328,10 @@ def finance_history_keep(now: float) -> None:
 #
 # Only credit cards' transactions are kept, and never in the log: a purchase is nobody's business
 # but the household's.
+#
+# Every bank account's transactions are kept too, what comes in as well as what goes out, so the
+# household can ask about them (`finance_transactions`). The budget stays the cards': nothing of a
+# bank account's counts toward its spending, its limits or its alerts.
 
 # How often the cards are asked about. Plaid itself hears from a bank a few times a day, so most
 # asks find nothing new; the page says when something last did.
@@ -9393,6 +9405,11 @@ BUDGET_TOP_MERCHANTS = 8
 # institutions were read again from the start, to have what was dropped before they were kept.
 TXN_CHECKING = "type = 'depository' AND subtype = 'checking'"
 TXN_CHECKING_READ_KEY = "txn_checking_read"
+# The state key that says every institution was read again from the start, to have what was
+# dropped before it was kept: `TXN_DETAILS`, and all that a bank account's transactions are.
+TXN_EVERYTHING_READ_KEY = "txn_everything_read"
+# The most of `finance_transactions`' matches it lists, the newest; its totals are of them all.
+TXN_LIST_MAX = 1000
 # What leaves a checking account that isn't a bill: money moved to the household's own savings,
 # brokerage or retirement accounts (paying a card off is already no spending, see `txn_kind`).
 CHECKING_NOT_BILLS = frozenset({"TRANSFER_OUT_SAVINGS", "TRANSFER_OUT_ACCOUNT_TRANSFER", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"})
@@ -9485,6 +9502,21 @@ def txn_kind(amount: float, category: str | None, name: str | None, detail: str 
     return "refund"
 
 
+def txn_details(txn: dict[str, Any], category: dict[str, Any]) -> tuple:
+    """
+    What else Plaid says of a transaction, in `TXN_DETAILS`' order: the bank's own description,
+    how it was paid, where, to whom, and how sure Plaid is of its category. Any of them can be
+    missing, and only text is kept: this is read back to people, and never decides a sum.
+    """
+    location = txn.get("location") if isinstance(txn.get("location"), dict) else {}
+    parties = [p for p in txn.get("counterparties") or [] if isinstance(p, dict)] if isinstance(txn.get("counterparties"), list) else []
+    values = (
+        txn.get("original_description"), txn.get("payment_channel"), txn.get("website"), location.get("city"), location.get("region"),
+        parties[0].get("name") if parties else None, category.get("confidence_level"),
+    )
+    return tuple(v.strip() if isinstance(v, str) and v.strip() else None for v in values)
+
+
 def txn_row(txn: dict[str, Any], item_id: str, now: float) -> tuple | None:
     """One of Plaid's transactions as a `plaid_transactions` row (without its tag), or None for one that says too little to keep."""
     txn_id, amount = txn.get("transaction_id"), txn.get("amount")
@@ -9498,6 +9530,7 @@ def txn_row(txn: dict[str, Any], item_id: str, now: float) -> tuple | None:
         txn_id, item_id, txn["account_id"], str(date)[:10], txn.get("date"), float(amount), txn.get("iso_currency_code") or txn.get("unofficial_currency_code"),
         name, merchant, merchant_key(merchant, name), category.get("primary"), category.get("detailed"), int(bool(txn.get("pending"))),
         txn.get("pending_transaction_id"), txn.get("account_owner"), txn_kind(float(amount), category.get("primary"), name, category.get("detailed")), now,
+        *txn_details(txn, category),
     )
 
 
@@ -9515,7 +9548,7 @@ def plaid_transactions_pull(access: str, cursor: str | None) -> dict[str, Any]:
         at = cursor
         try:
             for _page in range(TXN_MAX_PAGES):
-                body: dict[str, Any] = {"access_token": access, "count": TXN_PAGE}
+                body: dict[str, Any] = {"access_token": access, "count": TXN_PAGE, "options": {"include_original_description": True}}
                 if at:
                     body["cursor"] = at
                 answer = plaid_post("/transactions/sync", body)
@@ -9535,27 +9568,26 @@ def plaid_transactions_pull(access: str, cursor: str | None) -> dict[str, Any]:
 def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -> int:
     """
     Puts what `plaid_transactions_pull` read into relay.db and moves the institution's cursor on,
-    as one change: a relay stopped halfway asks for the same again. Only the credit cards'
-    transactions are kept, and what left a checking account (for what it pays every month, see
-    `budget_checking`): not what came into it, nor anything of a savings account's. A tag made by
+    as one change: a relay stopped halfway asks for the same again. The credit cards' and the bank
+    accounts' transactions are kept, and those of nothing else. A tag made by
     hand stays on a transaction Plaid changed, and passes from a pending purchase to the posted
     one that replaces it. A purchase kept from when its card was linked before gives way to the
     same one read again (`txn_take_over`). Answers how many rows changed.
     """
     def write(c: sqlite3.Connection) -> int:
-        cards = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND type='credit'", (item_id,))}
-        checking = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND " + TXN_CHECKING, (item_id,))}
+        kept = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND type IN ('credit', 'depository')", (item_id,))}
         keys = dict(c.execute("SELECT account_id, key FROM plaid_feed_keys").fetchall())
         changed = 0
         for txn in pulled["added"] + pulled["modified"]:
             row = txn_row(txn, item_id, now)
-            if row is None or not (row[2] in cards or (row[2] in checking and row[5] > 0)):
+            if row is None or row[2] not in kept:
                 continue
             before = c.execute("SELECT pending FROM plaid_transactions WHERE txn_id=?", (row[0],)).fetchone()
             c.execute(
                 "INSERT INTO plaid_transactions (txn_id, item_id, account_id, date, posted, amount, currency, name, merchant, merchant_key, category,"
-                " category_detail, pending, pending_id, owner, kind, updated, card) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-                " ON CONFLICT(txn_id) DO UPDATE SET item_id=excluded.item_id, account_id=excluded.account_id, date=excluded.date, posted=excluded.posted,"
+                " category_detail, pending, pending_id, owner, kind, updated, " + ", ".join(TXN_DETAILS) + ", card) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(txn_id) DO UPDATE SET " + ", ".join(f"{column}=excluded.{column}" for column in TXN_DETAILS) + ", item_id=excluded.item_id,"
+                " account_id=excluded.account_id, date=excluded.date, posted=excluded.posted,"
                 " amount=excluded.amount, currency=excluded.currency, name=excluded.name, merchant=excluded.merchant, merchant_key=excluded.merchant_key,"
                 " category=excluded.category, category_detail=excluded.category_detail, pending=excluded.pending, pending_id=excluded.pending_id,"
                 " owner=excluded.owner, kind=excluded.kind, updated=excluded.updated, card=excluded.card, removed_at=NULL, archived_at=NULL",
@@ -9644,6 +9676,11 @@ def plaid_transactions_sync(now: float) -> None:
         # over as they were, their tags with them.
         with_db(lambda c: (c.execute("UPDATE plaid_items SET txn_cursor=NULL WHERE item_id IN (SELECT item_id FROM plaid_accounts WHERE " + TXN_CHECKING + ")"), c.commit()))
         state_set(TXN_CHECKING_READ_KEY, {"at": now})
+    if not state_get(TXN_EVERYTHING_READ_KEY):
+        # The same, once, for every institution: for what it dropped until `TXN_DETAILS` and all of
+        # a bank account's transactions were kept.
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET txn_cursor=NULL"), c.commit()))
+        state_set(TXN_EVERYTHING_READ_KEY, {"at": now})
     items = with_db(lambda c: c.execute(
         "SELECT item_id, access, txn_cursor, products, (SELECT COUNT(*) FROM plaid_accounts a WHERE a.item_id = plaid_items.item_id)"
         " FROM plaid_items ORDER BY linked_at, item_id"
@@ -10010,6 +10047,81 @@ def budget_checking(first: str, last: str, config: dict[str, Any]) -> list[dict[
         "kind": "spend", "card": feed or f"{account} {mask or ''}".strip(), "bucket": None, "line": budget_line_guess(bills, key, category, detail),
         "amazon_order": False, "account": "checking",
     } for txn_id, date, amount, name, merchant, key, category, detail, feed, account, mask in rows if detail not in CHECKING_NOT_BILLS]
+
+
+def finance_accounts(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every account linked, what becomes of its transactions, and how far back those kept of it go."""
+    rows = with_db(lambda c: c.execute(
+        "SELECT k.key, i.institution, a.name, a.mask, a.type, a.subtype, a.current, i.error, i.products, a.account_id"
+        " FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id LEFT JOIN plaid_feed_keys k ON k.account_id = a.account_id"
+        " ORDER BY i.linked_at, i.item_id, a.name, a.account_id"
+    ).fetchall())
+    kept = {account: (count, first, last) for account, count, first, last in with_db(lambda c: c.execute(
+        "SELECT account_id, COUNT(*), MIN(date), MAX(date) FROM plaid_transactions WHERE removed_at IS NULL GROUP BY account_id"
+    ).fetchall())}
+    accounts = []
+    for key, institution, name, mask, kind, subtype, current, error, products, account_id in rows:
+        label = key or f"{name} {mask or ''}".strip()
+        count, first, last = kept.get(account_id, (0, None, None))
+        accounts.append({
+            "key": label, "institution": institution or "", "name": name, "mask": mask, "type": kind, "subtype": subtype, "balance": current,
+            "reads_transactions": kind in ("credit", "depository") and "transactions" in (products or ""), "needs_relink": error in PLAID_RELINK,
+            "in_budget": kind == "credit" and (config["roles"].get(label) or "") not in ("", BUDGET_IGNORE),
+            "count": count, "first": first, "last": last,
+        })
+    return accounts
+
+
+def finance_transactions(start: str | None = None, end: str | None = None, search: str | None = None, category: str | None = None, account: str | None = None,
+                         direction: str | None = None, now: float | None = None) -> dict[str, Any]:
+    """
+    What was read of every card and bank account between two days, inclusive (by default the last
+    30, up to today), whatever the budget makes of it: cards outside the budget, a card being paid
+    off, money coming into an account and moved between the household's own. An amount is Plaid's:
+    positive for money going out. `search` looks through everything said of a transaction,
+    `category` through Plaid's category, `account` through the account's name and type, and
+    `direction` is "in" or "out". The totals and the count are of every match; the transactions
+    are the newest `TXN_LIST_MAX` of them.
+    """
+    now = time.time() if now is None else now
+    try:
+        last = datetime.strptime(end, "%Y-%m-%d").date() if end else datetime.fromtimestamp(now, household_zone() or timezone.utc).date()
+        first = datetime.strptime(start, "%Y-%m-%d").date() if start else last - timedelta(days=30)
+    except ValueError:
+        raise HTTPException(400, {"error": "bad_range", "message": "start and end are YYYY-MM-DD"}) from None
+    if direction not in (None, "in", "out"):
+        raise HTTPException(400, {"error": "bad_range", "message": "direction is in or out"})
+    rows = with_db(lambda c: c.execute(
+        "SELECT t.date, t.amount, t.name, t.merchant, t.original, t.category, t.category_detail, t.confidence, t.pending, t.kind, k.key, t.card, a.name, a.mask, a.type, a.subtype,"
+        " t.channel, t.website, t.city, t.region, t.counterparty, t.note"
+        " FROM plaid_transactions t LEFT JOIN plaid_feed_keys k ON k.account_id = t.account_id LEFT JOIN plaid_accounts a ON a.account_id = t.account_id"
+        " WHERE t.removed_at IS NULL AND t.date >= ? AND t.date <= ?"
+        " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
+        " ORDER BY t.date DESC, t.amount DESC, t.txn_id",
+        (first.isoformat(), last.isoformat()),
+    ).fetchall())
+
+    def has(asked: str, *texts: str | None) -> bool:
+        return any(asked.casefold() in text.casefold() for text in texts if text)
+
+    found = []
+    for date, amount, name, merchant, original, kind, detail, confidence, pending, what, key, card, account_name, mask, account_type, subtype, channel, website, city, region, party, note in rows:
+        label = key or card or f"{account_name or ''} {mask or ''}".strip()
+        if (search and not has(search, name, merchant, original, party, website, city, region, note)) \
+                or (category and not has(category.strip().replace(" ", "_"), kind, detail)) \
+                or (account and not has(account, label, account_name, subtype)) \
+                or (direction == "in" and amount >= 0) or (direction == "out" and amount <= 0):
+            continue
+        found.append({
+            "date": date, "amount": round(amount, 2), "name": merchant or name or "", "description": next((d for d in (original, name) if d and d != (merchant or name)), None),
+            "category": kind, "category_detail": detail, "confidence": confidence, "pending": bool(pending), "kind": what, "account": label, "account_type": subtype or account_type,
+            "channel": channel, "website": website, "city": city, "region": region, "counterparty": party, "note": note,
+        })
+    return {
+        "start": first.isoformat(), "end": last.isoformat(), "count": len(found),
+        "money_out": round(sum(t["amount"] for t in found if t["amount"] > 0), 2), "money_in": round(-sum(t["amount"] for t in found if t["amount"] < 0), 2),
+        "accounts": finance_accounts(budget_config()), "transactions": found[:TXN_LIST_MAX],
+    }
 
 
 def _month_on(day: Any) -> Any:
@@ -10404,6 +10516,17 @@ def get_budget(request: Request, response: Response, month: str | None = None) -
     response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     require_finance_user(request)
     return budget_month(month)
+
+
+@app.get("/finance/transactions")
+def get_finance_transactions(
+    request: Request, response: Response, start: str | None = None, end: str | None = None, search: str | None = None, category: str | None = None,
+    account: str | None = None, direction: str | None = None,
+) -> dict[str, Any]:
+    """What was read of every card and bank account between two days, budget or no budget (see `finance_transactions`)."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    require_finance_user(request)
+    return finance_transactions(start, end, search, category, account, direction)
 
 
 @app.put("/finance/budget/config")

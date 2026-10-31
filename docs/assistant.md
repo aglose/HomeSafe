@@ -30,6 +30,7 @@ question is asked about whatever is showing by then.
   | `who_is_home` | shared | Away mode's phones, home or away |
   | `server_status` | shared | Frigate's version, load, storage, detector, pipelines |
   | `finance_sheet`, `budget` | finance | the sheet, and a month's budget or the card purchases matching a search across months; held back while the finance app is locked |
+  | `bank_transactions` | finance | every transaction kept from every card and bank account, budget or no budget, and what the bank wrote of it; asked of the relay each time, never kept on the phone, and held back while the finance app is locked |
   | `market_quotes` | finance | prices for symbols, or the watchlist (held back while the finance app is locked) |
   | `weather` | weather | the saved places' forecasts, or a place by name |
   | `training_log` | fitness | workouts and sets, body weight, phase |

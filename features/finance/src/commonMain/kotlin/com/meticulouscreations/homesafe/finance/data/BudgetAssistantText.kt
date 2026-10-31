@@ -78,9 +78,13 @@ internal data class BudgetAsk(
 
     companion object {
         private val MONTH = Regex("""\d{4}-(0[1-9]|1[0-2])""")
-        private val DAY = Regex("""\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])""")
     }
 }
+
+/** Whether [text] is a day as a tool is given one, `YYYY-MM-DD`. */
+internal fun isDay(text: String): Boolean = DAY.matches(text)
+
+private val DAY = Regex("""\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])""")
 
 /** The months from [first] to [last] (`YYYY-MM`), the newest first. */
 internal fun monthsBetween(first: String, last: String): List<String> {
@@ -210,7 +214,7 @@ private fun StringBuilder.appendCoverage(budget: Budget) {
     if (!budget.configured) appendLine("No bank connection is set up on the server, so there are no purchases to read.")
     if (budget.sandbox) appendLine("This is Plaid's sandbox: test institutions with made-up purchases.")
     if (!budget.ready) appendLine("Plaid is still fetching a card's first purchases, so this is incomplete.")
-    appendLine("This is the purchases and refunds on the cards in the budget. It isn't payments to the cards, or the money in bank accounts beyond what checking pays again and again.")
+    appendLine("This is the purchases and refunds on the cards in the budget. It isn't payments to the cards, or the money in bank accounts beyond what checking pays again and again: bank_transactions reads all of that.")
     val leftOut = budget.cards.mapNotNull { card ->
         when {
             !card.readsPurchases -> "${card.key} (linked as a loan, so its purchases were never read)"
@@ -253,9 +257,9 @@ private fun CardRole.label(): String = when (this) {
     CardRole.Unset -> "no role given yet"
 }
 
-private fun String.oneLine(): String = trim().replace(WHITESPACE, " ")
+internal fun String.oneLine(): String = trim().replace(WHITESPACE, " ")
 
-private fun money(amount: Double): String {
+internal fun money(amount: Double): String {
     val cents = (abs(amount) * 100).roundToLong()
     val sign = if (amount < 0 && cents != 0L) "-" else ""
     return "$sign${cents / 100}.${(cents % 100).toString().padStart(2, '0')}"
