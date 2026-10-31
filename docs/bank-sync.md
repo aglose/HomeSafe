@@ -69,7 +69,8 @@ the feed up, and the formula differs:
 
 Several accounts in one cell add up: `=SUMIF('Bank feed'!H:H, "depository", 'Bank feed'!B:B)` is
 all the cash. An account that is unlinked or closed leaves the feed, and a cell that looks it up
-shows `#N/A` until it is changed.
+shows `#N/A` until it is changed. Its past stays on the relay (see
+[What is kept](finance.md#what-is-kept)).
 
 When Plaid can't read an institution, its rows keep their last balances and the **Updated** column
 shows how old they are.

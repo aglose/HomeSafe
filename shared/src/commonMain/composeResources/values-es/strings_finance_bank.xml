@@ -67,7 +67,7 @@
         <item quantity="other">%1$d posiciones</item>
     </plurals>
     <string name="fin_bank_unlink_title">¿Desvincular %1$s?</string>
-    <string name="fin_bank_unlink_body">Se le pide a Plaid que la olvide, el servidor borra su clave y sus filas salen de la hoja de datos, así que cualquier celda de tu hoja de presupuesto que las busque mostrará un error hasta que la cambies. En el plan gratuito de Plaid, cada vinculación cuenta para siempre dentro del límite de 10, así que volver a vincularla más adelante gasta otra.</string>
+    <string name="fin_bank_unlink_body">Se le pide a Plaid que la olvide, el servidor borra su clave y sus filas salen de la hoja de datos, así que cualquier celda de tu hoja de presupuesto que las busque mostrará un error hasta que la cambies. Lo comprado con sus tarjetas se queda en el historial de tu presupuesto. En el plan gratuito de Plaid, cada vinculación cuenta para siempre dentro del límite de 10, así que volver a vincularla más adelante gasta otra.</string>
     <string name="fin_bank_unlink_confirm">Desvincular</string>
 
     <string name="fin_bank_feed_title">Hoja de datos del presupuesto</string>

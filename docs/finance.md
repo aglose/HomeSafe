@@ -215,6 +215,48 @@ A few conventions the parser relies on:
 Each missing step has its own message on the Wallet tab (`SheetSetupCard`): the API is off, the
 sheet isn't shared, no id is configured, or the relay is older than this feature.
 
+## What is kept
+
+The months are meant to be set side by side for years, so the relay keeps its own record in
+`relay.db`, for good. All of it stays on the Frigate box; none of it reaches a log or the feed.
+
+| What | Where | How often |
+|---|---|---|
+| Every card purchase, with Plaid's category and whatever was tagged | `plaid_transactions` | As read, hourly |
+| Each account's balances | `plaid_balance_days` | One row per account per day |
+| Each investment's quantity, price and value | `plaid_holding_days` | One row per holding per day |
+| Stock plan vests | `plaid_stock_events` | Past Plaid's two years they stay as read |
+| The limits, each card's role and the sheet's plan | `budget_plans` | One row per month, as the month left it |
+| The budget sheet's tabs | `finance_sheet_days` | A copy on each day it differs from the last (zlib-compressed JSON) |
+
+- **Comparisons are worked out when asked for**, not saved as totals. So sorting a purchase
+  differently later changes the months it was in, and a new way of comparing reaches back over
+  everything already kept. Only the plan is frozen: what a month was held to is what it had then.
+- **Unlinking keeps the past.** Plaid is told to forget the institution and the relay deletes its
+  token, but what was bought on a card stays, under the card's key, and goes on counting in its
+  month; so do the balances and holdings. Purchases still pending go, since they may never post,
+  and so do its stock plan vests, which the page reads by account. There is no button to erase the
+  history; that takes a query on the box.
+- **Linking again doesn't count anything twice.** Each posted purchase read under the new link
+  takes the place of the kept one of the same card, day and amount, and takes on its tags. A
+  purchase whose day or amount changed in between would show up twice.
+- **How far back it goes.** A new card link asks Plaid for all 730 days it offers (`PLAID_TXN_DAYS`).
+  Plaid fixes that when the link is made: a link from before it stays at the 90 days it asked for,
+  and signing in again doesn't change it. Only unlinking and linking again brings more, using up
+  another of the plan's links. Banks may hold less than two years.
+- **Only credit cards.** A bank account's transactions are read and dropped (see
+  [budget.md](budget.md)), so rent or a mortgage paid from checking is known only from the sheet.
+
+### The nightly copy
+
+Each night's first check copies `relay.db` to `RELAY_BACKUP_DIR` (`/mnt/surveillance/relay-backups`
+on the box, the recordings drive, a different disk from `relay.db`'s) and checks the copy. It keeps
+the last 14 nights and each month's first for good. A copy holds everything `relay.db` does, Plaid's
+tokens included, so the folder and files are for root alone. It guards against a lost system disk
+or a bad migration, not against losing the box: nothing leaves it.
+
+To restore, stop the relay, put a copy in place of `data/relay.db`, and start it again.
+
 ## Without the server
 
 Finance opens whether or not the camera server can be reached: from the drawer as usual, and from
