@@ -302,12 +302,18 @@ data class AmazonSummary(
     val total: Double get() = essential + discretionary + unsorted + unmatched
 }
 
-/** How often something comes round again. */
-enum class RecurringRhythm { WEEKLY, MONTHLY }
+/** How often something comes round again: every week, two weeks, month, two months or three months. */
+enum class RecurringRhythm {
+    WEEKLY,
+    BIWEEKLY,
+    MONTHLY,
+    BIMONTHLY,
+    QUARTERLY,
+}
 
 /**
  * Something the cards are charged, or the checking account pays, again and again
- * (`budget_recurring` in `relay/relay.py`): the same price every week or month, or a bill at
+ * (`budget_recurring` in `relay/relay.py`): the same price every [rhythm], or a bill at
  * whatever it comes to. [amount] is what it was last
  * charged, [was] what it was before that when the price changed then, and [monthly] what it comes
  * to a month (a bill's, what its last few came to). [next] is the day the next one is due (`YYYY-MM-DD`),

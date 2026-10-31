@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Budget tab's recurring charges (features/finance BudgetRecurring.kt): what the cards are charged every week or month. -->
+<!-- The Budget tab's recurring charges (features/finance BudgetRecurring.kt): what the cards are charged every week, two weeks, month, two months or three months. -->
 <resources>
     <string name="fin_recurring_title">Cargos recurrentes</string>
-    <string name="fin_recurring_subtitle">Lo que se paga con las tarjetas y la cuenta corriente cada semana o cada mes</string>
+    <string name="fin_recurring_subtitle">Lo que se paga una y otra vez con las tarjetas y la cuenta corriente</string>
     <string name="fin_recurring_headline">Unos %1$s al mes</string>
     <plurals name="fin_recurring_running">
         <item quantity="one">%1$d sigue activo</item>
@@ -14,11 +14,26 @@
     <string name="fin_recurring_monthly_due">Mensual · tocaba el %1$s, sin cobrar aún</string>
     <string name="fin_recurring_weekly_due">Semanal · tocaba el %1$s, sin cobrar aún</string>
     <string name="fin_recurring_bill_due">Factura mensual · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_biweekly_next">Cada 2 semanas · próximo: %1$s</string>
+    <string name="fin_recurring_biweekly_due">Cada 2 semanas · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_bimonthly_next">Cada 2 meses · próximo: %1$s</string>
+    <string name="fin_recurring_bimonthly_due">Cada 2 meses · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_quarterly_next">Cada 3 meses · próximo: %1$s</string>
+    <string name="fin_recurring_quarterly_due">Cada 3 meses · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_bill_weekly_next">Factura semanal · próxima: %1$s</string>
+    <string name="fin_recurring_bill_weekly_due">Factura semanal · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_bill_biweekly_next">Factura cada 2 semanas · próxima: %1$s</string>
+    <string name="fin_recurring_bill_biweekly_due">Factura cada 2 semanas · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_bill_bimonthly_next">Factura cada 2 meses · próxima: %1$s</string>
+    <string name="fin_recurring_bill_bimonthly_due">Factura cada 2 meses · tocaba el %1$s, sin cobrar aún</string>
+    <string name="fin_recurring_bill_quarterly_next">Factura cada 3 meses · próxima: %1$s</string>
+    <string name="fin_recurring_bill_quarterly_due">Factura cada 3 meses · tocaba el %1$s, sin cobrar aún</string>
     <string name="fin_recurring_last">Último cargo: %1$s</string>
     <string name="fin_recurring_up">Subió desde %1$s</string>
     <string name="fin_recurring_down">Bajó desde %1$s</string>
     <string name="fin_recurring_a_month">%1$s al mes</string>
     <string name="fin_recurring_about">Unos %1$s</string>
+    <string name="fin_recurring_about_a_month">Unos %1$s al mes</string>
     <plurals name="fin_recurring_more">
         <item quantity="one">%1$d más</item>
         <item quantity="other">%1$d más</item>
@@ -26,5 +41,5 @@
     <string name="fin_recurring_fewer">Ver menos</string>
     <string name="fin_recurring_stopped">Detenidos</string>
     <string name="fin_recurring_checking">Cuenta corriente</string>
-    <string name="fin_recurring_how">Se buscan en los últimos seis meses de las tarjetas y de la cuenta corriente: todo lo que se paga cada semana o cada mes al mismo precio, y las facturas por lo que sumen. Se dejan fuera el dinero movido a tus propias cuentas y los pagos de tarjeta, y lo que paga la cuenta corriente no cuenta contra el presupuesto. Algo cancelado pasa a Detenidos cuando su siguiente cargo lleva una semana de retraso.</string>
+    <string name="fin_recurring_how">Se buscan en el último año de las tarjetas y de la cuenta corriente: todo lo que se paga cada semana, cada 2 semanas, cada mes, cada 2 meses o cada 3 meses al mismo precio, y las facturas por lo que sumen. Se dejan fuera el dinero movido a tus propias cuentas y los pagos de tarjeta, y lo que paga la cuenta corriente no cuenta contra el presupuesto. Algo cancelado pasa a Detenidos cuando su siguiente cargo lleva bastante retraso.</string>
 </resources>

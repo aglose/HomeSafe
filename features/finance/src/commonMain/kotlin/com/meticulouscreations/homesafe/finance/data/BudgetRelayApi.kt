@@ -579,6 +579,15 @@ internal data class RelayAmazonSummary(
 @Serializable
 internal data class RelayBudgetPastMonth(val month: String = "", val spent: Double = 0.0, val days: Int = 30)
 
+/** A recurring charge's `rhythm` from the relay; one this app doesn't know yet is taken for a month's. */
+internal fun recurringRhythm(rhythm: String): RecurringRhythm = when (rhythm) {
+    "weekly" -> RecurringRhythm.WEEKLY
+    "biweekly" -> RecurringRhythm.BIWEEKLY
+    "bimonthly" -> RecurringRhythm.BIMONTHLY
+    "quarterly" -> RecurringRhythm.QUARTERLY
+    else -> RecurringRhythm.MONTHLY
+}
+
 /** What the cards and the checking account pay again and again (`budget_recurring` in relay.py). */
 @Serializable
 internal data class RelayRecurring(val monthly: Double = 0.0, val charges: List<RelayRecurringCharge> = emptyList()) {
@@ -587,7 +596,7 @@ internal data class RelayRecurring(val monthly: Double = 0.0, val charges: List<
         charges = charges.map { charge ->
             RecurringCharge(
                 name = charge.name,
-                rhythm = if (charge.rhythm == "weekly") RecurringRhythm.WEEKLY else RecurringRhythm.MONTHLY,
+                rhythm = recurringRhythm(charge.rhythm),
                 amount = charge.amount,
                 was = charge.was,
                 monthly = charge.monthly,

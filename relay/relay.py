@@ -9394,6 +9394,17 @@ BUDGET_LINE_GUESSES: tuple[tuple[re.Pattern[str], frozenset[str], re.Pattern[str
         (r"child ?care|daycare", {"GENERAL_SERVICES_CHILDCARE"}, None),
         (r"education|tuition|school", {"GENERAL_SERVICES_EDUCATION"}, None),
         (r"gifts?|donation|charity", {"GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES", "GOVERNMENT_AND_NON_PROFIT_DONATIONS"}, None),
+        # The bills, each by its kind before any utility line takes it. Plaid files some providers
+        # under another kind (AT&T's internet as telephone), so the provider's name says more.
+        (r"internet|wi-?fi|broadband|\bcable\b", {"RENT_AND_UTILITIES_INTERNET_AND_CABLE"},
+         r"^(at t|comcast|xfinity|sonic|spectrum|cox|frontier|google fiber|starlink|astound|wave|optimum|centurylink)\b"),
+        (r"phone|mobile|\bcell\b|wireless", {"RENT_AND_UTILITIES_TELEPHONE"},
+         r"^(t mobile|verizon|mint mobile|visible|cricket|google fi|metro by|us mobile|boost mobile|consumer cellular)\b"),
+        (r"water|sewer|trash|garbage", {"RENT_AND_UTILITIES_WATER", "RENT_AND_UTILITIES_SEWAGE_AND_WASTE_MANAGEMENT"}, None),
+        # Not "gas" alone: a line of that name is fuel (above).
+        (r"electric|power|energy|gas (and|&) electric|\bpg ?& ?e\b", {"RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"}, None),
+        (r"financial|advis|planner|wealth", set(),
+         r"^(cetera|ameriprise|edward jones|lpl|raymond james|merrill|betterment|wealthfront|facet|vanguard personal)\b"),
         (r"utilit|electric|internet|phone", {"RENT_AND_UTILITIES"}, None),
         (r"\bloans?\b", {"LOAN_PAYMENTS"}, None),
         (r"insurance", {"GENERAL_SERVICES_INSURANCE"}, None),
@@ -9419,11 +9430,15 @@ TXN_LIST_MAX = 1000
 # brokerage or retirement accounts (paying a card off is already no spending, see `txn_kind`).
 CHECKING_NOT_BILLS = frozenset({"TRANSFER_OUT_SAVINGS", "TRANSFER_OUT_ACCOUNT_TRANSFER", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"})
 # What the cards are charged again and again (see `budget_recurring`): how many days apart the
-# charges of each rhythm fall (twice that when one was missed in between), how many days past the
-# day the next one was due it has stopped, and how long one that stopped stays listed.
-RECURRING_GAPS = {"weekly": (5, 9), "monthly": (26, 35)}
-RECURRING_GRACE_DAYS = {"weekly": 4, "monthly": 8}
-RECURRING_STOPPED_DAYS = 120
+# charges of each rhythm fall (twice that when one was missed in between), how many come in a
+# year, how many days past the day the next one was due it has stopped, and how long past that
+# day one that stopped stays listed.
+RECURRING_GAPS = {"weekly": (5, 9), "biweekly": (12, 16), "monthly": (26, 35), "bimonthly": (54, 68), "quarterly": (84, 98)}
+RECURRING_PER_YEAR = {"weekly": 52, "biweekly": 26, "monthly": 12, "bimonthly": 6, "quarterly": 4}
+RECURRING_GRACE_DAYS = {"weekly": 4, "biweekly": 6, "monthly": 8, "bimonthly": 12, "quarterly": 15}
+RECURRING_STOPPED_DAYS = 90
+# How far back recurring charges are looked for: three charges three months apart, one missed between.
+RECURRING_HISTORY_MONTHS = 13
 # How far a price can move in one step and still be the same charge again: a share of the larger,
 # and never closer than a dollar. A bill (electricity, water, the internet) can be any amount, but
 # only counts when it is most of what the merchant charged meanwhile.
@@ -9602,17 +9617,13 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
             # Only as it first posts: a change to one already posted has taken over its one already.
             if not row[12] and (before is None or before[0]):
                 txn_take_over(c, row, keys.get(row[2]))
-            if row[13]:
-                was = c.execute("SELECT tag, tag_by FROM plaid_transactions WHERE txn_id=? AND tag IS NOT NULL", (row[13],)).fetchone()
-                if was:
-                    c.execute("UPDATE plaid_transactions SET tag=?, tag_by=? WHERE txn_id=? AND tag IS NULL", (was[0], was[1], row[0]))
-                was = c.execute("SELECT line_tag, line_tag_by FROM plaid_transactions WHERE txn_id=? AND line_tag IS NOT NULL", (row[13],)).fetchone()
-                if was:
-                    c.execute("UPDATE plaid_transactions SET line_tag=?, line_tag_by=? WHERE txn_id=? AND line_tag IS NULL", (was[0], was[1], row[0]))
-                # Only as the posted one is first kept: a note taken off it since must not come back from the pending one.
-                was = c.execute("SELECT note, note_by FROM plaid_transactions WHERE txn_id=? AND note IS NOT NULL", (row[13],)).fetchone() if before is None else None
-                if was:
-                    c.execute("UPDATE plaid_transactions SET note=?, note_by=? WHERE txn_id=? AND note IS NULL", (was[0], was[1], row[0]))
+            # What was set by hand on the pending one carries over only as the posted one is first kept:
+            # a tag or note taken off the posted one since must not come back from the pending one.
+            if row[13] and before is None:
+                for column in ("tag", "line_tag", "note"):
+                    was = c.execute(f"SELECT {column}, {column}_by FROM plaid_transactions WHERE txn_id=? AND {column} IS NOT NULL", (row[13],)).fetchone()
+                    if was:
+                        c.execute(f"UPDATE plaid_transactions SET {column}=?, {column}_by=? WHERE txn_id=? AND {column} IS NULL", (was[0], was[1], row[0]))
         for txn_id in pulled["removed"]:
             changed += c.execute("UPDATE plaid_transactions SET removed_at=? WHERE txn_id=? AND item_id=? AND removed_at IS NULL", (now, txn_id, item_id)).rowcount
         c.execute("DELETE FROM plaid_transactions WHERE removed_at IS NOT NULL AND removed_at < ?", (now - TXN_TOMBSTONE_SECONDS,))
@@ -9874,9 +9885,11 @@ def budget_line_guess(lines: list[str], key: str | None, category: str | None, d
     """
     The line a purchase goes in on its own, if any: one named after its shop ("Costco" takes
     "COSTCO WHSE #0123"), else one whose name says what kind of spending it is and the purchase
-    being that (see `BUDGET_LINE_GUESSES`). Plaid's detailed category says most, so it is asked
-    first: fuel from Costco goes in Gas. Then a shop a line knows by name, so a Groceries line
-    still has Costco though Plaid calls it a superstore; then Plaid's broad category.
+    being that (see `BUDGET_LINE_GUESSES`). A bill from a provider a line knows comes first (AT&T,
+    which Plaid files as a telephone bill, in Internet; not Sonic the drive-in). Then Plaid's
+    detailed category, which says most: fuel from Costco goes in Gas. Then a shop a line knows by
+    name, so a Groceries line still has Costco though Plaid calls it a superstore; then Plaid's
+    broad category.
     """
     key = key or ""
     for line in lines:
@@ -9884,11 +9897,17 @@ def budget_line_guess(lines: list[str], key: str | None, category: str | None, d
         if len(named) >= 3 and (key == named or key.startswith(named + " ")):
             return line
     guesses = [(line, categories, shops) for line in lines for pattern, categories, shops in BUDGET_LINE_GUESSES if pattern.search(line)]
+    # A bill from a provider a line knows, whatever kind Plaid says it is (AT&T, filed as a telephone bill, is the internet's).
+    for line, _, shops in guesses:
+        if category == "RENT_AND_UTILITIES" and shops is not None and shops.search(key):
+            return line
     for line, categories, _ in guesses:
         if detail and detail in categories:
             return line
-    for line, _, shops in guesses:
-        if shops is not None and shops.search(key):
+    for line, categories, shops in guesses:
+        # A bill's providers stand for it only when it is a bill: Sonic the drive-in isn't the internet.
+        bills_only = bool(categories) and all(c.startswith("RENT_AND_UTILITIES_") for c in categories)
+        if shops is not None and shops.search(key) and (category == "RENT_AND_UTILITIES" or not bills_only):
             return line
     for line, categories, _ in guesses:
         if category and category in categories:
@@ -10147,10 +10166,17 @@ def finance_transactions(start: str | None = None, end: str | None = None, searc
     }
 
 
-def _month_on(day: Any) -> Any:
-    """The same day a month later, or the month's last day when it is shorter."""
-    year, month = (day.year + 1, 1) if day.month == 12 else (day.year, day.month + 1)
+def _month_on(day: Any, months: int = 1) -> Any:
+    """The same day `months` months later, or that month's last day when it is shorter."""
+    year, month = divmod(day.year * 12 + day.month - 1 + months, 12)
+    month += 1
     return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def _recurring_due(lastday: Any, rhythm: str) -> Any:
+    """When the next charge of a `rhythm` is due after one on `lastday`: a week or two on, or the same day one, two or three months on."""
+    months = {"monthly": 1, "bimonthly": 2, "quarterly": 3}.get(rhythm)
+    return _month_on(lastday, months) if months else lastday + timedelta(days=7 if rhythm == "weekly" else 14)
 
 
 def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[str, Any]]:
@@ -10163,6 +10189,8 @@ def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[st
     place of a run that doesn't. A run goes from one of the merchant's names to another only at the
     very same price (Plaid renaming it): a change of price, or a bill's amount, stays with one
     name, so City Power's bills don't run on into City Water's, nor a $30 plan into another's at $32.
+    Every two weeks, a run stays on one card: two monthly subscriptions at one price, one on each
+    person's card a fortnight apart, are two monthly ones, not one every two weeks.
     """
     low, high = RECURRING_GAPS[rhythm]
     days = [datetime.fromisoformat(c["date"]).date() for c in charges]
@@ -10176,6 +10204,8 @@ def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[st
             if gap > 2 * high:
                 break
             if not (low <= gap <= high or 2 * low <= gap <= 2 * high):
+                continue
+            if rhythm == "biweekly" and charge.get("card") != charges[j].get("card"):
                 continue
             one_name = _recurring_name(charge) == _recurring_name(charges[j])
             same = _cents(charge["amount"]) == _cents(charges[j]["amount"]) or (one_name and _recurring_bill(charge) and _recurring_bill(charges[j]))
@@ -10254,8 +10284,8 @@ def recurring_merchant(purchase: dict[str, Any]) -> str:
 
 def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, Any]:
     """
-    What the cards are charged again and again: each merchant's charges that come every week or
-    every month at the same amount (a bill at any amount), from `purchases` as of `today`. Each
+    What the cards are charged again and again: each merchant's charges that come every week, two
+    weeks, month, two months or three months at the same amount (a bill at any amount), from `purchases` as of `today`. Each
     says what it is, when it last came and when the next is due, what it comes to a month, and
     what it was before when its price changed at the last charge. One whose next charge is well
     overdue has `stopped`, and stays listed a while so a cancellation can be seen to have taken.
@@ -10280,16 +10310,16 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
             runs = [(rhythm, tail) for rhythm, tail in ((rhythm, _recurring_tail(chain, rhythm, charges)) for rhythm, chain in runs) if tail]
             if not runs:
                 break
-            # A weekly charge also comes once in most months: the longest run is the rhythm. Of two as long, the
+            # A weekly charge also comes once in most months (and a monthly one every three): the longest run is the rhythm. Of two as long, the
             # one whose price never changed: a $9.99 subscription, not it and the Supercharger charge after it.
             rhythm, chain = max(runs, key=lambda run: (len(run[1]), len({_cents(c["amount"]) for c in run[1]}) == 1, run[1][-1]["date"]))
             ids = {c["id"] for c in chain}
             left = [c for c in left if c["id"] not in ids]
             last = chain[-1]
             lastday = datetime.fromisoformat(last["date"]).date()
-            due = _month_on(lastday) if rhythm == "monthly" else lastday + timedelta(days=7)
+            due = _recurring_due(lastday, rhythm)
             stopped = (today - due).days >= RECURRING_GRACE_DAYS[rhythm]
-            if stopped and (today - lastday).days > RECURRING_STOPPED_DAYS:
+            if stopped and (today - due).days > RECURRING_STOPPED_DAYS:
                 continue
             bill = _recurring_bill(last)
             # A bill's month is what its last few came to; anything else costs what it was last charged.
@@ -10298,7 +10328,7 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
             mine.append({
                 "merchant": last["merchant"], "name": last["name"], "rhythm": rhythm, "amount": round(last["amount"], 2),
                 "was": round(before, 2) if not bill and _cents(before) != _cents(last["amount"]) else None,
-                "monthly": round(each * 52 / 12 if rhythm == "weekly" else each, 2), "bill": bill,
+                "monthly": round(each * RECURRING_PER_YEAR[rhythm] / 12, 2), "bill": bill,
                 "count": len(chain), "first": chain[0]["date"], "last": last["date"], "next": None if stopped else due.isoformat(),
                 "stopped": stopped, "card": last["card"], "bucket": last["bucket"], "line": last["line"],
                 "account": last.get("account", "card"),
@@ -10332,6 +10362,8 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
     config = budget_config()
     rules = budget_rules()
     earliest = month_before(month, BUDGET_HISTORY_MONTHS - 1)
+    # The months before those for recurring charges (see `budget_recurring`), up to the last of them.
+    since, older = month_before(month, RECURRING_HISTORY_MONTHS - 1), month_before(month, BUDGET_HISTORY_MONTHS)
     counted = budget_purchases(f"{earliest}-01", f"{month}-{days:02d}", config)
     purchases = [p for p in counted if p["date"][:7] == month]
     spent_by_month: dict[str, float] = {}
@@ -10406,8 +10438,10 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
         "alerts_sent": sorted(alerts.get("sent") or {}) if alerts.get("month") == month else [],
         "amazon": amazon_month(purchases),
         # What the cards and the checking accounts pay again and again, as of today: only for the month under way.
-        "recurring": budget_recurring([p for p in counted if p["date"] <= today.isoformat()] + budget_checking(f"{earliest}-01", today.isoformat(), config), today)
-        if month == this_month else None,
+        "recurring": budget_recurring(
+            budget_purchases(f"{since}-01", f"{older}-{month_days(older):02d}", config) + [p for p in counted if p["date"] <= today.isoformat()]
+            + budget_checking(f"{since}-01", today.isoformat(), config), today,
+        ) if month == this_month else None,
     }
 
 

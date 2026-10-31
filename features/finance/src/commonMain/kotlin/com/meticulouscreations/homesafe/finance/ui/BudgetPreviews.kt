@@ -261,7 +261,8 @@ object BudgetFixtures {
 
     /**
      * What the cards and the checking account pay again and again, on the 12th: a student loan
-     * and a phone bill from checking, each in its bill line, a weekly meal box, a bill, a streaming
+     * and a phone bill from checking, each in its bill line, a weekly meal box, a cleaner paid every
+     * two weeks, car insurance every three months, a water bill every two months that is overdue, a bill, a streaming
      * service whose price went up and a storage plan whose price came down, one a few days
      * overdue, and two that stopped.
      */
@@ -284,11 +285,14 @@ object BudgetFixtures {
             cardKey = if (checking) CHECKING else card, bucket = if (checking) BucketId.Unassigned else bucket, fromChecking = checking, line = line,
         )
         RecurringCharges(
-            monthly = 1_925.70,
+            monthly = 2_508.20,
             charges = listOf(
                 charge("Summit Student Loans", 1_140.0, "2026-11-07", checking = true, line = "Student loan", last = "2026-10-07"),
                 charge("Fresh Plate Meals", 89.99, "2026-10-14", was = 79.99, rhythm = RecurringRhythm.WEEKLY, monthly = 389.96, card = FAMILY, bucket = BucketId.Family, last = "2026-10-07"),
+                charge("Tidy Home Cleaning", 150.0, "2026-10-20", rhythm = RecurringRhythm.BIWEEKLY, monthly = 325.0, checking = true, line = "Cleaning", last = "2026-10-06"),
                 charge("City Power", 141.02, "2026-11-03", monthly = 138.40, bill = true, card = FAMILY, bucket = BucketId.Family, last = "2026-10-03"),
+                charge("Coastline Auto Insurance", 412.50, "2026-12-15", rhythm = RecurringRhythm.QUARTERLY, monthly = 137.50, card = FAMILY, bucket = BucketId.Family, last = "2026-09-15"),
+                charge("Bay Water", 236.80, "2026-10-10", rhythm = RecurringRhythm.BIMONTHLY, monthly = 120.0, bill = true, checking = true, line = "Water", last = "2026-08-10"),
                 charge("Bright Mobile", 118.20, "2026-10-24", monthly = 112.40, bill = true, checking = true, line = "Phone", last = "2026-09-24"),
                 charge("Fiber Net", 59.99, "2026-11-09", card = FAMILY, bucket = BucketId.Family, last = "2026-10-09"),
                 charge("Home Guard Monitoring", 29.99, "2026-10-09", last = "2026-09-09"),
