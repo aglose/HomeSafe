@@ -37,6 +37,7 @@ import homesafe.shared.generated.resources.fin_recurring_a_month
 import homesafe.shared.generated.resources.fin_recurring_about
 import homesafe.shared.generated.resources.fin_recurring_bill_due
 import homesafe.shared.generated.resources.fin_recurring_bill_next
+import homesafe.shared.generated.resources.fin_recurring_checking
 import homesafe.shared.generated.resources.fin_recurring_down
 import homesafe.shared.generated.resources.fin_recurring_fewer
 import homesafe.shared.generated.resources.fin_recurring_headline
@@ -60,8 +61,9 @@ private const val RECURRING_SHOWN = 6
 internal val Budget.showsRecurring: Boolean get() = isCurrentMonth && recurring?.charges?.isNotEmpty() == true
 
 /**
- * What the cards are charged every week or month: what those still running come to a month, each
- * with when the next one is due and whose it is, a price that changed at its last charge, and
+ * What the cards and the checking account pay every week or month: what those still running come
+ * to a month, each with when the next one is due, the sheet's line it is in, and whose it is (or
+ * that checking pays it), a price that changed at its last charge, and
  * under them those that stopped (cancelled, or moved off the cards), so a cancellation can be
  * seen to have taken. The dearest first; past the first few, the rest unfold on a tap.
  */
@@ -112,9 +114,14 @@ private fun RecurringRow(charge: RecurringCharge, people: List<String>, today: S
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(charge.name, style = FinanceTheme.type.body, color = strong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val whose = charge.bucket.takeIf { it != BucketId.Unassigned && (it !is BucketId.Person || it.name in people) }?.label()
+            // Checking's is the household's, not a cardholder's; the sheet's line it is in is data, shown as written.
+            val whose = if (charge.fromChecking) {
+                stringResource(Res.string.fin_recurring_checking)
+            } else {
+                charge.bucket.takeIf { it != BucketId.Unassigned && (it !is BucketId.Person || it.name in people) }?.label()
+            }
             Text(
-                listOfNotNull(recurringWhen(charge, today), whose).joinToString(stringResource(Res.string.common_dot_separator)),
+                listOfNotNull(recurringWhen(charge, today), charge.line, whose).joinToString(stringResource(Res.string.common_dot_separator)),
                 style = FinanceTheme.type.label,
                 color = colors.textTertiary,
                 // Two lines for an overdue one in a longer language, with whose it is.

@@ -294,8 +294,9 @@ data class AmazonSummary(
 enum class RecurringRhythm { WEEKLY, MONTHLY }
 
 /**
- * Something the cards are charged again and again (`budget_recurring` in `relay/relay.py`): the
- * same price every week or month, or a bill at whatever it comes to. [amount] is what it was last
+ * Something the cards are charged, or the checking account pays, again and again
+ * (`budget_recurring` in `relay/relay.py`): the same price every week or month, or a bill at
+ * whatever it comes to. [amount] is what it was last
  * charged, [was] what it was before that when the price changed then, and [monthly] what it comes
  * to a month (a bill's, what its last few came to). [next] is the day the next one is due (`YYYY-MM-DD`),
  * and null once it has [stopped]: the next one is well overdue, so it was cancelled or moved.
@@ -320,9 +321,13 @@ data class RecurringCharge(
     val cardKey: String,
     /** Whose the last charge was. */
     val bucket: BucketId,
+    /** Paid from the checking account rather than on a card: no spending against the budget. */
+    val fromChecking: Boolean = false,
+    /** The budget sheet's line it is in: a card-paid one for a card's, a bill line ("Cellphone") for checking's. */
+    val line: String? = null,
 )
 
-/** What the cards are charged again and again, as of today: those still running, the dearest first, then those that stopped. */
+/** What the cards and the checking account pay again and again, as of today: those still running, the dearest first, then those that stopped. */
 @Immutable
 @Serializable
 data class RecurringCharges(
@@ -351,12 +356,18 @@ data class LineRule(val merchantKey: String, val line: String?)
 
 /**
  * The numbers only the budget sheet knows, as this app last reported them to the relay: the
- * month's take-home, the bills that are paid from the bank rather than on a card, and what each
- * line that is paid by card plans for a month, by its name.
+ * month's take-home, the bills that are paid from the bank rather than on a card, what each
+ * line that is paid by card plans for a month, by its name, and the same for each of the other
+ * lines, the bills ([bills]: what the checking account pays is put in them).
  */
 @Immutable
 @Serializable
-data class BudgetSheetFigures(val takeHome: Double?, val billsOffCard: Double?, val lines: Map<String, Double> = emptyMap()) {
+data class BudgetSheetFigures(
+    val takeHome: Double?,
+    val billsOffCard: Double?,
+    val lines: Map<String, Double> = emptyMap(),
+    val bills: Map<String, Double> = emptyMap(),
+) {
     companion object {
         /**
          * Read from the sheet: every expense line counts as a bill unless it is one of
@@ -367,6 +378,7 @@ data class BudgetSheetFigures(val takeHome: Double?, val billsOffCard: Double?, 
             takeHome = finance.monthlyIncome ?: finance.income.takeIf { it.isNotEmpty() }?.sumOf { it.monthly },
             billsOffCard = finance.expenses.takeIf { it.isNotEmpty() }?.filter { it.name !in cardPaidLines }?.sumOf { it.monthly },
             lines = finance.expenses.filter { it.name in cardPaidLines }.groupBy { it.name }.mapValues { (_, same) -> same.sumOf { it.monthly } },
+            bills = finance.expenses.filter { it.name !in cardPaidLines }.groupBy { it.name }.mapValues { (_, same) -> same.sumOf { it.monthly } },
         )
     }
 }

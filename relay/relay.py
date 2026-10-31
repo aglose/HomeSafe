@@ -9197,12 +9197,22 @@ BUDGET_LINE_GUESSES: tuple[tuple[re.Pattern[str], frozenset[str], re.Pattern[str
         (r"education|tuition|school", {"GENERAL_SERVICES_EDUCATION"}, None),
         (r"gifts?|donation|charity", {"GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES", "GOVERNMENT_AND_NON_PROFIT_DONATIONS"}, None),
         (r"utilit|electric|internet|phone", {"RENT_AND_UTILITIES"}, None),
+        (r"\bloans?\b", {"LOAN_PAYMENTS"}, None),
+        (r"insurance", {"GENERAL_SERVICES_INSURANCE"}, None),
     )
 )
 # The share of the month's limit at which the phones are first told, and then told it is passed.
 BUDGET_TOTAL_PERCENTS = (80, 100)
 BUDGET_HISTORY_MONTHS = 6
 BUDGET_TOP_MERCHANTS = 8
+# The accounts whose withdrawals are kept beside the cards' purchases, for the bills paid from
+# them (see `budget_checking`), as SQL on plaid_accounts; and the state key that says their
+# institutions were read again from the start, to have what was dropped before they were kept.
+TXN_CHECKING = "type = 'depository' AND subtype = 'checking'"
+TXN_CHECKING_READ_KEY = "txn_checking_read"
+# What leaves a checking account that isn't a bill: money moved to the household's own savings,
+# brokerage or retirement accounts (paying a card off is already no spending, see `txn_kind`).
+CHECKING_NOT_BILLS = frozenset({"TRANSFER_OUT_SAVINGS", "TRANSFER_OUT_ACCOUNT_TRANSFER", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"})
 # What the cards are charged again and again (see `budget_recurring`): how many days apart the
 # charges of each rhythm fall (twice that when one was missed in between), how many days past the
 # day the next one was due it has stopped, and how long one that stopped stays listed.
@@ -9338,15 +9348,18 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
     """
     Puts what `plaid_transactions_pull` read into relay.db and moves the institution's cursor on,
     as one change: a relay stopped halfway asks for the same again. Only the credit cards'
-    transactions are kept. A tag made by hand stays on a transaction Plaid changed, and passes
-    from a pending purchase to the posted one that replaces it. Answers how many rows changed.
+    transactions are kept, and what left a checking account (for what it pays every month, see
+    `budget_checking`): not what came into it, nor anything of a savings account's. A tag made by
+    hand stays on a transaction Plaid changed, and passes from a pending purchase to the posted
+    one that replaces it. Answers how many rows changed.
     """
     def write(c: sqlite3.Connection) -> int:
         cards = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND type='credit'", (item_id,))}
+        checking = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND " + TXN_CHECKING, (item_id,))}
         changed = 0
         for txn in pulled["added"] + pulled["modified"]:
             row = txn_row(txn, item_id, now)
-            if row is None or row[2] not in cards:
+            if row is None or not (row[2] in cards or (row[2] in checking and row[5] > 0)):
                 continue
             c.execute(
                 "INSERT INTO plaid_transactions (txn_id, item_id, account_id, date, posted, amount, currency, name, merchant, merchant_key, category,"
@@ -9405,6 +9418,12 @@ def plaid_transactions_sync(now: float) -> None:
     product to it. Nor is one whose accounts aren't known yet, since which of them are cards
     decides what is kept.
     """
+    if not state_get(TXN_CHECKING_READ_KEY):
+        # Until the checking accounts' withdrawals were kept, they were read and dropped: read
+        # their institutions from the start once, to have them too. The cards' rows are written
+        # over as they were, their tags with them.
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET txn_cursor=NULL WHERE item_id IN (SELECT item_id FROM plaid_accounts WHERE " + TXN_CHECKING + ")"), c.commit()))
+        state_set(TXN_CHECKING_READ_KEY, {"at": now})
     items = with_db(lambda c: c.execute(
         "SELECT item_id, access, txn_cursor, products, (SELECT COUNT(*) FROM plaid_accounts a WHERE a.item_id = plaid_items.item_id)"
         " FROM plaid_items ORDER BY linked_at, item_id"
@@ -9457,7 +9476,8 @@ def budget_config() -> dict[str, Any]:
         "card_paid_lines": list(kept.get("card_paid_lines") or []),
         "alerts": {name: bool((kept.get("alerts") or {}).get(name)) for name in BUDGET_ALERT_NAMES},
         "sheet": {"take_home": sheet.get("take_home"), "bills_off_card": sheet.get("bills_off_card"),
-                  "lines": {str(name): amount for name, amount in (sheet.get("lines") or {}).items() if isinstance(amount, (int, float))}, "at": sheet.get("at")},
+                  "lines": {str(name): amount for name, amount in (sheet.get("lines") or {}).items() if isinstance(amount, (int, float))},
+                  "bills": {str(name): amount for name, amount in (sheet.get("bills") or {}).items() if isinstance(amount, (int, float))}, "at": sheet.get("at")},
     }
 
 
@@ -9529,13 +9549,17 @@ def budget_config_save(patch: dict[str, Any], now: float) -> dict[str, Any]:
             config["alerts"][name] = bool(on)
     if patch.get("sheet") is not None:
         sheet = patch["sheet"]
-        lines = sheet.get("lines") or {}
-        if not isinstance(lines, dict) or len(lines) > BUDGET_MAX_LINES:
+        lines, bills = sheet.get("lines") or {}, sheet.get("bills") or {}
+        if not isinstance(lines, dict) or not isinstance(bills, dict) or len(lines) > BUDGET_MAX_LINES or len(bills) > BUDGET_MAX_LINES:
             raise _budget_refusal(f"the sheet's lines are up to {BUDGET_MAX_LINES} names, each with an amount")
+
+        def amounts(named: dict[str, Any]) -> dict[str, float]:
+            return {str(name)[:200]: amount for name, amount in ((name, _budget_amount(value, f"the {name} line")) for name, value in named.items()) if amount is not None}
+
+        # The bill lines are the sheet's other expense lines, paid from the bank (Cellphone, Rent): what checking pays is put in them.
         config["sheet"] = {
             "take_home": _budget_amount(sheet.get("take_home"), "take-home"), "bills_off_card": _budget_amount(sheet.get("bills_off_card"), "the bills"),
-            "lines": {str(name)[:200]: amount for name, amount in ((name, _budget_amount(value, f"the {name} line")) for name, value in lines.items()) if amount is not None},
-            "at": now,
+            "lines": amounts(lines), "bills": amounts(bills), "at": now,
         }
     # A role naming someone who has since left the budget goes back to unset.
     config["roles"] = {key: role for key, role in config["roles"].items() if not role.startswith(BUDGET_PERSON) or role in budget_buckets(config["people"])}
@@ -9673,6 +9697,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     rows = with_db(lambda c: c.execute(
         "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key, t.category_detail, t.line_tag"
         " FROM plaid_transactions t JOIN plaid_feed_keys k ON k.account_id = t.account_id"
+        " JOIN plaid_accounts a ON a.account_id = t.account_id AND a.type = 'credit'"
         " WHERE t.removed_at IS NULL AND t.kind != 'payment' AND t.date >= ? AND t.date <= ?"
         " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
         " ORDER BY t.date DESC, t.amount DESC, t.txn_id",
@@ -9701,6 +9726,31 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
         })
     amazon_attach(purchases, amazon, first, last)
     return purchases
+
+
+def budget_checking(first: str, last: str, config: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    What left the checking accounts between two days (inclusive) that could be a bill, shaped
+    like `budget_purchases`' purchases, for what is paid every month (`budget_recurring`). None of
+    it is spending against the budget, which is the cards'. Money moved to the household's own
+    accounts and a card paid off are left out. Each is put in the budget sheet's bill line it
+    looks like ("Cellphone" for T-Mobile, by `budget_line_guess`), if any.
+    """
+    rows = with_db(lambda c: c.execute(
+        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.category_detail, k.key, a.name, a.mask"
+        " FROM plaid_transactions t JOIN plaid_accounts a ON a.account_id = t.account_id AND a.type = 'depository' AND a.subtype = 'checking'"
+        " LEFT JOIN plaid_feed_keys k ON k.account_id = t.account_id"
+        " WHERE t.removed_at IS NULL AND t.kind = 'spend' AND t.amount > 0 AND t.date >= ? AND t.date <= ?"
+        " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
+        " ORDER BY t.date DESC, t.amount DESC, t.txn_id",
+        (first, last),
+    ).fetchall())
+    bills = list(config["sheet"]["bills"])
+    return [{
+        "id": txn_id, "date": date, "amount": round(amount, 2), "name": merchant or name or "", "merchant": key or None, "category": category,
+        "kind": "spend", "card": feed or f"{account} {mask or ''}".strip(), "bucket": None, "line": budget_line_guess(bills, key, category, detail),
+        "amazon_order": False, "account": "checking",
+    } for txn_id, date, amount, name, merchant, key, category, detail, feed, account, mask in rows if detail not in CHECKING_NOT_BILLS]
 
 
 def _month_on(day: Any) -> Any:
@@ -9857,6 +9907,7 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
                 "monthly": round(each * 52 / 12 if rhythm == "weekly" else each, 2), "bill": bill,
                 "count": len(chain), "first": chain[0]["date"], "last": last["date"], "next": None if stopped else due.isoformat(),
                 "stopped": stopped, "card": last["card"], "bucket": last["bucket"], "line": last["line"],
+                "account": last.get("account", "card"),
             })
         # A subscription whose billing day moved is one still running, not one that stopped and another that started:
         # the same price at the same rhythm, starting after the other's last charge. One that ran alongside it (the
@@ -9958,8 +10009,9 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
                     for m in (month_before(month, back) for back in range(BUDGET_HISTORY_MONTHS - 1, 0, -1))],
         "alerts_sent": sorted(alerts.get("sent") or {}) if alerts.get("month") == month else [],
         "amazon": amazon_month(purchases),
-        # What the cards are charged again and again, as of today: only for the month under way.
-        "recurring": budget_recurring([p for p in counted if p["date"] <= today.isoformat()], today) if month == this_month else None,
+        # What the cards and the checking accounts pay again and again, as of today: only for the month under way.
+        "recurring": budget_recurring([p for p in counted if p["date"] <= today.isoformat()] + budget_checking(f"{earliest}-01", today.isoformat(), config), today)
+        if month == this_month else None,
     }
 
 
@@ -10848,6 +10900,7 @@ def amazon_attach(purchases: list[dict[str, Any]], charges: set[str], first: str
     after = (datetime.fromisoformat(last) + timedelta(days=AMAZON_ORDER_WINDOW[1])).date().isoformat()
     nearby = with_db(lambda c: c.execute(
         "SELECT txn_id, date, amount, name, merchant FROM plaid_transactions WHERE removed_at IS NULL AND kind = 'spend' AND date >= ? AND date <= ?"
+        " AND account_id IN (SELECT account_id FROM plaid_accounts WHERE type = 'credit')"
         " AND txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)",
         (before, after),
     ).fetchall())

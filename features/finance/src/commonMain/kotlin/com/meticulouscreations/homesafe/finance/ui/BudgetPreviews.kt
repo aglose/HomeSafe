@@ -45,6 +45,7 @@ object BudgetFixtures {
     private val now = Clock.System.now().epochSeconds
     const val TRAVEL = "Summit Bank Voyager 4410"
     const val FAMILY = "Northwind Platinum 2207"
+    const val CHECKING = "Summit Bank Everyday Checking 3381"
     val people = listOf("Alex", "Sam")
 
     val cards = listOf(
@@ -253,9 +254,10 @@ object BudgetFixtures {
     val withAmazon = onPace.let { it.copy(purchases = (it.purchases + amazonPurchases).sortedByDescending { p -> p.date }, amazon = amazonSummary) }
 
     /**
-     * What the cards are charged again and again, on the 12th: a weekly meal box, a bill, a
-     * streaming service whose price went up and a storage plan whose price came down, one a few
-     * days overdue, and two that stopped.
+     * What the cards and the checking account pay again and again, on the 12th: a student loan
+     * and a phone bill from checking, each in its bill line, a weekly meal box, a bill, a streaming
+     * service whose price went up and a storage plan whose price came down, one a few days
+     * overdue, and two that stopped.
      */
     val recurring = run {
         fun charge(
@@ -269,13 +271,19 @@ object BudgetFixtures {
             card: String = TRAVEL,
             bucket: BucketId = alex,
             last: String = "2026-10-01",
-        ) =
-            RecurringCharge(name, rhythm, amount, was, monthly, bill, count = 4, first = "2026-06-01", last = last, next = next, stopped = next == null, cardKey = card, bucket = bucket)
+            checking: Boolean = false,
+            line: String? = null,
+        ) = RecurringCharge(
+            name, rhythm, amount, was, monthly, bill, count = 4, first = "2026-06-01", last = last, next = next, stopped = next == null,
+            cardKey = if (checking) CHECKING else card, bucket = if (checking) BucketId.Unassigned else bucket, fromChecking = checking, line = line,
+        )
         RecurringCharges(
-            monthly = 673.30,
+            monthly = 1_925.70,
             charges = listOf(
+                charge("Summit Student Loans", 1_140.0, "2026-11-07", checking = true, line = "Student loan", last = "2026-10-07"),
                 charge("Fresh Plate Meals", 89.99, "2026-10-14", was = 79.99, rhythm = RecurringRhythm.WEEKLY, monthly = 389.96, card = FAMILY, bucket = BucketId.Family, last = "2026-10-07"),
                 charge("City Power", 141.02, "2026-11-03", monthly = 138.40, bill = true, card = FAMILY, bucket = BucketId.Family, last = "2026-10-03"),
+                charge("Bright Mobile", 118.20, "2026-10-24", monthly = 112.40, bill = true, checking = true, line = "Phone", last = "2026-09-24"),
                 charge("Fiber Net", 59.99, "2026-11-09", card = FAMILY, bucket = BucketId.Family, last = "2026-10-09"),
                 charge("Home Guard Monitoring", 29.99, "2026-10-09", last = "2026-09-09"),
                 charge("Streamflix", 22.99, "2026-11-04", was = 19.99, card = FAMILY, bucket = BucketId.Family, last = "2026-10-04"),

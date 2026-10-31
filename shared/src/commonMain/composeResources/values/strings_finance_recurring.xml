@@ -2,7 +2,7 @@
 <!-- The Budget tab's recurring charges (features/finance BudgetRecurring.kt): what the cards are charged every week or month. -->
 <resources>
     <string name="fin_recurring_title">Recurring charges</string>
-    <string name="fin_recurring_subtitle">What the cards are charged every week or month</string>
+    <string name="fin_recurring_subtitle">What the cards and checking pay every week or month</string>
     <string name="fin_recurring_headline">About %1$s a month</string>
     <plurals name="fin_recurring_running">
         <item quantity="one">%1$d still running</item>
@@ -25,5 +25,6 @@
     </plurals>
     <string name="fin_recurring_fewer">Show fewer</string>
     <string name="fin_recurring_stopped">Stopped</string>
-    <string name="fin_recurring_how">Found in the cards' last six months: anything charged every week or month at the same price, and bills at whatever they come to. Something cancelled moves to Stopped once its next charge is a week overdue.</string>
+    <string name="fin_recurring_checking">Checking</string>
+    <string name="fin_recurring_how">Found in the last six months of the cards and the checking account: anything paid every week or month at the same price, and bills at whatever they come to. Money moved to your own accounts and card payments are left out, and what checking pays isn't counted against the budget. Something cancelled moves to Stopped once its next charge is a week overdue.</string>
 </resources>

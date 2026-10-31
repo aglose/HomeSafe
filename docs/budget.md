@@ -41,7 +41,9 @@ In the app: **Finance → Budget**. Its settings are behind **Limits and cards**
   times a day, so most hours find nothing new: the page says when the cards were last asked and
   when that last found anything. **Read the cards now** asks at once, at most once a minute.
 - **Only credit cards' transactions are kept**, in `relay.db` on the Frigate box, and never in
-  the relay's log. Unlinking a card deletes what was bought on it.
+  the relay's log, with one exception: what left a checking account linked the same way (see
+  "Recurring charges"). Nothing that came into it, and nothing of a savings account's. Unlinking a
+  card deletes what was bought on it.
 - **What counts.** Purchases, pending ones included (flagged, since they can still change). A
   refund comes off the month it arrives in. Paying the card off is not spending and is left out.
   The month is the household's calendar month, by the day the card was used.
@@ -159,9 +161,10 @@ Under **Limits and cards → Alerts** (and in Settings → Notifications) are fo
 
 ## Recurring charges
 
-Under the budget lines, **Recurring charges** lists what the cards are charged again and again:
-subscriptions, memberships, a weekly meal box, and the bills paid by card. It is there to catch what
-nobody remembers paying for, such as a service the app replaced that is still being billed.
+Under the budget lines, **Recurring charges** lists what the cards are charged, and the checking
+account pays, again and again: subscriptions, memberships, a weekly meal box, the phone, the student
+loan. It is there to catch what nobody remembers paying for, such as a service the app replaced that
+is still being billed.
 
 - **What counts.** A merchant's charges that come a week or a month apart (a missed one in between
   is allowed for, but no more often than one isn't, so two people's subscriptions a fortnight apart
@@ -186,8 +189,21 @@ nobody remembers paying for, such as a service the app replaced that is still be
   the sum of those still running.
 - **Only the month under way.** It is worked out as of today from the six months the page reads, so
   a month looked back at doesn't show it.
-- **Only the cards.** The relay keeps no bank account's transactions, so bills paid straight from
-  checking are not here; the budget sheet's bills are what plans for those.
+- **The checking account too.** A checking account linked as *A bank or credit card* (it comes
+  with the card at the same bank) has its withdrawals kept beside the cards' purchases: not what
+  comes in (pay), not its savings accounts', not money moved to the household's own accounts
+  (Plaid's `TRANSFER_OUT_SAVINGS`, `_ACCOUNT_TRANSFER`, `_INVESTMENT_AND_RETIREMENT_FUNDS`), and
+  not a card paid off. None of it counts toward the month's spending, the limits or the alerts:
+  the budget is the cards'. Its rows say **Checking** where a card's say whose it is.
+- **Each in its line.** A card's charge is in the card-paid line its purchases are in. What
+  checking pays is put in one of the sheet's other expense lines, the bill lines, which the app
+  reports to the relay with the rest of the sheet (`sheet.bills`), as card purchases find their
+  line: by the line's name and Plaid's category ("Cellphone" takes the telephone bill, "Student
+  loans" a loan payment, "Insurance" insurance).
+- **History.** The first sync after checking began to be kept reads its bank from the start once
+  (`txn_checking_read` in the state table), to have what was dropped before; the cards' rows are
+  written over as they were, tags and all. A bill paid every two or three months (water, life
+  insurance) isn't caught: only weekly and monthly ones are.
 
 ## Amazon orders
 
@@ -272,7 +288,7 @@ was made. The app is unverified, so sign-in shows Google's "hasn't verified this
 - `relay/relay.py`, "budget": `plaid_transactions_pull` / `plaid_transactions_store` (the hourly
   read), `budget_bucket` (whose a purchase is), `budget_line` / `budget_line_guess` (which line
   it is in), `budget_month` (the page's answer), `budget_recurring` (what is charged again and
-  again), `budget_check` (the alerts), and the `/finance/budget…` routes. Tests: `BudgetSyncTest`,
+  again) with `budget_checking` (what checking pays), `budget_check` (the alerts), and the `/finance/budget…` routes. Tests: `BudgetSyncTest`,
   `BudgetMonthTest`, `BudgetLinesTest`, `BudgetRecurringTest`, `BudgetAlertsTest`,
   `BudgetRoutesTest`, `DeviceOwnerTest` in `relay/test_relay.py`. In the app, `BudgetRecurring.kt`
   (`RecurringBlock`) draws what `BudgetRelayApi` reads into `Budget.recurring`.
