@@ -251,6 +251,20 @@ class BudgetViewModel(
         }
     }
 
+    /** Writes a note on a purchase ("a tire for the Tesla"); null or blank takes it off. */
+    fun note(purchaseId: String, note: String?) {
+        if (purchaseId in _uiState.value.tagging) return
+        _uiState.update { it.copy(tagging = it.tagging + purchaseId, notice = null) }
+        viewModelScope.launch {
+            tagOrder.withLock { repository.note(purchaseId, note?.trim()?.takeIf { it.isNotEmpty() }) }
+                .onSuccess { budget ->
+                    _uiState.update { it.copy(tagging = it.tagging - purchaseId) }
+                    applied(budget)
+                }
+                .onFailure { e -> failed(e) { it.copy(tagging = it.tagging - purchaseId) } }
+        }
+    }
+
     /** Says whether one item of the Amazon order behind [purchaseId] was essential or discretionary; null lets it sort itself again. */
     fun sayNeed(purchaseId: String, orderId: String, item: AmazonItem, need: AmazonNeed?) {
         if (purchaseId in _uiState.value.tagging) return
@@ -302,8 +316,9 @@ class BudgetViewModel(
     /**
      * The budget sheet was read. The relay can't read take-home or the bills out of it (only this
      * app parses the sheet), and needs both to know where spending starts to come out of savings,
-     * nor what each card-paid line plans for, which each line's spending is set against; so they
-     * are reported whenever they differ from what it has. The budget's people are the
+     * nor what each card-paid line plans for, which each line's spending is set against, nor the
+     * bill lines, which what the checking account pays is put in; so they are reported whenever
+     * they differ from what it has. The budget's people are the
      * sheet's too, and follow it: someone added to the sheet, or renamed there, is told to the
      * relay. A sheet that names nobody (a block the parser didn't find) changes nothing.
      */
@@ -332,7 +347,8 @@ class BudgetViewModel(
     private fun BudgetSheetFigures.sameAs(other: BudgetSheetFigures): Boolean {
         fun near(a: Double?, b: Double?) = a != null && b != null && abs(a - b) < 1.0
         return near(takeHome, other.takeHome) && near(billsOffCard, other.billsOffCard) &&
-            lines.keys == other.lines.keys && lines.all { (line, monthly) -> near(monthly, other.lines[line]) }
+            lines.keys == other.lines.keys && lines.all { (line, monthly) -> near(monthly, other.lines[line]) } &&
+            bills.keys == other.bills.keys && bills.all { (line, monthly) -> near(monthly, other.bills[line]) }
     }
 
     fun dismissNotice() = _uiState.update { it.copy(notice = null) }

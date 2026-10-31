@@ -190,6 +190,11 @@
     <string name="fin_budget_source_account">Here because of the card it was on.</string>
     <string name="fin_budget_source_bank">Here because the bank named whose card it was.</string>
     <string name="fin_budget_source_rule">Here because this shop is remembered.</string>
+    <string name="fin_budget_source_amazon">Shared out by the order emails: the essentials are the family's, the rest is whoever's email the order came to. Pick someone to put all of it there.</string>
+    <string name="fin_budget_note_title">Note</string>
+    <string name="fin_budget_note_hint">What was it for? A tire for the Tesla, say</string>
+    <string name="fin_budget_note_save">Save note</string>
+    <string name="fin_budget_note_remove">Remove note</string>
     <string name="fin_budget_source_none">The bank didn't say who made it.</string>
 
     <string name="fin_budget_how">The server asks Plaid what was bought on each card every hour. Banks pass purchases on a few times a day, so one can take some hours to show, and a pending one can still change. A card being paid off is not counted, and a refund comes off the month it arrives in.</string>

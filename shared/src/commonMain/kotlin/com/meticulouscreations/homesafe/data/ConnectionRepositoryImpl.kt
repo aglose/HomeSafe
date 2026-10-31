@@ -116,6 +116,9 @@ class ConnectionRepositoryImpl(
     /** [LAN_GRACE_MS]; tests shorten or lengthen it (real time, see [signInExpecting]). */
     internal var lanGraceMs = LAN_GRACE_MS
 
+    /** How long [refreshRoute] waits between tries; a test that must see another path recover sets it to never. */
+    internal var routeRetryMs = ROUTE_SWITCH_RETRY_MS
+
     private val _expectedConnection = MutableStateFlow<ActiveConnection?>(null)
     override val expectedConnection: StateFlow<ActiveConnection?> = _expectedConnection.asStateFlow()
 
@@ -293,9 +296,20 @@ class ConnectionRepositoryImpl(
     }
 
     override suspend fun checkServer() {
-        // One pass rather than [refreshRoute]'s loop: the caller wants an answer, and a revalidation
-        // already retrying in the background carries on doing so either way.
+        // One pass rather than [refreshRoute]'s loop: the caller wants an answer now.
         checkRoute(verifySession = true)
+        keepLookingWhileUnreachable()
+    }
+
+    /**
+     * When the server has been found gone, looks for it again on an interval until it answers.
+     * Whoever asked [checkServer] (a page whose request failed while the server restarted) asks
+     * once; nothing else is certain to ask again (no network need change, the app need not leave
+     * the screen), so without this the app would say the server is gone long after it is back.
+     */
+    private fun keepLookingWhileUnreachable() {
+        if (!_serverUnreachable.value || revalidationJob?.isActive == true) return
+        revalidationJob = appScope.launch { refreshRoute(verifySession = true) }
     }
 
     /**
@@ -534,7 +548,7 @@ class ConnectionRepositoryImpl(
      * until it succeeds or the next network change supersedes it.
      */
     private suspend fun refreshRoute(verifySession: Boolean) {
-        while (!checkRoute(verifySession)) delay(ROUTE_SWITCH_RETRY_MS)
+        while (!checkRoute(verifySession)) delay(routeRetryMs)
     }
 
     /**
@@ -546,13 +560,15 @@ class ConnectionRepositoryImpl(
         val current = _activeConnection.value ?: return true
         if (sessionCredentials == null) return true
         val preferred = if (localAnswers(current.localUrl)) ConnectionRoute.LOCAL_NETWORK else ConnectionRoute.TAILSCALE
-        if (preferred == current.route && !verifySession) return true
+        // While the server is thought gone, a route that stands proves nothing: ask it.
+        val verify = verifySession || _serverUnreachable.value
+        if (preferred == current.route && !verify) return true
 
         return signInMutex.withLock {
             // Re-check under the lock: a user-driven connect may have landed in the meantime.
             val latest = _activeConnection.value ?: return true
             val credentials = sessionCredentials ?: return true
-            if (latest.route == preferred && !verifySession) return true
+            if (latest.route == preferred && !verify) return true
             // The one place the server is actually asked: what it found is what the screens are told.
             moveSession(latest, preferred, credentials).also { reached -> _serverUnreachable.value = !reached }
         }

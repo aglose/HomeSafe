@@ -5098,6 +5098,8 @@ class _Budget(_ScratchDb):
         for item_id in self.CARDS:
             self.link(item_id)
         relay.budget_config_save({"people": ["Andrew", "Sarah"], "roles": {self.VENTURE: "split", self.PLATINUM: "family"}}, self.NOW)
+        # The checking accounts' history was already read again from the start (see test_checking_s_history_is_read_again_once).
+        relay.state_set(relay.TXN_CHECKING_READ_KEY, {"at": self.NOW})
 
     def link(self, item_id, products=("transactions",), source=None):
         name, accounts = self.CARDS[source or item_id]
@@ -5154,9 +5156,23 @@ class BudgetSyncTest(_Budget):
         with self.assertRaises(relay.PlaidError):
             relay.plaid_transactions_pull("access-cap", "start")
 
-    def test_only_the_cards_purchases_are_kept(self):
-        self.store(_txn("t1", 54.2), _txn("paycheck", -3000.0, account="checking", name="ACME PAYROLL"), {"transaction_id": "broken"})
-        self.assertEqual(["t1"], [row[0] for row in relay.with_db(lambda c: c.execute("SELECT txn_id FROM plaid_transactions").fetchall())])
+    def test_only_the_cards_purchases_and_what_left_checking_are_kept(self):
+        relay.plaid_store("cap", self.CARDS["cap"][1] + [{"account_id": "savings", "name": "360 Savings", "mask": "7777", "type": "depository", "subtype": "savings",
+                                                           "balances": {"current": 9000.0}}], {}, [], {}, self.NOW)
+        self.store(_txn("t1", 54.2), _txn("paycheck", -3000.0, account="checking", name="ACME PAYROLL"), _txn("phone", 109.0, account="checking", name="T-MOBILE PCS SVC"),
+                   _txn("saved", 500.0, account="savings", name="TRANSFER FROM CHECKING"), {"transaction_id": "broken"})
+        self.assertEqual(["phone", "t1"], sorted(row[0] for row in relay.with_db(lambda c: c.execute("SELECT txn_id FROM plaid_transactions").fetchall())))
+
+    def test_checking_s_history_is_read_again_once(self):
+        # Before checking's withdrawals were kept, the institution's cursor had already gone past them.
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET txn_cursor='c9' WHERE item_id IN ('cap', 'amex')"), c.commit()))
+        relay.state_set(relay.TXN_CHECKING_READ_KEY, None)
+        plaid = relay.plaid_post = _PagedPlaid(transactions_sync=[{"added": [], "next_cursor": "c10", "has_more": False}])
+        relay.plaid_transactions_sync(self.NOW)
+        # The bank with a checking account is read from the start; the card-only one goes on from where it was.
+        self.assertEqual({"access-cap": None, "access-amex": "c9"}, {body["access_token"]: body.get("cursor") for body in plaid.asked("/transactions/sync")})
+        relay.plaid_transactions_sync(self.NOW + 3600)
+        self.assertEqual({"access-cap": "c10", "access-amex": "c10"}, {body["access_token"]: body.get("cursor") for body in plaid.asked("/transactions/sync")[2:]})
 
     def test_an_institution_is_asked_only_if_it_was_linked_for_its_transactions_and_its_accounts_are_known(self):
         self.link("amex", products=("liabilities",))
@@ -5411,6 +5427,45 @@ class BudgetMonthTest(_Budget):
         self.assertEqual(before, relay.budget_config())
 
 
+class BudgetNoteTest(_Budget):
+    """A note written on a purchase: kept, shown with it, taken off, and kept when it settles."""
+
+    def note(self, txn_id, note):
+        return relay.put_budget_transaction_note(txn_id, types.SimpleNamespace(note=note), object(), self.response)
+
+    def test_a_note_is_shown_with_its_purchase_and_a_blank_one_takes_it_off(self):
+        self.store(_txn("tire", 518.96, name="TESLA", merchant="Tesla"), _txn("other", 20.0))
+        month = self.note("tire", "  Tire replacement for\nthe Model Y  ")
+        self.assertEqual({"tire": "Tire replacement for the Model Y", "other": None}, {t["id"]: t["note"] for t in month["transactions"]})
+        self.assertEqual("alex", relay.with_db(lambda c: c.execute("SELECT note_by FROM plaid_transactions WHERE txn_id='tire'").fetchone()[0]))
+        self.note("tire", "   ")
+        self.assertIsNone(next(t["note"] for t in self.month()["transactions"] if t["id"] == "tire"))
+
+    def test_a_note_too_long_or_on_a_purchase_that_is_gone_is_refused(self):
+        self.store(_txn("tire", 518.96))
+        with self.assertRaises(relay.HTTPException) as long:
+            self.note("tire", "x" * (relay.BUDGET_NOTE_MAX + 1))
+        self.assertEqual("bad_budget", long.exception.detail["error"])
+        with self.assertRaises(relay.HTTPException) as gone:
+            self.note("nothing", "hello")
+        self.assertEqual(404, gone.exception.status_code)
+
+    def test_a_note_on_a_pending_purchase_stays_when_it_settles(self):
+        self.store(_txn("held", 518.96, pending=True))
+        self.note("held", "Tire replacement")
+        self.store(_txn("posted", 518.96, pending_transaction_id="held"), removed=["held"])
+        self.assertEqual({"posted": "Tire replacement"}, {t["id"]: t["note"] for t in self.month()["transactions"]})
+
+    def test_a_note_taken_off_a_settled_purchase_stays_off_when_plaid_changes_it_again(self):
+        self.store(_txn("held", 518.96, pending=True))
+        self.note("held", "Tire replacement")
+        self.store(_txn("posted", 518.96, pending_transaction_id="held"), removed=["held"])
+        self.note("posted", None)
+        # Plaid sends the settled purchase again (a new merchant name, say), still naming the pending one it replaced.
+        self.store(modified=[_txn("posted", 518.96, pending_transaction_id="held", merchant="Tesla Inc")])
+        self.assertEqual({"posted": None}, {t["id"]: t["note"] for t in self.month()["transactions"]})
+
+
 class BudgetRecurringTest(_Budget):
     """What the cards are charged again and again: found by its rhythm and its amount, when the next one is due, and when one stops."""
 
@@ -5432,7 +5487,7 @@ class BudgetRecurringTest(_Budget):
         self.assertEqual(["Factor", "Streamflix"], [r["name"] for r in recurring["charges"]])
         self.assertEqual({"merchant": "streamflix", "name": "Streamflix", "rhythm": "monthly", "amount": 15.99, "was": None, "monthly": 15.99, "bill": False,
                           "count": 3, "first": "2026-07-17", "last": "2026-09-16", "next": "2026-10-16", "stopped": False, "card": self.VENTURE, "bucket": None,
-                          "line": None}, recurring["charges"][1])
+                          "line": None, "account": "card"}, recurring["charges"][1])
         kit = recurring["charges"][0]
         self.assertEqual(("weekly", 4, "2026-10-12", 459.03), (kit["rhythm"], kit["count"], kit["next"], kit["monthly"]))
         self.assertEqual(475.02, recurring["monthly"])
@@ -5544,6 +5599,33 @@ class BudgetRecurringTest(_Budget):
         self.assertIsNone(recurring["charges"][1]["next"])
         # What has stopped costs nothing a month.
         self.assertEqual(459.03, recurring["monthly"])
+
+    def test_what_checking_pays_every_month_is_listed_in_its_bill_line_and_is_no_spending(self):
+        relay.budget_config_save({"sheet": {"take_home": 10000, "bills_off_card": 6000, "lines": {}, "bills": {"Cellphone": 120, "Student loans": 2700, "Rent": 4000}}}, self.NOW)
+        spent_before = self.month()["spent"]
+        self.store(*(_txn(f"phone{i}", amount, date=day, account="checking", name="T-MOBILE PCS SVC", merchant="T-Mobile", category="RENT_AND_UTILITIES",
+                          detailed="RENT_AND_UTILITIES_TELEPHONE") for i, (day, amount) in enumerate((("2026-07-24", 154.67), ("2026-08-24", 109.0), ("2026-09-24", 121.0)))),
+                   *(_txn(f"loan{i}", 2700.75, date=day, account="checking", name="EARNEST MO AUTOPAY", merchant="Earnest", category="LOAN_PAYMENTS",
+                          detailed="LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT") for i, day in enumerate(("2026-07-07", "2026-08-07", "2026-09-07"))),
+                   # Money moved to the household's own savings, and a card paid off, are no bills however regular.
+                   *(_txn(f"save{i}", 500.0, date=day, account="checking", name="TRANSFER TO SAVINGS", merchant=None, category="TRANSFER_OUT",
+                          detailed="TRANSFER_OUT_SAVINGS") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))),
+                   *(_txn(f"card{i}", 4000.0, date=day, account="checking", name="CAPITAL ONE MOBILE PMT", merchant=None, category="LOAN_PAYMENTS",
+                          detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT") for i, day in enumerate(("2026-07-03", "2026-08-03", "2026-09-03"))))
+        named = self.named()
+        self.assertEqual({"T-Mobile", "Earnest"}, set(named))
+        self.assertEqual(("checking", "Cellphone", True, "2026-10-24"), tuple(named["T-Mobile"][k] for k in ("account", "line", "bill", "next")))
+        self.assertEqual(("checking", "Student loans", 2700.75), tuple(named["Earnest"][k] for k in ("account", "line", "monthly")))
+        # None of it is spending against the cards' budget.
+        month = self.month()
+        self.assertEqual(spent_before, month["spent"])
+        self.assertFalse(any(t["id"].startswith(("phone", "loan")) for t in month["transactions"]))
+
+    def test_the_sheet_s_bill_lines_are_kept_beside_its_card_paid_ones(self):
+        relay.budget_config_save({"sheet": {"take_home": 10000, "bills_off_card": 6000, "lines": {"Groceries": 600}, "bills": {"Cellphone": 120.4}}}, self.NOW)
+        self.assertEqual(({"Groceries": 600.0}, {"Cellphone": 120.4}), (relay.budget_config()["sheet"]["lines"], relay.budget_config()["sheet"]["bills"]))
+        with self.assertRaises(relay.HTTPException):
+            relay.budget_config_save({"sheet": {"take_home": 10000, "bills_off_card": 6000, "bills": ["Cellphone"]}}, self.NOW)
 
     def test_only_the_month_under_way_says(self):
         self.store(*(_txn(f"tv{i}", 15.99, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-17", "2026-08-17", "2026-09-16"))))
@@ -5938,6 +6020,20 @@ class FinanceHistoryTest(_Budget):
         self.assertEqual(["new-near"], self.ids())
         self.assertEqual(["old-far"], self.ids("2026-08"))
         self.assertEqual([("family", "sam", "Groceries", "sam", self.VENTURE)], self.rows("SELECT tag, tag_by, line_tag, line_tag_by, card FROM plaid_transactions WHERE txn_id='new-near'"))
+
+    def test_a_card_linked_again_takes_over_a_purchase_s_note(self):
+        self.store(_txn("old", 518.96, name="TESLA", merchant="Tesla"))
+        relay.put_budget_transaction_note("old", types.SimpleNamespace(note="Tire replacement"), object(), self.response)
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new", 518.96, account="venture-again", name="TESLA", merchant="Tesla"), item="cap2")
+        self.assertEqual([("Tire replacement", "alex")], self.rows("SELECT note, note_by FROM plaid_transactions WHERE txn_id='new'"))
+
+    def test_checking_s_withdrawals_never_count_toward_the_month_even_once_unlinked(self):
+        self.store(_txn("t1", 54.2), _txn("phone", 109.0, account="checking", name="T-MOBILE PCS SVC"))
+        self.assertEqual(54.2, self.month()["spent"])
+        self.unlink()
+        self.assertEqual(54.2, self.month()["spent"])
 
     def test_two_alike_on_one_day_each_take_over_one_and_the_name_decides_which(self):
         self.store(_txn("old-a", 5.0, name="COFFEE A"), _txn("old-b", 5.0, name="COFFEE B"))
@@ -6460,6 +6556,42 @@ class AmazonBudgetTest(_Budget):
         self.assertEqual(("shipment", 32.47), (found["toy"]["match"], found["toy"]["discretionary"]))
         summary = self.month()["amazon"]
         self.assertEqual({"configured": True, "read_at": self.NOW, "failed": [], "charges": 4, "essential": 97.39, "discretionary": 119.05, "unsorted": 0.0, "unmatched": 15.0}, summary)
+
+    def test_essentials_are_the_family_s_and_the_rest_is_whoever_s_mailbox_the_order_came_to(self):
+        relay.AMAZON_GMAIL_TOKENS = {"andrew": "refresh"}
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"),
+                   _txn("dog", 70.34, date="2026-10-02", name="Amazon.com*RT4YU8", merchant="Amazon"),
+                   _txn("mystery", 15.0, date="2026-10-06", name="AMZN Mktp US*111", merchant="Amazon"))
+        found = {t["id"]: t for t in self.month()["transactions"]}
+        # Paper towels and a LEGO set: the towels are the family's, the LEGO set Andrew's, whose mailbox the order came to.
+        self.assertEqual(("person:Andrew", "amazon", [{"bucket": "person:Andrew", "amount": 86.58}, {"bucket": "family", "amount": 27.05}]),
+                         (found["big"]["bucket"], found["big"]["source"], found["big"]["shares"]))
+        self.assertEqual(("family", [{"bucket": "family", "amount": 70.34}]), (found["dog"]["bucket"], found["dog"]["shares"]))
+        # No order found: it goes where it would on its own.
+        self.assertEqual((None, "none"), (found["mystery"]["bucket"], found["mystery"]["source"]))
+        self.assertNotIn("shares", found["mystery"])
+        # Each bucket counts its shares.
+        self.assertEqual((86.58, 97.39, 15.0), tuple(self.bucket(b)["spent"] for b in ("person:Andrew", "family", "unassigned")))
+        self.assertEqual(2, self.bucket("family")["count"])
+
+    def test_an_amazon_charge_put_in_a_bucket_by_hand_goes_there_whole(self):
+        relay.AMAZON_GMAIL_TOKENS = {"andrew": "refresh"}
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"))
+        relay.put_budget_transaction("big", types.SimpleNamespace(bucket="person:Sarah", remember=False), object(), self.response)
+        big = next(t for t in self.month()["transactions"] if t["id"] == "big")
+        self.assertEqual(("person:Sarah", "manual"), (big["bucket"], big["source"]))
+        self.assertNotIn("shares", big)
+        self.assertEqual((113.63, 0.0), (self.bucket("person:Sarah")["spent"], self.bucket("family")["spent"]))
+
+    def test_a_mailbox_that_is_no_one_s_leaves_the_rest_where_the_charge_goes(self):
+        relay.AMAZON_GMAIL_TOKENS = {"sam": "refresh"}
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"))
+        big = next(t for t in self.month()["transactions"] if t["id"] == "big")
+        self.assertEqual([{"bucket": None, "amount": 86.58}, {"bucket": "family", "amount": 27.05}], big["shares"])
+        self.assertIsNone(big["bucket"])
 
     def test_an_item_said_by_hand_stays_said_and_taking_it_back_sorts_it_again(self):
         relay.amazon_sync(self.NOW)

@@ -183,6 +183,11 @@
     <string name="fin_budget_source_account">Aquí por la tarjeta con que se pagó.</string>
     <string name="fin_budget_source_bank">Aquí porque el banco indicó de quién era la tarjeta.</string>
     <string name="fin_budget_source_rule">Aquí porque este comercio se recuerda.</string>
+    <string name="fin_budget_source_amazon">Repartido según los correos del pedido: lo esencial es de la familia y el resto de quien recibió el pedido en su correo. Elige a alguien para ponerlo todo ahí.</string>
+    <string name="fin_budget_note_title">Nota</string>
+    <string name="fin_budget_note_hint">¿Para qué fue? Una rueda del Tesla, por ejemplo</string>
+    <string name="fin_budget_note_save">Guardar nota</string>
+    <string name="fin_budget_note_remove">Quitar nota</string>
     <string name="fin_budget_source_none">El banco no dijo quién la hizo.</string>
 
     <string name="fin_budget_how">El servidor le pregunta a Plaid cada hora qué se compró con cada tarjeta. Los bancos envían las compras unas cuantas veces al día, así que una puede tardar algunas horas en aparecer, y una pendiente todavía puede cambiar. El pago de una tarjeta no se cuenta, y un reembolso se descuenta del mes en que llega.</string>

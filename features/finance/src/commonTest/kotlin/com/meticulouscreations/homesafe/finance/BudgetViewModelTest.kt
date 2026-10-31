@@ -93,6 +93,13 @@ class BudgetViewModelTest {
             return changed
         }
 
+        val notes = mutableListOf<Pair<String, String?>>()
+
+        override suspend fun note(purchaseId: String, note: String?): Result<Budget> {
+            notes += purchaseId to note
+            return changed
+        }
+
         override suspend fun forgetLineRule(merchantKey: String): Result<Budget> {
             forgotten += merchantKey
             return changed
@@ -398,6 +405,23 @@ class BudgetViewModelTest {
         vm.onSheet(finance)
         runCurrent()
         assertEquals(listOf(BudgetConfigPatch(sheet = figures)), repo.saved)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun aNoteIsSentTrimmed_andABlankOneTakesItOff() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = shown(repo)
+        val noted = october.copy(spent = october.spent + 1)
+        repo.changed = Result.success(noted)
+        vm.note("p-1-0", "  Tire replacement  ")
+        assertEquals(setOf("p-1-0"), vm.uiState.value.tagging)
+        runCurrent()
+        vm.note("p-1-0", "   ")
+        runCurrent()
+        assertEquals(listOf("p-1-0" to "Tire replacement", "p-1-0" to null), repo.notes)
+        assertEquals(emptySet(), vm.uiState.value.tagging)
+        assertEquals(noted, vm.uiState.value.budget)
         vm.setActive(false)
     }
 

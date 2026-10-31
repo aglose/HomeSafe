@@ -28,6 +28,7 @@ import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
+import com.meticulouscreations.homesafe.finance.domain.PurchaseShare
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharges
 import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
@@ -109,6 +110,13 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
                     put("remember", remember)
                 },
             )
+        }.answer()
+    }
+
+    suspend fun note(serverUrl: String, purchaseId: String, note: String?): Result<Budget> = suspendRunCatching {
+        httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/budget/transactions/$purchaseId/note")) {
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject { put("note", note) })
         }.answer()
     }
 
@@ -201,6 +209,7 @@ internal fun BudgetConfigPatch.toJson(): JsonObject = buildJsonObject {
                 put("take_home", sheet.takeHome)
                 put("bills_off_card", sheet.billsOffCard)
                 put("lines", buildJsonObject { sheet.lines.forEach { (line, monthly) -> put(line, monthly) } })
+                put("bills", buildJsonObject { sheet.bills.forEach { (line, monthly) -> put(line, monthly) } })
             },
         )
     }
@@ -268,7 +277,7 @@ internal data class RelayBudget(
             alerts = BudgetAlertSwitches(total = config.alerts.total, savings = config.alerts.savings, buckets = config.alerts.buckets, lines = config.alerts.lines),
             rules = config.rules.map { MerchantRule(it.merchant, BucketId.ofWire(it.bucket)) },
             lineRules = config.lineRules.map { LineRule(it.merchant, it.line?.takeIf { line -> line.isNotEmpty() }) },
-            sheet = BudgetSheetFigures(takeHome = config.sheet.takeHome, billsOffCard = config.sheet.billsOffCard, lines = config.sheet.lines),
+            sheet = BudgetSheetFigures(takeHome = config.sheet.takeHome, billsOffCard = config.sheet.billsOffCard, lines = config.sheet.lines, bills = config.sheet.bills),
         ),
         savingsLine = savingsLine,
         spent = spent,
@@ -295,6 +304,7 @@ internal data class RelayBudget(
                     "account" -> BucketSource.ACCOUNT
                     "bank" -> BucketSource.BANK
                     "rule" -> BucketSource.RULE
+                    "amazon" -> BucketSource.AMAZON
                     else -> BucketSource.NONE
                 },
                 remembered = txn.remembered,
@@ -308,6 +318,8 @@ internal data class RelayBudget(
                 lineRemembered = txn.lineRemembered,
                 fromAmazon = txn.fromAmazon,
                 amazon = txn.amazon?.toDomain(),
+                note = txn.note?.takeIf { it.isNotBlank() },
+                shares = txn.shares.map { PurchaseShare(BucketId.ofWire(it.bucket), it.amount) },
             )
         },
         history = history.map { BudgetPastMonth(it.month, it.spent, it.days) },
@@ -372,6 +384,7 @@ internal data class RelayBudgetSheet(
     @SerialName("take_home") val takeHome: Double? = null,
     @SerialName("bills_off_card") val billsOffCard: Double? = null,
     val lines: Map<String, Double> = emptyMap(),
+    val bills: Map<String, Double> = emptyMap(),
 )
 
 /** A card-paid line; the one with no name is the purchases in none of them. */
@@ -407,7 +420,13 @@ internal data class RelayPurchase(
     @SerialName("line_remembered") val lineRemembered: Boolean = false,
     @SerialName("from_amazon") val fromAmazon: Boolean = false,
     val amazon: RelayAmazonOrder? = null,
+    val note: String? = null,
+    val shares: List<RelayPurchaseShare> = emptyList(),
 )
+
+/** A share of a purchase's money in one bucket (`amazon_shares` in relay.py); a null bucket is nobody's yet. */
+@Serializable
+internal data class RelayPurchaseShare(val bucket: String? = null, val amount: Double = 0.0)
 
 /** What an Amazon charge paid for (`amazon_attach` in relay.py). */
 @Serializable
@@ -477,7 +496,7 @@ internal data class RelayAmazonSummary(
 @Serializable
 internal data class RelayBudgetPastMonth(val month: String = "", val spent: Double = 0.0, val days: Int = 30)
 
-/** What the cards are charged again and again (`budget_recurring` in relay.py). */
+/** What the cards and the checking account pay again and again (`budget_recurring` in relay.py). */
 @Serializable
 internal data class RelayRecurring(val monthly: Double = 0.0, val charges: List<RelayRecurringCharge> = emptyList()) {
     fun toDomain() = RecurringCharges(
@@ -497,6 +516,8 @@ internal data class RelayRecurring(val monthly: Double = 0.0, val charges: List<
                 stopped = charge.stopped,
                 cardKey = charge.card,
                 bucket = BucketId.ofWire(charge.bucket),
+                fromChecking = charge.account == "checking",
+                line = charge.line?.takeIf { it.isNotEmpty() },
             )
         },
     )
@@ -517,4 +538,6 @@ internal data class RelayRecurringCharge(
     val stopped: Boolean = false,
     val card: String = "",
     val bucket: String? = null,
+    val line: String? = null,
+    val account: String = "card",
 )

@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.domain.LineRule
 import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
+import com.meticulouscreations.homesafe.finance.domain.PurchaseShare
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
 import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
 import com.meticulouscreations.homesafe.text.UiText
@@ -166,12 +167,15 @@ class BudgetRelayApiTest {
                  {"merchant":"factor","name":"Factor","rhythm":"weekly","amount":105.93,"was":94.93,"monthly":459.03,"bill":false,"count":4,
                   "first":"2026-09-14","last":"2026-10-05","next":"2026-10-12","stopped":false,"card":"Summit Bank Voyager 4410","bucket":"person:Alex","line":null},
                  {"merchant":"lemonade","name":"Lemonade","rhythm":"monthly","amount":14.43,"was":null,"monthly":14.43,"bill":false,"count":2,
-                  "first":"2026-07-13","last":"2026-08-12","next":null,"stopped":true,"card":"Northwind Platinum 2207","bucket":"family","line":null}]},
+                  "first":"2026-07-13","last":"2026-08-12","next":null,"stopped":true,"card":"Northwind Platinum 2207","bucket":"family","line":null},
+                 {"merchant":"t mobile","name":"T-Mobile","rhythm":"monthly","amount":121.0,"was":null,"monthly":113.0,"bill":true,"count":3,
+                  "first":"2026-07-24","last":"2026-09-24","next":"2026-10-24","stopped":false,"card":"Summit Bank Checking 3381","bucket":null,
+                  "line":"Cellphone","account":"checking"}]},
                "history":""",
         )
         val recurring = api(MockEngine { respond(withRecurring, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow().recurring!!
         assertEquals(475.02, recurring.monthly)
-        val (factor, lemonade) = recurring.charges
+        val (factor, lemonade, phone) = recurring.charges
         assertEquals(
             RecurringCharge(
                 "Factor", RecurringRhythm.WEEKLY, 105.93, was = 94.93, monthly = 459.03, bill = false, count = 4, first = "2026-09-14", last = "2026-10-05",
@@ -180,7 +184,10 @@ class BudgetRelayApiTest {
             factor,
         )
         assertEquals(Triple(RecurringRhythm.MONTHLY, null, BucketId.Family), Triple(lemonade.rhythm, lemonade.next, lemonade.bucket))
-        assertEquals(listOf(factor) to listOf(lemonade), recurring.running to recurring.stopped)
+        // A card's says nothing of an account and is a card's; what checking pays says so, and which of the sheet's bill lines it is in.
+        assertEquals(false to null, lemonade.fromChecking to lemonade.line)
+        assertEquals(Triple(true, "Cellphone", BucketId.Unassigned), Triple(phone.fromChecking, phone.line, phone.bucket))
+        assertEquals(listOf(factor, phone) to listOf(lemonade), recurring.running to recurring.stopped)
     }
 
     @Test
@@ -215,8 +222,10 @@ class BudgetRelayApiTest {
 
     @Test
     fun theSheetsLinesGoWithItsFigures() {
-        val sheet = BudgetConfigPatch(sheet = BudgetSheetFigures(14_170.0, 9_000.0, lines = mapOf("Groceries" to 600.0))).toJson().getValue("sheet").jsonObject
+        val sheet = BudgetConfigPatch(sheet = BudgetSheetFigures(14_170.0, 9_000.0, lines = mapOf("Groceries" to 600.0), bills = mapOf("Cellphone" to 120.0))).toJson()
+            .getValue("sheet").jsonObject
         assertEquals("600.0", sheet.getValue("lines").jsonObject.getValue("Groceries").jsonPrimitive.content)
+        assertEquals("120.0", sheet.getValue("bills").jsonObject.getValue("Cellphone").jsonPrimitive.content)
     }
 
     @Test
@@ -266,6 +275,34 @@ class BudgetRelayApiTest {
         assertEquals("true", body.getValue("alerts").jsonObject.getValue("total").jsonPrimitive.content)
         // The budget lines' switch goes with the others, off unless it was switched on.
         assertEquals("false", body.getValue("alerts").jsonObject.getValue("lines").jsonPrimitive.content)
+    }
+
+    @Test
+    fun aPurchaseReadsItsNoteAndAnAmazonChargeItsShares() = runTest {
+        val withShares = month.replace(
+            """"kind":"spend","remembered":true}""",
+            """"kind":"spend","remembered":true,"note":"Tire replacement","shares":[{"bucket":"person:Sam","amount":40.0},{"bucket":"family","amount":14.2}]}""",
+        ).replace(""""source":"rule","kind":"spend"""", """"source":"amazon","kind":"spend"""")
+        val (shared, plain) = api(MockEngine { respond(withShares, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow().purchases
+        assertEquals("Tire replacement", shared.note)
+        assertEquals(BucketSource.AMAZON, shared.source)
+        assertEquals(listOf(PurchaseShare(BucketId.Person("Sam"), 40.0), PurchaseShare(BucketId.Family, 14.2)), shared.shares)
+        assertTrue(shared.isIn(BucketId.Family) && shared.isIn(BucketId.Person("Sam")) && !shared.isIn(BucketId.Unassigned))
+        assertEquals(null to emptyList(), plain.note to plain.shares)
+    }
+
+    @Test
+    fun aNoteIsWrittenOnAPurchase_andANullTakesItOff() = runTest {
+        val calls = mutableListOf<String>()
+        val api = api(
+            MockEngine { request ->
+                calls += "${request.method.value} ${request.url.encodedPath} ${request.body.toByteArray().decodeToString()}"
+                respond(month, HttpStatusCode.OK, jsonHeaders)
+            },
+        )
+        api.note("http://frigate.local", "t1", "Tire replacement").getOrThrow()
+        api.note("http://frigate.local", "t1", null).getOrThrow()
+        assertEquals(listOf("""PUT /finance/budget/transactions/t1/note {"note":"Tire replacement"}""", """PUT /finance/budget/transactions/t1/note {"note":null}"""), calls)
     }
 
     @Test

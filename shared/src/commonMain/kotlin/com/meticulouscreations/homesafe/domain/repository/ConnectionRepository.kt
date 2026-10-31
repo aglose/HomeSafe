@@ -97,8 +97,9 @@ interface ConnectionRepository {
     /**
      * Something asked the server and got no answer: one pass, now, of the same route and session
      * check, without the camera list after it. [serverUnreachable] says what it found by the time
-     * this returns. For whoever has to know, before showing what the device kept, whether the
-     * server is really gone. A fake that never signs in needn't override it.
+     * this returns, and a server found gone is looked for again in the background until it
+     * answers. For whoever has to know, before showing what the device kept, whether the server
+     * is really gone. A fake that never signs in needn't override it.
      */
     suspend fun checkServer() {}
 }
