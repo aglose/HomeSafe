@@ -5950,6 +5950,37 @@ class FinanceHistoryTest(_Budget):
         self.store(_txn("new-a", 5.0, name="COFFEE A", account="venture-again"), item="cap2")
         self.assertEqual(["new-a", "new-b"], self.ids())
 
+    def test_a_change_to_a_posted_purchase_takes_nothing_more_over(self):
+        self.store(_txn("old-a", 5.0, name="COFFEE A"), _txn("old-b", 5.0, name="COFFEE B"))
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new-b", 5.0, name="COFFEE B", account="venture-again"), item="cap2")
+        self.store(modified=[_txn("new-b", 5.0, name="COFFEE B", merchant="Coffee", account="venture-again")], item="cap2")
+        self.assertEqual(["new-b", "old-a"], self.ids())
+        self.assertEqual(10.0, self.month()["spent"])
+
+    def test_a_pending_purchase_takes_over_when_it_posts_under_its_own_id(self):
+        self.store(_txn("old", 54.2))
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new", 54.2, account="venture-again", pending=True), item="cap2")
+        self.store(modified=[_txn("new", 54.2, account="venture-again")], item="cap2")
+        self.assertEqual(["new"], self.ids())
+
+    def test_what_plaid_took_back_before_the_unlinking_stands_for_nothing_when_linked_again(self):
+        self.store(_txn("a-gone", 54.2), _txn("b-real", 54.2))
+        self.store(removed=["a-gone"])
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new", 54.2, account="venture-again"), item="cap2")
+        self.assertEqual(["new"], self.ids())
+        self.assertEqual(54.2, self.month()["spent"])
+
+    def test_what_was_pending_on_a_card_that_closed_stops_counting_and_what_posted_doesn_t(self):
+        self.store(_txn("posted", 54.2), _txn("waiting", 9.0, pending=True))
+        relay.plaid_store("cap", [a for a in self.CARDS["cap"][1] if a["account_id"] != "venture"], {}, [], {}, self.NOW)
+        self.assertEqual(["posted"], self.ids())
+
     def test_a_pending_purchase_on_a_card_linked_again_takes_nothing_over(self):
         self.store(_txn("old", 54.2))
         self.unlink()
@@ -6024,6 +6055,15 @@ class FinanceHistoryTest(_Budget):
         self.assertEqual((4000, 600), (october["limits"]["total"], october["sheet"]["lines"]["Groceries"]))
         self.assertEqual((3000, 800), (november["limits"]["total"], november["sheet"]["lines"]["Groceries"]))
         self.assertEqual({"split", "family"}, set(october["roles"].values()))
+
+    def test_the_daily_call_starts_a_month_but_never_replaces_what_a_save_wrote(self):
+        relay.budget_config_save({"limits": {"total": 5000}}, self.NOW)
+        stale = relay.budget_config()
+        relay.budget_config_save({"limits": {"total": 4000}}, self.NOW + 60)
+        relay.budget_plan_keep(stale, self.NOW + 60, replace=False)
+        self.assertEqual(4000, self.plan("2026-10")["limits"]["total"])
+        relay.budget_plan_keep(stale, self.NOW + 40 * self.DAY, replace=False)
+        self.assertEqual(5000, self.plan("2026-11")["limits"]["total"])
 
     # The sheet
 
@@ -6120,12 +6160,21 @@ class FinanceHistoryTest(_Budget):
 
     # Amazon
 
-    def test_amazon_s_emails_are_searched_back_to_the_oldest_order_kept(self):
-        self.assertIn(f"newer_than:{relay.AMAZON_LOOKBACK_DAYS}d", relay.amazon_query(self.NOW))
-        relay.with_db(lambda c: (c.execute("INSERT INTO amazon_orders (order_id, ordered) VALUES ('old', '2025-10-07')"), c.commit()))
-        self.assertIn("newer_than:372d", relay.amazon_query(self.NOW))
-        relay.with_db(lambda c: (c.execute("UPDATE amazon_orders SET ordered='2026-10-01'"), c.commit()))
-        self.assertIn(f"newer_than:{relay.AMAZON_LOOKBACK_DAYS}d", relay.amazon_query(self.NOW))
+    def test_a_re_read_forgets_only_what_the_search_still_reaches(self):
+        def write(c):
+            for order, day in (("old", "2026-01-15"), ("new", "2026-09-20")):
+                c.execute("INSERT INTO amazon_orders (order_id, ordered, confirmed) VALUES (?,?,1)", (order, day))
+                c.execute("INSERT INTO amazon_items (order_id, pos, title) VALUES (?,0,'Soap')", (order,))
+                c.execute("INSERT INTO amazon_shipments VALUES (?,?,?,5.0)", (f"mail-{order}", order, day))
+                c.execute("INSERT INTO amazon_emails VALUES (?,'sam',0,'ordered')", (f"mail-{order}",))
+            c.commit()
+        relay.with_db(write)
+        relay.state_set(relay.AMAZON_PARSER_KEY, relay.AMAZON_PARSER - 1)
+        relay.amazon_reread(self.NOW)
+        self.assertEqual([("old",)], self.rows("SELECT order_id FROM amazon_items"))
+        self.assertEqual([("old",)], self.rows("SELECT order_id FROM amazon_shipments"))
+        self.assertEqual([("new", 0), ("old", 1)], self.rows("SELECT order_id, confirmed FROM amazon_orders ORDER BY order_id"))
+        self.assertEqual([], self.rows("SELECT * FROM amazon_emails"))
 
 
 # Made-up Amazon emails in the shapes Amazon sends: an order's plain text, the same order as HTML,

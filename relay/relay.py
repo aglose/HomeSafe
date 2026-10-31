@@ -9201,11 +9201,16 @@ def household_day(now: float) -> str:
     return datetime.fromtimestamp(now, household_zone() or timezone.utc).date().isoformat()
 
 
-def budget_plan_keep(config: dict[str, Any], now: float) -> None:
-    """What the budget holds this month to, as things stand: a later month's changes never reach a month that has ended."""
+def budget_plan_keep(config: dict[str, Any], now: float, replace: bool = True) -> None:
+    """
+    What the budget holds this month to, as things stand: a later month's changes never reach a
+    month that has ended. Each save replaces it. The daily call only starts a month nothing was
+    saved in yet (`replace` False), so settings it read just before a save can't undo that save.
+    """
     plan = {name: config[name] for name in ("people", "limits", "roles", "card_paid_lines", "sheet")}
     month = household_day(now)[:7]
-    with_db(lambda c: (c.execute("INSERT OR REPLACE INTO budget_plans VALUES (?,?,?)", (month, json.dumps(plan, sort_keys=True), now)), c.commit()))
+    verb = "INSERT OR REPLACE" if replace else "INSERT OR IGNORE"
+    with_db(lambda c: (c.execute(f"{verb} INTO budget_plans VALUES (?,?,?)", (month, json.dumps(plan, sort_keys=True), now)), c.commit()))
 
 
 def finance_sheet_keep(now: float) -> None:
@@ -9272,7 +9277,7 @@ def finance_history_keep(now: float) -> None:
     except Exception:
         log.exception("finance history: couldn't tell whether today's was kept")
         return
-    for keep in (lambda: budget_plan_keep(budget_config(), now), lambda: finance_sheet_keep(now), lambda: relay_backup(now)):
+    for keep in (lambda: budget_plan_keep(budget_config(), now, replace=False), lambda: finance_sheet_keep(now), lambda: relay_backup(now)):
         try:
             keep()
         except Exception as e:
@@ -9522,6 +9527,7 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
             row = txn_row(txn, item_id, now)
             if row is None or row[2] not in cards:
                 continue
+            before = c.execute("SELECT pending FROM plaid_transactions WHERE txn_id=?", (row[0],)).fetchone()
             c.execute(
                 "INSERT INTO plaid_transactions (txn_id, item_id, account_id, date, posted, amount, currency, name, merchant, merchant_key, category,"
                 " category_detail, pending, pending_id, owner, kind, updated, card) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
@@ -9532,7 +9538,9 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
                 (*row, keys.get(row[2])),
             )
             changed += 1
-            txn_take_over(c, row, keys.get(row[2]))
+            # Only as it first posts: a change to one already posted has taken over its one already.
+            if not row[12] and (before is None or before[0]):
+                txn_take_over(c, row, keys.get(row[2]))
             if row[13]:
                 was = c.execute("SELECT tag, tag_by FROM plaid_transactions WHERE txn_id=? AND tag IS NOT NULL", (row[13],)).fetchone()
                 if was:
@@ -9555,14 +9563,13 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
 
 def txn_take_over(c: sqlite3.Connection, row: tuple, card: str | None) -> None:
     """
-    A card unlinked and linked again has its past read afresh under new ids. A posted purchase just
-    stored replaces the one kept from before, the same day and amount on the same card (the one of
-    the same name, when two match), and takes on its tags. What the new link doesn't reach stays.
+    A card unlinked and linked again has its past read afresh under new ids. A purchase that has
+    just posted replaces the one kept from before, the same day and amount on the same card (the
+    one of the same name, when two match), and takes on its tags. What the new link doesn't reach
+    stays. A transaction Plaid had taken back before the unlinking isn't counted, so stands for nothing.
     """
-    if row[12]:
-        return
     was = c.execute(
-        "SELECT txn_id, tag, tag_by, line_tag, line_tag_by FROM plaid_transactions WHERE archived_at IS NOT NULL AND card=? AND date=? AND ABS(amount - ?) < 0.005"
+        "SELECT txn_id, tag, tag_by, line_tag, line_tag_by FROM plaid_transactions WHERE archived_at IS NOT NULL AND removed_at IS NULL AND card=? AND date=? AND ABS(amount - ?) < 0.005"
         " ORDER BY name IS NOT ?, txn_id LIMIT 1",
         (card, row[3], row[5], row[7]),
     ).fetchone()
@@ -9864,13 +9871,15 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     """
     What counts toward the budget between two days (inclusive), each put in its bucket: every
     purchase and refund on a card that has a role, pending ones too, whether or not the card is
-    still linked. A card being paid off doesn't count, nor a transaction Plaid took back, nor a pending one whose posted one is here.
+    still linked (but for what was still pending on one that's gone, which nothing will now settle).
+    A card being paid off doesn't count, nor a transaction Plaid took back, nor a pending one whose posted one is here.
     Each of Amazon's charges also says what its order was (see "Amazon orders").
     """
     rows = with_db(lambda c: c.execute(
         "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, COALESCE(k.key, t.card), t.category_detail, t.line_tag"
         " FROM plaid_transactions t LEFT JOIN plaid_feed_keys k ON k.account_id = t.account_id"
         " WHERE t.removed_at IS NULL AND t.kind != 'payment' AND t.date >= ? AND t.date <= ?"
+        " AND (k.key IS NOT NULL OR t.pending = 0)"
         " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
         " ORDER BY t.date DESC, t.amount DESC, t.txn_id",
         (first, last),
@@ -10427,9 +10436,10 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 # Every hour reads the emails of the last few months that it hasn't read yet, so a mailbox linked
 # today brings its history with it.
 AMAZON_LOOKBACK_DAYS = int(os.environ.get("AMAZON_LOOKBACK_DAYS", "120"))
-AMAZON_QUERY = 'from:amazon.com {subject:Ordered subject:Shipped subject:"Your Amazon.com order" subject:"Your Amazon order"}'
-# How far past an order its emails are looked for: the search goes by the email's day, not the order's.
-AMAZON_QUERY_MARGIN_DAYS = 7
+AMAZON_QUERY = ('from:amazon.com {subject:Ordered subject:Shipped subject:"Your Amazon.com order" subject:"Your Amazon order"}'
+                f" newer_than:{AMAZON_LOOKBACK_DAYS}d")
+# How well inside the search's reach an email has to be for a re-read to count on finding it again.
+AMAZON_REREAD_MARGIN_DAYS = 2
 # The most new emails one read fetches (the rest wait for the next hour), and the most of the
 # search's pages it lists to find them.
 AMAZON_MAX_EMAILS = 400
@@ -10737,23 +10747,15 @@ def amazon_store(mailbox: str, message_id: str, day: str, parsed: dict[str, Any]
     with_db(write)
 
 
-def amazon_query(now: float) -> str:
-    """What to search a mailbox for: the last few months, or back to the oldest order kept, so a read that starts over (`amazon_reread`) loses none of them."""
-    oldest = with_db(lambda c: c.execute("SELECT MIN(ordered) FROM amazon_orders").fetchone()[0])
-    kept = (datetime.fromtimestamp(now, timezone.utc).date() - datetime.fromisoformat(oldest).date()).days + AMAZON_QUERY_MARGIN_DAYS if oldest else 0
-    return f"{AMAZON_QUERY} newer_than:{max(AMAZON_LOOKBACK_DAYS, kept)}d"
-
-
 def amazon_read_mailbox(mailbox: str, now: float) -> int:
     """Reads one mailbox's Amazon emails that haven't been read yet; how many there were."""
     zone = household_zone() or timezone.utc
     seen = {row[0] for row in with_db(lambda c: c.execute("SELECT message_id FROM amazon_emails").fetchall())}
     fresh: list[str] = []
     page: str | None = None
-    query = amazon_query(now)
     # Past the ones read already, so a mailbox with more than a read's worth gets through them all over the hours.
     for _ in range(AMAZON_MAX_PAGES):
-        listed = gmail_get(mailbox, "/messages", now, q=query, maxResults=100, **({"pageToken": page} if page else {}))
+        listed = gmail_get(mailbox, "/messages", now, q=AMAZON_QUERY, maxResults=100, **({"pageToken": page} if page else {}))
         fresh += [m["id"] for m in listed.get("messages") or [] if m["id"] not in seen]
         page = listed.get("nextPageToken")
         if not page or len(fresh) >= AMAZON_MAX_EMAILS:
@@ -10832,20 +10834,23 @@ def amazon_sort_items(ask: Callable[[list[str]], list[str] | None] | None = None
     return len(verdicts)
 
 
-def amazon_reread() -> None:
+def amazon_reread(now: float) -> None:
     """
     Forgets what the emails were read as, when they are now read differently (`AMAZON_PARSER`),
-    so the next read goes through them all again. What someone said about an item stays: a
-    re-read item of the same title in the same order gets it back.
+    so the next read goes through them again. Only what the search still reaches: an order older
+    than that stays as it was read, since its emails won't be. What someone said about an item
+    stays too: a re-read item of the same title in the same order gets it back.
     """
     if state_get(AMAZON_PARSER_KEY) == AMAZON_PARSER:
         return
 
+    since = str(datetime.fromtimestamp(now, timezone.utc).date() - timedelta(days=AMAZON_LOOKBACK_DAYS - AMAZON_REREAD_MARGIN_DAYS))
+
     def forget(c: sqlite3.Connection) -> None:
         c.execute("DELETE FROM amazon_emails")
-        c.execute("DELETE FROM amazon_shipments")
-        c.execute("DELETE FROM amazon_items WHERE need_by IS NULL OR need_by NOT LIKE 'user:%'")
-        c.execute("UPDATE amazon_orders SET confirmed=0")
+        c.execute("DELETE FROM amazon_shipments WHERE shipped >= ?", (since,))
+        c.execute("DELETE FROM amazon_items WHERE (need_by IS NULL OR need_by NOT LIKE 'user:%') AND order_id IN (SELECT order_id FROM amazon_orders WHERE ordered >= ?)", (since,))
+        c.execute("UPDATE amazon_orders SET confirmed=0 WHERE ordered >= ?", (since,))
         c.commit()
 
     with_db(forget)
@@ -10859,7 +10864,7 @@ def amazon_sync(now: float | None = None) -> None:
         return
     now = time.time() if now is None else now
     try:
-        amazon_reread()
+        amazon_reread(now)
         read, failed = 0, []
         for mailbox in sorted(AMAZON_GMAIL_TOKENS):
             try:

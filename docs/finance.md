@@ -244,6 +244,10 @@ The months are meant to be set side by side for years, so the relay keeps its ow
   Plaid fixes that when the link is made: a link from before it stays at the 90 days it asked for,
   and signing in again doesn't change it. Only unlinking and linking again brings more, using up
   another of the plan's links. Banks may hold less than two years.
+- **A card that closes** works the same way, but for what was still pending on it, which stops
+  counting since nothing will settle it.
+- **Amazon's emails read again.** When the relay learns to read them differently, it forgets only
+  what its search still reaches (`AMAZON_LOOKBACK_DAYS`). Older orders stay as they were first read.
 - **Only credit cards.** A bank account's transactions are read and dropped (see
   [budget.md](budget.md)), so rent or a mortgage paid from checking is known only from the sheet.
 
