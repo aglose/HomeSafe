@@ -29,7 +29,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -950,14 +952,18 @@ class ConnectionRepositoryImplTest {
     @Test
     fun aNetworkChangeWhileTheServerIsThoughtGoneAsksIt_evenOnTheSameRoute() = runTest {
         val h = Harness(this)
+        // The background re-check looks once and then never again, so only the network change can bring the server back.
+        h.repository.routeRetryMs = Long.MAX_VALUE
         h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
         advanceUntilIdle()
         h.frigate.tailscaleReachable = false
         h.frigate.localReachable = false
         h.repository.checkServer()
+        settle()
         assertTrue(h.repository.serverUnreachable.value)
         val checksWhileDown = h.frigate.sessionChecks(localHost)
 
+        // The server comes back on the same network: the network changes, the route doesn't.
         h.frigate.tailscaleReachable = true
         h.frigate.localReachable = true
         emitNetworkChange(h)

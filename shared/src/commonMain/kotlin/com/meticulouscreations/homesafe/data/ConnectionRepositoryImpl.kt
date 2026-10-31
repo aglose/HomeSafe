@@ -116,6 +116,9 @@ class ConnectionRepositoryImpl(
     /** [LAN_GRACE_MS]; tests shorten or lengthen it (real time, see [signInExpecting]). */
     internal var lanGraceMs = LAN_GRACE_MS
 
+    /** How long [refreshRoute] waits between tries; a test that must see another path recover sets it to never. */
+    internal var routeRetryMs = ROUTE_SWITCH_RETRY_MS
+
     private val _expectedConnection = MutableStateFlow<ActiveConnection?>(null)
     override val expectedConnection: StateFlow<ActiveConnection?> = _expectedConnection.asStateFlow()
 
@@ -545,7 +548,7 @@ class ConnectionRepositoryImpl(
      * until it succeeds or the next network change supersedes it.
      */
     private suspend fun refreshRoute(verifySession: Boolean) {
-        while (!checkRoute(verifySession)) delay(ROUTE_SWITCH_RETRY_MS)
+        while (!checkRoute(verifySession)) delay(routeRetryMs)
     }
 
     /**
