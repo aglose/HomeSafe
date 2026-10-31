@@ -41,7 +41,8 @@ In the app: **Finance → Budget**. Its settings are behind **Limits and cards**
   times a day, so most hours find nothing new: the page says when the cards were last asked and
   when that last found anything. **Read the cards now** asks at once, at most once a minute.
 - **Only credit cards' transactions are kept**, in `relay.db` on the Frigate box, and never in
-  the relay's log. Unlinking a card deletes what was bought on it.
+  the relay's log. They stay there for good, a card unlinked or closed included (see
+  [What is kept](finance.md#what-is-kept)).
 - **What counts.** Purchases, pending ones included (flagged, since they can still change). A
   refund comes off the month it arrives in. Paying the card off is not spending and is left out.
   The month is the household's calendar month, by the day the card was used.

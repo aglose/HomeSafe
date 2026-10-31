@@ -3960,6 +3960,12 @@ class BankSyncTest(_ScratchDb):
         asked = relay.plaid_link_request("alex", "bank", access="access-item1")
         self.assertEqual("access-item1", asked["access_token"])
         self.assertNotIn("products", asked)
+        self.assertNotIn("transactions", asked)
+
+    def test_a_card_is_linked_for_all_the_history_plaid_has(self):
+        self.assertEqual({"days_requested": 730}, relay.plaid_link_request("alex", "bank")["transactions"])
+        self.assertNotIn("transactions", relay.plaid_link_request("alex", "investments"))
+        self.assertNotIn("transactions", relay.plaid_link_request("alex", "loans"))
 
     def test_starting_a_link_answers_the_page_and_remembers_the_token(self):
         self.plaid(link_token_create={"link_token": "link-1", "hosted_link_url": "https://secure.plaid.com/hl/abc"})
@@ -5876,12 +5882,299 @@ class BudgetRoutesTest(_Budget):
         self.assertFalse(relay.post_budget_sync(object(), self.response)["syncing"])
         self.assertEqual(["budget"], self.background)
 
-    def test_unlinking_a_card_forgets_what_was_bought_on_it(self):
+    def test_unlinking_a_card_keeps_what_was_bought_on_it(self):
         relay.plaid_post = _FakePlaid()
         self.store(_txn("t1", 54.2))
         relay.delete_bank_institution("cap", object(), self.response)
-        self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_transactions").fetchone()[0]))
+        self.assertEqual(["t1"], [p["id"] for p in self.month()["transactions"]])
         self.assertEqual([self.PLATINUM], [card["key"] for card in self.month()["cards"]])
+
+
+class FinanceHistoryTest(_Budget):
+    """What is kept for setting the months side by side later: nothing read from Plaid is lost, and what gets overwritten is copied first."""
+
+    NAMES = _Budget.NAMES + ("FINANCE_SHEET_ID", "finance_sheet", "RELAY_BACKUP_DIR")
+    DAY = 86400
+
+    def setUp(self):
+        super().setUp()
+        relay.RELAY_BACKUP_DIR = ""
+        relay.FINANCE_SHEET_ID = ""
+        relay.plaid_post = _FakePlaid()
+
+    def unlink(self, item="cap"):
+        relay.delete_bank_institution(item, object(), self.response)
+
+    def ids(self, month=None):
+        return sorted(p["id"] for p in self.month(month)["transactions"])
+
+    def rows(self, sql, *args):
+        return relay.with_db(lambda c: c.execute(sql, args).fetchall())
+
+    # Purchases
+
+    def test_a_closed_card_s_purchases_go_on_counting_in_their_month(self):
+        self.store(_txn("t1", 54.2))
+        relay.plaid_store("cap", [a for a in self.CARDS["cap"][1] if a["account_id"] != "venture"], {}, [], {}, self.NOW)
+        self.assertEqual(["t1"], self.ids())
+        self.assertEqual(54.2, self.month()["spent"])
+
+    def test_a_card_unlinked_is_still_counted_by_the_role_it_had(self):
+        self.store(_txn("t1", 54.2, account="platinum"), item="amex")
+        self.unlink("amex")
+        self.assertEqual(54.2, self.bucket("family")["spent"])
+
+    def test_what_is_still_pending_when_a_card_is_unlinked_is_not_kept(self):
+        self.store(_txn("posted", 54.2), _txn("waiting", 9.0, pending=True))
+        self.unlink()
+        self.assertEqual(["posted"], self.ids())
+
+    def test_a_card_linked_again_takes_over_what_it_reads_again_and_keeps_what_it_cannot(self):
+        self.store(_txn("old-far", 20.0, date="2026-08-01"), _txn("old-near", 54.2))
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_transactions SET tag='family', tag_by='sam', line_tag='Groceries', line_tag_by='sam' WHERE txn_id='old-near'"), c.commit()))
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new-near", 54.2, account="venture-again"), item="cap2")
+        self.assertEqual(["new-near"], self.ids())
+        self.assertEqual(["old-far"], self.ids("2026-08"))
+        self.assertEqual([("family", "sam", "Groceries", "sam", self.VENTURE)], self.rows("SELECT tag, tag_by, line_tag, line_tag_by, card FROM plaid_transactions WHERE txn_id='new-near'"))
+
+    def test_two_alike_on_one_day_each_take_over_one_and_the_name_decides_which(self):
+        self.store(_txn("old-a", 5.0, name="COFFEE A"), _txn("old-b", 5.0, name="COFFEE B"))
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_transactions SET tag='family' WHERE txn_id='old-b'"), c.commit()))
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new-b", 5.0, name="COFFEE B", account="venture-again"), item="cap2")
+        self.assertEqual(["new-b", "old-a"], self.ids())
+        self.assertEqual([("family",)], self.rows("SELECT tag FROM plaid_transactions WHERE txn_id='new-b'"))
+        self.store(_txn("new-a", 5.0, name="COFFEE A", account="venture-again"), item="cap2")
+        self.assertEqual(["new-a", "new-b"], self.ids())
+
+    def test_a_change_to_a_posted_purchase_takes_nothing_more_over(self):
+        self.store(_txn("old-a", 5.0, name="COFFEE A"), _txn("old-b", 5.0, name="COFFEE B"))
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new-b", 5.0, name="COFFEE B", account="venture-again"), item="cap2")
+        self.store(modified=[_txn("new-b", 5.0, name="COFFEE B", merchant="Coffee", account="venture-again")], item="cap2")
+        self.assertEqual(["new-b", "old-a"], self.ids())
+        self.assertEqual(10.0, self.month()["spent"])
+
+    def test_a_pending_purchase_takes_over_when_it_posts_under_its_own_id(self):
+        self.store(_txn("old", 54.2))
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new", 54.2, account="venture-again", pending=True), item="cap2")
+        self.store(modified=[_txn("new", 54.2, account="venture-again")], item="cap2")
+        self.assertEqual(["new"], self.ids())
+
+    def test_what_plaid_took_back_before_the_unlinking_stands_for_nothing_when_linked_again(self):
+        self.store(_txn("a-gone", 54.2), _txn("b-real", 54.2))
+        self.store(removed=["a-gone"])
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new", 54.2, account="venture-again"), item="cap2")
+        self.assertEqual(["new"], self.ids())
+        self.assertEqual(54.2, self.month()["spent"])
+
+    def test_what_was_pending_on_a_card_that_closed_stops_counting_and_what_posted_doesn_t(self):
+        self.store(_txn("posted", 54.2), _txn("waiting", 9.0, pending=True))
+        relay.plaid_store("cap", [a for a in self.CARDS["cap"][1] if a["account_id"] != "venture"], {}, [], {}, self.NOW)
+        self.assertEqual(["posted"], self.ids())
+
+    def test_a_pending_purchase_on_a_card_linked_again_takes_nothing_over(self):
+        self.store(_txn("old", 54.2))
+        self.unlink()
+        self.link("cap2", source="cap")
+        self.store(_txn("new", 54.2, account="venture-again", pending=True), item="cap2")
+        self.assertEqual(["new", "old"], self.ids())
+
+    def test_purchases_from_before_there_was_a_card_column_are_given_it(self):
+        self.store(_txn("t1", 54.2))
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_transactions SET card=NULL"), c.commit()))
+        relay.db().close()
+        self.assertEqual([(self.VENTURE,)], self.rows("SELECT card FROM plaid_transactions"))
+
+    # Balances and holdings
+
+    HOLDING = {"account_id": "venture", "security_id": "s1", "quantity": 10, "institution_price": 5.0, "institution_value": 50.0}
+    SECURITIES = {"s1": {"ticker_symbol": "VTI", "name": "Total Market", "type": "etf"}}
+
+    def read_cap(self, now, balance=812.4, holdings=()):
+        accounts = [dict(a, balances=dict(a["balances"], current=balance)) if a["account_id"] == "venture" else a for a in self.CARDS["cap"][1]]
+        relay.plaid_store("cap", accounts, {}, None if holdings is None else list(holdings), self.SECURITIES, now)
+
+    def test_a_balance_is_kept_for_each_day_and_a_later_read_that_day_replaces_it(self):
+        self.read_cap(self.NOW, 100.0)
+        self.read_cap(self.NOW + 60, 200.0)
+        self.read_cap(self.NOW + self.DAY, 300.0)
+        self.assertEqual([("2026-10-07", 200.0, self.VENTURE, "Capital One", "Venture"), ("2026-10-08", 300.0, self.VENTURE, "Capital One", "Venture")],
+                         self.rows("SELECT day, current, key, institution, name FROM plaid_balance_days WHERE account_id='venture' ORDER BY day"))
+
+    def test_a_day_goes_by_the_household_s_clock(self):
+        self.phone("p", tz="America/Los_Angeles")
+        self.read_cap(self.NOW - 0.5 * self.DAY)
+        self.assertEqual([("2026-10-06",)], self.rows("SELECT DISTINCT day FROM plaid_balance_days WHERE at=?", self.NOW - 0.5 * self.DAY))
+
+    def test_holdings_are_kept_by_the_day_and_one_sold_that_day_goes(self):
+        self.read_cap(self.NOW, holdings=[self.HOLDING, dict(self.HOLDING, security_id="s2")])
+        self.read_cap(self.NOW + 60, holdings=[self.HOLDING])
+        self.read_cap(self.NOW + self.DAY, holdings=[dict(self.HOLDING, institution_value=60.0)])
+        self.assertEqual([("2026-10-07", "s1", "VTI", 50.0, self.VENTURE), ("2026-10-08", "s1", "VTI", 60.0, self.VENTURE)],
+                         self.rows("SELECT day, security_id, ticker, value, key FROM plaid_holding_days ORDER BY day"))
+
+    def test_holdings_plaid_has_not_ready_leave_the_day_s_as_they_were(self):
+        self.read_cap(self.NOW, holdings=[self.HOLDING])
+        self.read_cap(self.NOW + 60, holdings=None)
+        self.assertEqual(1, len(self.rows("SELECT * FROM plaid_holding_days WHERE day='2026-10-07'")))
+
+    def test_unlinking_leaves_how_things_stood(self):
+        self.read_cap(self.NOW, holdings=[self.HOLDING])
+        self.unlink()
+        self.assertEqual(2, len(self.rows("SELECT * FROM plaid_balance_days WHERE item_id='cap'")))
+        self.assertEqual(1, len(self.rows("SELECT * FROM plaid_holding_days")))
+
+    def test_stock_plan_activity_past_plaid_s_reach_stays_and_what_it_can_see_is_replaced(self):
+        def event(txn_id, date):
+            return (txn_id, "cap", "venture", date, "transfer", "ACME", 10.0, "vest")
+        relay.with_db(lambda c: (c.executemany("INSERT INTO plaid_stock_events VALUES (?,?,?,?,?,?,?,?)", [event("ancient", "2020-01-15"), event("recent", "2026-09-15")]), c.commit()))
+        relay.plaid_post = _PagedPlaid(investments_transactions_get=[{"investment_transactions": [{"investment_transaction_id": "new", "account_id": "venture", "date": "2026-10-01", "type": "transfer"}],
+                                                                      "securities": [], "total_investment_transactions": 1}])
+        relay.stock_events_sync("cap", "access-cap", ["venture"], self.NOW)
+        self.assertEqual([("ancient",), ("new",)], self.rows("SELECT txn_id FROM plaid_stock_events ORDER BY date"))
+
+    # The plan
+
+    def plan(self, month):
+        return json.loads(self.rows("SELECT plan FROM budget_plans WHERE month=?", month)[0][0])
+
+    def test_a_month_keeps_the_plan_it_ended_with_whatever_later_months_change(self):
+        relay.budget_config_save({"limits": {"total": 5000}, "sheet": {"take_home": 9000, "bills_off_card": 3000, "lines": {"Groceries": 600}}}, self.NOW)
+        relay.budget_config_save({"limits": {"total": 4000}}, self.NOW + 3600)
+        relay.budget_config_save({"limits": {"total": 3000}, "sheet": {"lines": {"Groceries": 800}}}, self.NOW + 40 * self.DAY)
+        october, november = self.plan("2026-10"), self.plan("2026-11")
+        self.assertEqual((4000, 600), (october["limits"]["total"], october["sheet"]["lines"]["Groceries"]))
+        self.assertEqual((3000, 800), (november["limits"]["total"], november["sheet"]["lines"]["Groceries"]))
+        self.assertEqual({"split", "family"}, set(october["roles"].values()))
+
+    def test_the_daily_call_starts_a_month_but_never_replaces_what_a_save_wrote(self):
+        relay.budget_config_save({"limits": {"total": 5000}}, self.NOW)
+        stale = relay.budget_config()
+        relay.budget_config_save({"limits": {"total": 4000}}, self.NOW + 60)
+        relay.budget_plan_keep(stale, self.NOW + 60, replace=False)
+        self.assertEqual(4000, self.plan("2026-10")["limits"]["total"])
+        relay.budget_plan_keep(stale, self.NOW + 40 * self.DAY, replace=False)
+        self.assertEqual(5000, self.plan("2026-11")["limits"]["total"])
+
+    # The sheet
+
+    def sheet_says(self, *values):
+        relay.FINANCE_SHEET_ID = "sheet"
+        relay.finance_sheet = lambda refresh: {"sheets": [{"title": "Home", "values": [list(values)], "merges": []}], "fetched_at": time.time()}
+
+    def test_the_sheet_is_copied_only_when_it_changed_and_the_copy_reads_back(self):
+        import zlib
+        self.sheet_says("Rent", 2000)
+        relay.finance_sheet_keep(self.NOW)
+        relay.finance_sheet_keep(self.NOW + self.DAY)
+        self.sheet_says("Rent", 2100)
+        relay.finance_sheet_keep(self.NOW + 2 * self.DAY)
+        kept = self.rows("SELECT day, body FROM finance_sheet_days ORDER BY day")
+        self.assertEqual(["2026-10-07", "2026-10-09"], [day for day, _ in kept])
+        self.assertEqual([["Rent", 2100]], json.loads(zlib.decompress(kept[1][1]))[0]["values"])
+
+    def test_no_sheet_means_no_copy(self):
+        relay.finance_sheet_keep(self.NOW)
+        self.assertEqual([], self.rows("SELECT day FROM finance_sheet_days"))
+
+    # The nightly copy
+
+    def backups(self):
+        return sorted(os.listdir(relay.RELAY_BACKUP_DIR))
+
+    def test_the_night_s_copy_is_the_whole_database_and_only_the_relay_may_read_it(self):
+        import sqlite3
+        relay.RELAY_BACKUP_DIR = os.path.join(self._dir.name, "backups")
+        self.store(_txn("t1", 54.2))
+        relay.relay_backup(self.NOW)
+        self.assertEqual(["relay-2026-10-07.db"], self.backups())
+        path = os.path.join(relay.RELAY_BACKUP_DIR, "relay-2026-10-07.db")
+        self.assertEqual(0o600, os.stat(path).st_mode & 0o777)
+        self.assertEqual(0o700, os.stat(relay.RELAY_BACKUP_DIR).st_mode & 0o777)
+        copy = sqlite3.connect(path)
+        self.addCleanup(copy.close)
+        self.assertEqual([("t1",)], copy.execute("SELECT txn_id FROM plaid_transactions").fetchall())
+
+    def test_old_copies_go_but_for_each_month_s_first(self):
+        relay.RELAY_BACKUP_DIR = os.path.join(self._dir.name, "backups")
+        os.makedirs(relay.RELAY_BACKUP_DIR)
+        names = [f"relay-2026-08-{d:02d}.db" for d in (3, 4)] + [f"relay-2026-09-{d:02d}.db" for d in range(1, 21)] + ["notes.txt"]
+        for name in names:
+            open(os.path.join(relay.RELAY_BACKUP_DIR, name), "w").close()
+        relay.relay_backup(self.NOW)
+        expected = ["notes.txt", "relay-2026-08-03.db", "relay-2026-09-01.db"] + [f"relay-2026-09-{d:02d}.db" for d in range(8, 21)] + ["relay-2026-10-07.db"]
+        self.assertEqual(sorted(expected), self.backups())
+
+    def test_a_copy_that_fails_leaves_no_partial_file(self):
+        relay.RELAY_BACKUP_DIR = os.path.join(self._dir.name, "backups")
+        saved, relay.DB_PATH = relay.DB_PATH, os.path.join(self._dir.name, "no", "such", "relay.db")
+        try:
+            with self.assertRaises(Exception):
+                relay.relay_backup(self.NOW)
+        finally:
+            relay.DB_PATH = saved
+        self.assertEqual([], self.backups())
+
+    def test_no_backup_folder_means_no_copy(self):
+        relay.relay_backup(self.NOW)
+
+    # Once a day
+
+    def test_a_day_s_copies_are_made_once_and_tomorrow_s_again(self):
+        relay.RELAY_BACKUP_DIR = os.path.join(self._dir.name, "backups")
+        self.sheet_says("Rent", 2000)
+        reads = []
+        said = relay.finance_sheet
+        relay.finance_sheet = lambda refresh: (reads.append(1), said(refresh))[1]
+        relay.finance_history_keep(self.NOW)
+        relay.finance_history_keep(self.NOW + 300)
+        self.assertEqual(1, len(reads))
+        self.assertEqual(["relay-2026-10-07.db"], self.backups())
+        self.assertEqual(1, len(self.rows("SELECT * FROM budget_plans WHERE month='2026-10'")))
+        relay.finance_history_keep(self.NOW + self.DAY)
+        self.assertEqual(["relay-2026-10-07.db", "relay-2026-10-08.db"], self.backups())
+
+    def test_a_sheet_that_cannot_be_read_doesn_t_stop_the_night_s_copy_nor_is_asked_again_that_day(self):
+        relay.RELAY_BACKUP_DIR = os.path.join(self._dir.name, "backups")
+        relay.FINANCE_SHEET_ID = "sheet"
+        reads = []
+
+        def refuse(refresh):
+            reads.append(1)
+            raise relay.HTTPException(502, {"error": "google_error"})
+
+        relay.finance_sheet = refuse
+        relay.finance_history_keep(self.NOW)
+        relay.finance_history_keep(self.NOW + 300)
+        self.assertEqual(1, len(reads))
+        self.assertEqual(["relay-2026-10-07.db"], self.backups())
+
+    # Amazon
+
+    def test_a_re_read_forgets_only_what_the_search_still_reaches(self):
+        def write(c):
+            for order, day in (("old", "2026-01-15"), ("new", "2026-09-20")):
+                c.execute("INSERT INTO amazon_orders (order_id, ordered, confirmed) VALUES (?,?,1)", (order, day))
+                c.execute("INSERT INTO amazon_items (order_id, pos, title) VALUES (?,0,'Soap')", (order,))
+                c.execute("INSERT INTO amazon_shipments VALUES (?,?,?,5.0)", (f"mail-{order}", order, day))
+                c.execute("INSERT INTO amazon_emails VALUES (?,'sam',0,'ordered')", (f"mail-{order}",))
+            c.commit()
+        relay.with_db(write)
+        relay.state_set(relay.AMAZON_PARSER_KEY, relay.AMAZON_PARSER - 1)
+        relay.amazon_reread(self.NOW)
+        self.assertEqual([("old",)], self.rows("SELECT order_id FROM amazon_items"))
+        self.assertEqual([("old",)], self.rows("SELECT order_id FROM amazon_shipments"))
+        self.assertEqual([("new", 0), ("old", 1)], self.rows("SELECT order_id, confirmed FROM amazon_orders ORDER BY order_id"))
+        self.assertEqual([], self.rows("SELECT * FROM amazon_emails"))
 
 
 # Made-up Amazon emails in the shapes Amazon sends: an order's plain text, the same order as HTML,
