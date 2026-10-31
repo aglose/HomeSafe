@@ -5482,6 +5482,15 @@ class BudgetRecurringTest(_Budget):
         self.assertEqual({"Cloud Drive": (30.0, None), "Cloud Music": (32.0, None)}, {name: (r["amount"], r["was"]) for name, r in self.named().items()})
         self.assertEqual(62.0, self.recurring()["monthly"])
 
+    def test_a_run_that_missed_too_often_long_ago_is_still_found_by_its_recent_charges(self):
+        self.store(*(_txn(f"m{i}", 12.99, date=day, name="NEWSPAPER", merchant="Daily Paper") for i, day in enumerate(("2026-05-01", "2026-07-01", "2026-08-01", "2026-10-01"))),
+                   # A weekly box that came every other week at first, then every week.
+                   *(_txn(f"w{i}", 64.49, date=day, name="FRESH BOX", merchant="Fresh Box") for i, day in
+                     enumerate(("2026-08-08", "2026-08-22", "2026-09-05", "2026-09-19", "2026-09-26", "2026-10-03"))))
+        named = self.named()
+        self.assertEqual(("monthly", 3, "2026-07-01", "2026-11-01"), tuple(named["Daily Paper"][k] for k in ("rhythm", "count", "first", "next")))
+        self.assertEqual(("weekly", 5, "2026-08-22", "2026-10-10"), tuple(named["Fresh Box"][k] for k in ("rhythm", "count", "first", "next")))
+
     def test_one_stops_on_the_day_it_is_a_grace_overdue(self):
         # Today is the 7th of October: a monthly one due the 29th of September is 8 days overdue, one due the 30th 7.
         self.store(*(_txn(f"late{i}", 12.49, date=day, name="LATE CO", merchant="Late Co") for i, day in enumerate(("2026-07-29", "2026-08-29"))),

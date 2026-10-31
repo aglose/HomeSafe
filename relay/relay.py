@@ -9788,6 +9788,15 @@ def _recurring_enough(chain: list[dict[str, Any]], rhythm: str, merchants: list[
     return sum(a != b for a, b in zip(cents, cents[1:])) <= 1
 
 
+def _recurring_tail(chain: list[dict[str, Any]], rhythm: str, merchants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    The longest stretch of a run, up to its last charge, that is something charged again and
+    again (see `_recurring_enough`); empty when none is. A run that missed too often long ago is
+    still what its recent charges say.
+    """
+    return next((chain[start:] for start in range(len(chain) - 1) if _recurring_enough(chain[start:], rhythm, merchants)), [])
+
+
 def recurring_merchant(purchase: dict[str, Any]) -> str:
     """
     What a recurring charge's merchant goes by: the first word of its name ("the" passed over).
@@ -9821,7 +9830,7 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
             for c in left:
                 amounts.setdefault(_cents(c["amount"]), []).append(c)
             runs = [(rhythm, _recurring_chain(group, rhythm)) for rhythm in RECURRING_GAPS for group in [left, *(g for g in amounts.values() if len(g) >= 2)]]
-            runs = [(rhythm, chain) for rhythm, chain in runs if _recurring_enough(chain, rhythm, charges)]
+            runs = [(rhythm, tail) for rhythm, tail in ((rhythm, _recurring_tail(chain, rhythm, charges)) for rhythm, chain in runs) if tail]
             if not runs:
                 break
             # A weekly charge also comes once in most months: the longest run is the rhythm. Of two as long, the
