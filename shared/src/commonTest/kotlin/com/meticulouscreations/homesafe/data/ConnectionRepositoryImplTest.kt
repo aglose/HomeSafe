@@ -929,6 +929,43 @@ class ConnectionRepositoryImplTest {
     }
 
     @Test
+    fun aServerFoundGoneIsLookedForAgainUntilItIsBack_withNobodyAskingTwice() = runTest {
+        val h = Harness(this)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+
+        // A page's request fails while the server restarts; it asks once, and nothing answers.
+        h.frigate.tailscaleReachable = false
+        h.frigate.localReachable = false
+        h.repository.checkServer()
+        assertTrue(h.repository.serverUnreachable.value)
+
+        // The server comes back. No network changes, the app stays on screen, nobody asks again.
+        h.frigate.tailscaleReachable = true
+        h.frigate.localReachable = true
+        eventually("the screens told the server is back") { !h.repository.serverUnreachable.value }
+        assertEquals(ConnectionRoute.LOCAL_NETWORK, h.repository.activeConnection.value?.route)
+    }
+
+    @Test
+    fun aNetworkChangeWhileTheServerIsThoughtGoneAsksIt_evenOnTheSameRoute() = runTest {
+        val h = Harness(this)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+        h.frigate.tailscaleReachable = false
+        h.frigate.localReachable = false
+        h.repository.checkServer()
+        assertTrue(h.repository.serverUnreachable.value)
+        val checksWhileDown = h.frigate.sessionChecks(localHost)
+
+        h.frigate.tailscaleReachable = true
+        h.frigate.localReachable = true
+        emitNetworkChange(h)
+        eventually("the session asked about again") { h.frigate.sessionChecks(localHost) > checksWhileDown }
+        eventually("the screens told the server is back") { !h.repository.serverUnreachable.value }
+    }
+
+    @Test
     fun aSavedLoginForAServerTheDeviceHasNeverShownStillNeedsTheServer() = runTest {
         val h = Harness(this, FakeBiometrics(SavedCredentials(serverUrl, "andrew", "pw", localUrl)))
         h.frigate.tailscaleReachable = false
