@@ -33,8 +33,8 @@ internal data class BudgetAsk(
     val problem: String?
         get() = when {
             month != null && !MONTH.matches(month) -> "month is YYYY-MM."
-            from != null && !DAY.matches(from) -> "from is YYYY-MM-DD."
-            to != null && !DAY.matches(to) -> "to is YYYY-MM-DD."
+            from != null && !isDay(from) -> "from is a real day, YYYY-MM-DD."
+            to != null && !isDay(to) -> "to is a real day, YYYY-MM-DD."
             month != null && (from != null || to != null) -> "Give month, or from and to, not both."
             to != null && from == null -> "Give from as well as to."
             from != null && to != null && to < from -> "from is after to."
@@ -54,7 +54,8 @@ internal data class BudgetAsk(
             (from == null || purchase.date >= from) &&
                 (to == null || purchase.date <= to) &&
                 (search == null || purchase.mentions(search)) &&
-                (category == null || purchase.category?.contains(category.trim().replace(' ', '_'), ignoreCase = true) == true) &&
+                // One with no category of Plaid's is under OTHER in the month's figures, so it is here too.
+                (category == null || (purchase.category ?: "OTHER").contains(category.trim().replace(' ', '_'), ignoreCase = true)) &&
                 (card == null || purchase.cardKey in keys || purchase.cardKey.contains(card, ignoreCase = true))
         }.sortedByDescending { it.date }
     }
@@ -67,7 +68,7 @@ internal data class BudgetAsk(
     fun scope(latest: Budget): String = buildString {
         append(
             when {
-                from != null -> "Purchases from $from to ${to ?: "today"}"
+                from != null -> "Purchases from $from ${to?.let { "to $it" } ?: "onward"}"
                 else -> "Purchases in ${month ?: latest.month} only (give from and to to look at other months)"
             },
         )
@@ -81,8 +82,18 @@ internal data class BudgetAsk(
     }
 }
 
-/** Whether [text] is a day as a tool is given one, `YYYY-MM-DD`. */
-internal fun isDay(text: String): Boolean = DAY.matches(text)
+/** Whether [text] is a day as a tool is given one, `YYYY-MM-DD`, and one the calendar has. */
+internal fun isDay(text: String): Boolean {
+    if (!DAY.matches(text)) return false
+    val year = text.take(4).toInt()
+    val leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    val days = when (text.substring(5, 7).toInt()) {
+        2 -> if (leap) 29 else 28
+        4, 6, 9, 11 -> 30
+        else -> 31
+    }
+    return text.drop(8).toInt() <= days
+}
 
 private val DAY = Regex("""\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])""")
 
@@ -103,16 +114,24 @@ internal fun budgetText(ask: BudgetAsk, latest: Budget, budgets: List<Budget>, u
             appendMonth(latest)
         } else {
             appendLine(ask.scope(latest))
+            latest.syncedAtEpochSeconds?.let { appendLine("Cards last read at $it (Unix seconds).") }
+            if (ask.from != null) appendLine("The newest month known is ${latest.month}.")
             appendCoverage(latest)
             if (ask.from != null && ask.search == null && ask.category == null && ask.card == null) {
                 appendLine("Each month's spending, whole months:")
                 budgets.forEach { appendLine("- ${it.month}: ${money(it.spent)} (${it.purchases.size} purchases)") }
             }
+            if (ask.search != null) {
+                val unmatched = budgets.sumOf { month -> month.purchases.count { it.fromAmazon && it.amazon == null } }
+                if (unmatched > 0) appendLine("$unmatched Amazon charges here have no order found, so what they bought can't be searched.")
+            }
         }
         if (unread.isNotEmpty()) appendLine("Couldn't read ${unread.joinToString()}: nothing from those months is here or in any total.")
         appendLine()
     }
-    return head + purchasesText(ask.purchases(budgets, latest.cards), room - head.length)
+    // However long the summary runs, what the purchases come to and what was left out of them still gets said.
+    val summary = if (head.length <= room / 2) head else head.take(room / 2) + "\n…(the rest of this summary is too long to show)\n\n"
+    return summary + purchasesText(ask.purchases(budgets, latest.cards), room - summary.length)
 }
 
 /** The purchases, as many of the newest as [room] has space for, saying what any left out come to. */
@@ -136,6 +155,7 @@ private fun purchasesText(purchases: List<Purchase>, room: Int): String {
                     "from ${omitted.last().date} to ${omitted.first().date}. Use from and to, search, category or card to see them.",
             )
         }
+        if (purchases.any { it.amazon != null }) appendLine("An Amazon order lists all its items, which can be more than that one charge paid for.")
         appendLine("date | amount | merchant | category | card | whose | budget line | anything else")
         lines.forEach { appendLine(it) }
     }.trimEnd()
@@ -150,16 +170,19 @@ private fun purchaseLine(purchase: Purchase): String = buildString {
     purchase.note?.let { append(" | note: ").append(it.oneLine()) }
     val order = purchase.amazon
     when {
-        order != null -> append(" | Amazon order of ").append(order.ordered).append(": ").append(
-            order.items.joinToString("; ") { item ->
-                buildString {
-                    append(item.title.oneLine())
-                    if (item.quantity != 1) append(" x").append(item.quantity)
-                    item.price?.let { append(" at ").append(money(it)) }
-                    item.need?.let { append(" (").append(it.wire).append(')') }
-                }
-            },
-        )
+        order != null -> {
+            append(" | Amazon order of ").append(order.ordered).append(": ").append(
+                order.items.joinToString("; ") { item ->
+                    buildString {
+                        append(item.title.oneLine())
+                        if (item.quantity != 1) append(" x").append(item.quantity)
+                        item.price?.let { append(" at ").append(money(it)) }
+                        item.need?.let { append(" (").append(it.wire).append(')') }
+                    }
+                },
+            )
+            append(" | this charge: ${money(order.essential)} essential, ${money(order.discretionary)} discretionary, ${money(order.unsorted)} not sorted")
+        }
 
         purchase.fromAmazon -> append(" | Amazon order not found")
     }

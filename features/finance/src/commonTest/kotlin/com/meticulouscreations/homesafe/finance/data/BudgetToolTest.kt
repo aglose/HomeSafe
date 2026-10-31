@@ -6,6 +6,8 @@ import com.meticulouscreations.homesafe.finance.domain.AmazonItem
 import com.meticulouscreations.homesafe.finance.domain.AmazonMatch
 import com.meticulouscreations.homesafe.finance.domain.AmazonNeed
 import com.meticulouscreations.homesafe.finance.domain.AmazonOrder
+import com.meticulouscreations.homesafe.finance.domain.BankProblem
+import com.meticulouscreations.homesafe.finance.domain.BankSyncException
 import com.meticulouscreations.homesafe.finance.domain.BucketId
 import com.meticulouscreations.homesafe.finance.domain.BucketSource
 import com.meticulouscreations.homesafe.finance.domain.Budget
@@ -16,11 +18,15 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetPastMonth
 import com.meticulouscreations.homesafe.finance.domain.BudgetRepository
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.LinePick
+import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharges
 import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_error_not_connected
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -264,12 +270,60 @@ class BudgetToolTest {
     }
 
     @Test
+    fun aRefusalEndsARangeAndIsSaidRatherThanCalledAnUnreadMonth() = runTest {
+        months[THIS_MONTH] = budget(THIS_MONTH, listOf(purchase("2026-10-02", 1.0, "AMERICAN")), current = true)
+        refused["2026-09"] = BankSyncException(BankProblem.NOT_ALLOWED, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not allowed")
+
+        val text = ask("from" to "2026-07-01")
+
+        assertEquals("Couldn't read the budget: ${refused["2026-09"]?.message}", text)
+        assertEquals(listOf(null, "2026-09"), asked, "nothing further is asked of a server that refused")
+    }
+
+    @Test
+    fun aSummaryTooLongToFitStillLeavesThePurchases() {
+        val rules = List(3_000) { MerchantRule("a merchant someone remembered $it", BucketId.Family) }
+        val month = budget(THIS_MONTH, many(THIS_MONTH, 50), current = true).copy(config = BudgetConfig(rules = rules))
+
+        val text = budgetText(BudgetAsk(), month, listOf(month))
+
+        assertTrue(text.length <= MAX_TOOL_RESULT_CHARS, "${text.length} characters")
+        assertTrue("the rest of this summary is too long to show" in text)
+        assertTrue("Purchases: 50 coming to" in text)
+        assertEquals(50, text.lines().count { it.startsWith("$THIS_MONTH-") })
+    }
+
+    @Test
+    fun aPurchaseWithNoCategoryIsUnderOtherAsTheMonthCountsIt() = runTest {
+        months[THIS_MONTH] = budget(THIS_MONTH, listOf(purchase("2026-10-02", 3.0, "Mystery", category = null), purchase("2026-10-01", 4.0, "Coffee")), current = true)
+
+        assertTrue("Purchases: 1 coming to 3.00" in ask("category" to "other"))
+    }
+
+    @Test
+    fun whatIsNarrowedStillSaysHowFreshItIsAndWhatItCouldntSearch() = runTest {
+        months[THIS_MONTH] = budget(THIS_MONTH, listOf(purchase("2026-10-02", 3.0, "Amazon").copy(fromAmazon = true)), current = true)
+
+        val text = ask("from" to "2026-10-01", "search" to "dish soap")
+
+        assertTrue("Cards last read at 1790000000" in text)
+        assertTrue("The newest month known is 2026-10." in text)
+        assertTrue("Purchases from 2026-10-01 onward" in text)
+        assertTrue("1 Amazon charges here have no order found" in text)
+    }
+
+    @Test
     fun askingForTooMuchOrInTheWrongShapeIsAnswered() = runTest {
         months[THIS_MONTH] = budget(THIS_MONTH, current = true)
 
         assertTrue("at most 24" in ask("from" to "2020-01-01"))
         assertEquals("month is YYYY-MM.", ask("month" to "October"))
-        assertEquals("from is YYYY-MM-DD.", ask("from" to "2026-09"))
+        assertEquals("from is a real day, YYYY-MM-DD.", ask("from" to "2026-09"))
+        assertEquals("from is a real day, YYYY-MM-DD.", ask("from" to "2026-02-30"))
+        assertEquals("to is a real day, YYYY-MM-DD.", ask("from" to "2025-01-01", "to" to "2025-02-29"))
+        assertTrue(isDay("2024-02-29"))
+        assertFalse(isDay("1900-02-29"))
+        assertFalse(isDay("2026-04-31"))
         assertEquals("Give from as well as to.", ask("to" to "2026-09-01"))
         assertEquals("from is after to.", ask("from" to "2026-09-02", "to" to "2026-09-01"))
         assertEquals("Give month, or from and to, not both.", ask("month" to "2026-09", "from" to "2026-09-01"))
@@ -301,11 +355,13 @@ class BudgetToolTest {
     }
 
     private var lockOnRead = false
+    private val refused = HashMap<String?, BankSyncException>()
 
     private inner class FakeBudgets : BudgetRepository {
         override suspend fun budget(month: String?): Result<Budget> {
             asked += month
             if (lockOnRead) access.goOffline()
+            refused[month]?.let { return Result.failure(it) }
             return months[month ?: THIS_MONTH]?.let { Result.success(it) } ?: Result.failure(IllegalStateException("no such month"))
         }
 

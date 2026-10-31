@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.finance.domain.BankTransactions
 import com.meticulouscreations.homesafe.finance.domain.BankTransactionsRepository
 import com.meticulouscreations.homesafe.finance.domain.LinkedAccount
 import com.meticulouscreations.homesafe.finance.domain.MoneyDirection
+import com.meticulouscreations.homesafe.finance.domain.MoneyTotal
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -36,6 +37,7 @@ class BankTransactionsToolTest {
         BankTransaction(
             date = date,
             amount = amount,
+            currency = more.toMap()["currency"] ?: "USD",
             name = name,
             description = description,
             category = detail?.substringBefore('_'),
@@ -64,8 +66,7 @@ class BankTransactionsToolTest {
         start = "2026-09-01",
         end = "2026-10-31",
         count = count,
-        moneyOut = transactions.filter { it.amount > 0 }.sumOf { it.amount },
-        moneyIn = -transactions.filter { it.amount < 0 }.sumOf { it.amount },
+        totals = transactions.takeIf { it.isNotEmpty() }?.let { listOf(MoneyTotal("USD", it.filter { t -> t.amount > 0 }.sumOf { t -> t.amount }, -it.filter { t -> t.amount < 0 }.sumOf { t -> t.amount })) }.orEmpty(),
         accounts = accounts,
         transactions = transactions,
     )
@@ -124,7 +125,7 @@ class BankTransactionsToolTest {
         val text = ask()
 
         assertTrue("2026-10-01 | -3000.00 | ACME PAYROLL | - | Capital One 360 Checking 5555" in text)
-        assertTrue("1, 0.00 going out and 3000.00 coming in." in text)
+        assertTrue("1, USD 0.00 going out and 3000.00 coming in." in text)
         assertTrue("aren't what was spent or earned" in text)
     }
 
@@ -143,22 +144,55 @@ class BankTransactionsToolTest {
         val all = List(1_000) { transaction("2026-10-${(28 - it / 40).toString().padStart(2, '0')}", 10.0, "Merchant $it", "A long description the bank wrote of it $it", "FOOD_AND_DRINK_OTHER") }
         val query = BankTransactionQuery()
 
-        val text = bankTransactionsText(query, answer(all, count = 1_400).copy(moneyOut = 14_000.0))
+        val text = bankTransactionsText(query, answer(all, count = 1_400).copy(totals = listOf(MoneyTotal("USD", 14_000.0, 0.0))))
 
         assertTrue(text.length <= MAX_TOOL_RESULT_CHARS, "${text.length} characters")
         val shown = text.lines().count { it.startsWith("2026-10-") }
         assertTrue(shown in 1 until 1_000)
-        assertTrue("1400, 14000.00 going out" in text)
+        assertTrue("1400, USD 14000.00 going out" in text)
         assertTrue("only the newest $shown of 1400 are below. Left out: ${1_400 - shown}" in text)
-        assertTrue("${money(14_000.0 - shown * 10.0)} going out" in text)
+        assertTrue("USD ${money(14_000.0 - shown * 10.0)} going out" in text)
         assertTrue(text.indexOf("Accounts:") < text.indexOf("Too many to list"), "the accounts survive it")
     }
 
     @Test
     fun theRelayListingFewerThanMatchedIsSaidEvenWhenAllOfThemFit() {
-        val text = bankTransactionsText(BankTransactionQuery(), answer(listOf(transaction("2026-10-05", 1.0, "One")), count = 1_500).copy(moneyOut = 1_500.0))
+        val text = bankTransactionsText(BankTransactionQuery(), answer(listOf(transaction("2026-10-05", 1.0, "One")), count = 1_500).copy(totals = listOf(MoneyTotal("USD", 1_500.0, 0.0))))
 
         assertTrue("only the newest 1 of 1500 are below. Left out: 1499 from 2026-09-01 to 2026-10-05" in text, text)
+    }
+
+    @Test
+    fun eachCurrencyKeepsItsOwnTotalAndSaysItselfOnEachLine() {
+        val text = bankTransactionsText(
+            BankTransactionQuery(),
+            answer(listOf(transaction("2026-10-05", 200.0, "Hotel", more = arrayOf("currency" to "EUR")), transaction("2026-10-04", 100.0, "Train"))).copy(
+                totals = listOf(MoneyTotal("EUR", 200.0, 0.0), MoneyTotal("USD", 100.0, 5.0), MoneyTotal(null, 7.0, 0.0)),
+            ),
+        )
+
+        assertTrue("EUR 200.00 going out and 0.00 coming in; USD 100.00 going out and 5.00 coming in; no currency given: 7.00 going out" in text, text)
+        assertTrue("2026-10-05 | 200.00 EUR | Hotel" in text)
+        assertTrue("2026-10-04 | 100.00 USD | Train" in text)
+    }
+
+    @Test
+    fun anAccountNoLongerLinkedSaysHowFarBackWhatItLeftGoes() {
+        val gone = LinkedAccount("Old Card 1111", "", "credit", null, null, readsTransactions = false, needsRelink = false, inBudget = true, count = 9, first = "2024-01-01", last = "2025-01-01", unlinked = true)
+
+        val text = bankTransactionsText(BankTransactionQuery(), answer(emptyList()).copy(accounts = listOf(gone)))
+
+        assertTrue("Old Card 1111 (credit), no longer linked, 9 kept from 2024-01-01 to 2025-01-01, in the budget" in text, text)
+    }
+
+    @Test
+    fun aListOfAccountsTooLongToFitStillLeavesTheTransactions() {
+        val many = List(3_000) { LinkedAccount("An account of the household's $it", "A Bank", "depository", "checking", 1.0, readsTransactions = true, needsRelink = false, inBudget = false, count = 1, first = "2026-01-01", last = "2026-01-01") }
+
+        val text = bankTransactionsText(BankTransactionQuery(), answer(listOf(transaction("2026-10-05", 1.0, "One"))).copy(accounts = many))
+
+        assertTrue(text.length <= MAX_TOOL_RESULT_CHARS, "${text.length} characters")
+        assertTrue("2026-10-05 | 1.00 | One" in text)
     }
 
     @Test
@@ -216,10 +250,10 @@ class BankTransactionsToolTest {
 
     private var down = false
     private val requests = ArrayList<Url>()
-    private var relayAnswer = HttpStatusCode.OK to """{"start":"2026-09-01","end":"2026-10-31","count":1,"money_out":528.8,"money_in":0,"unknown_later":1,
+    private var relayAnswer = HttpStatusCode.OK to """{"start":"2026-09-01","end":"2026-10-31","count":1,"totals":[{"currency":"USD","out":528.8,"in":0}],"unknown_later":1,
         "accounts":[{"key":"Capital One Venture 1234","institution":"Capital One","name":"Venture","mask":"1234","type":"credit","subtype":"credit card","balance":812.4,
           "reads_transactions":true,"needs_relink":false,"in_budget":true,"count":2,"first":"2026-09-23","last":"2026-10-05"}],
-        "transactions":[{"date":"2026-09-23","amount":528.8,"name":"AMERICAN ","description":"AMERICAN AIR001","category":"GENERAL_MERCHANDISE","category_detail":"GENERAL_MERCHANDISE_OTHER",
+        "transactions":[{"date":"2026-09-23","amount":528.8,"currency":"USD","name":"AMERICAN ","description":"AMERICAN AIR001","category":"GENERAL_MERCHANDISE","category_detail":"GENERAL_MERCHANDISE_OTHER",
           "confidence":"LOW","pending":false,"kind":"spend","account":"Capital One Venture 1234","account_type":"credit card","channel":"online","website":null,"city":null,"region":null,
           "counterparty":null,"note":null}]}"""
 
@@ -245,7 +279,8 @@ class BankTransactionsToolTest {
         assertEquals("2026-09-01", requests.single().parameters["start"])
         assertEquals("out", requests.single().parameters["direction"])
         assertEquals(null, requests.single().parameters["account"], "what wasn't asked isn't sent")
-        assertEquals(528.8, read.moneyOut)
+        assertEquals(listOf(MoneyTotal("USD", 528.8, 0.0)), read.totals)
+        assertEquals("USD", read.transactions.single().currency)
         assertEquals("AMERICAN AIR001", read.transactions.single().description)
         assertEquals("GENERAL_MERCHANDISE_OTHER", read.transactions.single().categoryDetail)
         assertEquals("credit card", read.transactions.single().accountType)

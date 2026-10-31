@@ -6045,7 +6045,7 @@ class FinanceTransactionsTest(_Budget):
         answer = self.ask()
         self.assertEqual(8, answer["count"])
         self.assertEqual(["Costco", "Shoe Store", "Target", "WITHDRAWAL TO CHECKING", "CAPITAL ONE PAYMENT", "ACME PAYROLL", "INTEREST PAID", "AMERICAN "], [t["name"] for t in answer["transactions"]])
-        self.assertEqual((3004.5, round(528.8 + 54.2 + 800 + 500 + 20 + 30, 2)), (answer["money_in"], answer["money_out"]))
+        self.assertEqual([{"currency": "USD", "out": round(528.8 + 54.2 + 800 + 500 + 20 + 30, 2), "in": 3004.5}], answer["totals"])
 
     def test_none_of_what_was_added_changes_the_budget(self):
         self.store(_txn("fare", 528.8, date="2026-09-23"), _txn("costco", 54.2))
@@ -6060,7 +6060,7 @@ class FinanceTransactionsTest(_Budget):
         (fare,) = self.ask(search="air001")["transactions"]
         self.assertEqual(("AMERICAN ", "AMERICAN AIR0012345 FORT WORTH TX", "online", self.VENTURE, "credit card"),
                          (fare["name"], fare["description"], fare["channel"], fare["account"], fare["account_type"]))
-        self.assertEqual(528.8, self.ask(search="AMERICAN")["money_out"])
+        self.assertEqual(528.8, self.ask(search="AMERICAN")["totals"][0]["out"])
 
     def test_a_merchant_s_cleaned_up_name_leaves_the_bank_s_as_the_description(self):
         self.store(_txn("t1", 5.0, name="COSTCO WHSE #0123", merchant="Costco"), _txn("t2", 6.0, name="COFFEE", merchant=None))
@@ -6072,6 +6072,7 @@ class FinanceTransactionsTest(_Budget):
         self.assertEqual(["CAPITAL ONE PAYMENT"], self.names(category="credit card payment"))
         self.assertEqual(["WITHDRAWAL TO CHECKING", "INTEREST PAID"], self.names(account="savings"))
         self.assertEqual(["CAPITAL ONE PAYMENT", "ACME PAYROLL"], self.names(account="checking"))
+        self.assertEqual(["WITHDRAWAL TO CHECKING", "CAPITAL ONE PAYMENT", "ACME PAYROLL", "INTEREST PAID"], self.names(account="depository"))
         self.assertEqual(["Target"], self.names(account="3333"))
         self.assertEqual(["ACME PAYROLL", "INTEREST PAID"], self.names(direction="in"))
         self.assertEqual(["ACME PAYROLL"], self.names(start="2026-10-01", end="2026-10-01"))
@@ -6081,7 +6082,7 @@ class FinanceTransactionsTest(_Budget):
         limit, relay.TXN_LIST_MAX = relay.TXN_LIST_MAX, 2
         self.addCleanup(setattr, relay, "TXN_LIST_MAX", limit)
         answer = self.ask()
-        self.assertEqual((5, 5.0, 2), (answer["count"], answer["money_out"], len(answer["transactions"])))
+        self.assertEqual((5, 5.0, 2), (answer["count"], answer["totals"][0]["out"], len(answer["transactions"])))
 
     def test_each_account_says_what_becomes_of_it_and_how_far_back_it_goes(self):
         self.everything()
@@ -6092,6 +6093,24 @@ class FinanceTransactionsTest(_Budget):
         self.assertEqual((True, False, 1, "2026-10-05", "2026-10-05"), tuple(accounts["Store Card"][f] for f in fields), "no role yet")
         self.assertEqual((True, False, 2, "2026-10-01", "2026-10-02"), tuple(accounts["360 Checking"][f] for f in fields))
         self.assertEqual((False, False, 0, None, None), tuple(accounts["Mortgage"][f] for f in fields))
+
+    def test_each_currency_has_its_own_total(self):
+        self.store(_txn("usd", 100.0), _txn("eur", 200.0, iso_currency_code="EUR"), _txn("back", -5.0, iso_currency_code="EUR"), _txn("odd", 7.0, iso_currency_code=None, unofficial_currency_code=None))
+        answer = self.ask()
+        self.assertEqual([{"currency": "EUR", "out": 200.0, "in": 5.0}, {"currency": "USD", "out": 100.0, "in": 0.0}, {"currency": None, "out": 7.0, "in": 0.0}], answer["totals"])
+        self.assertEqual({"USD", "EUR", None}, {t["currency"] for t in answer["transactions"]})
+
+    def test_an_account_linked_again_goes_as_far_back_as_what_it_left_and_one_gone_is_still_listed(self):
+        self.store(_txn("old", 5.0, date="2026-01-05"), _txn("pay", -9.0, date="2026-02-01", account="checking"))
+        self.unlink()
+        gone = {a["key"]: a for a in self.ask(start="2026-01-01")["accounts"]}
+        self.assertEqual((True, False, 1), tuple(gone[self.VENTURE][f] for f in ("unlinked", "reads_transactions", "count")))
+        self.assertFalse(gone["Capital One 360 Checking 5555"]["in_budget"])
+        self.assertTrue(gone[self.VENTURE]["in_budget"])
+        self.link("cap2", source="cap")
+        self.store(_txn("new", 6.0, date="2026-10-01", account="venture-again"), item="cap2")
+        again = {a["key"]: a for a in self.ask(start="2026-01-01")["accounts"]}
+        self.assertEqual((False, True, 2, "2026-01-05", "2026-10-01"), tuple(again[self.VENTURE][f] for f in ("unlinked", "reads_transactions", "count", "first", "last")))
 
     def test_what_an_unlinked_account_left_is_still_read_back(self):
         self.everything()
@@ -6680,6 +6699,17 @@ class AmazonBudgetTest(_Budget):
 
     def amazon(self):
         return {t["id"]: t.get("amazon", "absent") for t in self.month()["transactions"]}
+
+    def test_a_bank_account_s_debit_never_takes_a_card_s_order_even_once_the_bank_is_unlinked(self):
+        relay.plaid_post = _FakePlaid()
+        relay.amazon_sync(self.NOW)
+        self.CARDS = {**self.CARDS, "bank": ("Credit Union", [{"account_id": "savings", "name": "Savings", "mask": "7777", "type": "depository", "subtype": "savings", "balances": {"current": 9000.0}}])}
+        self.link("bank")
+        self.store(_txn("debit", 70.34, date="2026-10-02", account="savings", name="Amazon.com*RT4YU8", merchant="Amazon"), item="bank")
+        relay.delete_bank_institution("bank", object(), self.response)
+        self.store(_txn("dog", 70.34, date="2026-10-03", account="platinum", name="Amazon.com*RT4YU8", merchant="Amazon"), item="amex")
+        self.assertEqual("113-7654321-1234567", self.amazon()["dog"]["order"])
+        self.assertEqual("depository", relay.with_db(lambda c: c.execute("SELECT account_type FROM plaid_transactions WHERE txn_id='debit'").fetchone()[0]))
 
     def test_each_email_is_read_once_and_its_items_sorted(self):
         relay.amazon_sync(self.NOW)

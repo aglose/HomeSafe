@@ -33,6 +33,8 @@ data class LinkedAccount(
     val count: Int,
     val first: String?,
     val last: String?,
+    /** No longer linked: all that's left of it is the transactions kept. */
+    val unlinked: Boolean = false,
 )
 
 /** One transaction on a card or a bank account, whatever the budget makes of it. */
@@ -41,6 +43,8 @@ data class BankTransaction(
     val date: String,
     /** As Plaid has it: positive for money going out. */
     val amount: Double,
+    /** Its ISO code, or null when the bank didn't give one. */
+    val currency: String?,
     /** The merchant as the bank or Plaid names it: data, shown as written. */
     val name: String,
     /** What the bank itself wrote, when that says more than [name]: data, shown as written. */
@@ -63,16 +67,18 @@ data class BankTransaction(
     val note: String?,
 )
 
+/** What matches came to in one currency; a null [currency] is those whose bank didn't give one. */
+data class MoneyTotal(val currency: String?, val moneyOut: Double, val moneyIn: Double)
+
 /**
- * What matched a [BankTransactionQuery]. [count], [moneyOut] and [moneyIn] are of every match;
- * [transactions] are as many of the newest as the relay lists.
+ * What matched a [BankTransactionQuery]. [count] and [totals] are of every match; [transactions]
+ * are as many of the newest as the relay lists.
  */
 data class BankTransactions(
     val start: String,
     val end: String,
     val count: Int,
-    val moneyOut: Double,
-    val moneyIn: Double,
+    val totals: List<MoneyTotal>,
     val accounts: List<LinkedAccount>,
     val transactions: List<BankTransaction>,
 )

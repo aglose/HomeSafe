@@ -30,6 +30,7 @@ import com.meticulouscreations.homesafe.finance.domain.LineRule
 import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.LinkedAccount
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
+import com.meticulouscreations.homesafe.finance.domain.MoneyTotal
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
 import com.meticulouscreations.homesafe.finance.domain.PurchaseShare
@@ -195,8 +196,7 @@ internal data class RelayBankTransactions(
     val start: String = "",
     val end: String = "",
     val count: Int = 0,
-    @SerialName("money_out") val moneyOut: Double = 0.0,
-    @SerialName("money_in") val moneyIn: Double = 0.0,
+    val totals: List<RelayMoneyTotal> = emptyList(),
     val accounts: List<RelayLinkedAccount> = emptyList(),
     val transactions: List<RelayBankTransaction> = emptyList(),
 ) {
@@ -204,17 +204,19 @@ internal data class RelayBankTransactions(
         start = start,
         end = end,
         count = count,
-        moneyOut = moneyOut,
-        moneyIn = moneyIn,
-        accounts = accounts.map { LinkedAccount(it.key, it.institution, it.type, it.subtype, it.balance, it.readsTransactions, it.needsRelink, it.inBudget, it.count, it.first, it.last) },
+        totals = totals.map { MoneyTotal(it.currency, it.moneyOut, it.moneyIn) },
+        accounts = accounts.map { LinkedAccount(it.key, it.institution, it.type, it.subtype, it.balance, it.readsTransactions, it.needsRelink, it.inBudget, it.count, it.first, it.last, it.unlinked) },
         transactions = transactions.map {
             BankTransaction(
-                it.date, it.amount, it.name, it.description, it.category, it.categoryDetail, it.confidence, it.pending, it.kind, it.account, it.accountType, it.channel, it.website, it.city,
+                it.date, it.amount, it.currency, it.name, it.description, it.category, it.categoryDetail, it.confidence, it.pending, it.kind, it.account, it.accountType, it.channel, it.website, it.city,
                 it.region, it.counterparty, it.note,
             )
         },
     )
 }
+
+@Serializable
+internal data class RelayMoneyTotal(val currency: String? = null, @SerialName("out") val moneyOut: Double = 0.0, @SerialName("in") val moneyIn: Double = 0.0)
 
 @Serializable
 internal data class RelayLinkedAccount(
@@ -229,12 +231,14 @@ internal data class RelayLinkedAccount(
     val count: Int = 0,
     val first: String? = null,
     val last: String? = null,
+    val unlinked: Boolean = false,
 )
 
 @Serializable
 internal data class RelayBankTransaction(
     val date: String = "",
     val amount: Double = 0.0,
+    val currency: String? = null,
     val name: String = "",
     val description: String? = null,
     val category: String? = null,

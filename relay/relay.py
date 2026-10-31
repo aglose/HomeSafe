@@ -380,6 +380,11 @@ def db() -> sqlite3.Connection:
     for column in TXN_DETAILS:
         if column not in columns:
             conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} TEXT")
+    # What kind of account it was on (`type` of plaid_accounts), which outlives the account: a bank
+    # account's transactions must stay out of the budget once its institution has been unlinked.
+    if "account_type" not in columns:
+        conn.execute("ALTER TABLE plaid_transactions ADD COLUMN account_type TEXT")
+    conn.execute("UPDATE plaid_transactions SET account_type=(SELECT type FROM plaid_accounts a WHERE a.account_id = plaid_transactions.account_id) WHERE account_type IS NULL")
     # What the relay would otherwise overwrite (see "finance history"): each account's balances and
     # each investment's holding as they stood on each of the household's days, the budget's plan as
     # it stood in each month, and the budget sheet on each day it differed from the day before
@@ -9575,7 +9580,7 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
     same one read again (`txn_take_over`). Answers how many rows changed.
     """
     def write(c: sqlite3.Connection) -> int:
-        kept = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND type IN ('credit', 'depository')", (item_id,))}
+        kept = dict(c.execute("SELECT account_id, type FROM plaid_accounts WHERE item_id=? AND type IN ('credit', 'depository')", (item_id,)).fetchall())
         keys = dict(c.execute("SELECT account_id, key FROM plaid_feed_keys").fetchall())
         changed = 0
         for txn in pulled["added"] + pulled["modified"]:
@@ -9585,13 +9590,13 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
             before = c.execute("SELECT pending FROM plaid_transactions WHERE txn_id=?", (row[0],)).fetchone()
             c.execute(
                 "INSERT INTO plaid_transactions (txn_id, item_id, account_id, date, posted, amount, currency, name, merchant, merchant_key, category,"
-                " category_detail, pending, pending_id, owner, kind, updated, " + ", ".join(TXN_DETAILS) + ", card) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " category_detail, pending, pending_id, owner, kind, updated, " + ", ".join(TXN_DETAILS) + ", card, account_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(txn_id) DO UPDATE SET " + ", ".join(f"{column}=excluded.{column}" for column in TXN_DETAILS) + ", item_id=excluded.item_id,"
                 " account_id=excluded.account_id, date=excluded.date, posted=excluded.posted,"
                 " amount=excluded.amount, currency=excluded.currency, name=excluded.name, merchant=excluded.merchant, merchant_key=excluded.merchant_key,"
                 " category=excluded.category, category_detail=excluded.category_detail, pending=excluded.pending, pending_id=excluded.pending_id,"
-                " owner=excluded.owner, kind=excluded.kind, updated=excluded.updated, card=excluded.card, removed_at=NULL, archived_at=NULL",
-                (*row, keys.get(row[2])),
+                " owner=excluded.owner, kind=excluded.kind, updated=excluded.updated, card=excluded.card, account_type=excluded.account_type, removed_at=NULL, archived_at=NULL",
+                (*row, keys.get(row[2]), kept[row[2]]),
             )
             changed += 1
             # Only as it first posts: a change to one already posted has taken over its one already.
@@ -9959,7 +9964,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
         " FROM plaid_transactions t LEFT JOIN plaid_feed_keys k ON k.account_id = t.account_id"
         " WHERE t.removed_at IS NULL AND t.kind != 'payment' AND t.date >= ? AND t.date <= ?"
         # The budget is the cards': what left a checking account is kept for its bills only (see `budget_checking`).
-        " AND t.account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE type = 'depository')"
+        " AND t.account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE type = 'depository') AND COALESCE(t.account_type, '') != 'depository'"
         " AND (k.key IS NOT NULL OR t.pending = 0)"
         " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
         " ORDER BY t.date DESC, t.amount DESC, t.txn_id",
@@ -10050,24 +10055,39 @@ def budget_checking(first: str, last: str, config: dict[str, Any]) -> list[dict[
 
 
 def finance_accounts(config: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every account linked, what becomes of its transactions, and how far back those kept of it go."""
+    """
+    Every account linked, what becomes of its transactions and how far back those kept of it go,
+    by its key in the feed: linked again, an account's id changes and its key doesn't. Then the
+    accounts that are gone but left transactions behind (`unlinked`).
+    """
     rows = with_db(lambda c: c.execute(
         "SELECT k.key, i.institution, a.name, a.mask, a.type, a.subtype, a.current, i.error, i.products, a.account_id"
         " FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id LEFT JOIN plaid_feed_keys k ON k.account_id = a.account_id"
         " ORDER BY i.linked_at, i.item_id, a.name, a.account_id"
     ).fetchall())
-    kept = {account: (count, first, last) for account, count, first, last in with_db(lambda c: c.execute(
-        "SELECT account_id, COUNT(*), MIN(date), MAX(date) FROM plaid_transactions WHERE removed_at IS NULL GROUP BY account_id"
-    ).fetchall())}
+    labels = {row[9]: row[0] or f"{row[2]} {row[3] or ''}".strip() for row in rows}
+    kept: dict[str, list[Any]] = {}
+    for key, account_id, kind, count, first, last in with_db(lambda c: c.execute(
+        "SELECT COALESCE(k.key, t.card), t.account_id, t.account_type, COUNT(*), MIN(t.date), MAX(t.date) FROM plaid_transactions t"
+        " LEFT JOIN plaid_feed_keys k ON k.account_id = t.account_id WHERE t.removed_at IS NULL GROUP BY 1, 2, 3"
+    ).fetchall()):
+        label = key or labels.get(account_id) or account_id
+        was = kept.setdefault(label, [0, first, last, kind])
+        was[:3] = [was[0] + count, min(was[1], first), max(was[2], last)]
     accounts = []
     for key, institution, name, mask, kind, subtype, current, error, products, account_id in rows:
-        label = key or f"{name} {mask or ''}".strip()
-        count, first, last = kept.get(account_id, (0, None, None))
+        label = labels[account_id]
+        count, first, last, _ = kept.pop(label, (0, None, None, None))
         accounts.append({
             "key": label, "institution": institution or "", "name": name, "mask": mask, "type": kind, "subtype": subtype, "balance": current,
             "reads_transactions": kind in ("credit", "depository") and "transactions" in (products or ""), "needs_relink": error in PLAID_RELINK,
             "in_budget": kind == "credit" and (config["roles"].get(label) or "") not in ("", BUDGET_IGNORE),
-            "count": count, "first": first, "last": last,
+            "count": count, "first": first, "last": last, "unlinked": False,
+        })
+    for label, (count, first, last, kind) in sorted(kept.items()):
+        accounts.append({
+            "key": label, "institution": "", "name": label, "mask": None, "type": kind, "subtype": None, "balance": None, "reads_transactions": False, "needs_relink": False,
+            "in_budget": kind != "depository" and (config["roles"].get(label) or "") not in ("", BUDGET_IGNORE), "count": count, "first": first, "last": last, "unlinked": True,
         })
     return accounts
 
@@ -10080,8 +10100,8 @@ def finance_transactions(start: str | None = None, end: str | None = None, searc
     off, money coming into an account and moved between the household's own. An amount is Plaid's:
     positive for money going out. `search` looks through everything said of a transaction,
     `category` through Plaid's category, `account` through the account's name and type, and
-    `direction` is "in" or "out". The totals and the count are of every match; the transactions
-    are the newest `TXN_LIST_MAX` of them.
+    `direction` is "in" or "out". The totals, one for each currency, and the count are of every
+    match; the transactions are the newest `TXN_LIST_MAX` of them.
     """
     now = time.time() if now is None else now
     try:
@@ -10092,7 +10112,7 @@ def finance_transactions(start: str | None = None, end: str | None = None, searc
     if direction not in (None, "in", "out"):
         raise HTTPException(400, {"error": "bad_range", "message": "direction is in or out"})
     rows = with_db(lambda c: c.execute(
-        "SELECT t.date, t.amount, t.name, t.merchant, t.original, t.category, t.category_detail, t.confidence, t.pending, t.kind, k.key, t.card, a.name, a.mask, a.type, a.subtype,"
+        "SELECT t.date, t.amount, t.currency, t.name, t.merchant, t.original, t.category, t.category_detail, t.confidence, t.pending, t.kind, k.key, t.card, a.name, a.mask, a.type, a.subtype,"
         " t.channel, t.website, t.city, t.region, t.counterparty, t.note"
         " FROM plaid_transactions t LEFT JOIN plaid_feed_keys k ON k.account_id = t.account_id LEFT JOIN plaid_accounts a ON a.account_id = t.account_id"
         " WHERE t.removed_at IS NULL AND t.date >= ? AND t.date <= ?"
@@ -10105,21 +10125,24 @@ def finance_transactions(start: str | None = None, end: str | None = None, searc
         return any(asked.casefold() in text.casefold() for text in texts if text)
 
     found = []
-    for date, amount, name, merchant, original, kind, detail, confidence, pending, what, key, card, account_name, mask, account_type, subtype, channel, website, city, region, party, note in rows:
+    totals: dict[str, dict[str, Any]] = {}
+    for date, amount, currency, name, merchant, original, kind, detail, confidence, pending, what, key, card, account_name, mask, account_type, subtype, channel, website, city, region, party, note in rows:
         label = key or card or f"{account_name or ''} {mask or ''}".strip()
         if (search and not has(search, name, merchant, original, party, website, city, region, note)) \
                 or (category and not has(category.strip().replace(" ", "_"), kind, detail)) \
-                or (account and not has(account, label, account_name, subtype)) \
+                or (account and not has(account, label, account_name, subtype, account_type)) \
                 or (direction == "in" and amount >= 0) or (direction == "out" and amount <= 0):
             continue
+        total = totals.setdefault(currency or "", {"currency": currency, "out": 0.0, "in": 0.0})
+        total["out" if amount > 0 else "in"] += abs(amount)
         found.append({
-            "date": date, "amount": round(amount, 2), "name": merchant or name or "", "description": next((d for d in (original, name) if d and d != (merchant or name)), None),
+            "date": date, "amount": round(amount, 2), "currency": currency, "name": merchant or name or "", "description": next((d for d in (original, name) if d and d != (merchant or name)), None),
             "category": kind, "category_detail": detail, "confidence": confidence, "pending": bool(pending), "kind": what, "account": label, "account_type": subtype or account_type,
             "channel": channel, "website": website, "city": city, "region": region, "counterparty": party, "note": note,
         })
     return {
         "start": first.isoformat(), "end": last.isoformat(), "count": len(found),
-        "money_out": round(sum(t["amount"] for t in found if t["amount"] > 0), 2), "money_in": round(-sum(t["amount"] for t in found if t["amount"] < 0), 2),
+        "totals": sorted(({**t, "out": round(t["out"], 2), "in": round(t["in"], 2)} for t in totals.values()), key=lambda t: -(t["out"] + t["in"])),
         "accounts": finance_accounts(budget_config()), "transactions": found[:TXN_LIST_MAX],
     }
 
@@ -11313,7 +11336,7 @@ def amazon_attach(purchases: list[dict[str, Any]], charges: set[str], first: str
     after = (datetime.fromisoformat(last) + timedelta(days=AMAZON_ORDER_WINDOW[1])).date().isoformat()
     nearby = with_db(lambda c: c.execute(
         "SELECT txn_id, date, amount, name, merchant FROM plaid_transactions WHERE removed_at IS NULL AND kind = 'spend' AND date >= ? AND date <= ?"
-        " AND account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE type = 'depository')"
+        " AND account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE type = 'depository') AND COALESCE(account_type, '') != 'depository'"
         " AND txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)",
         (before, after),
     ).fetchall())
