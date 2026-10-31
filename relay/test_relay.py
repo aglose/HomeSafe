@@ -5442,6 +5442,25 @@ class BudgetRecurringTest(_Budget):
         self.assertEqual((34.99, 32.99, 4), (named["Disney+"]["amount"], named["Disney+"]["was"], named["Disney+"]["count"]))
         self.assertEqual((9.99, None, 3, "2026-11-01"), (named["Tesla"]["amount"], named["Tesla"]["was"], named["Tesla"]["count"], named["Tesla"]["next"]))
 
+    def test_a_price_change_is_found_past_another_charge_of_the_merchant_s_at_a_price_in_between(self):
+        self.store(*(_txn(f"s{i}", amount, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, (day, amount) in
+                     enumerate((("2026-06-01", 9.99), ("2026-07-01", 9.99), ("2026-08-01", 9.99), ("2026-09-01", 10.99)))),
+                   _txn("gift", 10.5, date="2026-07-02", name="STREAMFLIX GIFT CARD", merchant="Streamflix"))
+        streamflix = self.named()["Streamflix"]
+        self.assertEqual((10.99, 9.99, 4, "2026-10-01", False), (streamflix["amount"], streamflix["was"], streamflix["count"], streamflix["next"], streamflix["stopped"]))
+
+    def test_an_amazon_membership_is_not_taken_for_a_shipment(self):
+        self.store(*(_txn(f"prime{i}", 14.99, date=day, name="Amazon Prime*1A2B3", merchant="Amazon") for i, day in enumerate(("2026-07-18", "2026-08-18", "2026-09-18"))))
+        self.assertEqual((14.99, 3), (self.named()["Amazon"]["amount"], self.named()["Amazon"]["count"]))
+
+    def test_a_bill_s_share_counts_every_name_it_went_by(self):
+        # The utility's bills, the last under a new name, among as many of its other charges: half of what it charged is not most.
+        self.store(*(_txn(f"bill{i}", amount, date=day, name="CITY POWER", merchant=merchant, category="RENT_AND_UTILITIES") for i, (day, amount, merchant) in
+                     enumerate((("2026-07-14", 120.0, "City Power"), ("2026-08-13", 150.0, "City Power"), ("2026-09-12", 140.0, "City Power Co")))),
+                   *(_txn(f"shop{i}", amount, date=day, name="CITY POWER STORE", merchant="City Power") for i, (day, amount) in
+                     enumerate((("2026-07-20", 30.0), ("2026-08-01", 45.0), ("2026-08-25", 12.0)))))
+        self.assertEqual({}, self.named())
+
     def test_a_bill_can_be_any_amount_and_costs_what_its_last_few_came_to(self):
         self.store(*(_txn(f"amp{i}", amount, date=day, name="ALAMEDA MUNICIPAL POWER", merchant="Alameda Municipal Power", category="RENT_AND_UTILITIES") for i, (day, amount) in
                      enumerate((("2026-07-14", 261.38), ("2026-08-11", 321.98), ("2026-09-02", 530.81), ("2026-09-11", 406.09)))))

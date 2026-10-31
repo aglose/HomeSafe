@@ -1557,6 +1557,24 @@ private fun com.meticulouscreations.homesafe.finance.ui.RealRateBlock(state: com
     - state: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.RecurringBlock(recurring: com.meticulouscreations.homesafe.finance.domain.RecurringCharges, budget: com.meticulouscreations.homesafe.finance.domain.Budget, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - recurring: STABLE (marked @Stable or @Immutable)
+    - budget: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.RecurringRow(charge: com.meticulouscreations.homesafe.finance.domain.RecurringCharge, people: kotlin.collections.List<kotlin.String>, today: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - charge: STABLE (marked @Stable or @Immutable)
+    - people: RUNTIME (requires runtime check)
+    - today: STABLE (String is immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.finance.ui.RefreshButton(refreshing: kotlin.Boolean, onRefresh: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -2429,7 +2447,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.holderLabel(holder: com.
     - holder: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.label(): kotlin.String
+internal fun com.meticulouscreations.homesafe.finance.ui.label(): kotlin.String
   skippable: false
   restartable: false
   params:
@@ -2455,6 +2473,14 @@ private fun com.meticulouscreations.homesafe.finance.ui.nodeValue(node: com.meti
   params:
     - node: STABLE (marked @Stable or @Immutable)
     - state: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.recurringWhen(charge: com.meticulouscreations.homesafe.finance.domain.RecurringCharge, today: kotlin.String): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - charge: STABLE (marked @Stable or @Immutable)
+    - today: STABLE (String is immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.rememberEconAxis(): com.meticulouscreations.homesafe.finance.ui.components.ChartAxis

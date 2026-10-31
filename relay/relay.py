@@ -9687,7 +9687,8 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
         role = config["roles"].get(card) or ""
         if role in ("", BUDGET_IGNORE):
             continue
-        if kind == "spend" and is_amazon_order_charge(name, merchant):
+        shipment = kind == "spend" and is_amazon_order_charge(name, merchant)
+        if shipment:
             amazon.add(txn_id)
         bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules, holder=(config["holders"].get(card) or {}).get(owner or ""))
         line, line_source = budget_line(line_tag, key, category, detail, lines, line_rules)
@@ -9695,6 +9696,8 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
             "id": txn_id, "date": date, "amount": round(amount, 2), "name": merchant or name or "", "merchant": key or None, "category": category,
             "pending": bool(pending), "card": card, "bucket": bucket, "source": source, "kind": kind, "remembered": bool(key) and key in rules,
             "line": line, "line_source": line_source, "line_remembered": bool(key) and key in line_rules,
+            # One of Amazon's shipments, told from the charge's own description ("Amazon Prime*1A2B3" is not), mailbox or not.
+            "amazon_order": shipment,
         })
     amazon_attach(purchases, amazon, first, last)
     return purchases
@@ -9709,29 +9712,38 @@ def _month_on(day: Any) -> Any:
 def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[str, Any]]:
     """
     The longest run among a merchant's charges (oldest first) that came one `rhythm` apart, or two
-    when one was missed, each much the amount of the one before (a bill any amount); of runs as
-    long, the one that ran latest.
+    when one was missed, at the same price to the cent but for one change of price (a bill at any
+    amount); of runs as long, the one that ran latest. The change is counted as the run is built,
+    so another charge of the merchant's at a price in between can't stand in for a renewal.
     """
     low, high = RECURRING_GAPS[rhythm]
     days = [datetime.fromisoformat(c["date"]).date() for c in charges]
-    best: list[tuple[int, int | None]] = []
+    # For each charge, the longest run ending at it with no change of price and with one: its
+    # length (0 for none), and the charge and the count of changes it came from.
+    best: list[list[tuple[int, int | None, int]]] = []
     for i, charge in enumerate(charges):
-        best.append((1, None))
+        best.append([(1, None, 0), (0, None, 0)])
         for j in range(i - 1, -1, -1):
             gap = (days[i] - days[j]).days
             if gap > 2 * high:
                 break
-            alike = _recurring_bill(charge) or abs(charge["amount"] - charges[j]["amount"]) <= max(1.0, RECURRING_DRIFT * max(charge["amount"], charges[j]["amount"]))
-            if (low <= gap <= high or 2 * low <= gap <= 2 * high) and alike and best[j][0] + 1 > best[i][0]:
-                best[i] = (best[j][0] + 1, j)
+            if not (low <= gap <= high or 2 * low <= gap <= 2 * high):
+                continue
+            same = _recurring_bill(charge) or _cents(charge["amount"]) == _cents(charges[j]["amount"])
+            if not same and abs(charge["amount"] - charges[j]["amount"]) > max(1.0, RECURRING_DRIFT * max(charge["amount"], charges[j]["amount"])):
+                continue
+            for changes in (0, 1):
+                length, after = best[j][changes][0], changes + (0 if same else 1)
+                if length and after <= 1 and length + 1 > best[i][after][0]:
+                    best[i][after] = (length + 1, j, changes)
     if not best:
         return []
-    end = max(range(len(best)), key=lambda i: (best[i][0], i))
+    end, changes = max(((i, c) for i in range(len(best)) for c in (0, 1)), key=lambda at: (best[at[0]][at[1]][0], at[0], -at[1]))
     chain = []
     at: int | None = end
     while at is not None:
         chain.append(charges[at])
-        at = best[at][1]
+        at, changes = best[at][changes][1], best[at][changes][2]
     return chain[::-1]
 
 
@@ -9745,7 +9757,8 @@ def _recurring_enough(chain: list[dict[str, Any]], rhythm: str, merchants: list[
     Whether a run of charges is something charged again and again. Three or more of the same
     amount in cents, but for one change of price; or, a month apart, two of the very same amount
     ($49.99, not $15.00: two round sums a month apart could be anything). A bill can be any amount,
-    three or more times, as long as they are most of what that merchant charged meanwhile.
+    three or more times, as long as they are most of what that merchant charged meanwhile, under
+    any of the names it went by in the run.
     """
     cents = [_cents(c["amount"]) for c in chain]
     if len(chain) == 2:
@@ -9753,7 +9766,8 @@ def _recurring_enough(chain: list[dict[str, Any]], rhythm: str, merchants: list[
     if len(chain) < 3:
         return False
     if all(_recurring_bill(c) for c in chain):
-        meanwhile = [p for p in merchants if p["merchant"] == chain[-1]["merchant"] and chain[0]["date"] <= p["date"] <= chain[-1]["date"]]
+        names = {c["merchant"] for c in chain}
+        meanwhile = [p for p in merchants if p["merchant"] in names and chain[0]["date"] <= p["date"] <= chain[-1]["date"]]
         return len(chain) >= RECURRING_SHARE * len(meanwhile)
     return sum(a != b for a, b in zip(cents, cents[1:])) <= 1
 
@@ -9780,7 +9794,7 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
     """
     by_merchant: dict[str, list[dict[str, Any]]] = {}
     for p in sorted(purchases, key=lambda p: (p["date"], p["id"])):
-        if p["kind"] == "spend" and p["amount"] > 0 and not is_amazon_order_charge(p["name"], None):
+        if p["kind"] == "spend" and p["amount"] > 0 and not p.get("amazon_order"):
             by_merchant.setdefault(recurring_merchant(p), []).append(p)
     found = []
     for charges in by_merchant.values():
