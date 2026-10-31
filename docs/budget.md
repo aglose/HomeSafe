@@ -179,7 +179,8 @@ nobody remembers paying for, such as a service the app replaced that is still be
 - **When the next is due.** A month after the last (the month's last day when it is shorter), or a
   week. Past that, the row says it is due and not charged yet. On the day a monthly one is 8 days
   overdue (a weekly one 4) it has **stopped**, cancelled or moved off the cards, and is listed under Stopped for
-  120 days from its last charge, so a cancellation can be seen to have taken.
+  120 days from its last charge, so a cancellation can be seen to have taken. One that stopped
+  where a run at the same price carries on isn't listed: its billing day moved.
 - **A month's worth.** A monthly charge's last price, a weekly one's times 52 / 12. The headline is
   the sum of those still running.
 - **Only the month under way.** It is worked out as of today from the six months the page reads, so

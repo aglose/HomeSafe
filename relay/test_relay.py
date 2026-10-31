@@ -5491,6 +5491,15 @@ class BudgetRecurringTest(_Budget):
         self.assertEqual(("monthly", 3, "2026-07-01", "2026-11-01"), tuple(named["Daily Paper"][k] for k in ("rhythm", "count", "first", "next")))
         self.assertEqual(("weekly", 5, "2026-08-22", "2026-10-10"), tuple(named["Fresh Box"][k] for k in ("rhythm", "count", "first", "next")))
 
+    def test_a_run_is_found_past_older_charges_that_would_make_a_longer_run_that_misses_too_often(self):
+        # May 1, May 30, Jul 29 and Oct 7 are the longest run, but miss twice in three; Aug 11, Sep 11 and Oct 7 is the subscription.
+        self.store(*(_txn(f"c{i}", 9.99, date=day, name="PODCAST PLUS", merchant="Podcast Plus") for i, day in
+                     enumerate(("2026-05-01", "2026-05-30", "2026-07-29", "2026-08-11", "2026-09-11", "2026-10-07"))))
+        charges = self.recurring()["charges"]
+        # The older charges aren't listed as one that stopped: it is the same subscription, its billing day moved.
+        self.assertEqual([("monthly", "2026-10-07", False)], [(r["rhythm"], r["last"], r["stopped"]) for r in charges])
+        self.assertGreaterEqual(charges[0]["count"], 3)
+
     def test_one_stops_on_the_day_it_is_a_grace_overdue(self):
         # Today is the 7th of October: a monthly one due the 29th of September is 8 days overdue, one due the 30th 7.
         self.store(*(_txn(f"late{i}", 12.49, date=day, name="LATE CO", merchant="Late Co") for i, day in enumerate(("2026-07-29", "2026-08-29"))),

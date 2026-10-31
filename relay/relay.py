@@ -9712,20 +9712,21 @@ def _month_on(day: Any) -> Any:
 def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[str, Any]]:
     """
     The longest run among a merchant's charges (oldest first) that came one `rhythm` apart, or two
-    when one was missed, at the same price to the cent but for one change of price (a bill at any
-    amount); of runs as long, the one that ran latest. The change is counted as the run is built,
-    so another charge of the merchant's at a price in between can't stand in for a renewal. A run
-    goes from one of the merchant's names to another only at the very same price (Plaid renaming
-    it): a change of price, or a bill's amount, stays with one name, so City Power's bills don't
-    run on into City Water's, nor a $30 plan into another's at $32.
+    when one was missed but no more often than one wasn't, at the same price to the cent but for
+    one change of price (a bill at any amount); of runs as long, the one that ran latest. The
+    change and the misses are counted as the run is built, so another charge of the merchant's at a
+    price in between can't stand in for a renewal, nor older charges that miss too often take the
+    place of a run that doesn't. A run goes from one of the merchant's names to another only at the
+    very same price (Plaid renaming it): a change of price, or a bill's amount, stays with one
+    name, so City Power's bills don't run on into City Water's, nor a $30 plan into another's at $32.
     """
     low, high = RECURRING_GAPS[rhythm]
     days = [datetime.fromisoformat(c["date"]).date() for c in charges]
-    # For each charge, the longest run ending at it with no change of price and with one: its
-    # length (0 for none), and the charge and the count of changes it came from.
-    best: list[list[tuple[int, int | None, int]]] = []
+    # For each charge, the longest run ending at it by (changes of price, gaps on time less gaps
+    # with one missed): its length, and the charge and the state it came from.
+    best: list[dict[tuple[int, int], tuple[int, int | None, tuple[int, int] | None]]] = []
     for i, charge in enumerate(charges):
-        best.append([(1, None, 0), (0, None, 0)])
+        best.append({(0, 0): (1, None, None)})
         for j in range(i - 1, -1, -1):
             gap = (days[i] - days[j]).days
             if gap > 2 * high:
@@ -9736,18 +9737,18 @@ def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[st
             same = _cents(charge["amount"]) == _cents(charges[j]["amount"]) or (one_name and _recurring_bill(charge) and _recurring_bill(charges[j]))
             if not same and (not one_name or abs(charge["amount"] - charges[j]["amount"]) > max(1.0, RECURRING_DRIFT * max(charge["amount"], charges[j]["amount"]))):
                 continue
-            for changes in (0, 1):
-                length, after = best[j][changes][0], changes + (0 if same else 1)
-                if length and after <= 1 and length + 1 > best[i][after][0]:
-                    best[i][after] = (length + 1, j, changes)
-    if not best:
+            for (changes, balance), (length, _, _) in best[j].items():
+                state = (changes + (0 if same else 1), balance + (1 if gap <= high else -1))
+                if state[0] <= 1 and length + 1 > best[i].get(state, (0, None, None))[0]:
+                    best[i][state] = (length + 1, j, (changes, balance))
+    ends = [(length, i, -state[0], state) for i, states in enumerate(best) for state, (length, _, _) in states.items() if state[1] >= 0]
+    if not ends:
         return []
-    end, changes = max(((i, c) for i in range(len(best)) for c in (0, 1)), key=lambda at: (best[at[0]][at[1]][0], at[0], -at[1]))
+    _, at, _, state = max(ends)
     chain = []
-    at: int | None = end
     while at is not None:
         chain.append(charges[at])
-        at, changes = best[at][changes][1], best[at][changes][2]
+        _, at, state = best[at][state]
     return chain[::-1]
 
 
@@ -9814,7 +9815,8 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
     says what it is, when it last came and when the next is due, what it comes to a month, and
     what it was before when its price changed at the last charge. One whose next charge is well
     overdue has `stopped`, and stays listed a while so a cancellation can be seen to have taken.
-    A merchant can have more than one (a TV service and its add-on). Amazon's shipments are
+    A merchant can have more than one (a TV service and its add-on); a run that stopped where one
+    at the same price carries on is that one, its billing day moved. Amazon's shipments are
     shopping, not something charged again and again.
     """
     by_merchant: dict[str, list[dict[str, Any]]] = {}
@@ -9823,7 +9825,7 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
             by_merchant.setdefault(recurring_merchant(p), []).append(p)
     found = []
     for charges in by_merchant.values():
-        left = list(charges)
+        left, mine = list(charges), []
         while len(left) >= 2:
             # Each amount's own run first, so a $9.99 subscription isn't lost among the same merchant's other charges.
             amounts: dict[int, list[dict[str, Any]]] = {}
@@ -9848,13 +9850,16 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
             # A bill's month is what its last few came to; anything else costs what it was last charged.
             each = sum(c["amount"] for c in chain[-3:]) / len(chain[-3:]) if bill else last["amount"]
             before = chain[-2]["amount"]
-            found.append({
+            mine.append({
                 "merchant": last["merchant"], "name": last["name"], "rhythm": rhythm, "amount": round(last["amount"], 2),
                 "was": round(before, 2) if not bill and _cents(before) != _cents(last["amount"]) else None,
                 "monthly": round(each * 52 / 12 if rhythm == "weekly" else each, 2), "bill": bill,
                 "count": len(chain), "first": chain[0]["date"], "last": last["date"], "next": None if stopped else due.isoformat(),
                 "stopped": stopped, "card": last["card"], "bucket": last["bucket"], "line": last["line"],
             })
+        # A subscription whose billing day moved is one still running, not one that stopped and another that started.
+        going = [r for r in mine if not r["stopped"]]
+        found += [r for r in mine if not (r["stopped"] and any(_cents(g["amount"]) == _cents(r["amount"]) and g["last"] > r["last"] for g in going))]
     running = sorted((r for r in found if not r["stopped"]), key=lambda r: (-r["monthly"], r["name"]))
     ended = sorted((r for r in found if r["stopped"]), key=lambda r: (r["last"], r["name"]), reverse=True)
     return {"monthly": round(sum(r["monthly"] for r in running), 2), "charges": running + ended}
