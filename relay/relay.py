@@ -9572,7 +9572,8 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
                 was = c.execute("SELECT line_tag, line_tag_by FROM plaid_transactions WHERE txn_id=? AND line_tag IS NOT NULL", (row[13],)).fetchone()
                 if was:
                     c.execute("UPDATE plaid_transactions SET line_tag=?, line_tag_by=? WHERE txn_id=? AND line_tag IS NULL", (was[0], was[1], row[0]))
-                was = c.execute("SELECT note, note_by FROM plaid_transactions WHERE txn_id=? AND note IS NOT NULL", (row[13],)).fetchone()
+                # Only as the posted one is first kept: a note taken off it since must not come back from the pending one.
+                was = c.execute("SELECT note, note_by FROM plaid_transactions WHERE txn_id=? AND note IS NOT NULL", (row[13],)).fetchone() if before is None else None
                 if was:
                     c.execute("UPDATE plaid_transactions SET note=?, note_by=? WHERE txn_id=? AND note IS NULL", (was[0], was[1], row[0]))
         for txn_id in pulled["removed"]:

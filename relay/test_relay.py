@@ -5456,6 +5456,15 @@ class BudgetNoteTest(_Budget):
         self.store(_txn("posted", 518.96, pending_transaction_id="held"), removed=["held"])
         self.assertEqual({"posted": "Tire replacement"}, {t["id"]: t["note"] for t in self.month()["transactions"]})
 
+    def test_a_note_taken_off_a_settled_purchase_stays_off_when_plaid_changes_it_again(self):
+        self.store(_txn("held", 518.96, pending=True))
+        self.note("held", "Tire replacement")
+        self.store(_txn("posted", 518.96, pending_transaction_id="held"), removed=["held"])
+        self.note("posted", None)
+        # Plaid sends the settled purchase again (a new merchant name, say), still naming the pending one it replaced.
+        self.store(modified=[_txn("posted", 518.96, pending_transaction_id="held", merchant="Tesla Inc")])
+        self.assertEqual({"posted": None}, {t["id"]: t["note"] for t in self.month()["transactions"]})
+
 
 class BudgetRecurringTest(_Budget):
     """What the cards are charged again and again: found by its rhythm and its amount, when the next one is due, and when one stops."""
