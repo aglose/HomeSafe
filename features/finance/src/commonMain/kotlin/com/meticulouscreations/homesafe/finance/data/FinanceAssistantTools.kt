@@ -7,6 +7,9 @@ import com.meticulouscreations.homesafe.assistant.listing
 import com.meticulouscreations.homesafe.assistant.noInput
 import com.meticulouscreations.homesafe.assistant.stringInput
 import com.meticulouscreations.homesafe.assistant.stringProperty
+import com.meticulouscreations.homesafe.finance.domain.BankProblem
+import com.meticulouscreations.homesafe.finance.domain.BankSyncException
+import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.BudgetRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
@@ -19,9 +22,6 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.assistant_tool_budget
 import homesafe.shared.generated.resources.assistant_tool_finance
 import homesafe.shared.generated.resources.assistant_tool_markets
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.roundToLong
 
@@ -88,16 +88,22 @@ class BudgetTool(private val budgets: BudgetRepository, private val access: Fina
         return if (access.locked.value) LOCKED else budget
     }
 
-    /** Every month [from] touches up to `to` or the month under way, whichever is first, a few at a time: the relay works each one out afresh. */
+    /**
+     * Every month [from] touches up to `to` or the month under way, whichever is first, one at a
+     * time. The server refusing whoever is asking isn't a month that couldn't be read: it ends the
+     * read there, so no answer still on its way puts back what that refusal took off the device.
+     */
     private suspend fun range(ask: BudgetAsk, from: String): String {
         val latest = budgets.budget(null).getOrElse { return "Couldn't read the budget: ${it.message}" }
         val last = minOf(ask.to?.take(7) ?: latest.month, latest.month)
         val months = monthsBetween(from.take(7), last)
         if (months.size > MAX_MONTHS_READ) return "That is ${months.size} months; ask for at most $MAX_MONTHS_READ at a time."
-        val read = months.chunked(MONTHS_READ_AT_ONCE).flatMap { some ->
-            coroutineScope {
-                some.map { month -> async { month to if (month == latest.month) Result.success(latest) else budgets.budget(month) } }.awaitAll()
-            }
+        val read = ArrayList<Pair<String, Result<Budget>>>(months.size)
+        for (month in months) {
+            val budget = if (month == latest.month) Result.success(latest) else budgets.budget(month)
+            val problem = (budget.exceptionOrNull() as? BankSyncException)?.problem
+            if (problem == BankProblem.SIGNED_OUT || problem == BankProblem.NOT_ALLOWED) return "Couldn't read the budget: ${budget.exceptionOrNull()?.message}"
+            read += month to budget
         }
         return budgetText(ask, latest, read.mapNotNull { (_, budget) -> budget.getOrNull() }, unread = read.filter { (_, budget) -> budget.isFailure }.map { it.first })
     }
@@ -105,7 +111,6 @@ class BudgetTool(private val budgets: BudgetRepository, private val access: Fina
     private companion object {
         // As far back as the relay asks Plaid to keep (`PLAID_TXN_DAYS` in `relay/relay.py`).
         const val MAX_MONTHS_READ = 24
-        const val MONTHS_READ_AT_ONCE = 4
     }
 }
 
