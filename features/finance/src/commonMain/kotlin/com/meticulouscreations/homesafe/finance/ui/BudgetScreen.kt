@@ -272,6 +272,8 @@ import homesafe.shared.generated.resources.fin_budget_who_over
 import homesafe.shared.generated.resources.fin_budget_who_subtitle
 import homesafe.shared.generated.resources.fin_budget_who_title
 import homesafe.shared.generated.resources.fin_budget_who_unsorted_note
+import homesafe.shared.generated.resources.fin_recurring_subtitle
+import homesafe.shared.generated.resources.fin_recurring_title
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_body
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_title
 import kotlinx.coroutines.launch
@@ -521,6 +523,11 @@ fun BudgetScreen(
                             }
                         }
                     }
+                    val recurring = budget.recurring
+                    if (recurring != null && budget.showsRecurring) {
+                        item(key = "recurring-h") { SectionHeader(stringResource(Res.string.fin_recurring_title), subtitle = stringResource(Res.string.fin_recurring_subtitle)) }
+                        item(key = "recurring") { RecurringBlock(recurring, budget) }
+                    }
                     val amazon = budget.amazon
                     if (amazon != null && amazon.configured && amazon.charges > 0) {
                         item(key = "amazon-h") { SectionHeader(stringResource(Res.string.fin_amazon_title), subtitle = stringResource(Res.string.fin_amazon_subtitle)) }
@@ -732,6 +739,12 @@ private fun LazyListScope.budgetDeskItems(
                     }
                     if (budget.merchants.isNotEmpty()) {
                         DeskPanel(title = stringResource(Res.string.fin_budget_where_title), bottom = 8.dp) { MerchantBlock(budget) }
+                    }
+                    val recurring = budget.recurring
+                    if (recurring != null && budget.showsRecurring) {
+                        DeskPanel(title = stringResource(Res.string.fin_recurring_title), subtitle = stringResource(Res.string.fin_recurring_subtitle), bottom = 4.dp) {
+                            RecurringBlock(recurring, budget)
+                        }
                     }
                     val amazon = budget.amazon
                     if (amazon != null && amazon.configured && amazon.charges > 0) {
@@ -1159,7 +1172,7 @@ private fun PurchaseTableRow(purchase: Purchase, budget: Budget, busy: Boolean, 
 }
 
 @Composable
-private fun BucketId.label(): String = when (this) {
+internal fun BucketId.label(): String = when (this) {
     is BucketId.Person -> name
     BucketId.Family -> stringResource(Res.string.fin_budget_bucket_family)
     BucketId.Unassigned -> stringResource(Res.string.fin_budget_bucket_unsorted)

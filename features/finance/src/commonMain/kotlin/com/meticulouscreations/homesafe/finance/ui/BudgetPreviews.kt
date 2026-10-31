@@ -28,6 +28,9 @@ import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
+import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
+import com.meticulouscreations.homesafe.finance.domain.RecurringCharges
+import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_budget_error_relay_outdated
@@ -249,6 +252,45 @@ object BudgetFixtures {
     /** On the 12th with the Amazon order emails read. */
     val withAmazon = onPace.let { it.copy(purchases = (it.purchases + amazonPurchases).sortedByDescending { p -> p.date }, amazon = amazonSummary) }
 
+    /**
+     * What the cards are charged again and again, on the 12th: a weekly meal box, a bill, a
+     * streaming service whose price went up and a storage plan whose price came down, one a few
+     * days overdue, and two that stopped.
+     */
+    val recurring = run {
+        fun charge(
+            name: String,
+            amount: Double,
+            next: String?,
+            was: Double? = null,
+            rhythm: RecurringRhythm = RecurringRhythm.MONTHLY,
+            monthly: Double = amount,
+            bill: Boolean = false,
+            card: String = TRAVEL,
+            bucket: BucketId = alex,
+            last: String = "2026-10-01",
+        ) =
+            RecurringCharge(name, rhythm, amount, was, monthly, bill, count = 4, first = "2026-06-01", last = last, next = next, stopped = next == null, cardKey = card, bucket = bucket)
+        RecurringCharges(
+            monthly = 673.30,
+            charges = listOf(
+                charge("Fresh Plate Meals", 89.99, "2026-10-14", was = 79.99, rhythm = RecurringRhythm.WEEKLY, monthly = 389.96, card = FAMILY, bucket = BucketId.Family, last = "2026-10-07"),
+                charge("City Power", 141.02, "2026-11-03", monthly = 138.40, bill = true, card = FAMILY, bucket = BucketId.Family, last = "2026-10-03"),
+                charge("Fiber Net", 59.99, "2026-11-09", card = FAMILY, bucket = BucketId.Family, last = "2026-10-09"),
+                charge("Home Guard Monitoring", 29.99, "2026-10-09", last = "2026-09-09"),
+                charge("Streamflix", 22.99, "2026-11-04", was = 19.99, card = FAMILY, bucket = BucketId.Family, last = "2026-10-04"),
+                charge("Tunebox", 11.99, "2026-10-21", bucket = sam, last = "2026-09-21"),
+                charge("Cloud Drive", 9.99, "2026-10-26", was = 14.99, last = "2026-09-26"),
+                charge("Ride Pass", 9.99, "2026-10-30", bucket = sam, last = "2026-09-30"),
+                charge("Pawsure Pet Insurance", 18.40, null, last = "2026-08-14"),
+                charge("Peak Climbing Gym", 34.99, null, bucket = sam, last = "2026-08-03"),
+            ),
+        )
+    }
+
+    /** On the 12th with what the cards are charged again and again. */
+    val withRecurring = onPace.copy(recurring = recurring)
+
     /** September, over and looked back at, a lighter month than October is shaping up to be. */
     val september = month(day = 30, scale = 0.32, yearMonth = "2026-09", daysInMonth = 30, history = listOf(BudgetPastMonth("2026-04", 4_330.0, 30)) + pastMonths.dropLast(1))
 
@@ -278,10 +320,10 @@ private fun BudgetDeskPreview(state: BudgetUiState) {
     }
 }
 
-@Preview(name = "Desk · Budget, with Amazon orders", widthDp = 1200, heightDp = 2600)
+@Preview(name = "Desk · Budget, with Amazon orders and recurring charges", widthDp = 1200, heightDp = 2600)
 @Composable
 private fun FinanceDeskBudgetPreview() {
-    BudgetDeskPreview(BudgetFixtures.state(BudgetFixtures.withAmazon))
+    BudgetDeskPreview(BudgetFixtures.state(BudgetFixtures.withAmazon.copy(recurring = BudgetFixtures.recurring)))
 }
 
 @Preview(name = "Desk · Budget, September beside October", widthDp = 1200, heightDp = 1500)
@@ -308,6 +350,12 @@ private fun FinanceBudgetLookingBackPreview() {
 @Composable
 private fun FinanceBudgetAmazonScreenPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.withAmazon))
+}
+
+@Preview(name = "Budget · with recurring charges", widthDp = 412, heightDp = 4300)
+@Composable
+private fun FinanceBudgetRecurringScreenPreview() {
+    BudgetPreview(BudgetFixtures.state(BudgetFixtures.withRecurring))
 }
 
 @Preview(name = "Budget · close to the limit", widthDp = 412, heightDp = 1500)

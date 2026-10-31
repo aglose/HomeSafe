@@ -290,6 +290,50 @@ data class AmazonSummary(
     val total: Double get() = essential + discretionary + unsorted + unmatched
 }
 
+/** How often something comes round again. */
+enum class RecurringRhythm { WEEKLY, MONTHLY }
+
+/**
+ * Something the cards are charged again and again (`budget_recurring` in `relay/relay.py`): the
+ * same price every week or month, or a bill at whatever it comes to. [amount] is what it was last
+ * charged, [was] what it was before that when the price changed then, and [monthly] what it comes
+ * to a month (a bill's, what its last few came to). [next] is the day the next one is due (`YYYY-MM-DD`),
+ * and null once it has [stopped]: the next one is well overdue, so it was cancelled or moved.
+ */
+@Immutable
+@Serializable
+data class RecurringCharge(
+    /** The merchant as the bank or Plaid names it: data, shown as written. */
+    val name: String,
+    val rhythm: RecurringRhythm,
+    val amount: Double,
+    val was: Double?,
+    val monthly: Double,
+    /** Electricity, water, the internet: an amount that changes from one to the next. */
+    val bill: Boolean,
+    val count: Int,
+    /** The days it was first and last charged, `YYYY-MM-DD`. */
+    val first: String,
+    val last: String,
+    val next: String?,
+    val stopped: Boolean,
+    val cardKey: String,
+    /** Whose the last charge was. */
+    val bucket: BucketId,
+)
+
+/** What the cards are charged again and again, as of today: those still running, the dearest first, then those that stopped. */
+@Immutable
+@Serializable
+data class RecurringCharges(
+    /** What the ones still running come to a month. */
+    val monthly: Double,
+    val charges: List<RecurringCharge>,
+) {
+    val running: List<RecurringCharge> get() = charges.filterNot { it.stopped }
+    val stopped: List<RecurringCharge> get() = charges.filter { it.stopped }
+}
+
 /** The month's limits. A person with no entry, or a null, has none. */
 @Immutable
 @Serializable
@@ -411,6 +455,8 @@ data class Budget(
     val history: List<BudgetPastMonth>,
     /** What the month's Amazon charges were for, from the order emails; null from a relay that doesn't read them. */
     val amazon: AmazonSummary? = null,
+    /** What the cards are charged again and again; only for the month under way, and null from a relay that doesn't say. */
+    val recurring: RecurringCharges? = null,
 ) {
     /** The cards whose purchases count. */
     val budgetCards: List<BudgetCard> get() = cards.filter { it.role != CardRole.Unset && it.role != CardRole.Ignore }

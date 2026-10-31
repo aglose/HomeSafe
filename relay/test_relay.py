@@ -5405,6 +5405,131 @@ class BudgetMonthTest(_Budget):
         self.assertEqual(before, relay.budget_config())
 
 
+class BudgetRecurringTest(_Budget):
+    """What the cards are charged again and again: found by its rhythm and its amount, when the next one is due, and when one stops."""
+
+    def recurring(self):
+        return self.month()["recurring"]
+
+    def named(self):
+        return {r["name"]: r for r in self.recurring()["charges"]}
+
+    def test_a_subscription_and_a_weekly_box_are_found_and_shopping_is_not(self):
+        self.store(*(_txn(f"tv{i}", 15.99, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-17", "2026-08-17", "2026-09-16"))),
+                   *(_txn(f"kit{i}", 105.93, date=day, name="FACTOR75LLC", merchant="Factor") for i, day in enumerate(("2026-09-14", "2026-09-21", "2026-09-28", "2026-10-05"))),
+                   # The same coffee shop every week is not a subscription: its amount is never the same twice.
+                   *(_txn(f"cafe{i}", amount, date=day, name="GREEN CAFE", merchant="Green Cafe") for i, (day, amount) in
+                     enumerate((("2026-09-05", 6.5), ("2026-09-12", 7.25), ("2026-09-19", 6.75), ("2026-09-26", 7.0)))),
+                   # Nor are Amazon's shipments, however alike.
+                   *(_txn(f"amzn{i}", 25.0, date=day, name="AMAZON MKTPL*2K1", merchant="Amazon") for i, day in enumerate(("2026-08-05", "2026-09-05", "2026-10-05"))))
+        recurring = self.recurring()
+        self.assertEqual(["Factor", "Streamflix"], [r["name"] for r in recurring["charges"]])
+        self.assertEqual({"merchant": "streamflix", "name": "Streamflix", "rhythm": "monthly", "amount": 15.99, "was": None, "monthly": 15.99, "bill": False,
+                          "count": 3, "first": "2026-07-17", "last": "2026-09-16", "next": "2026-10-16", "stopped": False, "card": self.VENTURE, "bucket": None,
+                          "line": None}, recurring["charges"][1])
+        kit = recurring["charges"][0]
+        self.assertEqual(("weekly", 4, "2026-10-12", 459.03), (kit["rhythm"], kit["count"], kit["next"], kit["monthly"]))
+        self.assertEqual(475.02, recurring["monthly"])
+
+    def test_a_price_that_changed_says_what_it_was_and_a_subscription_is_found_among_the_merchant_s_other_charges(self):
+        self.store(*(_txn(f"d{i}", amount, date=day, name="DISNEY PLUS", merchant="Disney+") for i, (day, amount) in
+                     enumerate((("2026-06-23", 32.99), ("2026-07-23", 32.99), ("2026-08-23", 32.99), ("2026-09-23", 34.99)))),
+                   *(_txn(f"sub{i}", 9.99, date=day, name="TESLA SUBSCRIPTION US", merchant="Tesla") for i, day in enumerate(("2026-08-01", "2026-09-01", "2026-10-01"))),
+                   *(_txn(f"charge{i}", amount, date=day, name="TESLA SUPERCHARGER US", merchant="Tesla") for i, (day, amount) in
+                     enumerate((("2026-08-01", 8.77), ("2026-08-17", 7.31), ("2026-09-03", 11.5), ("2026-10-03", 9.0)))))
+        named = self.named()
+        self.assertEqual(["Disney+", "Tesla"], sorted(named))
+        self.assertEqual((34.99, 32.99, 4), (named["Disney+"]["amount"], named["Disney+"]["was"], named["Disney+"]["count"]))
+        self.assertEqual((9.99, None, 3, "2026-11-01"), (named["Tesla"]["amount"], named["Tesla"]["was"], named["Tesla"]["count"], named["Tesla"]["next"]))
+
+    def test_a_price_change_is_found_past_another_charge_of_the_merchant_s_at_a_price_in_between(self):
+        self.store(*(_txn(f"s{i}", amount, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, (day, amount) in
+                     enumerate((("2026-06-01", 9.99), ("2026-07-01", 9.99), ("2026-08-01", 9.99), ("2026-09-01", 10.99)))),
+                   _txn("gift", 10.5, date="2026-07-02", name="STREAMFLIX GIFT CARD", merchant="Streamflix"))
+        streamflix = self.named()["Streamflix"]
+        self.assertEqual((10.99, 9.99, 4, "2026-10-01", False), (streamflix["amount"], streamflix["was"], streamflix["count"], streamflix["next"], streamflix["stopped"]))
+
+    def test_an_amazon_membership_is_not_taken_for_a_shipment(self):
+        self.store(*(_txn(f"prime{i}", 14.99, date=day, name="Amazon Prime*1A2B3", merchant="Amazon") for i, day in enumerate(("2026-07-18", "2026-08-18", "2026-09-18"))))
+        self.assertEqual((14.99, 3), (self.named()["Amazon"]["amount"], self.named()["Amazon"]["count"]))
+
+    def test_a_bill_s_share_counts_every_name_it_went_by(self):
+        # The utility's bills, the last under a new name, among as many of its other charges: half of what it charged is not most.
+        self.store(*(_txn(f"bill{i}", amount, date=day, name="CITY POWER", merchant=merchant, category="RENT_AND_UTILITIES") for i, (day, amount, merchant) in
+                     enumerate((("2026-07-14", 120.0, "City Power"), ("2026-08-13", 150.0, "City Power"), ("2026-09-12", 140.0, "City Power Co")))),
+                   *(_txn(f"shop{i}", amount, date=day, name="CITY POWER STORE", merchant="City Power") for i, (day, amount) in
+                     enumerate((("2026-07-20", 30.0), ("2026-08-01", 45.0), ("2026-08-25", 12.0)))))
+        self.assertEqual({}, self.named())
+
+    def test_two_utilities_that_share_a_first_word_are_two_bills(self):
+        self.store(*(_txn(f"power{i}", 120.0, date=day, name="CITY POWER", merchant="City Power", category="RENT_AND_UTILITIES") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))),
+                   *(_txn(f"water{i}", 35.0, date=day, name="CITY WATER", merchant="City Water", category="RENT_AND_UTILITIES") for i, day in enumerate(("2026-08-03", "2026-09-03", "2026-10-03"))))
+        self.assertEqual({"City Power": 120.0, "City Water": 35.0}, {name: r["monthly"] for name, r in self.named().items()})
+        self.assertEqual(155.0, self.recurring()["monthly"])
+
+    def test_the_same_subscription_on_two_cards_a_fortnight_apart_is_two_monthly_ones(self):
+        self.store(*(_txn(f"a{i}", 9.99, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))))
+        self.store(*(_txn(f"s{i}", 9.99, date=day, account="platinum", name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-15", "2026-08-15", "2026-09-15"))),
+                   item="amex")
+        charges = self.recurring()["charges"]
+        self.assertEqual([("monthly", self.PLATINUM, "2026-10-15"), ("monthly", self.VENTURE, "2026-10-01")],
+                         sorted(((r["rhythm"], r["card"], r["next"]) for r in charges), key=lambda r: r[1]))
+        self.assertEqual(19.98, self.recurring()["monthly"])
+
+    def test_two_prices_from_merchants_that_share_a_first_word_are_not_one_price_change(self):
+        self.store(*(_txn(f"d{i}", 30.0, date=day, name="CLOUD DRIVE", merchant="Cloud Drive") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))),
+                   *(_txn(f"m{i}", 32.0, date=day, name="CLOUD MUSIC", merchant="Cloud Music") for i, day in enumerate(("2026-07-28", "2026-08-28", "2026-09-28"))))
+        self.assertEqual({"Cloud Drive": (30.0, None), "Cloud Music": (32.0, None)}, {name: (r["amount"], r["was"]) for name, r in self.named().items()})
+        self.assertEqual(62.0, self.recurring()["monthly"])
+
+    def test_a_run_that_missed_too_often_long_ago_is_still_found_by_its_recent_charges(self):
+        self.store(*(_txn(f"m{i}", 12.99, date=day, name="NEWSPAPER", merchant="Daily Paper") for i, day in enumerate(("2026-05-01", "2026-07-01", "2026-08-01", "2026-10-01"))),
+                   # A weekly box that came every other week at first, then every week.
+                   *(_txn(f"w{i}", 64.49, date=day, name="FRESH BOX", merchant="Fresh Box") for i, day in
+                     enumerate(("2026-08-08", "2026-08-22", "2026-09-05", "2026-09-19", "2026-09-26", "2026-10-03"))))
+        named = self.named()
+        self.assertEqual(("monthly", 3, "2026-07-01", "2026-11-01"), tuple(named["Daily Paper"][k] for k in ("rhythm", "count", "first", "next")))
+        self.assertEqual(("weekly", 5, "2026-08-22", "2026-10-10"), tuple(named["Fresh Box"][k] for k in ("rhythm", "count", "first", "next")))
+
+    def test_one_stops_on_the_day_it_is_a_grace_overdue(self):
+        # Today is the 7th of October: a monthly one due the 29th of September is 8 days overdue, one due the 30th 7.
+        self.store(*(_txn(f"late{i}", 12.49, date=day, name="LATE CO", merchant="Late Co") for i, day in enumerate(("2026-07-29", "2026-08-29"))),
+                   *(_txn(f"near{i}", 12.49, date=day, name="NEAR CO", merchant="Near Co") for i, day in enumerate(("2026-07-30", "2026-08-30"))),
+                   # A weekly one due the 3rd is 4 days overdue, one due the 4th 3.
+                   *(_txn(f"wlate{i}", 20.49, date=day, name="BOX WEEKLY", merchant="Box Weekly") for i, day in enumerate(("2026-09-12", "2026-09-19", "2026-09-26"))),
+                   *(_txn(f"wnear{i}", 20.49, date=day, name="KIT WEEKLY", merchant="Kit Weekly") for i, day in enumerate(("2026-09-13", "2026-09-20", "2026-09-27"))))
+        self.assertEqual({"Late Co": True, "Near Co": False, "Box Weekly": True, "Kit Weekly": False}, {name: r["stopped"] for name, r in self.named().items()})
+
+    def test_a_bill_can_be_any_amount_and_costs_what_its_last_few_came_to(self):
+        self.store(*(_txn(f"amp{i}", amount, date=day, name="ALAMEDA MUNICIPAL POWER", merchant="Alameda Municipal Power", category="RENT_AND_UTILITIES") for i, (day, amount) in
+                     enumerate((("2026-07-14", 261.38), ("2026-08-11", 321.98), ("2026-09-02", 530.81), ("2026-09-11", 406.09)))))
+        power = self.named()["Alameda Municipal Power"]
+        self.assertEqual((True, None, 3, 329.82, "2026-10-11"), (power["bill"], power["was"], power["count"], power["monthly"], power["next"]))
+
+    def test_two_charges_a_month_apart_count_only_at_a_price_to_the_cent(self):
+        self.store(_txn("sonic1", 49.99, date="2026-08-09", name="SONIC.NET", merchant="Sonic"), _txn("sonic2", 49.99, date="2026-09-09", name="SONIC.NET", merchant="Sonic"),
+                   _txn("stand1", 15.0, date="2026-08-22", name="FLOWER STAND", merchant=None), _txn("stand2", 15.0, date="2026-09-22", name="FLOWER STAND", merchant=None))
+        self.assertEqual(["Sonic"], list(self.named()))
+
+    def test_one_that_stopped_says_so_for_a_while_and_a_renamed_merchant_is_one_run(self):
+        self.store(_txn("l1", 14.43, date="2026-07-13", name="LEMONADE INSURANCE", merchant="Lemonade"), _txn("l2", 14.43, date="2026-08-12", name="LEMONADE INSURANCE", merchant="Lemonade"),
+                   # Stopped too long ago to say.
+                   _txn("g1", 29.99, date="2026-05-01", name="OLD GYM", merchant="Old Gym"), _txn("g2", 29.99, date="2026-06-01", name="OLD GYM", merchant="Old Gym"),
+                   # Plaid named it one thing for two weeks and another the third.
+                   _txn("f1", 105.93, date="2026-09-21", name="FACTOR75LLC", merchant="Factor Inc."), _txn("f2", 105.93, date="2026-09-28", name="FACTOR75LLC", merchant="Factor Inc."),
+                   _txn("f3", 105.93, date="2026-10-05", name="FACTOR75LLC", merchant="Factor75"))
+        recurring = self.recurring()
+        self.assertEqual([("Factor75", False, 3), ("Lemonade", True, 2)], [(r["name"], r["stopped"], r["count"]) for r in recurring["charges"]])
+        self.assertIsNone(recurring["charges"][1]["next"])
+        # What has stopped costs nothing a month.
+        self.assertEqual(459.03, recurring["monthly"])
+
+    def test_only_the_month_under_way_says(self):
+        self.store(*(_txn(f"tv{i}", 15.99, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-17", "2026-08-17", "2026-09-16"))))
+        self.assertIsNone(self.month("2026-09")["recurring"])
+        self.assertEqual(1, len(self.recurring()["charges"]))
+
+
 class BudgetLinesTest(_Budget):
     """The budget sheet's card-paid lines: which purchases fill each, by hand, by rule and on their own, and each against its plan."""
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Budget tab's recurring charges (features/finance BudgetRecurring.kt): what the cards are charged every week or month. -->
+<resources>
+    <string name="fin_recurring_title">Recurring charges</string>
+    <string name="fin_recurring_subtitle">What the cards are charged every week or month</string>
+    <string name="fin_recurring_headline">About %1$s a month</string>
+    <plurals name="fin_recurring_running">
+        <item quantity="one">%1$d still running</item>
+        <item quantity="other">%1$d still running</item>
+    </plurals>
+    <string name="fin_recurring_monthly_next">Monthly · next %1$s</string>
+    <string name="fin_recurring_weekly_next">Weekly · next %1$s</string>
+    <string name="fin_recurring_bill_next">Monthly bill · next %1$s</string>
+    <string name="fin_recurring_monthly_due">Monthly · due %1$s, not charged yet</string>
+    <string name="fin_recurring_weekly_due">Weekly · due %1$s, not charged yet</string>
+    <string name="fin_recurring_bill_due">Monthly bill · due %1$s, not charged yet</string>
+    <string name="fin_recurring_last">Last charged %1$s</string>
+    <string name="fin_recurring_up">Up from %1$s</string>
+    <string name="fin_recurring_down">Down from %1$s</string>
+    <string name="fin_recurring_a_month">%1$s a month</string>
+    <string name="fin_recurring_about">About %1$s</string>
+    <plurals name="fin_recurring_more">
+        <item quantity="one">%1$d more</item>
+        <item quantity="other">%1$d more</item>
+    </plurals>
+    <string name="fin_recurring_fewer">Show fewer</string>
+    <string name="fin_recurring_stopped">Stopped</string>
+    <string name="fin_recurring_how">Found in the cards' last six months: anything charged every week or month at the same price, and bills at whatever they come to. Something cancelled moves to Stopped once its next charge is a week overdue.</string>
+</resources>
