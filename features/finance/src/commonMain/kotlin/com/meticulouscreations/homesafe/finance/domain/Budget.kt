@@ -147,8 +147,13 @@ data class BudgetCard(
 @Serializable
 data class BudgetBucket(val id: BucketId, val spent: Double, val limit: Double?, val count: Int)
 
-/** How a purchase came to be in its bucket. */
-enum class BucketSource { MANUAL, ACCOUNT, BANK, RULE, NONE }
+/** How a purchase came to be in its bucket; [AMAZON] by its order's essentials (the family's) and the rest (whoever ordered it). */
+enum class BucketSource { MANUAL, ACCOUNT, BANK, RULE, AMAZON, NONE }
+
+/** Part of a purchase's money in one bucket: an Amazon charge's essentials are the family's, the rest whoever ordered it. */
+@Immutable
+@Serializable
+data class PurchaseShare(val bucket: BucketId, val amount: Double)
 
 /** How a purchase came to be in its budget line: by hand, by its merchant's rule, on its own (by what it is), or it is in none. */
 enum class LineSource { MANUAL, RULE, AUTO, NONE }
@@ -215,8 +220,15 @@ data class Purchase(
     val fromAmazon: Boolean = false,
     /** The Amazon order it paid for, once the relay matched it to one of the order emails. */
     val amazon: AmazonOrder? = null,
+    /** What someone wrote on it ("a tire for the Tesla"): data, shown as written. */
+    val note: String? = null,
+    /** Its money shared out between buckets, the largest first, when it is (an Amazon charge, [BucketSource.AMAZON]); empty when all of it is in [bucket]. */
+    val shares: List<PurchaseShare> = emptyList(),
 ) {
     val isRefund: Boolean get() = amount < 0
+
+    /** Whether any of its money is in [bucket]: an Amazon charge is in each bucket a share of it is. */
+    fun isIn(bucket: BucketId): Boolean = if (shares.isEmpty()) this.bucket == bucket else shares.any { it.bucket == bucket }
 }
 
 /** Whether something bought is a need or a want. [wire] is the relay's name for it (`AMAZON_NEEDS` in `relay/relay.py`). */
@@ -474,7 +486,7 @@ data class Budget(
     val budgetCards: List<BudgetCard> get() = cards.filter { it.role != CardRole.Unset && it.role != CardRole.Ignore }
 
     /** The purchases on a shared card that nobody has been put to yet. */
-    val unassigned: List<Purchase> get() = purchases.filter { it.bucket == BucketId.Unassigned }
+    val unassigned: List<Purchase> get() = purchases.filter { it.isIn(BucketId.Unassigned) }
 }
 
 /**
@@ -496,6 +508,9 @@ interface BudgetRepository {
     suspend fun tagLine(purchaseId: String, line: LinePick, remember: Boolean): Result<Budget>
 
     suspend fun forgetLineRule(merchantKey: String): Result<Budget>
+
+    /** Writes [note] on a purchase, shown with it to everyone who sees the budget; null or blank takes it off. */
+    suspend fun note(purchaseId: String, note: String?): Result<Budget>
 
     /**
      * Says whether one item of an Amazon order was essential or discretionary; null lets it sort

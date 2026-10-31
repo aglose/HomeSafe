@@ -5421,6 +5421,36 @@ class BudgetMonthTest(_Budget):
         self.assertEqual(before, relay.budget_config())
 
 
+class BudgetNoteTest(_Budget):
+    """A note written on a purchase: kept, shown with it, taken off, and kept when it settles."""
+
+    def note(self, txn_id, note):
+        return relay.put_budget_transaction_note(txn_id, types.SimpleNamespace(note=note), object(), self.response)
+
+    def test_a_note_is_shown_with_its_purchase_and_a_blank_one_takes_it_off(self):
+        self.store(_txn("tire", 518.96, name="TESLA", merchant="Tesla"), _txn("other", 20.0))
+        month = self.note("tire", "  Tire replacement for\nthe Model Y  ")
+        self.assertEqual({"tire": "Tire replacement for the Model Y", "other": None}, {t["id"]: t["note"] for t in month["transactions"]})
+        self.assertEqual("alex", relay.with_db(lambda c: c.execute("SELECT note_by FROM plaid_transactions WHERE txn_id='tire'").fetchone()[0]))
+        self.note("tire", "   ")
+        self.assertIsNone(next(t["note"] for t in self.month()["transactions"] if t["id"] == "tire"))
+
+    def test_a_note_too_long_or_on_a_purchase_that_is_gone_is_refused(self):
+        self.store(_txn("tire", 518.96))
+        with self.assertRaises(relay.HTTPException) as long:
+            self.note("tire", "x" * (relay.BUDGET_NOTE_MAX + 1))
+        self.assertEqual("bad_budget", long.exception.detail["error"])
+        with self.assertRaises(relay.HTTPException) as gone:
+            self.note("nothing", "hello")
+        self.assertEqual(404, gone.exception.status_code)
+
+    def test_a_note_on_a_pending_purchase_stays_when_it_settles(self):
+        self.store(_txn("held", 518.96, pending=True))
+        self.note("held", "Tire replacement")
+        self.store(_txn("posted", 518.96, pending_transaction_id="held"), removed=["held"])
+        self.assertEqual({"posted": "Tire replacement"}, {t["id"]: t["note"] for t in self.month()["transactions"]})
+
+
 class BudgetRecurringTest(_Budget):
     """What the cards are charged again and again: found by its rhythm and its amount, when the next one is due, and when one stops."""
 
@@ -6210,6 +6240,42 @@ class AmazonBudgetTest(_Budget):
         self.assertEqual(("shipment", 32.47), (found["toy"]["match"], found["toy"]["discretionary"]))
         summary = self.month()["amazon"]
         self.assertEqual({"configured": True, "read_at": self.NOW, "failed": [], "charges": 4, "essential": 97.39, "discretionary": 119.05, "unsorted": 0.0, "unmatched": 15.0}, summary)
+
+    def test_essentials_are_the_family_s_and_the_rest_is_whoever_s_mailbox_the_order_came_to(self):
+        relay.AMAZON_GMAIL_TOKENS = {"andrew": "refresh"}
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"),
+                   _txn("dog", 70.34, date="2026-10-02", name="Amazon.com*RT4YU8", merchant="Amazon"),
+                   _txn("mystery", 15.0, date="2026-10-06", name="AMZN Mktp US*111", merchant="Amazon"))
+        found = {t["id"]: t for t in self.month()["transactions"]}
+        # Paper towels and a LEGO set: the towels are the family's, the LEGO set Andrew's, whose mailbox the order came to.
+        self.assertEqual(("person:Andrew", "amazon", [{"bucket": "person:Andrew", "amount": 86.58}, {"bucket": "family", "amount": 27.05}]),
+                         (found["big"]["bucket"], found["big"]["source"], found["big"]["shares"]))
+        self.assertEqual(("family", [{"bucket": "family", "amount": 70.34}]), (found["dog"]["bucket"], found["dog"]["shares"]))
+        # No order found: it goes where it would on its own.
+        self.assertEqual((None, "none"), (found["mystery"]["bucket"], found["mystery"]["source"]))
+        self.assertNotIn("shares", found["mystery"])
+        # Each bucket counts its shares.
+        self.assertEqual((86.58, 97.39, 15.0), tuple(self.bucket(b)["spent"] for b in ("person:Andrew", "family", "unassigned")))
+        self.assertEqual(2, self.bucket("family")["count"])
+
+    def test_an_amazon_charge_put_in_a_bucket_by_hand_goes_there_whole(self):
+        relay.AMAZON_GMAIL_TOKENS = {"andrew": "refresh"}
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"))
+        relay.put_budget_transaction("big", types.SimpleNamespace(bucket="person:Sarah", remember=False), object(), self.response)
+        big = next(t for t in self.month()["transactions"] if t["id"] == "big")
+        self.assertEqual(("person:Sarah", "manual"), (big["bucket"], big["source"]))
+        self.assertNotIn("shares", big)
+        self.assertEqual((113.63, 0.0), (self.bucket("person:Sarah")["spent"], self.bucket("family")["spent"]))
+
+    def test_a_mailbox_that_is_no_one_s_leaves_the_rest_where_the_charge_goes(self):
+        relay.AMAZON_GMAIL_TOKENS = {"sam": "refresh"}
+        relay.amazon_sync(self.NOW)
+        self.store(_txn("big", 113.63, date="2026-10-05", name="AMZN Mktp US*2K1AB3CD4", merchant="Amazon"))
+        big = next(t for t in self.month()["transactions"] if t["id"] == "big")
+        self.assertEqual([{"bucket": None, "amount": 86.58}, {"bucket": "family", "amount": 27.05}], big["shares"])
+        self.assertIsNone(big["bucket"])
 
     def test_an_item_said_by_hand_stays_said_and_taking_it_back_sorts_it_again(self):
         relay.amazon_sync(self.NOW)

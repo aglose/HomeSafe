@@ -28,6 +28,7 @@ import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
+import com.meticulouscreations.homesafe.finance.domain.PurchaseShare
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharges
 import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
@@ -109,6 +110,13 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
                     put("remember", remember)
                 },
             )
+        }.answer()
+    }
+
+    suspend fun note(serverUrl: String, purchaseId: String, note: String?): Result<Budget> = suspendRunCatching {
+        httpClient.put(PushRelayApi.relayUrl(serverUrl, "/finance/budget/transactions/$purchaseId/note")) {
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject { put("note", note) })
         }.answer()
     }
 
@@ -296,6 +304,7 @@ internal data class RelayBudget(
                     "account" -> BucketSource.ACCOUNT
                     "bank" -> BucketSource.BANK
                     "rule" -> BucketSource.RULE
+                    "amazon" -> BucketSource.AMAZON
                     else -> BucketSource.NONE
                 },
                 remembered = txn.remembered,
@@ -309,6 +318,8 @@ internal data class RelayBudget(
                 lineRemembered = txn.lineRemembered,
                 fromAmazon = txn.fromAmazon,
                 amazon = txn.amazon?.toDomain(),
+                note = txn.note?.takeIf { it.isNotBlank() },
+                shares = txn.shares.map { PurchaseShare(BucketId.ofWire(it.bucket), it.amount) },
             )
         },
         history = history.map { BudgetPastMonth(it.month, it.spent, it.days) },
@@ -409,7 +420,13 @@ internal data class RelayPurchase(
     @SerialName("line_remembered") val lineRemembered: Boolean = false,
     @SerialName("from_amazon") val fromAmazon: Boolean = false,
     val amazon: RelayAmazonOrder? = null,
+    val note: String? = null,
+    val shares: List<RelayPurchaseShare> = emptyList(),
 )
+
+/** A share of a purchase's money in one bucket (`amazon_shares` in relay.py); a null bucket is nobody's yet. */
+@Serializable
+internal data class RelayPurchaseShare(val bucket: String? = null, val amount: Double = 0.0)
 
 /** What an Amazon charge paid for (`amazon_attach` in relay.py). */
 @Serializable

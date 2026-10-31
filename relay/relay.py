@@ -358,6 +358,10 @@ def db() -> sqlite3.Connection:
     for column in ("line_tag", "line_tag_by"):
         if column not in columns:
             conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} TEXT")
+    # A note someone wrote on a purchase ("a tire for the Tesla"), and who wrote it.
+    for column in ("note", "note_by"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} TEXT")
     conn.execute("CREATE TABLE IF NOT EXISTS budget_line_rules (merchant_key TEXT PRIMARY KEY, line TEXT NOT NULL, by TEXT, at REAL)")
     # What Amazon's emails said was ordered (see "Amazon orders"): each email read once
     # (`amazon_emails`), each order with the day it was placed, its total when an email gave one
@@ -9204,6 +9208,8 @@ BUDGET_LINE_GUESSES: tuple[tuple[re.Pattern[str], frozenset[str], re.Pattern[str
 # The share of the month's limit at which the phones are first told, and then told it is passed.
 BUDGET_TOTAL_PERCENTS = (80, 100)
 BUDGET_HISTORY_MONTHS = 6
+# The longest note a purchase can carry: a line or two, not a document.
+BUDGET_NOTE_MAX = 280
 BUDGET_TOP_MERCHANTS = 8
 # The accounts whose withdrawals are kept beside the cards' purchases, for the bills paid from
 # them (see `budget_checking`), as SQL on plaid_accounts; and the state key that says their
@@ -9251,6 +9257,11 @@ class BudgetTag(BaseModel):
     bucket: str | None = None
     # Whether every purchase from this merchant goes the same way from now on.
     remember: bool = False
+
+
+class BudgetNote(BaseModel):
+    # What someone wants to remember about a purchase ("a tire for the Tesla"), or null (or nothing but spaces) to take it off.
+    note: str | None = None
 
 
 class BudgetLineTag(BaseModel):
@@ -9378,6 +9389,9 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
                 was = c.execute("SELECT line_tag, line_tag_by FROM plaid_transactions WHERE txn_id=? AND line_tag IS NOT NULL", (row[13],)).fetchone()
                 if was:
                     c.execute("UPDATE plaid_transactions SET line_tag=?, line_tag_by=? WHERE txn_id=? AND line_tag IS NULL", (was[0], was[1], row[0]))
+                was = c.execute("SELECT note, note_by FROM plaid_transactions WHERE txn_id=? AND note IS NOT NULL", (row[13],)).fetchone()
+                if was:
+                    c.execute("UPDATE plaid_transactions SET note=?, note_by=? WHERE txn_id=? AND note IS NULL", (was[0], was[1], row[0]))
         for txn_id in pulled["removed"]:
             changed += c.execute("UPDATE plaid_transactions SET removed_at=? WHERE txn_id=? AND item_id=? AND removed_at IS NULL", (now, txn_id, item_id)).rowcount
         c.execute("DELETE FROM plaid_transactions WHERE removed_at IS NOT NULL AND removed_at < ?", (now - TXN_TOMBSTONE_SECONDS,))
@@ -9695,7 +9709,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     Each of Amazon's charges also says what its order was (see "Amazon orders").
     """
     rows = with_db(lambda c: c.execute(
-        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key, t.category_detail, t.line_tag"
+        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key, t.category_detail, t.line_tag, t.note"
         " FROM plaid_transactions t JOIN plaid_feed_keys k ON k.account_id = t.account_id"
         " JOIN plaid_accounts a ON a.account_id = t.account_id AND a.type = 'credit'"
         " WHERE t.removed_at IS NULL AND t.kind != 'payment' AND t.date >= ? AND t.date <= ?"
@@ -9708,7 +9722,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
     lines = config["card_paid_lines"]
     purchases = []
     amazon: set[str] = set()
-    for txn_id, date, amount, name, merchant, key, category, pending, owner, kind, tag, card, detail, line_tag in rows:
+    for txn_id, date, amount, name, merchant, key, category, pending, owner, kind, tag, card, detail, line_tag, note in rows:
         role = config["roles"].get(card) or ""
         if role in ("", BUDGET_IGNORE):
             continue
@@ -9722,10 +9736,44 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
             "pending": bool(pending), "card": card, "bucket": bucket, "source": source, "kind": kind, "remembered": bool(key) and key in rules,
             "line": line, "line_source": line_source, "line_remembered": bool(key) and key in line_rules,
             # One of Amazon's shipments, told from the charge's own description ("Amazon Prime*1A2B3" is not), mailbox or not.
-            "amazon_order": shipment,
+            "amazon_order": shipment, "note": note,
         })
     amazon_attach(purchases, amazon, first, last)
+    amazon_shares(purchases, config["people"])
     return purchases
+
+
+def amazon_shares(purchases: list[dict[str, Any]], people: list[str]) -> None:
+    """
+    Shares each Amazon charge whose order was found out between the buckets by what it was for:
+    the essentials are the family's, and the rest is the person whose mailbox the order came to
+    ("andrew" is Andrew's). What nobody has sorted yet, and the rest when the mailbox is no one
+    of the budget's people, stays where the charge would go on its own. A charge someone put in
+    a bucket by hand goes there whole. Each such purchase gets its `shares` ({bucket, amount},
+    the largest first, in whole cents that add up to it) and is in the bucket of the largest,
+    by "amazon".
+    """
+    for p in purchases:
+        order = p.get("amazon")
+        if not order or p["source"] == "manual":
+            continue
+        mailbox = (order.get("mailbox") or "").lower()
+        person = next((BUDGET_PERSON + name for name in people if name.lower() == mailbox), None)
+        cents: dict[str | None, int] = {}
+        for need, bucket in (("essential", BUDGET_FAMILY), ("discretionary", person or p["bucket"]), ("unsorted", p["bucket"])):
+            cents[bucket] = cents.get(bucket, 0) + _cents(order.get(need) or 0.0)
+        # The order's split is in cents of the charge already; any odd cent goes with the charge's own bucket.
+        cents[p["bucket"]] = cents.get(p["bucket"], 0) + _cents(p["amount"]) - sum(cents.values())
+        shares = sorted(((bucket, amount) for bucket, amount in cents.items() if amount), key=lambda share: -share[1])
+        if not shares:
+            continue
+        p["shares"] = [{"bucket": bucket, "amount": amount / 100} for bucket, amount in shares]
+        p["bucket"], p["source"] = shares[0][0], "amazon"
+
+
+def purchase_shares(p: dict[str, Any]) -> list[dict[str, Any]]:
+    """Where a purchase's money goes: shared out between buckets (an Amazon charge, see `amazon_shares`), or all of it in its one bucket."""
+    return p.get("shares") or [{"bucket": p["bucket"], "amount": p["amount"]}]
 
 
 def budget_checking(first: str, last: str, config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -9945,8 +9993,10 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
         spent_by_month[p["date"][:7]] = spent_by_month.get(p["date"][:7], 0.0) + p["amount"]
 
     def bucket(bucket_id: str | None, kind: str, name: str | None, limit: float | None) -> dict[str, Any]:
-        mine = [p for p in purchases if p["bucket"] == bucket_id]
-        return {"id": bucket_id or "unassigned", "kind": kind, "name": name, "spent": round(sum(p["amount"] for p in mine), 2), "limit": limit, "count": len(mine)}
+        # An Amazon charge counts for each bucket its shares are in (see `amazon_shares`).
+        mine = [(p["id"], share["amount"]) for p in purchases for share in purchase_shares(p) if share["bucket"] == bucket_id]
+        return {"id": bucket_id or "unassigned", "kind": kind, "name": name, "spent": round(sum(amount for _, amount in mine), 2), "limit": limit,
+                "count": len({txn_id for txn_id, _ in mine})}
 
     # Each card-paid line against what the sheet plans for it, and what it usually comes to: the
     # average of the months before this one, of those in which the cards were used at all (one
@@ -10214,6 +10264,29 @@ def put_budget_transaction_line(txn_id: str, body: BudgetLineTag, request: Reque
         return row
 
     row = with_db(tag)
+    if row is None:
+        raise HTTPException(404, {"error": "not_found", "message": "That purchase isn't there any more"})
+    return budget_month(row[0][:7])
+
+
+@app.put("/finance/budget/transactions/{txn_id}/note")
+def put_budget_transaction_note(txn_id: str, body: BudgetNote, request: Request, response: Response) -> dict[str, Any]:
+    """Writes a note on a purchase, shown with it to everyone who sees the budget; a null or blank one takes it off. Answers its month."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
+    note = " ".join((body.note or "").split()) or None
+    if note is not None and len(note) > BUDGET_NOTE_MAX:
+        raise _budget_refusal(f"a note is up to {BUDGET_NOTE_MAX} characters")
+
+    def write(c: sqlite3.Connection) -> tuple | None:
+        row = c.execute("SELECT date FROM plaid_transactions WHERE txn_id=? AND removed_at IS NULL", (txn_id,)).fetchone()
+        if row is None:
+            return None
+        c.execute("UPDATE plaid_transactions SET note=?, note_by=? WHERE txn_id=?", (note, user if note else None, txn_id))
+        c.commit()
+        return row
+
+    row = with_db(write)
     if row is None:
         raise HTTPException(404, {"error": "not_found", "message": "That purchase isn't there any more"})
     return budget_month(row[0][:7])
@@ -10847,8 +10920,9 @@ def amazon_orders_near(first: str, last: str) -> list[dict[str, Any]]:
     end = (datetime.fromisoformat(last) + timedelta(days=-AMAZON_ORDER_WINDOW[0])).date().isoformat()
 
     def read(c: sqlite3.Connection) -> list[dict[str, Any]]:
-        orders = {order_id: {"id": order_id, "date": ordered, "total": total, "items": [], "shipments": []}
-                  for order_id, ordered, total in c.execute("SELECT order_id, ordered, total FROM amazon_orders WHERE ordered >= ? AND ordered <= ? ORDER BY ordered, order_id", (start, end))}
+        orders = {order_id: {"id": order_id, "date": ordered, "total": total, "mailbox": mailbox, "items": [], "shipments": []}
+                  for order_id, ordered, total, mailbox in c.execute(
+                      "SELECT order_id, ordered, total, mailbox FROM amazon_orders WHERE ordered >= ? AND ordered <= ? ORDER BY ordered, order_id", (start, end))}
         for order_id, pos, title, quantity, price, need, by in c.execute("SELECT order_id, pos, title, quantity, price, need, need_by FROM amazon_items ORDER BY order_id, pos"):
             if order_id in orders:
                 orders[order_id]["items"].append({"pos": pos, "title": title, "quantity": quantity, "price": price, "need": need, "need_by": by})
@@ -10919,7 +10993,7 @@ def amazon_attach(purchases: list[dict[str, Any]], charges: set[str], first: str
         parts = match.get("parts") or {order["id"]: _cents(p["amount"])}
         # A charge for several orders' shipments: each order's share by its own items, the items all listed.
         shares = [amazon_split(cents / 100, by_id[order_id]["items"]) for order_id, cents in sorted(parts.items())]
-        p["amazon"] = {"order": order["id"], "match": match["match"], "ordered": order["date"],
+        p["amazon"] = {"order": order["id"], "match": match["match"], "ordered": order["date"], "mailbox": order.get("mailbox"),
                        "items": [{"order": order_id, **{k: item[k] for k in ("pos", "title", "quantity", "price", "need", "need_by")}}
                                  for order_id in sorted(parts, key=lambda o: o != order["id"]) for item in by_id[order_id]["items"]],
                        **{need: round(sum(share[need] for share in shares), 2) for need in (*AMAZON_NEEDS, "unsorted")}}

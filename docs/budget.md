@@ -63,9 +63,15 @@ role.
 
 ### Whose a purchase is
 
-In this order: a tag someone made by hand; the card being one person's own; on a shared card,
-whoever the bank's mark for the cardholder belongs to; a remembered shop; the family, when the card
-is the family's; otherwise nobody yet.
+In this order: a tag someone made by hand; an Amazon charge whose order was found, shared out by
+what it was for (see "Amazon orders"); the card being one person's own; on a shared card, whoever
+the bank's mark for the cardholder belongs to; a remembered shop; the family, when the card is the
+family's; otherwise nobody yet.
+
+**Notes.** Tap a purchase and write what it was for under **Note** ("A tire for the Tesla"): it is
+shown in italics under the purchase, to everyone who sees the budget, and the purchase search finds
+it. Up to 280 characters; **Remove note** takes it off. A note on a pending purchase stays when it
+settles (`PUT /finance/budget/transactions/{id}/note`, kept in `plaid_transactions.note`).
 
 **Whose card is which.** Banks mark each purchase with who made it, each in its own way. American
 Express writes the cardholder's name ("SAM RIVERA 1006"), which is matched to the budget's people by
@@ -245,6 +251,14 @@ paid for:
   what the priced ones do on average. Until the order's own email is read, its items are the ones
   its shipment emails named. For a shipment that is the whole order's mix, since a shipment's email
   rarely says which items it carried.
+- **Whose it is.** The essentials of a charge are the family's, and the discretionary part is the
+  person whose mailbox the order came to (mailbox "andrew" is Andrew's, by name, ignoring case).
+  What nobody has sorted yet, and the discretionary part of an order to a mailbox that is none of
+  the budget's people, stays where the charge would go on its own. So one charge can count for two
+  buckets: it carries `shares` ({bucket, amount}, the largest first, in whole cents that add up to
+  it), is in the bucket of the largest (source `"amazon"`), and each bucket's total counts its
+  share. Its chip names each bucket ("Andrew · Family") and its sheet each share's amount. Putting
+  it in a bucket by hand puts all of it there, as for any purchase.
 - **What the app gets.** Each Amazon purchase in `/finance/budget` carries `from_amazon` and
   `amazon`: the order, how it was matched, its items with their sorting, and the charge's
   `essential`, `discretionary` and `unsorted` shares. The month carries `amazon` too: those three

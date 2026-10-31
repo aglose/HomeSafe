@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.finance.domain.LinePick
 import com.meticulouscreations.homesafe.finance.domain.LineRule
 import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
+import com.meticulouscreations.homesafe.finance.domain.PurchaseShare
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
 import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
 import com.meticulouscreations.homesafe.text.UiText
@@ -274,6 +275,34 @@ class BudgetRelayApiTest {
         assertEquals("true", body.getValue("alerts").jsonObject.getValue("total").jsonPrimitive.content)
         // The budget lines' switch goes with the others, off unless it was switched on.
         assertEquals("false", body.getValue("alerts").jsonObject.getValue("lines").jsonPrimitive.content)
+    }
+
+    @Test
+    fun aPurchaseReadsItsNoteAndAnAmazonChargeItsShares() = runTest {
+        val withShares = month.replace(
+            """"kind":"spend","remembered":true}""",
+            """"kind":"spend","remembered":true,"note":"Tire replacement","shares":[{"bucket":"person:Sam","amount":40.0},{"bucket":"family","amount":14.2}]}""",
+        ).replace(""""source":"rule","kind":"spend"""", """"source":"amazon","kind":"spend"""")
+        val (shared, plain) = api(MockEngine { respond(withShares, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow().purchases
+        assertEquals("Tire replacement", shared.note)
+        assertEquals(BucketSource.AMAZON, shared.source)
+        assertEquals(listOf(PurchaseShare(BucketId.Person("Sam"), 40.0), PurchaseShare(BucketId.Family, 14.2)), shared.shares)
+        assertTrue(shared.isIn(BucketId.Family) && shared.isIn(BucketId.Person("Sam")) && !shared.isIn(BucketId.Unassigned))
+        assertEquals(null to emptyList(), plain.note to plain.shares)
+    }
+
+    @Test
+    fun aNoteIsWrittenOnAPurchase_andANullTakesItOff() = runTest {
+        val calls = mutableListOf<String>()
+        val api = api(
+            MockEngine { request ->
+                calls += "${request.method.value} ${request.url.encodedPath} ${request.body.toByteArray().decodeToString()}"
+                respond(month, HttpStatusCode.OK, jsonHeaders)
+            },
+        )
+        api.note("http://frigate.local", "t1", "Tire replacement").getOrThrow()
+        api.note("http://frigate.local", "t1", null).getOrThrow()
+        assertEquals(listOf("""PUT /finance/budget/transactions/t1/note {"note":"Tire replacement"}""", """PUT /finance/budget/transactions/t1/note {"note":null}"""), calls)
     }
 
     @Test

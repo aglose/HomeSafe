@@ -251,6 +251,20 @@ class BudgetViewModel(
         }
     }
 
+    /** Writes a note on a purchase ("a tire for the Tesla"); null or blank takes it off. */
+    fun note(purchaseId: String, note: String?) {
+        if (purchaseId in _uiState.value.tagging) return
+        _uiState.update { it.copy(tagging = it.tagging + purchaseId, notice = null) }
+        viewModelScope.launch {
+            tagOrder.withLock { repository.note(purchaseId, note?.trim()?.takeIf { it.isNotEmpty() }) }
+                .onSuccess { budget ->
+                    _uiState.update { it.copy(tagging = it.tagging - purchaseId) }
+                    applied(budget)
+                }
+                .onFailure { e -> failed(e) { it.copy(tagging = it.tagging - purchaseId) } }
+        }
+    }
+
     /** Says whether one item of the Amazon order behind [purchaseId] was essential or discretionary; null lets it sort itself again. */
     fun sayNeed(purchaseId: String, orderId: String, item: AmazonItem, need: AmazonNeed?) {
         if (purchaseId in _uiState.value.tagging) return

@@ -61,6 +61,8 @@ class BudgetRepositoryImpl(
 
     override suspend fun tagLine(purchaseId: String, line: LinePick, remember: Boolean): Result<Budget> = change { relay.tagLine(it, purchaseId, line, remember) }
 
+    override suspend fun note(purchaseId: String, note: String?): Result<Budget> = change { relay.note(it, purchaseId, note) }
+
     override suspend fun forgetLineRule(merchantKey: String): Result<Budget> = change { relay.forgetLineRule(it, merchantKey) }
 
     override suspend fun sayNeed(orderId: String, item: AmazonItem, need: AmazonNeed?): Result<Budget> = change { relay.sayNeed(it, orderId, item, need) }

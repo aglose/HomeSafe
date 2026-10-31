@@ -28,6 +28,7 @@ import com.meticulouscreations.homesafe.finance.domain.LineSource
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.NeedSource
 import com.meticulouscreations.homesafe.finance.domain.Purchase
+import com.meticulouscreations.homesafe.finance.domain.PurchaseShare
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharge
 import com.meticulouscreations.homesafe.finance.domain.RecurringCharges
 import com.meticulouscreations.homesafe.finance.domain.RecurringRhythm
@@ -206,7 +207,9 @@ object BudgetFixtures {
     val amazonPurchases = listOf(
         Purchase(
             id = "amz-1", date = "2026-10-09", amount = 113.63, name = "Amazon", category = "GENERAL_MERCHANDISE", pending = false, cardKey = FAMILY,
-            bucket = BucketId.Family, source = BucketSource.ACCOUNT, remembered = false, fromAmazon = true,
+            bucket = BucketId.Person("Alex"), source = BucketSource.AMAZON, remembered = false, fromAmazon = true,
+            // The paper towels are the family's; the building set is Alex's, whose mailbox the order came to.
+            shares = listOf(PurchaseShare(BucketId.Person("Alex"), 86.58), PurchaseShare(BucketId.Family, 27.05)),
             amazon = AmazonOrder(
                 orderId = "112-0000000-0000001",
                 match = AmazonMatch.ORDER,
@@ -250,8 +253,11 @@ object BudgetFixtures {
         unmatched = 15.0,
     )
 
-    /** On the 12th with the Amazon order emails read. */
-    val withAmazon = onPace.let { it.copy(purchases = (it.purchases + amazonPurchases).sortedByDescending { p -> p.date }, amazon = amazonSummary) }
+    /** On the 12th with the Amazon order emails read, and a note on one purchase. */
+    val withAmazon = onPace.let { month ->
+        val noted = month.purchases.map { p -> if (p.id == "p-12-0") p.copy(note = "Birthday cake for Sam") else p }
+        month.copy(purchases = (noted + amazonPurchases).sortedByDescending { p -> p.date }, amazon = amazonSummary)
+    }
 
     /**
      * What the cards and the checking account pay again and again, on the 12th: a student loan

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -68,6 +69,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -201,6 +203,10 @@ import homesafe.shared.generated.resources.fin_budget_merchant_times
 import homesafe.shared.generated.resources.fin_budget_months_subtitle
 import homesafe.shared.generated.resources.fin_budget_months_title
 import homesafe.shared.generated.resources.fin_budget_not_ready
+import homesafe.shared.generated.resources.fin_budget_note_hint
+import homesafe.shared.generated.resources.fin_budget_note_remove
+import homesafe.shared.generated.resources.fin_budget_note_save
+import homesafe.shared.generated.resources.fin_budget_note_title
 import homesafe.shared.generated.resources.fin_budget_open_linked_accounts
 import homesafe.shared.generated.resources.fin_budget_pace_caption
 import homesafe.shared.generated.resources.fin_budget_pace_caption_compare
@@ -243,6 +249,7 @@ import homesafe.shared.generated.resources.fin_budget_sort_more
 import homesafe.shared.generated.resources.fin_budget_sort_subtitle
 import homesafe.shared.generated.resources.fin_budget_sort_title
 import homesafe.shared.generated.resources.fin_budget_source_account
+import homesafe.shared.generated.resources.fin_budget_source_amazon
 import homesafe.shared.generated.resources.fin_budget_source_bank
 import homesafe.shared.generated.resources.fin_budget_source_manual
 import homesafe.shared.generated.resources.fin_budget_source_none
@@ -317,15 +324,20 @@ private val Purchase.categoryKey: String get() = category?.takeIf { it.isNotEmpt
 /**
  * Whether [purchase] is in the list under [filter]: everything, one bucket's (by key), one
  * category's (`cat:` and its name), one budget line's (`line:` and its name, or nothing for none),
- * or Amazon's ([AMAZON_FILTER]).
+ * or Amazon's ([AMAZON_FILTER]). An Amazon charge shared out is in each bucket a share of it is.
  */
 private fun matchesFilter(purchase: Purchase, filter: String?): Boolean = when {
     filter == null -> true
     filter == AMAZON_FILTER -> purchase.fromAmazon
     filter.startsWith(CATEGORY_FILTER) -> purchase.categoryKey == filter.removePrefix(CATEGORY_FILTER)
     filter.startsWith(LINE_FILTER) -> purchase.line.orEmpty() == filter.removePrefix(LINE_FILTER)
-    else -> purchase.bucket.key == filter
+    else -> if (purchase.shares.isEmpty()) purchase.bucket.key == filter else purchase.shares.any { it.bucket.key == filter }
 }
+
+/** Whose a purchase is, as its chip says it: a charge shared out names each bucket, the largest share first. */
+@Composable
+private fun Purchase.whoseLabel(): String =
+    if (shares.size > 1) shares.map { it.bucket.label() }.joinToString(stringResource(Res.string.common_dot_separator)) else bucket.label()
 
 /** The Budget tab with its view model: reads the month while it is on screen, and reports the sheet's take-home and bills to the relay. */
 @Composable
@@ -352,6 +364,7 @@ internal fun BudgetRoute(
         onTag = viewModel::tag,
         onTagLine = viewModel::tagLine,
         onSayNeed = viewModel::sayNeed,
+        onNote = viewModel::note,
         onSetRole = { card, role -> viewModel.save(BudgetConfigPatch(roles = mapOf(card to role))) },
         onSetHolder = { card, mark, person -> viewModel.save(BudgetConfigPatch(holders = mapOf(card to mapOf(mark to person)))) },
         onShowMonth = viewModel::showMonth,
@@ -385,6 +398,7 @@ fun BudgetScreen(
     onOpenLinkedAccounts: () -> Unit,
     onOpenSettings: () -> Unit,
     onSayNeed: (purchaseId: String, orderId: String, item: AmazonItem, need: AmazonNeed?) -> Unit = { _, _, _, _ -> },
+    onNote: (purchaseId: String, note: String?) -> Unit = { _, _ -> },
 ) {
     val budget = state.budget
     // Which bucket's purchases the list shows (by key), and the purchase whose sheet is up (by id).
@@ -404,7 +418,7 @@ fun BudgetScreen(
     // Worked out once per change, not on every recomposition of the list.
     val shown = remember(purchases, filter, query) {
         val needle = query.trim()
-        purchases.filter { matchesFilter(it, filter) && (needle.isEmpty() || it.name.contains(needle, ignoreCase = true)) }
+        purchases.filter { matchesFilter(it, filter) && (needle.isEmpty() || it.name.contains(needle, ignoreCase = true) || it.note?.contains(needle, ignoreCase = true) == true) }
     }
     val shownByDay = remember(shown) { shown.groupBy { it.date } }
     val desk = LocalFinanceDesk.current
@@ -589,6 +603,7 @@ fun BudgetScreen(
             lines = budget.lines.map { it.name },
             busy = picked.id in state.tagging,
             onSayNeed = { orderId, item, need -> onSayNeed(picked.id, orderId, item, need) },
+            onNote = { note -> onNote(picked.id, note) },
             onPick = { bucket, remember ->
                 tagging = null
                 onTag(picked.id, bucket, remember)
@@ -1139,6 +1154,7 @@ private fun PurchaseTableRow(purchase: Purchase, budget: Budget, busy: Boolean, 
         Column(Modifier.weight(TABLE_NAME_WEIGHT).padding(end = 12.dp)) {
             Text(purchase.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             purchase.amazon?.let { amazonItemsLine(it) }?.let { Text(it, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            purchase.note?.let { PurchaseNote(it) }
         }
         Text(
             purchase.line ?: purchase.category?.let { stringResource(categoryLabel(it)) } ?: "",
@@ -1152,10 +1168,11 @@ private fun PurchaseTableRow(purchase: Purchase, budget: Budget, busy: Boolean, 
         Box(Modifier.width(TABLE_WHOSE_WIDTH)) {
             val color = bucketColor(purchase.bucket, budget.config.people)
             Text(
-                purchase.bucket.label(),
+                purchase.whoseLabel(),
                 style = FinanceTheme.type.micro,
                 color = if (busy) colors.textTertiary else color,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.clip(CircleShape).background(color.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 3.dp),
             )
         }
@@ -1986,6 +2003,7 @@ private fun PurchaseRow(purchase: Purchase, budget: Budget, busy: Boolean, onCli
                 if (purchase.pending) stringResource(Res.string.fin_budget_purchase_pending) else null,
             )
             Text(about.joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            purchase.note?.let { PurchaseNote(it) }
         }
         Spacer(Modifier.width(12.dp))
         Column(horizontalAlignment = Alignment.End) {
@@ -1996,7 +2014,7 @@ private fun PurchaseRow(purchase: Purchase, budget: Budget, busy: Boolean, onCli
             )
             val color = bucketColor(purchase.bucket, budget.config.people)
             Text(
-                purchase.bucket.label(),
+                purchase.whoseLabel(),
                 style = FinanceTheme.type.micro,
                 color = if (busy) colors.textTertiary else color,
                 modifier = Modifier.padding(top = 3.dp).clip(CircleShape).background(color.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 2.dp),
@@ -2020,6 +2038,7 @@ private fun TagSheet(
     lines: List<String>,
     busy: Boolean,
     onSayNeed: (orderId: String, item: AmazonItem, need: AmazonNeed?) -> Unit,
+    onNote: (String?) -> Unit,
     onPick: (BucketId, Boolean) -> Unit,
     onPickLine: (LinePick, Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -2034,7 +2053,8 @@ private fun TagSheet(
         scrimColor = Color.Black.copy(alpha = 0.6f),
     ) {
         // Scrolls: with several people and lines, or large text, the remember switch would otherwise fall off its bottom.
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp).testTag("finance_budget_tag_sheet")) {
+        // A sheet is outside the pages that make room for the keyboard, and the note is typed into it.
+        Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp).testTag("finance_budget_tag_sheet")) {
             Column(Modifier.padding(horizontal = PageGutter)) {
                 Text(purchase.name, style = FinanceTheme.type.section, color = colors.textPrimary)
                 Spacer(Modifier.height(2.dp))
@@ -2042,6 +2062,19 @@ private fun TagSheet(
                 Text(about.joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary)
                 Spacer(Modifier.height(4.dp))
                 Text(stringResource(sourceNote(purchase.source)), style = FinanceTheme.type.label, color = colors.textTertiary)
+                if (purchase.shares.size > 1) {
+                    Spacer(Modifier.height(6.dp))
+                    purchase.shares.forEach { share ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(bucketColor(share.bucket, people)))
+                            Spacer(Modifier.width(8.dp))
+                            Text(share.bucket.label(), style = FinanceTheme.type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+                            Text(FinanceFormat.money(share.amount), style = FinanceTheme.type.label, color = colors.textPrimary)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                NoteField(purchase, busy, onNote)
             }
             if (purchase.fromAmazon) {
                 Hairline(Modifier.padding(horizontal = PageGutter, vertical = 10.dp))
@@ -2139,6 +2172,64 @@ private fun TagSheet(
     }
 }
 
+/** A note someone wrote on a purchase, under what it was: their words, set apart in italics. */
+@Composable
+private fun PurchaseNote(note: String) {
+    Text(note, style = FinanceTheme.type.label.copy(fontStyle = FontStyle.Italic), color = FinanceTheme.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+}
+
+/**
+ * The purchase's note, to write, change or take off ("a tire for the Tesla"): typed in, it is
+ * saved with Save; one already written can be taken off. Everyone who sees the budget sees it.
+ */
+@Composable
+private fun NoteField(purchase: Purchase, busy: Boolean, onNote: (String?) -> Unit, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    var draft by rememberSaveable(purchase.id, purchase.note) { mutableStateOf(purchase.note.orEmpty()) }
+    val changed = draft.trim() != purchase.note.orEmpty()
+    Column(modifier.fillMaxWidth()) {
+        Text(stringResource(Res.string.fin_budget_note_title), style = type.bodyStrong, color = colors.textPrimary)
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+            if (draft.isEmpty()) Text(stringResource(Res.string.fin_budget_note_hint), style = type.body, color = colors.textTertiary)
+            val noteDescription = stringResource(Res.string.fin_budget_note_title)
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it.take(NOTE_MAX) },
+                enabled = !busy,
+                maxLines = 4,
+                textStyle = type.body.copy(color = colors.textPrimary),
+                cursorBrush = SolidColor(colors.accent),
+                modifier = Modifier.fillMaxWidth().testTag("finance_budget_note").semantics { contentDescription = noteDescription },
+            )
+        }
+        if (changed || purchase.note != null) {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                if (purchase.note != null && !changed) {
+                    Text(
+                        stringResource(Res.string.fin_budget_note_remove),
+                        style = type.bodyStrong,
+                        color = colors.textSecondary,
+                        modifier = Modifier.handCursor().clickable(enabled = !busy, role = Role.Button) { onNote(null) }.testTag("finance_budget_note_remove").padding(8.dp),
+                    )
+                }
+                if (changed) {
+                    Text(
+                        stringResource(Res.string.fin_budget_note_save),
+                        style = type.bodyStrong,
+                        color = colors.accent,
+                        modifier = Modifier.handCursor().clickable(enabled = !busy, role = Role.Button) { onNote(draft) }.testTag("finance_budget_note_save").padding(8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The longest note, as the relay takes it (`BUDGET_NOTE_MAX` in relay.py). */
+private const val NOTE_MAX = 280
+
 /** The Wallet's line about the month under way: what the cards have cost against the limit, and where that stands. Opens the Budget tab. */
 @Composable
 internal fun BudgetTeaser(budget: Budget, onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -2165,6 +2256,7 @@ private fun sourceNote(source: BucketSource): StringResource = when (source) {
     BucketSource.ACCOUNT -> Res.string.fin_budget_source_account
     BucketSource.BANK -> Res.string.fin_budget_source_bank
     BucketSource.RULE -> Res.string.fin_budget_source_rule
+    BucketSource.AMAZON -> Res.string.fin_budget_source_amazon
     BucketSource.NONE -> Res.string.fin_budget_source_none
 }
 
