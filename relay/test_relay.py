@@ -5739,6 +5739,8 @@ class BudgetLinesTest(_Budget):
         self.assertEqual("Electric", guess("Pacific Gas and Electric Company", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"))
         self.assertEqual("Water", guess("Ebmud", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_WATER"))
         self.assertEqual("Financial Services", guess("Cetera", "TRAVEL", "TRAVEL_OTHER_TRAVEL"))
+        # An adviser filed as insurance is still the adviser's, not the life insurance.
+        self.assertEqual("Financial Services", guess("Ameriprise Financial", "GENERAL_SERVICES", "GENERAL_SERVICES_INSURANCE"))
         self.assertEqual("Life Insurance x 2", guess("Pacific Life", "GENERAL_SERVICES", "GENERAL_SERVICES_INSURANCE"))
         # A line called Gas is fuel, not the gas and electric bill.
         self.assertEqual("Gas", guess("Shell", "TRANSPORTATION", "TRANSPORTATION_GAS"))

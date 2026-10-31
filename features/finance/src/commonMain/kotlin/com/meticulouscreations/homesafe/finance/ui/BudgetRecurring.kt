@@ -121,7 +121,8 @@ internal fun RecurringBlock(recurring: RecurringCharges, budget: Budget, modifie
 /**
  * One recurring charge: its merchant, how often and when next (or when it last came, once it
  * stopped) and whose, and what it costs: a monthly bill what it comes to a month, anything else
- * what it was last time, and what it comes to a month too when it doesn't come monthly. A price that changed says what it was.
+ * what it was last time, and what it comes to a month too when it doesn't come monthly. A price
+ * that changed says what it was, under that.
  */
 @Composable
 private fun RecurringRow(charge: RecurringCharge, people: List<String>, today: String) {
@@ -156,26 +157,24 @@ private fun RecurringRow(charge: RecurringCharge, people: List<String>, today: S
                 style = FinanceTheme.type.bodyStrong,
                 color = strong,
             )
+            if (charge.rhythm != RecurringRhythm.MONTHLY && !charge.stopped) {
+                Text(
+                    stringResource(if (charge.bill) Res.string.fin_recurring_about_a_month else Res.string.fin_recurring_a_month, FinanceFormat.money(charge.monthly, 0)),
+                    style = FinanceTheme.type.label,
+                    color = colors.textTertiary,
+                )
+            }
             val was = charge.was
-            when {
-                was != null && !charge.stopped -> {
-                    val up = charge.amount > was
-                    val tint = if (up) colors.watch else colors.gain
-                    Text(
-                        stringResource(if (up) Res.string.fin_recurring_up else Res.string.fin_recurring_down, FinanceFormat.money(was)),
-                        style = FinanceTheme.type.micro,
-                        color = tint,
-                        maxLines = 1,
-                        modifier = Modifier.padding(top = 2.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
-                }
-
-                charge.rhythm != RecurringRhythm.MONTHLY && !charge.stopped ->
-                    Text(
-                        stringResource(if (charge.bill) Res.string.fin_recurring_about_a_month else Res.string.fin_recurring_a_month, FinanceFormat.money(charge.monthly, 0)),
-                        style = FinanceTheme.type.label,
-                        color = colors.textTertiary,
-                    )
+            if (was != null && !charge.stopped) {
+                val up = charge.amount > was
+                val tint = if (up) colors.watch else colors.gain
+                Text(
+                    stringResource(if (up) Res.string.fin_recurring_up else Res.string.fin_recurring_down, FinanceFormat.money(was)),
+                    style = FinanceTheme.type.micro,
+                    color = tint,
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 2.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                )
             }
         }
     }

@@ -9886,7 +9886,8 @@ def budget_line_guess(lines: list[str], key: str | None, category: str | None, d
     The line a purchase goes in on its own, if any: one named after its shop ("Costco" takes
     "COSTCO WHSE #0123"), else one whose name says what kind of spending it is and the purchase
     being that (see `BUDGET_LINE_GUESSES`). A bill from a provider a line knows comes first (AT&T,
-    which Plaid files as a telephone bill, in Internet; not Sonic the drive-in). Then Plaid's
+    which Plaid files as a telephone bill, in Internet; not Sonic the drive-in), and so does a shop
+    of a line known only by its shops (Cetera in Financial services, whatever Plaid calls it). Then Plaid's
     detailed category, which says most: fuel from Costco goes in Gas. Then a shop a line knows by
     name, so a Groceries line still has Costco though Plaid calls it a superstore; then Plaid's
     broad category.
@@ -9897,9 +9898,10 @@ def budget_line_guess(lines: list[str], key: str | None, category: str | None, d
         if len(named) >= 3 and (key == named or key.startswith(named + " ")):
             return line
     guesses = [(line, categories, shops) for line in lines for pattern, categories, shops in BUDGET_LINE_GUESSES if pattern.search(line)]
-    # A bill from a provider a line knows, whatever kind Plaid says it is (AT&T, filed as a telephone bill, is the internet's).
-    for line, _, shops in guesses:
-        if category == "RENT_AND_UTILITIES" and shops is not None and shops.search(key):
+    # A bill from a provider a line knows, whatever kind Plaid says it is (AT&T, filed as a telephone bill, is the internet's),
+    # and a shop of a line known only by its shops (a financial adviser Plaid files as insurance, or as travel).
+    for line, categories, shops in guesses:
+        if shops is not None and (category == "RENT_AND_UTILITIES" or not categories) and shops.search(key):
             return line
     for line, categories, _ in guesses:
         if detail and detail in categories:
