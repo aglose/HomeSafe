@@ -19,6 +19,9 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.assistant_tool_budget
 import homesafe.shared.generated.resources.assistant_tool_finance
 import homesafe.shared.generated.resources.assistant_tool_markets
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.roundToLong
 
@@ -48,17 +51,61 @@ class FinanceSheetTool(private val finance: FinanceRepository, private val acces
 @ContributesIntoSet(AppScope::class)
 class BudgetTool(private val budgets: BudgetRepository, private val access: FinanceAccess) : AssistantTool {
     override val name = "budget"
-    override val description = "The monthly budget built from the household's synced bank cards: what has been spent and is " +
-        "pending, each bucket against its limit, each budget line paid by card (groceries and the like) against what the sheet plans " +
-        "for it, the cards, and the month's purchases with their buckets and lines. Defaults to this month."
-    override val inputSchema = inputOf("month" to stringProperty("The month to look at, as YYYY-MM. Leave out for the current month."))
+    override val description = "The monthly budget built from the household's synced bank cards. With nothing asked, this month: what " +
+        "has been spent and is pending, each bucket against its limit, each budget line paid by card (groceries and the like) against " +
+        "what the sheet plans for it, the cards, what is charged again and again, and the month's purchases with their buckets and " +
+        "lines. month looks at another month. from and to read the purchases between two days, across months. search, category and " +
+        "card keep to the purchases that match, with what they come to. Plaid's categories can be wrong (an airline filed as " +
+        "GENERAL_MERCHANDISE), so to find a kind of spending, search for its merchants' names over the months in question as well as " +
+        "looking at categories. The answer says what it leaves out: bank accounts, cards outside the budget, and any purchases too many to list."
+    override val inputSchema = inputOf(
+        "month" to stringProperty("The month to look at, as YYYY-MM. Leave out for the current month."),
+        "from" to stringProperty("The first day to read purchases from, as YYYY-MM-DD, instead of a month. At most $MAX_MONTHS_READ months back at a time."),
+        "to" to stringProperty("The last day to read purchases to, as YYYY-MM-DD, with from. Leave out for today."),
+        "search" to stringProperty("Only purchases whose merchant, note or Amazon items mention this, e.g. \"american\"."),
+        "category" to stringProperty("Only purchases in this Plaid category, e.g. \"TRAVEL\"."),
+        "card" to stringProperty("Only purchases on this card, by its name, institution or last four digits."),
+    )
     override val activity = Res.string.assistant_tool_budget
     override val lock get() = access.locked
 
     override suspend fun run(input: JsonObject): String {
         if (access.locked.value) return LOCKED
-        val budget = budgets.budget(input.stringInput("month")).fold({ it.toString() }, { "Couldn't read the budget: ${it.message}" })
+        val ask = BudgetAsk(
+            month = input.stringInput("month"),
+            from = input.stringInput("from"),
+            to = input.stringInput("to"),
+            search = input.stringInput("search"),
+            category = input.stringInput("category"),
+            card = input.stringInput("card"),
+        )
+        ask.problem?.let { return it }
+        val budget = if (ask.from == null) {
+            budgets.budget(ask.month).fold({ budgetText(ask, it, listOf(it)) }, { "Couldn't read the budget: ${it.message}" })
+        } else {
+            range(ask, ask.from)
+        }
         return if (access.locked.value) LOCKED else budget
+    }
+
+    /** Every month [from] touches up to `to` or the month under way, whichever is first, a few at a time: the relay works each one out afresh. */
+    private suspend fun range(ask: BudgetAsk, from: String): String {
+        val latest = budgets.budget(null).getOrElse { return "Couldn't read the budget: ${it.message}" }
+        val last = minOf(ask.to?.take(7) ?: latest.month, latest.month)
+        val months = monthsBetween(from.take(7), last)
+        if (months.size > MAX_MONTHS_READ) return "That is ${months.size} months; ask for at most $MAX_MONTHS_READ at a time."
+        val read = months.chunked(MONTHS_READ_AT_ONCE).flatMap { some ->
+            coroutineScope {
+                some.map { month -> async { month to if (month == latest.month) Result.success(latest) else budgets.budget(month) } }.awaitAll()
+            }
+        }
+        return budgetText(ask, latest, read.mapNotNull { (_, budget) -> budget.getOrNull() }, unread = read.filter { (_, budget) -> budget.isFailure }.map { it.first })
+    }
+
+    private companion object {
+        // As far back as the relay asks Plaid to keep (`PLAID_TXN_DAYS` in `relay/relay.py`).
+        const val MAX_MONTHS_READ = 24
+        const val MONTHS_READ_AT_ONCE = 4
     }
 }
 

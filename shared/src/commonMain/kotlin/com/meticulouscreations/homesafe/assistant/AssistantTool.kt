@@ -86,4 +86,5 @@ fun <T> listing(items: List<T>, limit: Int, describe: (T) -> String = { it.toStr
 internal fun String.capped(maxChars: Int = MAX_TOOL_RESULT_CHARS): String =
     if (length <= maxChars) this else take(maxChars) + "\n…(cut off; ask for less)"
 
-private const val MAX_TOOL_RESULT_CHARS = 60_000
+/** The most of a tool's result that reaches Claude; a tool with more than this should choose what to say for itself. */
+const val MAX_TOOL_RESULT_CHARS = 60_000

@@ -29,14 +29,16 @@ question is asked about whatever is showing by then.
   | `doors` | shared | each door open or shut, battery, recent openings |
   | `who_is_home` | shared | Away mode's phones, home or away |
   | `server_status` | shared | Frigate's version, load, storage, detector, pipelines |
-  | `finance_sheet`, `budget` | finance | the sheet and the month's budget; held back while the finance app is locked |
+  | `finance_sheet`, `budget` | finance | the sheet, and a month's budget or the card purchases matching a search across months; held back while the finance app is locked |
   | `market_quotes` | finance | prices for symbols, or the watchlist (held back while the finance app is locked) |
   | `weather` | weather | the saved places' forecasts, or a place by name |
   | `training_log` | fitness | workouts and sets, body weight, phase |
   | `location_history` | atlas | one day's visits, or the Atlas overview; held back while Atlas is locked |
 
   Tools only read. A tool's output is written for Claude (English, often `toString()` of the
-  domain model) and isn't copy; what the screen says while it runs (`activity`) is.
+  domain model) and isn't copy; what the screen says while it runs (`activity`) is. A result past
+  60,000 characters is cut off at that point, so a tool that can have more than that says what it
+  left out itself and takes input to ask for less, as `budget` does (`BudgetAssistantText.kt`).
 
 ## Locks
 
