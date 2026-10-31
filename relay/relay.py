@@ -48,6 +48,7 @@ from statistics import median
 import threading
 import time
 import zipfile
+import zlib
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -363,6 +364,29 @@ def db() -> sqlite3.Connection:
         if column not in columns:
             conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} TEXT")
     conn.execute("CREATE TABLE IF NOT EXISTS budget_line_rules (merchant_key TEXT PRIMARY KEY, line TEXT NOT NULL, by TEXT, at REAL)")
+    # Which card a purchase was on by its key in the feed (`card`), which outlives the account, and
+    # when its institution was unlinked (`archived_at`; see "finance history").
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_transactions)")}
+    for column, declaration in (("card", "TEXT"), ("archived_at", "REAL")):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE plaid_transactions ADD COLUMN {column} {declaration}")
+    conn.execute("UPDATE plaid_transactions SET card=(SELECT key FROM plaid_feed_keys k WHERE k.account_id = plaid_transactions.account_id) WHERE card IS NULL")
+    conn.execute("CREATE INDEX IF NOT EXISTS plaid_transactions_card ON plaid_transactions (card, date)")
+    # What the relay would otherwise overwrite (see "finance history"): each account's balances and
+    # each investment's holding as they stood on each of the household's days, the budget's plan as
+    # it stood in each month, and the budget sheet on each day it differed from the day before
+    # (`body`: its tabs as zlib-compressed JSON).
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_balance_days (day TEXT NOT NULL, account_id TEXT NOT NULL, item_id TEXT, key TEXT, institution TEXT, name TEXT, mask TEXT,"
+        " type TEXT, subtype TEXT, current REAL, available REAL, credit_limit REAL, currency TEXT, at REAL NOT NULL, PRIMARY KEY (day, account_id))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_holding_days (day TEXT NOT NULL, account_id TEXT NOT NULL, security_id TEXT NOT NULL, lot INTEGER NOT NULL, item_id TEXT, key TEXT, ticker TEXT,"
+        " name TEXT, kind TEXT, quantity REAL, vested REAL, price REAL, price_as_of TEXT, value REAL, cost_basis REAL, currency TEXT, at REAL NOT NULL,"
+        " PRIMARY KEY (day, account_id, security_id, lot))"
+    )
+    conn.execute("CREATE TABLE IF NOT EXISTS budget_plans (month TEXT PRIMARY KEY, plan TEXT NOT NULL, at REAL NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS finance_sheet_days (day TEXT PRIMARY KEY, at REAL NOT NULL, digest TEXT NOT NULL, body BLOB NOT NULL)")
     # What Amazon's emails said was ordered (see "Amazon orders"): each email read once
     # (`amazon_emails`), each order with the day it was placed, its total when an email gave one
     # and whether its own email was read (`confirmed`: until then its items are what the shipment
@@ -7696,6 +7720,8 @@ PLAID_REDIRECT_URI = os.environ.get("PLAID_REDIRECT_URI", "").strip()
 # holds the mortgage and a brokerage account too brings all three. Transactions are what a bank or
 # a card is linked by, and what the budget reads a card's purchases with (see "budget").
 PLAID_KINDS = {"bank": "transactions", "investments": "investments", "loans": "liabilities"}
+# How much of a card's past a new link asks for: as far as Plaid goes.
+PLAID_TXN_DAYS = 730
 PLAID_EXTRAS = ("investments", "liabilities")
 # How long a link stays good (Plaid's own lifetime for a hosted link it doesn't deliver itself).
 PLAID_LINK_SECONDS = 1800
@@ -7796,6 +7822,9 @@ def plaid_link_request(user: str, kind: str, access: str | None = None) -> dict[
         product = PLAID_KINDS[kind]
         body["products"] = [product]
         body["required_if_supported_products"] = [p for p in PLAID_EXTRAS if p != product]
+        # Fixed for good when the link is made: Plaid would otherwise fetch 90 days and never more.
+        if product == "transactions":
+            body["transactions"] = {"days_requested": PLAID_TXN_DAYS}
     return body
 
 
@@ -7926,8 +7955,11 @@ def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, d
     Replaces what is kept of an institution with what Plaid just said: its accounts, their loan
     terms, and what they hold. `terms` or `holdings` None leaves those as they were (Plaid hadn't
     them ready), though an account that is gone still takes its holdings with it. Each account
-    new to the relay is given its key in the feed (see `plaid_assign_keys`).
+    new to the relay is given its key in the feed (see `plaid_assign_keys`), and how everything
+    stands today goes into the history (see `plaid_keep_day`).
     """
+    day = household_day(now)
+
     def write(c: sqlite3.Connection) -> None:
         kept = terms
         if kept is None:
@@ -7961,9 +7993,32 @@ def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, d
                      h.get("cost_basis"), h.get("iso_currency_code") or h.get("unofficial_currency_code")),
                 )
         plaid_assign_keys(c)
+        plaid_keep_day(c, item_id, day, holdings is not None, now)
         c.commit()
 
     with_db(write)
+
+
+def plaid_keep_day(c: sqlite3.Connection, item_id: str, day: str, holdings_read: bool, now: float) -> None:
+    """
+    Puts an institution's balances and holdings as just read into the history, one row each per
+    day: a second read that day takes the place of the first, a position sold in between going
+    with it. Holdings Plaid hadn't ready are left as the day's first read had them. The caller commits.
+    """
+    c.execute(
+        "INSERT OR REPLACE INTO plaid_balance_days (day, account_id, item_id, key, institution, name, mask, type, subtype, current, available, credit_limit, currency, at)"
+        " SELECT ?, a.account_id, a.item_id, k.key, i.institution, a.name, a.mask, a.type, a.subtype, a.current, a.available, a.credit_limit, a.currency, ?"
+        " FROM plaid_accounts a LEFT JOIN plaid_items i ON i.item_id = a.item_id LEFT JOIN plaid_feed_keys k ON k.account_id = a.account_id WHERE a.item_id=?",
+        (day, now, item_id),
+    )
+    if holdings_read:
+        c.execute("DELETE FROM plaid_holding_days WHERE day=? AND item_id=?", (day, item_id))
+        c.execute(
+            "INSERT OR REPLACE INTO plaid_holding_days (day, account_id, security_id, lot, item_id, key, ticker, name, kind, quantity, vested, price, price_as_of, value, cost_basis, currency, at)"
+            " SELECT ?, h.account_id, h.security_id, h.lot, h.item_id, k.key, h.ticker, h.name, h.kind, h.quantity, h.vested, h.price, h.price_as_of, h.value, h.cost_basis, h.currency, ?"
+            " FROM plaid_holdings h LEFT JOIN plaid_feed_keys k ON k.account_id = h.account_id WHERE h.item_id=?",
+            (day, now, item_id),
+        )
 
 
 def plaid_sync_item(item_id: str, access: str, now: float) -> str | None:
@@ -8052,12 +8107,13 @@ VEST_MATCH_DAYS = 20
 
 def stock_events_sync(item_id: str, access: str, account_ids: list[str], now: float) -> None:
     """
-    The activity of an institution's stock plan accounts into relay.db, replacing what was kept.
-    A failure keeps what was read before and is only logged: the balances were read all the same.
+    The activity of an institution's stock plan accounts into relay.db, replacing what was kept of
+    the days just asked about: what has passed out of Plaid's reach stays as it was read. A failure keeps what was read before and is only logged: the balances were read all the same.
     """
     try:
         today = datetime.fromtimestamp(now, household_zone() or timezone.utc).date()
-        asked = {"access_token": access, "start_date": str(today - timedelta(days=STOCK_EVENTS_DAYS)), "end_date": str(today)}
+        since = str(today - timedelta(days=STOCK_EVENTS_DAYS))
+        asked = {"access_token": access, "start_date": since, "end_date": str(today)}
         events: list[dict[str, Any]] = []
         tickers: dict[str, str | None] = {}
         for _ in range(10):
@@ -8069,7 +8125,7 @@ def stock_events_sync(item_id: str, access: str, account_ids: list[str], now: fl
                 break
 
         def write(c: sqlite3.Connection) -> None:
-            c.execute("DELETE FROM plaid_stock_events WHERE item_id=?", (item_id,))
+            c.execute("DELETE FROM plaid_stock_events WHERE item_id=? AND date >= ?", (item_id, since))
             for t in events:
                 if t.get("investment_transaction_id") and t.get("account_id") in account_ids and t.get("date"):
                     c.execute("INSERT OR REPLACE INTO plaid_stock_events VALUES (?,?,?,?,?,?,?,?)",
@@ -8761,10 +8817,12 @@ def bank_sync_due(now: float, last: float, zone: ZoneInfo | None) -> bool:
 def bank_forever() -> None:
     """
     Once a day at BANK_SYNC_HOUR, and on a start that slept through it: every institution, then
-    the feed. Every hour in between: what was bought on the cards (see "budget").
+    the feed. Every hour in between: what was bought on the cards (see "budget"). And the day's
+    copies of what isn't kept any other way (see "finance history").
     """
     while True:
         time.sleep(BANK_CHECK_SECONDS)
+        finance_history_keep(time.time())
         try:
             if not plaid_on():
                 continue
@@ -8878,7 +8936,7 @@ def bank_busy() -> HTTPException:
 
 @app.delete("/finance/bank/institutions/{item_id}")
 def delete_bank_institution(item_id: str, request: Request, response: Response) -> dict[str, Any]:
-    """Unlinks an institution: Plaid is told to forget it, and its token, accounts and feed rows go."""
+    """Unlinks an institution: Plaid is told to forget it, and its token, accounts and feed rows go. What was spent and how it all stood stays (see "finance history")."""
     user = require_bank(request, response)
     # Behind any sync under way, and ahead of the next: a sync that read this institution before
     # it was forgotten would otherwise store its accounts again, and write them back to the feed.
@@ -8896,7 +8954,13 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
                 raise plaid_problem(e) from e
 
         def forget(c: sqlite3.Connection) -> None:
-            for table in ("plaid_transactions", "plaid_stock_events", "plaid_holdings", "plaid_accounts", "plaid_items"):
+            # What is still pending may never post, and nothing will now say so.
+            c.execute("DELETE FROM plaid_transactions WHERE item_id=? AND pending=1", (item_id,))
+            c.execute(
+                "UPDATE plaid_transactions SET archived_at=?, card=COALESCE(card, (SELECT key FROM plaid_feed_keys k WHERE k.account_id = plaid_transactions.account_id)) WHERE item_id=?",
+                (time.time(), item_id),
+            )
+            for table in ("plaid_stock_events", "plaid_holdings", "plaid_accounts", "plaid_items"):
                 c.execute(f"DELETE FROM {table} WHERE item_id=?", (item_id,))
             plaid_assign_keys(c)
             c.commit()
@@ -9110,6 +9174,119 @@ def put_finance_sheet_value(body: SheetValue, request: Request, response: Respon
         raise HTTPException(502, {"error": "google_error", "message": "Couldn't reach Google"}) from e
     finally:
         _bank_lock.release()
+
+
+# ---------------------------------------------------------------- finance history
+#
+# The months are to be set side by side for years (docs/finance.md, "What is kept"), and most of
+# what they'd need is overwritten as it changes. So the relay keeps it as it goes:
+#
+# - Every purchase stays once read. Plaid can't be asked again for what has passed out of its reach,
+#   so unlinking a card or closing it keeps what was bought on it, by the card's key, and it goes on
+#   counting in the months it was bought in.
+# - Each account's balances and each holding, one row per day (`plaid_keep_day`).
+# - The budget's plan as it stood in each month (`budget_plan_keep`): a limit or a line changed
+#   today isn't what last spring was held to.
+# - The budget sheet, each day it differs from the last copy (`finance_sheet_keep`).
+# - A copy of relay.db each night, on another disk (`relay_backup`).
+#
+# Nothing here is worked out ahead: comparing months is done from the rows when it's asked for, so a
+# purchase sorted differently later changes the months it was in.
+
+FINANCE_KEPT_KEY = "finance_kept"
+# Where the nightly copies go, a disk other than relay.db's. Unset: there are none.
+RELAY_BACKUP_DIR = os.environ.get("RELAY_BACKUP_DIR", "")
+# The copies kept: the last few nights, and each month's first for good.
+RELAY_BACKUP_NIGHTS = 14
+
+
+def household_day(now: float) -> str:
+    """The day it is on the household's clock (UTC when unknown), as YYYY-MM-DD."""
+    return datetime.fromtimestamp(now, household_zone() or timezone.utc).date().isoformat()
+
+
+def budget_plan_keep(config: dict[str, Any], now: float, replace: bool = True) -> None:
+    """
+    What the budget holds this month to, as things stand: a later month's changes never reach a
+    month that has ended. Each save replaces it. The daily call only starts a month nothing was
+    saved in yet (`replace` False), so settings it read just before a save can't undo that save.
+    """
+    plan = {name: config[name] for name in ("people", "limits", "roles", "card_paid_lines", "sheet")}
+    month = household_day(now)[:7]
+    verb = "INSERT OR REPLACE" if replace else "INSERT OR IGNORE"
+    with_db(lambda c: (c.execute(f"{verb} INTO budget_plans VALUES (?,?,?)", (month, json.dumps(plan, sort_keys=True), now)), c.commit()))
+
+
+def finance_sheet_keep(now: float) -> None:
+    """Today's copy of the budget sheet's tabs, unless they are as the last copy had them."""
+    if not FINANCE_SHEET_ID:
+        return
+    tabs = json.dumps(finance_sheet(False)["sheets"], sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(tabs.encode()).hexdigest()
+    day = household_day(now)
+
+    def write(c: sqlite3.Connection) -> None:
+        last = c.execute("SELECT digest FROM finance_sheet_days ORDER BY day DESC LIMIT 1").fetchone()
+        if not last or last[0] != digest:
+            c.execute("INSERT OR REPLACE INTO finance_sheet_days VALUES (?,?,?,?)", (day, now, digest, zlib.compress(tabs.encode())))
+            c.commit()
+
+    with_db(write)
+
+
+def relay_backup(now: float) -> None:
+    """
+    Tonight's copy of relay.db in RELAY_BACKUP_DIR, whole and checked or not at all, and the old
+    copies cleared away. It holds what relay.db does, Plaid's tokens among them: only the relay may read it.
+    """
+    if not RELAY_BACKUP_DIR:
+        return
+    os.makedirs(RELAY_BACKUP_DIR, exist_ok=True)
+    os.chmod(RELAY_BACKUP_DIR, 0o700)
+    path = os.path.join(RELAY_BACKUP_DIR, f"relay-{household_day(now)}.db")
+    partial = f"{path}.partial"
+    try:
+        source, copy = sqlite3.connect(DB_PATH), sqlite3.connect(partial)
+        try:
+            source.backup(copy)
+            checked = copy.execute("PRAGMA quick_check").fetchone()[0]
+        finally:
+            source.close()
+            copy.close()
+        if checked != "ok":
+            raise ValueError(f"the copy of relay.db fails its check: {checked}")
+        os.chmod(partial, 0o600)
+        os.replace(partial, path)
+    finally:
+        if os.path.exists(partial):
+            os.remove(partial)
+    copies = sorted(f for f in os.listdir(RELAY_BACKUP_DIR) if re.fullmatch(r"relay-\d{4}-\d{2}-\d{2}\.db", f))
+    firsts = {min(f for f in copies if f[:13] == month) for month in {f[:13] for f in copies}}
+    for name in copies[:-RELAY_BACKUP_NIGHTS]:
+        if name not in firsts:
+            os.remove(os.path.join(RELAY_BACKUP_DIR, name))
+
+
+def finance_history_keep(now: float) -> None:
+    """
+    What is owed once a day, on the first check of the household's day. One that fails is logged and
+    has to wait for tomorrow: the next day's copy has what it would have held, and a sheet that
+    can't be read isn't asked for every few minutes.
+    """
+    try:
+        day = household_day(now)
+        if (state_get(FINANCE_KEPT_KEY) or {}).get("day") == day:
+            return
+        state_set(FINANCE_KEPT_KEY, {"day": day})
+    except Exception:
+        log.exception("finance history: couldn't tell whether today's was kept")
+        return
+    for keep in (lambda: budget_plan_keep(budget_config(), now, replace=False), lambda: finance_sheet_keep(now), lambda: relay_backup(now)):
+        try:
+            keep()
+        except Exception as e:
+            # Not the detail of what Google answered, which may quote the sheet.
+            log.warning("finance history: one of today's copies wasn't kept: %s", type(e).__name__)
 
 
 # ---------------------------------------------------------------- budget
@@ -9362,26 +9539,32 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
     transactions are kept, and what left a checking account (for what it pays every month, see
     `budget_checking`): not what came into it, nor anything of a savings account's. A tag made by
     hand stays on a transaction Plaid changed, and passes from a pending purchase to the posted
-    one that replaces it. Answers how many rows changed.
+    one that replaces it. A purchase kept from when its card was linked before gives way to the
+    same one read again (`txn_take_over`). Answers how many rows changed.
     """
     def write(c: sqlite3.Connection) -> int:
         cards = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND type='credit'", (item_id,))}
         checking = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND " + TXN_CHECKING, (item_id,))}
+        keys = dict(c.execute("SELECT account_id, key FROM plaid_feed_keys").fetchall())
         changed = 0
         for txn in pulled["added"] + pulled["modified"]:
             row = txn_row(txn, item_id, now)
             if row is None or not (row[2] in cards or (row[2] in checking and row[5] > 0)):
                 continue
+            before = c.execute("SELECT pending FROM plaid_transactions WHERE txn_id=?", (row[0],)).fetchone()
             c.execute(
                 "INSERT INTO plaid_transactions (txn_id, item_id, account_id, date, posted, amount, currency, name, merchant, merchant_key, category,"
-                " category_detail, pending, pending_id, owner, kind, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " category_detail, pending, pending_id, owner, kind, updated, card) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(txn_id) DO UPDATE SET item_id=excluded.item_id, account_id=excluded.account_id, date=excluded.date, posted=excluded.posted,"
                 " amount=excluded.amount, currency=excluded.currency, name=excluded.name, merchant=excluded.merchant, merchant_key=excluded.merchant_key,"
                 " category=excluded.category, category_detail=excluded.category_detail, pending=excluded.pending, pending_id=excluded.pending_id,"
-                " owner=excluded.owner, kind=excluded.kind, updated=excluded.updated, removed_at=NULL",
-                row,
+                " owner=excluded.owner, kind=excluded.kind, updated=excluded.updated, card=excluded.card, removed_at=NULL, archived_at=NULL",
+                (*row, keys.get(row[2])),
             )
             changed += 1
+            # Only as it first posts: a change to one already posted has taken over its one already.
+            if not row[12] and (before is None or before[0]):
+                txn_take_over(c, row, keys.get(row[2]))
             if row[13]:
                 was = c.execute("SELECT tag, tag_by FROM plaid_transactions WHERE txn_id=? AND tag IS NOT NULL", (row[13],)).fetchone()
                 if was:
@@ -9403,6 +9586,28 @@ def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -
         return changed
 
     return with_db(write)
+
+
+def txn_take_over(c: sqlite3.Connection, row: tuple, card: str | None) -> None:
+    """
+    A card unlinked and linked again has its past read afresh under new ids. A purchase that has
+    just posted replaces the one kept from before, the same day and amount on the same card (the
+    one of the same name, when two match), and takes on its tags and its note. What the new link doesn't reach
+    stays. A transaction Plaid had taken back before the unlinking isn't counted, so stands for nothing.
+    """
+    was = c.execute(
+        "SELECT txn_id, tag, tag_by, line_tag, line_tag_by, note, note_by FROM plaid_transactions"
+        " WHERE archived_at IS NOT NULL AND removed_at IS NULL AND card=? AND date=? AND ABS(amount - ?) < 0.005"
+        " ORDER BY name IS NOT ?, txn_id LIMIT 1",
+        (card, row[3], row[5], row[7]),
+    ).fetchone()
+    if was:
+        c.execute(
+            "UPDATE plaid_transactions SET tag=COALESCE(tag, ?), tag_by=COALESCE(tag_by, ?), line_tag=COALESCE(line_tag, ?), line_tag_by=COALESCE(line_tag_by, ?),"
+            " note=COALESCE(note, ?), note_by=COALESCE(note_by, ?) WHERE txn_id=?",
+            (*was[1:], row[0]),
+        )
+        c.execute("DELETE FROM plaid_transactions WHERE txn_id=?", (was[0],))
 
 
 def plaid_transactions_sync_item(item_id: str, access: str, cursor: str | None, now: float) -> str | None:
@@ -9580,6 +9785,7 @@ def budget_config_save(patch: dict[str, Any], now: float) -> dict[str, Any]:
     # Likewise a cardholder's mark said to be theirs.
     config["holders"] = {card: marks for card, marks in ((card, {m: p for m, p in marks.items() if p in config["people"]}) for card, marks in config["holders"].items()) if marks}
     state_set(BUDGET_KEY, config)
+    budget_plan_keep(config, now)
     return config
 
 
@@ -9704,15 +9910,19 @@ def budget_cards(roles: dict[str, str], holders: dict[str, dict[str, str]] | Non
 def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict[str, Any]]:
     """
     What counts toward the budget between two days (inclusive), each put in its bucket: every
-    purchase and refund on a card that has a role, pending ones too. A card being paid off
-    doesn't count, nor a transaction Plaid took back, nor a pending one whose posted one is here.
+    purchase and refund on a card that has a role, pending ones too, whether or not the card is
+    still linked (but for what was still pending on one that's gone, which nothing will now settle).
+    A card being paid off doesn't count, nor a transaction Plaid took back, nor a pending one whose posted one is here.
     Each of Amazon's charges also says what its order was (see "Amazon orders").
     """
     rows = with_db(lambda c: c.execute(
-        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key, t.category_detail, t.line_tag, t.note"
-        " FROM plaid_transactions t JOIN plaid_feed_keys k ON k.account_id = t.account_id"
-        " JOIN plaid_accounts a ON a.account_id = t.account_id AND a.type = 'credit'"
+        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, COALESCE(k.key, t.card), t.category_detail,"
+        " t.line_tag, t.note"
+        " FROM plaid_transactions t LEFT JOIN plaid_feed_keys k ON k.account_id = t.account_id"
         " WHERE t.removed_at IS NULL AND t.kind != 'payment' AND t.date >= ? AND t.date <= ?"
+        # The budget is the cards': what left a checking account is kept for its bills only (see `budget_checking`).
+        " AND t.account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE type = 'depository')"
+        " AND (k.key IS NOT NULL OR t.pending = 0)"
         " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
         " ORDER BY t.date DESC, t.amount DESC, t.txn_id",
         (first, last),
@@ -10357,6 +10567,8 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 AMAZON_LOOKBACK_DAYS = int(os.environ.get("AMAZON_LOOKBACK_DAYS", "120"))
 AMAZON_QUERY = ('from:amazon.com {subject:Ordered subject:Shipped subject:"Your Amazon.com order" subject:"Your Amazon order"}'
                 f" newer_than:{AMAZON_LOOKBACK_DAYS}d")
+# How well inside the search's reach an email has to be for a re-read to count on finding it again.
+AMAZON_REREAD_MARGIN_DAYS = 2
 # The most new emails one read fetches (the rest wait for the next hour), and the most of the
 # search's pages it lists to find them.
 AMAZON_MAX_EMAILS = 400
@@ -10751,20 +10963,23 @@ def amazon_sort_items(ask: Callable[[list[str]], list[str] | None] | None = None
     return len(verdicts)
 
 
-def amazon_reread() -> None:
+def amazon_reread(now: float) -> None:
     """
     Forgets what the emails were read as, when they are now read differently (`AMAZON_PARSER`),
-    so the next read goes through them all again. What someone said about an item stays: a
-    re-read item of the same title in the same order gets it back.
+    so the next read goes through them again. Only what the search still reaches: an order older
+    than that stays as it was read, since its emails won't be. What someone said about an item
+    stays too: a re-read item of the same title in the same order gets it back.
     """
     if state_get(AMAZON_PARSER_KEY) == AMAZON_PARSER:
         return
 
+    since = str(datetime.fromtimestamp(now, timezone.utc).date() - timedelta(days=AMAZON_LOOKBACK_DAYS - AMAZON_REREAD_MARGIN_DAYS))
+
     def forget(c: sqlite3.Connection) -> None:
         c.execute("DELETE FROM amazon_emails")
-        c.execute("DELETE FROM amazon_shipments")
-        c.execute("DELETE FROM amazon_items WHERE need_by IS NULL OR need_by NOT LIKE 'user:%'")
-        c.execute("UPDATE amazon_orders SET confirmed=0")
+        c.execute("DELETE FROM amazon_shipments WHERE shipped >= ?", (since,))
+        c.execute("DELETE FROM amazon_items WHERE (need_by IS NULL OR need_by NOT LIKE 'user:%') AND order_id IN (SELECT order_id FROM amazon_orders WHERE ordered >= ?)", (since,))
+        c.execute("UPDATE amazon_orders SET confirmed=0 WHERE ordered >= ?", (since,))
         c.commit()
 
     with_db(forget)
@@ -10778,7 +10993,7 @@ def amazon_sync(now: float | None = None) -> None:
         return
     now = time.time() if now is None else now
     try:
-        amazon_reread()
+        amazon_reread(now)
         read, failed = 0, []
         for mailbox in sorted(AMAZON_GMAIL_TOKENS):
             try:
@@ -10974,7 +11189,7 @@ def amazon_attach(purchases: list[dict[str, Any]], charges: set[str], first: str
     after = (datetime.fromisoformat(last) + timedelta(days=AMAZON_ORDER_WINDOW[1])).date().isoformat()
     nearby = with_db(lambda c: c.execute(
         "SELECT txn_id, date, amount, name, merchant FROM plaid_transactions WHERE removed_at IS NULL AND kind = 'spend' AND date >= ? AND date <= ?"
-        " AND account_id IN (SELECT account_id FROM plaid_accounts WHERE type = 'credit')"
+        " AND account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE type = 'depository')"
         " AND txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)",
         (before, after),
     ).fetchall())

@@ -18,6 +18,9 @@ services:
       FCM_PROJECT: homesafe-percysafe
       FCM_KEY: /secrets/fcm.json
       RELAY_DB: /data/relay.db
+      # Each night's copy of relay.db (relay.py, "finance history"): on the recordings drive, a
+      # different disk from relay.db's, beside Frigate's folder rather than in it.
+      RELAY_BACKUP_DIR: /backups
       POLL_SECONDS: "5"
       CLIPS_DIR: /clips
       # The car check (relay.py, "car check"): files passing street cars' crops into the
@@ -94,6 +97,7 @@ services:
       # relay.db, timeline.db, the vehicle memory's picture of each household car
       # (data/vehicles/), and sheet-fill.json.
       - ./data:/data
+      - /mnt/surveillance/relay-backups:/backups
       # Frigate's clips (same drive Frigate mounts at /media/frigate), for adding tagged cars to a
       # classifier's dataset; see add_classification_example.
       - /mnt/surveillance/frigate/clips:/clips
