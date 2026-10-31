@@ -9204,8 +9204,8 @@ BUDGET_TOTAL_PERCENTS = (80, 100)
 BUDGET_HISTORY_MONTHS = 6
 BUDGET_TOP_MERCHANTS = 8
 # What the cards are charged again and again (see `budget_recurring`): how many days apart the
-# charges of each rhythm fall (twice that when one was missed in between), how long past the day
-# the next one was due it is still taken to be running, and how long one that stopped stays listed.
+# charges of each rhythm fall (twice that when one was missed in between), how many days past the
+# day the next one was due it has stopped, and how long one that stopped stays listed.
 RECURRING_GAPS = {"weekly": (5, 9), "monthly": (26, 35)}
 RECURRING_GRACE_DAYS = {"weekly": 4, "monthly": 8}
 RECURRING_STOPPED_DAYS = 120
@@ -9714,7 +9714,10 @@ def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[st
     The longest run among a merchant's charges (oldest first) that came one `rhythm` apart, or two
     when one was missed, at the same price to the cent but for one change of price (a bill at any
     amount); of runs as long, the one that ran latest. The change is counted as the run is built,
-    so another charge of the merchant's at a price in between can't stand in for a renewal.
+    so another charge of the merchant's at a price in between can't stand in for a renewal. A run
+    goes from one of the merchant's names to another only at the very same price (Plaid renaming
+    it): a change of price, or a bill's amount, stays with one name, so City Power's bills don't
+    run on into City Water's, nor a $30 plan into another's at $32.
     """
     low, high = RECURRING_GAPS[rhythm]
     days = [datetime.fromisoformat(c["date"]).date() for c in charges]
@@ -9729,8 +9732,9 @@ def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[st
                 break
             if not (low <= gap <= high or 2 * low <= gap <= 2 * high):
                 continue
-            same = _recurring_bill(charge) or _cents(charge["amount"]) == _cents(charges[j]["amount"])
-            if not same and abs(charge["amount"] - charges[j]["amount"]) > max(1.0, RECURRING_DRIFT * max(charge["amount"], charges[j]["amount"])):
+            one_name = _recurring_name(charge) == _recurring_name(charges[j])
+            same = _cents(charge["amount"]) == _cents(charges[j]["amount"]) or (one_name and _recurring_bill(charge) and _recurring_bill(charges[j]))
+            if not same and (not one_name or abs(charge["amount"] - charges[j]["amount"]) > max(1.0, RECURRING_DRIFT * max(charge["amount"], charges[j]["amount"]))):
                 continue
             for changes in (0, 1):
                 length, after = best[j][changes][0], changes + (0 if same else 1)
@@ -9747,6 +9751,11 @@ def _recurring_chain(charges: list[dict[str, Any]], rhythm: str) -> list[dict[st
     return chain[::-1]
 
 
+def _recurring_name(charge: dict[str, Any]) -> str:
+    """The name a charge's merchant went by this time (its key), as against `recurring_merchant`, what it goes by across its names."""
+    return charge["merchant"] or charge["name"].lower()
+
+
 def _recurring_bill(charge: dict[str, Any]) -> bool:
     """A bill (electricity, water, the internet), which comes every month at whatever it comes to."""
     return (charge["category"] or "") in RECURRING_ANY_AMOUNT
@@ -9758,9 +9767,16 @@ def _recurring_enough(chain: list[dict[str, Any]], rhythm: str, merchants: list[
     amount in cents, but for one change of price; or, a month apart, two of the very same amount
     ($49.99, not $15.00: two round sums a month apart could be anything). A bill can be any amount,
     three or more times, as long as they are most of what that merchant charged meanwhile, under
-    any of the names it went by in the run.
+    any of the names it went by in the run. A charge missed in between is allowed for, but no
+    more often than one isn't: two people's $9.99 subscriptions a fortnight apart are two monthly
+    ones, not one weekly one that is always missed.
     """
     cents = [_cents(c["amount"]) for c in chain]
+    high = RECURRING_GAPS[rhythm][1]
+    days = [datetime.fromisoformat(c["date"]).date() for c in chain]
+    missed = sum((b - a).days > high for a, b in zip(days, days[1:]))
+    if missed > len(chain) - 1 - missed:
+        return False
     if len(chain) == 2:
         return rhythm == "monthly" and cents[0] == cents[1] and cents[0] % 100 != 0
     if len(chain) < 3:
@@ -9816,7 +9832,7 @@ def budget_recurring(purchases: list[dict[str, Any]], today: Any) -> dict[str, A
             last = chain[-1]
             lastday = datetime.fromisoformat(last["date"]).date()
             due = _month_on(lastday) if rhythm == "monthly" else lastday + timedelta(days=7)
-            stopped = (today - due).days > RECURRING_GRACE_DAYS[rhythm]
+            stopped = (today - due).days >= RECURRING_GRACE_DAYS[rhythm]
             if stopped and (today - lastday).days > RECURRING_STOPPED_DAYS:
                 continue
             bill = _recurring_bill(last)

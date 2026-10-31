@@ -164,18 +164,21 @@ subscriptions, memberships, a weekly meal box, and the bills paid by card. It is
 nobody remembers paying for, such as a service the app replaced that is still being billed.
 
 - **What counts.** A merchant's charges that come a week or a month apart (a missed one in between
-  is allowed for) at the same price to the cent, three or more times. Two a month apart count too
+  is allowed for, but no more often than one isn't, so two people's subscriptions a fortnight apart
+  are two monthly ones) at the same price to the cent, three or more times. Two a month apart count too
   when the price is to the cent and not a round sum ($49.99, not $15.00). A price may change once
   along the way: the row says "Up from $32.99". A bill (Plaid's `RENT_AND_UTILITIES`: power, water,
   the internet) may be any amount, as long as its charges are most of what that merchant charged
   meanwhile, and costs what its last three came to on average. A coffee shop visited weekly is not
   recurring (its amount is never the same twice), nor are Amazon's shipments.
 - **One merchant, two names.** Charges are grouped by the first word of the merchant's name, because
-  Plaid names the same one "Factor Inc." one week and "Factor75" the next. Two merchants that share
-  a first word still keep apart, by amount: YouTube TV and its NFL add-on are two rows.
+  Plaid names the same one "Factor Inc." one week and "Factor75" the next. A run goes from one name
+  to another only at the very same price: a change of price, or a bill's amount, stays with one
+  name, so City Power's bills don't run on into City Water's. Two merchants that share a first word
+  still keep apart, by amount: YouTube TV and its NFL add-on are two rows.
 - **When the next is due.** A month after the last (the month's last day when it is shorter), or a
-  week. Past that, the row says it is due and not charged yet. A monthly one 8 days overdue (a
-  weekly one 4) has **stopped**, cancelled or moved off the cards, and is listed under Stopped for
+  week. Past that, the row says it is due and not charged yet. On the day a monthly one is 8 days
+  overdue (a weekly one 4) it has **stopped**, cancelled or moved off the cards, and is listed under Stopped for
   120 days from its last charge, so a cancellation can be seen to have taken.
 - **A month's worth.** A monthly charge's last price, a weekly one's times 52 / 12. The headline is
   the sum of those still running.

@@ -5461,6 +5461,36 @@ class BudgetRecurringTest(_Budget):
                      enumerate((("2026-07-20", 30.0), ("2026-08-01", 45.0), ("2026-08-25", 12.0)))))
         self.assertEqual({}, self.named())
 
+    def test_two_utilities_that_share_a_first_word_are_two_bills(self):
+        self.store(*(_txn(f"power{i}", 120.0, date=day, name="CITY POWER", merchant="City Power", category="RENT_AND_UTILITIES") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))),
+                   *(_txn(f"water{i}", 35.0, date=day, name="CITY WATER", merchant="City Water", category="RENT_AND_UTILITIES") for i, day in enumerate(("2026-08-03", "2026-09-03", "2026-10-03"))))
+        self.assertEqual({"City Power": 120.0, "City Water": 35.0}, {name: r["monthly"] for name, r in self.named().items()})
+        self.assertEqual(155.0, self.recurring()["monthly"])
+
+    def test_the_same_subscription_on_two_cards_a_fortnight_apart_is_two_monthly_ones(self):
+        self.store(*(_txn(f"a{i}", 9.99, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))))
+        self.store(*(_txn(f"s{i}", 9.99, date=day, account="platinum", name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-15", "2026-08-15", "2026-09-15"))),
+                   item="amex")
+        charges = self.recurring()["charges"]
+        self.assertEqual([("monthly", self.PLATINUM, "2026-10-15"), ("monthly", self.VENTURE, "2026-10-01")],
+                         sorted(((r["rhythm"], r["card"], r["next"]) for r in charges), key=lambda r: r[1]))
+        self.assertEqual(19.98, self.recurring()["monthly"])
+
+    def test_two_prices_from_merchants_that_share_a_first_word_are_not_one_price_change(self):
+        self.store(*(_txn(f"d{i}", 30.0, date=day, name="CLOUD DRIVE", merchant="Cloud Drive") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))),
+                   *(_txn(f"m{i}", 32.0, date=day, name="CLOUD MUSIC", merchant="Cloud Music") for i, day in enumerate(("2026-07-28", "2026-08-28", "2026-09-28"))))
+        self.assertEqual({"Cloud Drive": (30.0, None), "Cloud Music": (32.0, None)}, {name: (r["amount"], r["was"]) for name, r in self.named().items()})
+        self.assertEqual(62.0, self.recurring()["monthly"])
+
+    def test_one_stops_on_the_day_it_is_a_grace_overdue(self):
+        # Today is the 7th of October: a monthly one due the 29th of September is 8 days overdue, one due the 30th 7.
+        self.store(*(_txn(f"late{i}", 12.49, date=day, name="LATE CO", merchant="Late Co") for i, day in enumerate(("2026-07-29", "2026-08-29"))),
+                   *(_txn(f"near{i}", 12.49, date=day, name="NEAR CO", merchant="Near Co") for i, day in enumerate(("2026-07-30", "2026-08-30"))),
+                   # A weekly one due the 3rd is 4 days overdue, one due the 4th 3.
+                   *(_txn(f"wlate{i}", 20.49, date=day, name="BOX WEEKLY", merchant="Box Weekly") for i, day in enumerate(("2026-09-12", "2026-09-19", "2026-09-26"))),
+                   *(_txn(f"wnear{i}", 20.49, date=day, name="KIT WEEKLY", merchant="Kit Weekly") for i, day in enumerate(("2026-09-13", "2026-09-20", "2026-09-27"))))
+        self.assertEqual({"Late Co": True, "Near Co": False, "Box Weekly": True, "Kit Weekly": False}, {name: r["stopped"] for name, r in self.named().items()})
+
     def test_a_bill_can_be_any_amount_and_costs_what_its_last_few_came_to(self):
         self.store(*(_txn(f"amp{i}", amount, date=day, name="ALAMEDA MUNICIPAL POWER", merchant="Alameda Municipal Power", category="RENT_AND_UTILITIES") for i, (day, amount) in
                      enumerate((("2026-07-14", 261.38), ("2026-08-11", 321.98), ("2026-09-02", 530.81), ("2026-09-11", 406.09)))))
