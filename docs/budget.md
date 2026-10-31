@@ -25,8 +25,8 @@ In the app: **Finance → Budget**. Its settings are behind **Limits and cards**
 - **Who spent what.** Each person and the family card against their own limits.
 - **Where take-home goes.** Take-home, minus the bills that aren't paid by card, minus the cards
   so far: what is left, or how much is coming out of savings.
-- **Recurring charges.** What the cards are charged every week or month, and what that comes to a
-  month (see below).
+- **Recurring charges.** What the cards and checking pay every week, two weeks, month, two months
+  or three months, and what that comes to a month (see below).
 - **What it went on, where it went, month by month**, and every purchase. Tap a month's bar to
   look back at it.
 
@@ -84,7 +84,7 @@ from then on those purchases sort themselves. The same choices are under **Limit
 Tap a name under a purchase to tag it. Tap the purchase itself for the sheet, where **Always for
 …** remembers the shop, so every purchase from it, past and future, goes the same way. Remembered
 shops are listed in the settings and can be forgotten there. A tag stays with a pending purchase
-when it settles.
+when it settles, and one taken off the settled purchase stays off (so does a line's tag, or a note).
 
 ### Which budget line a purchase is in
 
@@ -170,13 +170,15 @@ Under **Limits and cards → Alerts** (and in Settings → Notifications) are fo
 ## Recurring charges
 
 Under the budget lines, **Recurring charges** lists what the cards are charged, and the checking
-account pays, again and again: subscriptions, memberships, a weekly meal box, the phone, the student
-loan. It is there to catch what nobody remembers paying for, such as a service the app replaced that
+account pays, again and again: subscriptions, memberships, a weekly meal box, the cleaner every two
+weeks, the phone, the student loan, the water bill every two months, insurance every three. It is there to catch what nobody remembers paying for, such as a service the app replaced that
 is still being billed.
 
-- **What counts.** A merchant's charges that come a week or a month apart (a missed one in between
-  is allowed for, but no more often than one isn't, so two people's subscriptions a fortnight apart
-  are two monthly ones) at the same price to the cent, three or more times. Two a month apart count too
+- **What counts.** A merchant's charges that come a week (5 to 9 days), two weeks (12 to 16), a
+  month (26 to 35), two months (54 to 68) or three months (84 to 98) apart, at the same price to the
+  cent, three or more times. A missed one in between is allowed for, but no more often than one
+  isn't, and a run every two weeks stays on one card or account, so two people's subscriptions a
+  fortnight apart are two monthly ones. Of runs that fit more than one rhythm, the longest is it. Two a month apart count too
   when the price is to the cent and not a round sum ($49.99, not $15.00). A price may change once
   along the way: the row says "Up from $32.99". A bill (Plaid's `RENT_AND_UTILITIES`: power, water,
   the internet) may be any amount, as long as its charges are most of what that merchant charged
@@ -187,16 +189,18 @@ is still being billed.
   to another only at the very same price: a change of price, or a bill's amount, stays with one
   name, so City Power's bills don't run on into City Water's. Two merchants that share a first word
   still keep apart, by amount: YouTube TV and its NFL add-on are two rows.
-- **When the next is due.** A month after the last (the month's last day when it is shorter), or a
-  week. Past that, the row says it is due and not charged yet. On the day a monthly one is 8 days
-  overdue (a weekly one 4) it has **stopped**, cancelled or moved off the cards, and is listed under Stopped for
-  120 days from its last charge, so a cancellation can be seen to have taken. One that stopped
+- **When the next is due.** One, two or three months after the last (that month's last day when it is
+  shorter), or one or two weeks. Past that, the row says it is due and not charged yet. Once it is
+  overdue by 4 days (weekly), 6 (two weeks), 8 (monthly), 12 (two months) or 15 (three months) it
+  has **stopped**, cancelled or moved off the cards, and is listed under Stopped until 90 days past
+  when it was due, so a cancellation can be seen to have taken. One that stopped
   where a run at the same price and rhythm took over after its last charge isn't listed: its billing
   day moved. One that ran alongside it (the same subscription on the other person's card) is.
-- **A month's worth.** A monthly charge's last price, a weekly one's times 52 / 12. The headline is
-  the sum of those still running.
-- **Only the month under way.** It is worked out as of today from the six months the page reads, so
-  a month looked back at doesn't show it.
+- **A month's worth.** The last price times how many come in a year (52, 26, 12, 6 or 4), over 12:
+  a row that doesn't come monthly says it under its price, and a bill says "About $120 a month".
+  The headline is the sum of those still running.
+- **Only the month under way.** It is worked out as of today from the last 13 months, enough for
+  three charges three months apart with one missed, so a month looked back at doesn't show it.
 - **The checking account too.** A checking account linked as *A bank or credit card* (it comes
   with the card at the same bank) has its withdrawals listed beside the cards' purchases: not what
   comes in (pay), not its savings accounts', not money moved to the household's own accounts
@@ -207,11 +211,14 @@ is still being billed.
   checking pays is put in one of the sheet's other expense lines, the bill lines, which the app
   reports to the relay with the rest of the sheet (`sheet.bills`), as card purchases find their
   line: by the line's name and Plaid's category ("Cellphone" takes the telephone bill, "Student
-  loans" a loan payment, "Insurance" insurance).
+  loans" a loan payment, "Insurance" insurance, "Water" the water bill, "Electric" gas and
+  electric). A provider known for one kind of bill decides first, because Plaid files AT&T's
+  internet as a telephone bill: AT&T, Comcast, Sonic and the like go to the internet line,
+  T-Mobile, Verizon and the like to the phone's, and a financial adviser (Cetera, Ameriprise, …)
+  to "Financial services", whatever Plaid calls them.
 - **History.** The first sync after checking began to be kept reads its bank from the start once
   (`txn_checking_read` in the state table), to have what was dropped before; the cards' rows are
-  written over as they were, tags and all. A bill paid every two or three months (water, life
-  insurance) isn't caught: only weekly and monthly ones are.
+  written over as they were, tags and all.
 
 ## Amazon orders
 

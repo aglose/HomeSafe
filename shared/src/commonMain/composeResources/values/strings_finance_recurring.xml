@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Budget tab's recurring charges (features/finance BudgetRecurring.kt): what the cards are charged every week or month. -->
+<!-- The Budget tab's recurring charges (features/finance BudgetRecurring.kt): what the cards are charged every week, two weeks, month, two months or three months. -->
 <resources>
     <string name="fin_recurring_title">Recurring charges</string>
-    <string name="fin_recurring_subtitle">What the cards and checking pay every week or month</string>
+    <string name="fin_recurring_subtitle">What the cards and checking pay again and again</string>
     <string name="fin_recurring_headline">About %1$s a month</string>
     <plurals name="fin_recurring_running">
         <item quantity="one">%1$d still running</item>
@@ -14,11 +14,26 @@
     <string name="fin_recurring_monthly_due">Monthly · due %1$s, not charged yet</string>
     <string name="fin_recurring_weekly_due">Weekly · due %1$s, not charged yet</string>
     <string name="fin_recurring_bill_due">Monthly bill · due %1$s, not charged yet</string>
+    <string name="fin_recurring_biweekly_next">Every 2 weeks · next %1$s</string>
+    <string name="fin_recurring_biweekly_due">Every 2 weeks · due %1$s, not charged yet</string>
+    <string name="fin_recurring_bimonthly_next">Every 2 months · next %1$s</string>
+    <string name="fin_recurring_bimonthly_due">Every 2 months · due %1$s, not charged yet</string>
+    <string name="fin_recurring_quarterly_next">Every 3 months · next %1$s</string>
+    <string name="fin_recurring_quarterly_due">Every 3 months · due %1$s, not charged yet</string>
+    <string name="fin_recurring_bill_weekly_next">Weekly bill · next %1$s</string>
+    <string name="fin_recurring_bill_weekly_due">Weekly bill · due %1$s, not charged yet</string>
+    <string name="fin_recurring_bill_biweekly_next">Bill every 2 weeks · next %1$s</string>
+    <string name="fin_recurring_bill_biweekly_due">Bill every 2 weeks · due %1$s, not charged yet</string>
+    <string name="fin_recurring_bill_bimonthly_next">Bill every 2 months · next %1$s</string>
+    <string name="fin_recurring_bill_bimonthly_due">Bill every 2 months · due %1$s, not charged yet</string>
+    <string name="fin_recurring_bill_quarterly_next">Bill every 3 months · next %1$s</string>
+    <string name="fin_recurring_bill_quarterly_due">Bill every 3 months · due %1$s, not charged yet</string>
     <string name="fin_recurring_last">Last charged %1$s</string>
     <string name="fin_recurring_up">Up from %1$s</string>
     <string name="fin_recurring_down">Down from %1$s</string>
     <string name="fin_recurring_a_month">%1$s a month</string>
     <string name="fin_recurring_about">About %1$s</string>
+    <string name="fin_recurring_about_a_month">About %1$s a month</string>
     <plurals name="fin_recurring_more">
         <item quantity="one">%1$d more</item>
         <item quantity="other">%1$d more</item>
@@ -26,5 +41,5 @@
     <string name="fin_recurring_fewer">Show fewer</string>
     <string name="fin_recurring_stopped">Stopped</string>
     <string name="fin_recurring_checking">Checking</string>
-    <string name="fin_recurring_how">Found in the last six months of the cards and the checking account: anything paid every week or month at the same price, and bills at whatever they come to. Money moved to your own accounts and card payments are left out, and what checking pays isn't counted against the budget. Something cancelled moves to Stopped once its next charge is a week overdue.</string>
+    <string name="fin_recurring_how">Found in the last year of the cards and the checking account: anything paid every week, every 2 weeks, every month, every 2 months or every 3 months at the same price, and bills at whatever they come to. Money moved to your own accounts and card payments are left out, and what checking pays isn't counted against the budget. Something cancelled moves to Stopped once its next charge is well overdue.</string>
 </resources>

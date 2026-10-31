@@ -35,8 +35,21 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.fin_recurring_a_month
 import homesafe.shared.generated.resources.fin_recurring_about
+import homesafe.shared.generated.resources.fin_recurring_about_a_month
+import homesafe.shared.generated.resources.fin_recurring_bill_bimonthly_due
+import homesafe.shared.generated.resources.fin_recurring_bill_bimonthly_next
+import homesafe.shared.generated.resources.fin_recurring_bill_biweekly_due
+import homesafe.shared.generated.resources.fin_recurring_bill_biweekly_next
 import homesafe.shared.generated.resources.fin_recurring_bill_due
 import homesafe.shared.generated.resources.fin_recurring_bill_next
+import homesafe.shared.generated.resources.fin_recurring_bill_quarterly_due
+import homesafe.shared.generated.resources.fin_recurring_bill_quarterly_next
+import homesafe.shared.generated.resources.fin_recurring_bill_weekly_due
+import homesafe.shared.generated.resources.fin_recurring_bill_weekly_next
+import homesafe.shared.generated.resources.fin_recurring_bimonthly_due
+import homesafe.shared.generated.resources.fin_recurring_bimonthly_next
+import homesafe.shared.generated.resources.fin_recurring_biweekly_due
+import homesafe.shared.generated.resources.fin_recurring_biweekly_next
 import homesafe.shared.generated.resources.fin_recurring_checking
 import homesafe.shared.generated.resources.fin_recurring_down
 import homesafe.shared.generated.resources.fin_recurring_fewer
@@ -46,11 +59,14 @@ import homesafe.shared.generated.resources.fin_recurring_last
 import homesafe.shared.generated.resources.fin_recurring_monthly_due
 import homesafe.shared.generated.resources.fin_recurring_monthly_next
 import homesafe.shared.generated.resources.fin_recurring_more
+import homesafe.shared.generated.resources.fin_recurring_quarterly_due
+import homesafe.shared.generated.resources.fin_recurring_quarterly_next
 import homesafe.shared.generated.resources.fin_recurring_running
 import homesafe.shared.generated.resources.fin_recurring_stopped
 import homesafe.shared.generated.resources.fin_recurring_up
 import homesafe.shared.generated.resources.fin_recurring_weekly_due
 import homesafe.shared.generated.resources.fin_recurring_weekly_next
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -61,7 +77,7 @@ private const val RECURRING_SHOWN = 6
 internal val Budget.showsRecurring: Boolean get() = isCurrentMonth && recurring?.charges?.isNotEmpty() == true
 
 /**
- * What the cards and the checking account pay every week or month: what those still running come
+ * What the cards and the checking account pay again and again: what those still running come
  * to a month, each with when the next one is due, the sheet's line it is in, and whose it is (or
  * that checking pays it), a price that changed at its last charge, and
  * under them those that stopped (cancelled, or moved off the cards), so a cancellation can be
@@ -104,8 +120,9 @@ internal fun RecurringBlock(recurring: RecurringCharges, budget: Budget, modifie
 
 /**
  * One recurring charge: its merchant, how often and when next (or when it last came, once it
- * stopped) and whose, and what it costs: a bill what it comes to a month, a weekly one what it
- * is each time and a month. A price that changed says what it was.
+ * stopped) and whose, and what it costs: a monthly bill what it comes to a month, anything else
+ * what it was last time, and what it comes to a month too when it doesn't come monthly. A price
+ * that changed says what it was, under that.
  */
 @Composable
 private fun RecurringRow(charge: RecurringCharge, people: List<String>, today: String) {
@@ -132,26 +149,32 @@ private fun RecurringRow(charge: RecurringCharge, people: List<String>, today: S
         Spacer(Modifier.width(12.dp))
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                if (charge.bill) stringResource(Res.string.fin_recurring_about, FinanceFormat.money(charge.monthly, 0)) else FinanceFormat.money(charge.amount),
+                if (charge.bill && charge.rhythm == RecurringRhythm.MONTHLY) {
+                    stringResource(Res.string.fin_recurring_about, FinanceFormat.money(charge.monthly, 0))
+                } else {
+                    FinanceFormat.money(charge.amount)
+                },
                 style = FinanceTheme.type.bodyStrong,
                 color = strong,
             )
+            if (charge.rhythm != RecurringRhythm.MONTHLY && !charge.stopped) {
+                Text(
+                    stringResource(if (charge.bill) Res.string.fin_recurring_about_a_month else Res.string.fin_recurring_a_month, FinanceFormat.money(charge.monthly, 0)),
+                    style = FinanceTheme.type.label,
+                    color = colors.textTertiary,
+                )
+            }
             val was = charge.was
-            when {
-                was != null && !charge.stopped -> {
-                    val up = charge.amount > was
-                    val tint = if (up) colors.watch else colors.gain
-                    Text(
-                        stringResource(if (up) Res.string.fin_recurring_up else Res.string.fin_recurring_down, FinanceFormat.money(was)),
-                        style = FinanceTheme.type.micro,
-                        color = tint,
-                        maxLines = 1,
-                        modifier = Modifier.padding(top = 2.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
-                }
-
-                charge.rhythm == RecurringRhythm.WEEKLY && !charge.stopped ->
-                    Text(stringResource(Res.string.fin_recurring_a_month, FinanceFormat.money(charge.monthly, 0)), style = FinanceTheme.type.label, color = colors.textTertiary)
+            if (was != null && !charge.stopped) {
+                val up = charge.amount > was
+                val tint = if (up) colors.watch else colors.gain
+                Text(
+                    stringResource(if (up) Res.string.fin_recurring_up else Res.string.fin_recurring_down, FinanceFormat.money(was)),
+                    style = FinanceTheme.type.micro,
+                    color = tint,
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 2.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                )
             }
         }
     }
@@ -162,16 +185,26 @@ private fun RecurringRow(charge: RecurringCharge, people: List<String>, today: S
 private fun recurringWhen(charge: RecurringCharge, today: String): String {
     val next = charge.next
     if (charge.stopped || next == null) return stringResource(Res.string.fin_recurring_last, FinanceFormat.dayOfMonth(charge.last).resolve())
-    val day = FinanceFormat.dayOfMonth(next).resolve()
-    val late = next < today
-    return stringResource(
-        when {
-            charge.bill -> if (late) Res.string.fin_recurring_bill_due else Res.string.fin_recurring_bill_next
-            charge.rhythm == RecurringRhythm.WEEKLY -> if (late) Res.string.fin_recurring_weekly_due else Res.string.fin_recurring_weekly_next
-            else -> if (late) Res.string.fin_recurring_monthly_due else Res.string.fin_recurring_monthly_next
-        },
-        day,
-    )
+    val (upcoming, overdue) = if (charge.bill) charge.rhythm.billWhen() else charge.rhythm.chargeWhen()
+    return stringResource(if (next < today) overdue else upcoming, FinanceFormat.dayOfMonth(next).resolve())
+}
+
+/** A charge of this rhythm's next one, and the one that is overdue. */
+private fun RecurringRhythm.chargeWhen(): Pair<StringResource, StringResource> = when (this) {
+    RecurringRhythm.WEEKLY -> Res.string.fin_recurring_weekly_next to Res.string.fin_recurring_weekly_due
+    RecurringRhythm.BIWEEKLY -> Res.string.fin_recurring_biweekly_next to Res.string.fin_recurring_biweekly_due
+    RecurringRhythm.MONTHLY -> Res.string.fin_recurring_monthly_next to Res.string.fin_recurring_monthly_due
+    RecurringRhythm.BIMONTHLY -> Res.string.fin_recurring_bimonthly_next to Res.string.fin_recurring_bimonthly_due
+    RecurringRhythm.QUARTERLY -> Res.string.fin_recurring_quarterly_next to Res.string.fin_recurring_quarterly_due
+}
+
+/** A bill of this rhythm's next one, and the one that is overdue. */
+private fun RecurringRhythm.billWhen(): Pair<StringResource, StringResource> = when (this) {
+    RecurringRhythm.WEEKLY -> Res.string.fin_recurring_bill_weekly_next to Res.string.fin_recurring_bill_weekly_due
+    RecurringRhythm.BIWEEKLY -> Res.string.fin_recurring_bill_biweekly_next to Res.string.fin_recurring_bill_biweekly_due
+    RecurringRhythm.MONTHLY -> Res.string.fin_recurring_bill_next to Res.string.fin_recurring_bill_due
+    RecurringRhythm.BIMONTHLY -> Res.string.fin_recurring_bill_bimonthly_next to Res.string.fin_recurring_bill_bimonthly_due
+    RecurringRhythm.QUARTERLY -> Res.string.fin_recurring_bill_quarterly_next to Res.string.fin_recurring_bill_quarterly_due
 }
 
 @Preview(name = "Budget · recurring charges", widthDp = 412, heightDp = 1100)

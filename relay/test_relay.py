@@ -16,6 +16,7 @@ import threading
 import time
 import types
 import unittest
+from datetime import date
 
 
 def _stub(name: str, **attrs) -> None:
@@ -5285,6 +5286,15 @@ class BudgetSyncTest(_Budget):
         self.assertEqual([("t1", "person:Sarah", "manual")], [(t["id"], t["bucket"], t["source"]) for t in month["transactions"]])
         self.assertEqual(56.0, month["spent"])
 
+    def test_a_tag_taken_off_a_settled_purchase_stays_off_when_plaid_changes_it_again(self):
+        self.store(_txn("p1", 54.2, pending=True))
+        relay.put_budget_transaction("p1", types.SimpleNamespace(bucket="person:Sarah", remember=False), object(), self.response)
+        self.store(_txn("t1", 54.2, pending_transaction_id="p1"), removed=["p1"], cursor="c2")
+        relay.put_budget_transaction("t1", types.SimpleNamespace(bucket=None, remember=False), object(), self.response)
+        # Plaid sends the settled purchase again, still naming the pending one it replaced.
+        self.store(modified=[_txn("t1", 54.2, pending_transaction_id="p1", merchant="Shop Inc")], cursor="c3")
+        self.assertEqual([("t1", None)], [(t["id"], t["bucket"]) for t in self.month()["transactions"]])
+
     def test_a_pending_purchase_plaid_has_not_yet_taken_back_is_not_counted_twice(self):
         self.store(_txn("p1", 54.2, pending=True), _txn("t1", 54.2, pending_transaction_id="p1"))
         self.assertEqual(54.2, self.month()["spent"])
@@ -5574,6 +5584,35 @@ class BudgetRecurringTest(_Budget):
                    item="amex")
         self.assertEqual({(self.VENTURE, True), (self.PLATINUM, False)}, {(r["card"], r["stopped"]) for r in self.recurring()["charges"]})
 
+    def test_a_charge_every_two_weeks_two_months_or_three_months_is_found_with_what_it_comes_to_a_month(self):
+        self.store(*(_txn(f"clean{i}", 150.0, date=day, name="TIDY HOME", merchant="Tidy Home") for i, day in enumerate(("2026-08-27", "2026-09-10", "2026-09-24", "2026-10-06"))),
+                   # The water bill comes every two months at whatever it comes to.
+                   *(_txn(f"water{i}", amount, date=day, name="EBMUD", merchant="Ebmud", category="RENT_AND_UTILITIES") for i, (day, amount) in
+                     enumerate((("2026-04-10", 88.0), ("2026-06-09", 96.0), ("2026-08-10", 104.0)))),
+                   *(_txn(f"pest{i}", 89.97, date=day, name="BUGS BE GONE", merchant="Bugs Be Gone") for i, day in enumerate(("2026-01-31", "2026-04-30", "2026-07-31"))))
+        named = self.named()
+        self.assertEqual(("biweekly", 4, "2026-10-20", 325.0), tuple(named["Tidy Home"][k] for k in ("rhythm", "count", "next", "monthly")))
+        self.assertEqual(("bimonthly", True, "2026-10-10", 48.0), tuple(named["Ebmud"][k] for k in ("rhythm", "bill", "next", "monthly")))
+        # Three months on from the last day of July is the last of October.
+        self.assertEqual(("quarterly", "2026-10-31", 29.99), tuple(named["Bugs Be Gone"][k] for k in ("rhythm", "next", "monthly")))
+        self.assertEqual(round(325.0 + 48.0 + 29.99, 2), self.recurring()["monthly"])
+
+    def test_two_monthly_subscriptions_on_one_card_are_not_taken_for_one_every_two_weeks_when_the_cards_differ(self):
+        # A fortnight apart at one price, but on two people's cards: each is its own monthly one.
+        self.store(*(_txn(f"a{i}", 9.99, date=day, name="STREAMFLIX.COM", merchant="Streamflix") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01", "2026-10-01"))))
+        self.store(*(_txn(f"s{i}", 9.99, date=day, account="platinum", name="STREAMFLIX.COM", merchant="Streamflix") for i, day in
+                     enumerate(("2026-07-15", "2026-08-15", "2026-09-15"))), item="amex")
+        self.assertEqual({"monthly"}, {r["rhythm"] for r in self.recurring()["charges"]})
+
+    def test_a_quarterly_charge_that_stopped_stays_listed_a_while_past_when_it_was_due(self):
+        self.store(*(_txn(f"pest{i}", 89.97, date=day, name="BUGS BE GONE", merchant="Bugs Be Gone") for i, day in enumerate(("2025-10-15", "2026-01-15", "2026-04-15"))))
+        pest = self.named()["Bugs Be Gone"]
+        self.assertEqual(("quarterly", True, None), (pest["rhythm"], pest["stopped"], pest["next"]))
+
+    def test_a_month_on_keeps_the_day_or_takes_the_month_s_last(self):
+        self.assertEqual([date(2026, 2, 28), date(2027, 2, 28), date(2027, 1, 15)],
+                         [relay._month_on(date(2026, 1, 31)), relay._month_on(date(2026, 11, 30), 3), relay._month_on(date(2026, 11, 15), 2)])
+
     def test_two_prices_from_merchants_that_share_a_first_word_are_not_one_price_change(self):
         self.store(*(_txn(f"d{i}", 30.0, date=day, name="CLOUD DRIVE", merchant="Cloud Drive") for i, day in enumerate(("2026-07-01", "2026-08-01", "2026-09-01"))),
                    *(_txn(f"m{i}", 32.0, date=day, name="CLOUD MUSIC", merchant="Cloud Music") for i, day in enumerate(("2026-07-28", "2026-08-28", "2026-09-28"))))
@@ -5691,6 +5730,25 @@ class BudgetLinesTest(_Budget):
         self.assertEqual({"name": "Groceries", "planned": 600.0, "spent": 266.5, "count": 3, "usual": None}, self.line("Groceries"))
         self.assertEqual({"name": None, "planned": None, "spent": 50.0, "count": 1, "usual": None}, self.line(None))
 
+    def test_each_bill_finds_its_own_kind_of_line_and_the_provider_decides_when_plaid_files_it_elsewhere(self):
+        bills = ["Mortgage", "Electric", "Life Insurance x 2", "Sarah Disability Insurance", "T-Mobile", "Water", "Financial Services", "Internet", "Gas"]
+        guess = lambda name, category, detail: relay.budget_line_guess(bills, relay.merchant_key(name, None), category, detail)
+        self.assertEqual("Internet", guess("AT&T", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_TELEPHONE"))
+        self.assertEqual("Internet", guess("Sonic Internet", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_INTERNET_AND_CABLE"))
+        self.assertEqual("T-Mobile", guess("T-Mobile", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_TELEPHONE"))
+        self.assertEqual("Electric", guess("Pacific Gas and Electric Company", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"))
+        self.assertEqual("Water", guess("Ebmud", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_WATER"))
+        self.assertEqual("Financial Services", guess("Cetera", "TRAVEL", "TRAVEL_OTHER_TRAVEL"))
+        # An adviser filed as insurance is still the adviser's, not the life insurance.
+        self.assertEqual("Financial Services", guess("Ameriprise Financial", "GENERAL_SERVICES", "GENERAL_SERVICES_INSURANCE"))
+        self.assertEqual("Life Insurance x 2", guess("Pacific Life", "GENERAL_SERVICES", "GENERAL_SERVICES_INSURANCE"))
+        # A line called Gas is fuel, not the gas and electric bill.
+        self.assertEqual("Gas", guess("Shell", "TRANSPORTATION", "TRANSPORTATION_GAS"))
+        # A phone carrier nobody listed still finds the phone line (here named after another carrier), not the internet's.
+        self.assertEqual("T-Mobile", guess("Ting", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_TELEPHONE"))
+        # A provider's name decides only for a bill: Sonic the drive-in is not the internet.
+        self.assertIsNone(guess("Sonic Drive-In", "FOOD_AND_DRINK", "FOOD_AND_DRINK_FAST_FOOD"))
+
     def test_only_the_lines_paid_by_card_are_lines(self):
         self.store(_txn("safeway", 64.5, name="SAFEWAY #1234", merchant="Safeway", category="FOOD_AND_DRINK"))
         relay.budget_config_save({"card_paid_lines": ["Dining out"]}, self.NOW)
@@ -5728,6 +5786,14 @@ class BudgetLinesTest(_Budget):
         relay.put_budget_transaction_line("p1", types.SimpleNamespace(line="Dining out", remember=False), object(), self.response)
         self.store(_txn("t1", 56.0, pending_transaction_id="p1"), removed=["p1"], cursor="c2")
         self.assertEqual({"t1": ("Dining out", "manual")}, self.found())
+
+    def test_a_line_s_tag_taken_off_a_settled_purchase_stays_off_when_plaid_changes_it_again(self):
+        self.store(_txn("p1", 54.2, pending=True))
+        relay.put_budget_transaction_line("p1", types.SimpleNamespace(line="Dining out", remember=False), object(), self.response)
+        self.store(_txn("t1", 56.0, pending_transaction_id="p1"), removed=["p1"], cursor="c2")
+        relay.put_budget_transaction_line("t1", types.SimpleNamespace(line=None, remember=False), object(), self.response)
+        self.store(modified=[_txn("t1", 56.0, pending_transaction_id="p1", merchant="Diner Inc")], cursor="c3")
+        self.assertNotEqual("manual", self.found()["t1"][1])
 
     def test_a_line_usually_comes_to_the_average_of_the_months_before_that_spent_anything(self):
         self.store(_txn("aug", 700.0, date="2026-08-10"), _txn("sep", 500.0, date="2026-09-10"), _txn("oct", 100.0),

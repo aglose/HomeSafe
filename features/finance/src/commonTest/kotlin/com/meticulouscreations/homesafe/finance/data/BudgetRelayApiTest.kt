@@ -191,6 +191,14 @@ class BudgetRelayApiTest {
     }
 
     @Test
+    fun eachRhythmIsReadAndOneThisAppDoesNotKnowIsTakenForAMonths() {
+        assertEquals(
+            listOf(RecurringRhythm.WEEKLY, RecurringRhythm.BIWEEKLY, RecurringRhythm.MONTHLY, RecurringRhythm.BIMONTHLY, RecurringRhythm.QUARTERLY, RecurringRhythm.MONTHLY),
+            listOf("weekly", "biweekly", "monthly", "bimonthly", "quarterly", "yearly").map(::recurringRhythm),
+        )
+    }
+
+    @Test
     fun aMonthFromARelayBeforeRecurringChargesHasNone() = runTest {
         assertNull(api(MockEngine { respond(month, HttpStatusCode.OK, jsonHeaders) }).budget("http://frigate.local", null).getOrThrow().recurring)
     }
