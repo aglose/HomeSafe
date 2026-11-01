@@ -99,6 +99,24 @@ class DesktopVideoEngineTest {
     }
 
     @Test
+    fun `a join that never drew stays cancelled if the stream on screen ended before the next choice`() {
+        val ending = server.clip("ending", width = SD_WIDTH, height = 36, seconds = 1)
+        val cancelled = server.clip("cancelled", width = HD_WIDTH, height = 72, joinDelayMs = 3_000)
+        val chosen = server.clip("chosen", width = OTHER_WIDTH, height = 54, joinDelayMs = 6_000)
+        onUi { engine.load(VideoSource.Live(ending.url)) }
+        awaitTrue("the first stream's picture") { engine.picture?.width == SD_WIDTH }
+        onUi { engine.load(VideoSource.Live(cancelled.url)) }
+        awaitTrue("the first stream to end") { ending.connections.get() == 0 && decodeThreads() == 1 }
+
+        onUi { engine.load(VideoSource.Live(chosen.url)) }
+
+        awaitTrue("the last choice's picture") {
+            assertTrue(engine.picture?.width != HD_WIDTH, "the cancelled stream was drawn")
+            engine.picture?.width == OTHER_WIDTH
+        }
+    }
+
+    @Test
     fun `a slow camera doesn't hold up another camera's start`() {
         val slow = server.clip("slow", width = HD_WIDTH, height = 72, joinDelayMs = 60_000)
         val quick = server.clip("quick", width = SD_WIDTH, height = 36)
@@ -210,8 +228,11 @@ class DesktopVideoEngineTest {
         onUi { engine.load(VideoSource.Recording(recording.url, headers = emptyMap(), startPositionMs = 0)) }
         SwingUtilities.invokeLater { uiFree.await() }
 
-        awaitTrue("the recording to play to its end") { decodeThreads() == 0 }
-        uiFree.countDown()
+        try {
+            awaitTrue("the recording to play to its end") { decodeThreads() == 0 }
+        } finally {
+            uiFree.countDown()
+        }
 
         awaitTrue("the end to be reported") { engine.ended == 1 }
         assertEquals(HD_WIDTH, engine.picture?.width)

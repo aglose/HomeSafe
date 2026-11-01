@@ -113,6 +113,9 @@ internal class DesktopVideoEngine(val key: String?) {
     /** The [session] still drawing until the current one has its first picture, or [NO_SESSION]; see [load]. */
     private val outgoing = AtomicInteger(NO_SESSION)
 
+    /** The [session] that made [picture]. UI thread only. */
+    private var pictureSession = NO_SESSION
+
     /** A picture a decode thread made that the UI thread hasn't published yet; replaced, not queued, when it falls behind. */
     private val pending = AtomicReference<PendingPicture?>(null)
 
@@ -131,8 +134,8 @@ internal class DesktopVideoEngine(val key: String?) {
         if (previous is VideoSource.Live && next is VideoSource.Live && previous.url == next.url) return
         val moving = picture != null && pictureGeneration == coldStartGeneration
         if (previous is VideoSource.Live && next is VideoSource.Live && running && moving) {
-            // A join that never drew is simply replaced; whatever is on screen stays until something takes over.
-            outgoing.compareAndSet(NO_SESSION, session)
+            // Whatever is on screen plays on until something takes over; a join that never drew is simply replaced.
+            if (pictureSession == session) outgoing.compareAndSet(NO_SESSION, session)
         } else {
             outgoing.set(NO_SESSION)
             coldStartGeneration++
@@ -413,6 +416,7 @@ internal class DesktopVideoEngine(val key: String?) {
             // Drawn pictures hold their own reference to the Skia image, so the one replaced can go now.
             val previous = picture
             picture = next.image
+            pictureSession = next.session
             previous?.close()
             if (fromCurrent && pictureGeneration != coldStartGeneration) pictureGeneration = coldStartGeneration
             if (stalled) stalled = false

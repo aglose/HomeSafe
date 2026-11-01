@@ -32,7 +32,8 @@ internal fun go2rtcContinuousUrl(url: String): String? {
  * through with no hold until the picture has caught up, rather than the clock starting from the
  * oldest of it and staying that far behind for good. The clock starts again only on a jump forward
  * in the timestamps, as there is nothing to wait for, or when every frame for a whole
- * [ADJUST_WINDOW_NANOS] has been over [MAX_DRIFT_NANOS] late, which no backlog would last.
+ * [ADJUST_WINDOW_NANOS] has been over [MAX_DRIFT_NANOS] late without getting at least
+ * [MIN_DRAIN_NANOS] less so: not a backlog draining, however slowly, but a clock that is out.
  *
  * The live clock also moves to suit how frames have been arriving, looked at over the same window.
  * Any that came late give it that much room, up to [MAX_ROOM_NANOS] in all, so that jitter of that
@@ -46,6 +47,7 @@ internal class FramePacer(private val live: Boolean) {
     private var windowEndsAtNanos = NO_WINDOW
     private var shortestHoldNanos = Long.MAX_VALUE
     private var longestHoldNanos = Long.MIN_VALUE
+    private var firstHoldNanos = 0L
 
     /** After a pause or a seek: the next frame is shown at once, and the clock runs from it. */
     fun restart() {
@@ -59,11 +61,14 @@ internal class FramePacer(private val live: Boolean) {
         if (!live) return if (hold < -MAX_DRIFT_NANOS) startFrom(timestampUs, nowNanos) else hold.coerceAtLeast(0)
         if (hold > MAX_DRIFT_NANOS) return startFrom(timestampUs, nowNanos)
         // A window opens on a frame rather than on the wall clock, so one stall can't close a window on the frame after it alone.
-        if (windowEndsAtNanos == NO_WINDOW) windowEndsAtNanos = nowNanos + ADJUST_WINDOW_NANOS
+        if (windowEndsAtNanos == NO_WINDOW) {
+            windowEndsAtNanos = nowNanos + ADJUST_WINDOW_NANOS
+            firstHoldNanos = hold
+        }
         shortestHoldNanos = min(shortestHoldNanos, hold)
         longestHoldNanos = max(longestHoldNanos, hold)
         if (nowNanos < windowEndsAtNanos) return hold.coerceAtLeast(0)
-        if (longestHoldNanos < -MAX_DRIFT_NANOS) return startFrom(timestampUs, nowNanos)
+        if (longestHoldNanos < -MAX_DRIFT_NANOS && hold - firstHoldNanos < MIN_DRAIN_NANOS) return startFrom(timestampUs, nowNanos)
         val move = when {
             shortestHoldNanos > MAX_ROOM_NANOS -> -shortestHoldNanos
             shortestHoldNanos < 0 -> min(-shortestHoldNanos, MAX_ROOM_NANOS - roomNanos)
@@ -96,6 +101,7 @@ internal class FramePacer(private val live: Boolean) {
         const val MAX_DRIFT_NANOS = 1_000_000_000L
         const val ADJUST_WINDOW_NANOS = 2_000_000_000L
         const val MAX_ROOM_NANOS = 150_000_000L
+        const val MIN_DRAIN_NANOS = 50_000_000L
         private const val NANOS_PER_US = 1000L
         private const val UNSET = Long.MIN_VALUE
         private const val NO_WINDOW = Long.MAX_VALUE

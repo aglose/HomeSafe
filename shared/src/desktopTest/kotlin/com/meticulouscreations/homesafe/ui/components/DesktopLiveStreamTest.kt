@@ -61,6 +61,17 @@ class DesktopLiveStreamTest {
     }
 
     @Test
+    fun `a backlog is gone through to its end however little faster than real time it decodes`() {
+        // 25 fps video decoded at 50 fps, and at 30, so a five-second backlog takes a while to go.
+        for ((decode, drained) in listOf(20 * MS to 8_000 * MS, 33 * MS to 35_000 * MS)) {
+            val stallEnds = 15_000 * MS
+            val shown = playLive(seconds = 90, decode = decode) { capturedAt -> if (capturedAt in 10_000 * MS until stallEnds) stallEnds else capturedAt }
+            val after = shown.filter { it.capturedAt > stallEnds + drained }
+            assertTrue(after.all { it.delay <= FramePacer.MAX_ROOM_NANOS + FRAME + decode }, "decoding a frame in ${decode / MS} ms, up to ${after.maxOf { it.delay } / MS} ms behind")
+        }
+    }
+
+    @Test
     fun `the room for late frames doesn't add up past its limit`() {
         // Half a second late, every three seconds, for ten minutes, once under way on time.
         val shown = playLive(seconds = 600) { capturedAt ->
@@ -204,12 +215,12 @@ class DesktopLiveStreamTest {
      * one has been shown, and time moves on by the hold it is given. A hold made up for frames
      * that were already waiting doesn't vanish here, as it wouldn't there.
      */
-    private fun playLive(seconds: Int, arrivalOf: (capturedAt: Long) -> Long): List<ShownFrame> {
+    private fun playLive(seconds: Int, decode: Long = 0, arrivalOf: (capturedAt: Long) -> Long): List<ShownFrame> {
         val pacer = FramePacer(live = true)
         var now = 0L
         return List(seconds * 1000 / 40) { index ->
             val capturedAt = index * FRAME
-            now = maxOf(now, arrivalOf(capturedAt))
+            now = maxOf(now, arrivalOf(capturedAt)) + decode
             now += pacer.holdNanos(capturedAt / 1000, now)
             ShownFrame(capturedAt, now)
         }
