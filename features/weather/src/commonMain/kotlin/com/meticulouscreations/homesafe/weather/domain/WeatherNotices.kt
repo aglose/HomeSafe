@@ -231,7 +231,7 @@ object WeatherNoticePlanner {
         if (!settings.enabled) return emptyList()
         val notices = ArrayList<WeatherNotice>()
         val hour = report.localHour(nowEpochSeconds)
-        val quiet = hour < QUIET_UNTIL_HOUR || hour >= QUIET_FROM_HOUR
+        val quiet = isQuiet(hour)
 
         if (settings.severeAlerts) {
             report.alerts
@@ -247,6 +247,18 @@ object WeatherNoticePlanner {
         }
         return notices.filter { it.key !in sent }.map { it.copy(place = placeName) }
     }
+
+    /**
+     * Whether a shower's notification is held back at [localHour] on the place's clock, whatever
+     * the forecast says: the rules of [plan] that don't need one to go by.
+     */
+    fun holdsBackSoon(localHour: Int, nowEpochSeconds: Long, sent: Map<String, Long>): Boolean =
+        isQuiet(localHour) || saidSoonLately(nowEpochSeconds, sent)
+
+    private fun isQuiet(hour: Int): Boolean = hour < QUIET_UNTIL_HOUR || hour >= QUIET_FROM_HOUR
+
+    private fun saidSoonLately(now: Long, sent: Map<String, Long>): Boolean =
+        sent.any { (key, at) -> key.startsWith(SOON_PREFIX) && now - at < SOON_COOLDOWN_SECONDS }
 
     /**
      * A notification to look at, asked for from Settings: today as the forecast has it, whether
@@ -324,7 +336,7 @@ object WeatherNoticePlanner {
         val lead = near.startEpochSeconds - now
         if (lead > SOON_LEAD_SECONDS) return null
         // One shower, one notification: the next check will see the same start a little nearer.
-        if (sent.any { (key, at) -> key.startsWith(SOON_PREFIX) && now - at < SOON_COOLDOWN_SECONDS }) return null
+        if (saidSoonLately(now, sent)) return null
         val title = WeatherStory.nearTermPhrase(near, now) ?: return null
         val at = WeatherFormat.clock(near.startEpochSeconds, report.offsetAt(near.startEpochSeconds))
         val lasting = near.endEpochSeconds?.let { end -> WeatherFormat.roundedMinutes(end - near.startEpochSeconds) }

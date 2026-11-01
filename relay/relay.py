@@ -5678,7 +5678,12 @@ def rain_soon_tick(now: float, fetch: Callable[[dict[str, Any]], dict[str, Any]]
     for device_id, token in rain_soon_phones(now):
         if not rain_soon_claim(device_id, soon["key"], now, "relay")["granted"]:
             continue
-        result = (push or deliver)(token, title, body, data)
+        # Firebase out of reach raises rather than answering: this phone's push failing, not the rest's.
+        try:
+            result = (push or deliver)(token, title, body, data)
+        except Exception as e:  # noqa: BLE001
+            log.warning("rain soon: push failed (%s)", type(e).__name__)
+            result = "failed"
         results.append(result)
         if result == "failed":
             # Not told, so not held to it: the next look tries again, and its own check may get there first.

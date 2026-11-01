@@ -29,8 +29,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * One look at the forecast for notifications: fetch it for where the phone is, ask
@@ -108,7 +111,8 @@ class WeatherAlertCheck(
      * [shown] says the platform has drawn the push's own banner already (iOS, which then only
      * sometimes wakes the app to get here): what is posted takes its place, without alerting
      * again. Android draws nothing itself; a forecast this build can't read goes out as the relay
-     * worded it, [fallbackTitle] and [fallbackBody].
+     * worded it, [fallbackTitle] and [fallbackBody], with no card, under the same cooldown and the
+     * same quiet hours, read from this phone's clock since the relay only tells a phone at home.
      *
      * Doesn't wait on [running]: a check might be fetching a forecast, longer than a push's
      * handler may run, and at worst posts the same id again, which alerts nobody twice.
@@ -122,13 +126,15 @@ class WeatherAlertCheck(
         val prefs = preferences.observe().first()
         if (!prefs.notices.enabled || !prefs.notices.precipitationSoon || mute.muted.value || !notifier.isAllowed()) return@runCatching false
         val report = WeatherSoonPush.report(payload, now)
+        val home = textLoader.load(UiText.of(Res.string.weather_notice_place_home))
         val notification = if (report != null) {
             val settings = prefs.notices.copy(dailyOutlook = false, severeAlerts = false)
             val notice = WeatherNoticePlanner.plan(report, null, settings, prefs.units, now, sent).firstOrNull() ?: return@runCatching false
-            notice.copy(place = textLoader.load(UiText.of(Res.string.weather_notice_place_home))).toNotification(HERE)
+            notice.copy(place = home).toNotification(HERE)
         } else {
-            if (shown) return@runCatching false
-            WeatherNotification(key, fallbackTitle, fallbackBody, WeatherNoticeArt(WeatherNoticeIcon.RAIN), link = WeatherDeepLink(placeId = Place.CURRENT_ID))
+            val hour = Instant.fromEpochSeconds(now).toLocalDateTime(TimeZone.currentSystemDefault()).hour
+            if (shown || WeatherNoticePlanner.holdsBackSoon(hour, now, sent)) return@runCatching false
+            WeatherNotification(key, fallbackTitle, fallbackBody, WeatherNoticeArt(WeatherNoticeIcon.RAIN), place = home, link = WeatherDeepLink(placeId = Place.CURRENT_ID))
         }
         val posted = notifier.notify(notification.copy(replacesPush = shown))
         if (posted) ledger.record(notification.id, now)
@@ -163,16 +169,19 @@ class WeatherAlertCheck(
         if (!notifier.isAllowed()) return 0
         val place = place() ?: return 0
         val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return 0
-        val notices = WeatherNoticePlanner.plan(report, place.name.takeIf { it.isNotBlank() }, prefs.notices, prefs.units, now, ledger.sent(now))
+        // What the relay said it told this phone counts here as said, though the push may not have landed yet.
+        val sent = ledger.sent(now).mapKeys { (key, _) -> key.removePrefix(TOLD_PREFIX) }
+        val notices = WeatherNoticePlanner.plan(report, place.name.takeIf { it.isNotBlank() }, prefs.notices, prefs.units, now, sent)
         // Marked as said only once it has been: one the OS wouldn't take is tried again next time.
         return notices.count { notice ->
             // Muted while the forecast was being fetched: held back, and not marked as said.
             if (mute.muted.value) return@count false
-            // The relay told this phone first: said, as far as the next check is concerned.
+            // The relay told this phone first: this check stays quiet from now on, and the push, which
+            // may still be on its way, is kept apart from what has been posted so it can still land.
             if (notice.kind == WeatherNoticeKind.PRECIPITATION_SOON) {
                 val claim = claims.claim(notice.key)
                 if (claim != null && !claim.granted) {
-                    ledger.record(notice.key, claim.atEpochSeconds ?: now)
+                    ledger.record(TOLD_PREFIX + notice.key, claim.atEpochSeconds ?: now)
                     return@count false
                 }
             }
@@ -214,6 +223,9 @@ class WeatherAlertCheck(
             ?: places.observe().first().firstOrNull()
 
     private companion object {
+        /** In the ledger, ahead of a shower's key: the relay says it told this phone, and nothing here has seen it yet. */
+        const val TOLD_PREFIX = "told:"
+
         /** Where a shower from the relay lands: the phone's own position, since the relay only tells a phone at home. Only its id is read. */
         val HERE = Place(Place.CURRENT_ID, name = "", latitude = 0.0, longitude = 0.0)
 

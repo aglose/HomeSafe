@@ -46,9 +46,22 @@ import homesafe.shared.generated.resources.weather_unit_kmh
 import homesafe.shared.generated.resources.weather_unit_mm
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class WeatherNoticePlannerTest {
+
+    @Test
+    fun aShowerIsHeldBackWithoutAForecastInTheQuietHoursAndAfterOneSaidLately() {
+        val now = 100_000L
+        assertTrue(WeatherNoticePlanner.holdsBackSoon(22, now, emptyMap()))
+        assertTrue(WeatherNoticePlanner.holdsBackSoon(5, now, emptyMap()))
+        assertFalse(WeatherNoticePlanner.holdsBackSoon(21, now, emptyMap()))
+        assertFalse(WeatherNoticePlanner.holdsBackSoon(6, now, emptyMap()))
+        assertTrue(WeatherNoticePlanner.holdsBackSoon(12, now, mapOf("soon:1" to now - WeatherNoticePlanner.SOON_COOLDOWN_SECONDS + 1)))
+        assertFalse(WeatherNoticePlanner.holdsBackSoon(12, now, mapOf("soon:1" to now - WeatherNoticePlanner.SOON_COOLDOWN_SECONDS)))
+        assertFalse(WeatherNoticePlanner.holdsBackSoon(12, now, mapOf("today:1" to now)))
+    }
 
     private val metric = WeatherUnits(TemperatureUnit.CELSIUS, MeasureSystem.METRIC)
     private val all = WeatherNoticeSettings()

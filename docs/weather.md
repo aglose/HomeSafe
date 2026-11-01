@@ -202,7 +202,7 @@ it holds the other off for the three hours the planner would:
 
 | | What stops the second one |
 |---|---|
-| The relay pushed first | The phone's check asks, is told no, and notes it in its ledger as if it had said so itself. An Android phone already has: the push went through the ledger |
+| The relay pushed first | The phone's check asks, is told no, and stays quiet from then on. That is noted apart from what has been posted, so a push still on its way can land. An Android phone that got the push first needn't ask: it went through the ledger |
 | The phone's check said first | The relay finds it taken and doesn't push |
 | The relay was out of reach when the phone asked | The phone goes ahead: better twice than never. An Android phone drops the later push against its ledger. On an iPhone the push is drawn by iOS, so it can be seen a second time, on the same notification |
 

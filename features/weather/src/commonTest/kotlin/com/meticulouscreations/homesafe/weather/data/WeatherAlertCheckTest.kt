@@ -38,6 +38,9 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -207,14 +210,38 @@ class WeatherAlertCheckTest {
         assertFalse(h.pushed())
     }
 
+    /** [hour] o'clock on the clock of whatever machine runs this, which is the one an unreadable forecast goes by. */
+    private fun onThisClock(hour: Int) = LocalDateTime(2025, 10, 9, hour, 0).toInstant(TimeZone.currentSystemDefault()).epochSeconds
+
     @Test
-    fun aForecastThisBuildCantReadGoesOutAsTheRelayWordedIt() = runTest {
+    fun aForecastThisBuildCantReadGoesOutAsTheRelayWordedItStillSayingHome() = runTest {
         val h = harness(report = null)
+        h.clock.seconds = onThisClock(15)
         assertTrue(h.pushed(text = "a newer relay's"))
         val posted = h.notifier.posted.single()
         assertEquals(listOf(rainKey, "Rain at 3:30 PM", "Around 3:30 PM"), listOf(posted.id, posted.title, posted.body))
         assertEquals(WeatherNoticeIcon.RAIN, posted.art.icon)
-        assertTrue(h.ledger.sent(now).containsKey(rainKey))
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_place_home)), posted.place)
+        assertTrue(h.ledger.sent(h.clock.seconds).containsKey(rainKey))
+    }
+
+    @Test
+    fun aForecastThisBuildCantReadIsHeldBackAtNightByThisPhonesClock() = runTest {
+        val h = harness(report = null)
+        h.clock.seconds = onThisClock(23)
+        assertFalse(h.pushed(text = "a newer relay's"))
+        h.clock.seconds = onThisClock(5)
+        assertFalse(h.pushed(text = "a newer relay's"))
+        assertTrue(h.notifier.posted.isEmpty())
+    }
+
+    @Test
+    fun aForecastThisBuildCantReadDoesntRepeatAShowerAlreadySaid() = runTest {
+        val h = harness(report = null)
+        h.clock.seconds = onThisClock(15)
+        h.ledger.record("soon:1", h.clock.seconds - 600)
+        assertFalse(h.pushed(text = "a newer relay's"))
+        assertTrue(h.notifier.posted.isEmpty())
     }
 
     @Test
@@ -257,10 +284,21 @@ class WeatherAlertCheckTest {
         h.claims.answer = WeatherSoonClaims.Claim(granted = false, atEpochSeconds = now - 600)
         assertEquals(0, h.check.run())
         assertTrue(h.notifier.posted.isEmpty())
-        assertEquals(now - 600, h.ledger.sent(now)[rainKey])
+        assertEquals(now - 600, h.ledger.sent(now)["told:$rainKey"])
         // Not asked again: the phone knows, now.
         assertEquals(0, h.check.run())
         assertEquals(1, h.claims.asked.size)
+    }
+
+    @Test
+    fun aPushLandingAfterTheCheckWasToldToStayQuietIsStillPostedAndThenTheCheckStaysQuiet() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        h.claims.answer = WeatherSoonClaims.Claim(granted = false, atEpochSeconds = now)
+        assertEquals(0, h.check.run())
+        assertTrue(h.pushed())
+        assertEquals(rainKey, h.notifier.posted.single().id)
+        assertEquals(0, h.check.run())
+        assertEquals(1, h.notifier.posted.size)
     }
 
     @Test

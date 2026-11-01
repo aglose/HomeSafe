@@ -11587,6 +11587,24 @@ class RainSoonTest(_ScratchDb):
         self.answer = "sent"
         self.assertEqual(1, self.tick(self.T + 900)["sent"])
 
+    def test_a_push_that_raises_holds_nothing_and_the_next_phone_is_still_told(self):
+        self.phone("pixel")
+        relay_on, relay.apns_on = relay.apns_on, lambda: True
+        try:
+            self.phone("iphone", "ios", "b" * 64)
+
+            def push(token, title, body, data, away=False):
+                if token == "fcm":
+                    raise TimeoutError("Firebase out of reach")
+                return self.push(token, title, body, data)
+
+            outcome = relay.rain_soon_tick(self.T, fetch=self.fetch(), push=push)
+        finally:
+            relay.apns_on = relay_on
+        self.assertEqual({"sent": 1, "dropped": 0, "failed": 1}, outcome)
+        self.assertEqual((None, None, None), self.told("pixel"))
+        self.assertEqual("relay", self.told("iphone")[2])
+
     def test_a_dead_token_goes_with_its_row(self):
         self.phone()
         self.answer = "dropped"
