@@ -4,12 +4,13 @@ import android.content.Context
 import androidx.test.platform.app.InstrumentationRegistry
 
 /**
- * The schema Room exported for [version] of [AppDatabase], as the migration tests rebuild an old
- * database from it. shared/schemas is packed into the test APK as Java resources (see
- * shared/build.gradle.kts), so it is read from there rather than from the source tree.
+ * The schema Room exported for [version] of [database] (by its simple name; [AppDatabase] unless
+ * another is asked for), as the migration tests rebuild an old database from it. shared/schemas is
+ * packed into the test APK as Java resources (see shared/build.gradle.kts), so it is read from there
+ * rather than from the source tree.
  */
-internal fun exportedSchema(version: Int): String {
-    val path = "com.meticulouscreations.homesafe.data.AppDatabase/$version.json"
+internal fun exportedSchema(version: Int, database: String = "AppDatabase"): String {
+    val path = "com.meticulouscreations.homesafe.data.$database/$version.json"
     val stream = AppDatabase::class.java.classLoader?.getResourceAsStream(path)
         ?: error("$path is not in the test APK: is shared/schemas still a resource directory of androidDeviceTest?")
     return stream.bufferedReader().use { it.readText() }

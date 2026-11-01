@@ -3,10 +3,10 @@ package com.meticulouscreations.homesafe.fitness.domain
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The training log, kept on the device: the exercises, every set, the workouts they were done
+ * The training log, as this device holds it: the exercises, every set, the workouts they were done
  * in, the phases and the weigh-ins. Each is small enough to be handed over whole whenever it
  * changes, which is what the screens are worked out from. With it, the heart-rate settings and
- * what each workout's heart added up to.
+ * what each workout's heart added up to. [FitnessLogSync] keeps it in step with the server's.
  */
 interface FitnessRepository {
     val exercises: Flow<List<Exercise>>

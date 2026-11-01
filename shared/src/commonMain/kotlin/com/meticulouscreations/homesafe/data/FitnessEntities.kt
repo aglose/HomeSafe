@@ -203,6 +203,9 @@ interface FitnessDao {
     @Upsert
     suspend fun upsertPhase(phase: FitnessPhaseEntity)
 
+    @Query("DELETE FROM FitnessPhaseEntity WHERE id = :id")
+    suspend fun deletePhase(id: Long)
+
     @Query("SELECT * FROM FitnessBodyweightEntity ORDER BY epochDay")
     fun observeBodyweights(): Flow<List<FitnessBodyweightEntity>>
 
@@ -260,7 +263,83 @@ interface FitnessDao {
         if (heartSettings != null) upsertHeartSettings(heartSettings)
         heartSummaries.forEach { upsertHeartSummary(it) }
     }
+
+    @Query("DELETE FROM FitnessExerciseEntity")
+    suspend fun deleteAllExercises()
+
+    @Query("DELETE FROM FitnessSetEntity")
+    suspend fun deleteAllSets()
+
+    @Query("DELETE FROM FitnessWorkoutEntity")
+    suspend fun deleteAllWorkouts()
+
+    @Query("DELETE FROM FitnessPhaseEntity")
+    suspend fun deleteAllPhases()
+
+    @Query("DELETE FROM FitnessBodyweightEntity")
+    suspend fun deleteAllBodyweights()
+
+    @Query("DELETE FROM FitnessHeartSummaryEntity")
+    suspend fun deleteAllHeartSummaries()
+
+    /**
+     * Writes what came from the server, and takes away what was deleted there, in one transaction:
+     * another device's changes land together or not at all. What is added goes before what is
+     * taken away, and sets before their workouts, for the same reason as in [writeMerge].
+     */
+    @Transaction
+    suspend fun writeFromServer(written: FitnessLogRows, heartSettings: FitnessHeartSettingsEntity?, gone: FitnessLogGone) {
+        if (written.exercises.isNotEmpty()) upsertExercises(written.exercises)
+        if (written.sets.isNotEmpty()) upsertSets(written.sets)
+        written.workouts.forEach { upsertWorkout(it) }
+        written.phases.forEach { upsertPhase(it) }
+        written.bodyweights.forEach { upsertBodyweight(it) }
+        if (heartSettings != null) upsertHeartSettings(heartSettings)
+        written.heartSummaries.forEach { upsertHeartSummary(it) }
+        gone.sets.forEach { deleteSet(it) }
+        gone.heartSummaries.forEach { deleteHeartSummary(it) }
+        gone.workouts.forEach { deleteWorkout(it) }
+        gone.exercises.forEach { deleteExercise(it) }
+        gone.phases.forEach { deletePhase(it) }
+        gone.bodyweights.forEach { deleteBodyweight(it) }
+    }
+
+    /**
+     * Makes the log these rows and nothing else, in one transaction, so that being stopped part-way
+     * leaves the log as it was. The heart-rate settings are written over, not cleared, because the
+     * sensor chosen on this device stays with it.
+     */
+    @Transaction
+    suspend fun replaceLog(rows: FitnessLogRows, heartSettings: FitnessHeartSettingsEntity?) {
+        deleteAllSets()
+        deleteAllHeartSummaries()
+        deleteAllWorkouts()
+        deleteAllExercises()
+        deleteAllPhases()
+        deleteAllBodyweights()
+        writeFromServer(rows, heartSettings, FitnessLogGone())
+    }
 }
+
+/** Rows of the training log, as they come from the server or are about to go to it. */
+data class FitnessLogRows(
+    val exercises: List<FitnessExerciseEntity> = emptyList(),
+    val sets: List<FitnessSetEntity> = emptyList(),
+    val workouts: List<FitnessWorkoutEntity> = emptyList(),
+    val phases: List<FitnessPhaseEntity> = emptyList(),
+    val bodyweights: List<FitnessBodyweightEntity> = emptyList(),
+    val heartSummaries: List<FitnessHeartSummaryEntity> = emptyList(),
+)
+
+/** The ids of rows of the training log that were deleted on the server. */
+data class FitnessLogGone(
+    val exercises: List<String> = emptyList(),
+    val sets: List<Long> = emptyList(),
+    val workouts: List<Long> = emptyList(),
+    val phases: List<Long> = emptyList(),
+    val bodyweights: List<Long> = emptyList(),
+    val heartSummaries: List<Long> = emptyList(),
+)
 
 /** [FitnessDao] in memory: for the web target, which has no database, and for tests. */
 class InMemoryFitnessDao : FitnessDao {
@@ -338,6 +417,34 @@ class InMemoryFitnessDao : FitnessDao {
         phases.update { current ->
             (current.filter { it.id != phase.id } + phase).sortedWith(compareBy({ it.startedAtEpochSeconds }, { it.id }))
         }
+    }
+
+    override suspend fun deletePhase(id: Long) {
+        phases.update { current -> current.filter { it.id != id } }
+    }
+
+    override suspend fun deleteAllExercises() {
+        exercises.value = emptyList()
+    }
+
+    override suspend fun deleteAllSets() {
+        sets.value = emptyList()
+    }
+
+    override suspend fun deleteAllWorkouts() {
+        workouts.value = emptyList()
+    }
+
+    override suspend fun deleteAllPhases() {
+        phases.value = emptyList()
+    }
+
+    override suspend fun deleteAllBodyweights() {
+        bodyweights.value = emptyList()
+    }
+
+    override suspend fun deleteAllHeartSummaries() {
+        heartSummaries.value = emptyList()
     }
 
     override fun observeBodyweights(): Flow<List<FitnessBodyweightEntity>> = bodyweights

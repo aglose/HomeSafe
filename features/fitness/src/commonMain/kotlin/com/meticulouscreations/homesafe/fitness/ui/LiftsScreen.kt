@@ -67,6 +67,7 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
+import com.meticulouscreations.homesafe.fitness.domain.FitnessSyncStatus
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.MovementClassifier
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
@@ -114,6 +115,10 @@ import homesafe.shared.generated.resources.fitness_lifts_import
 import homesafe.shared.generated.resources.fitness_lifts_of_best
 import homesafe.shared.generated.resources.fitness_lifts_send_copy
 import homesafe.shared.generated.resources.fitness_lifts_untrained
+import homesafe.shared.generated.resources.fitness_sync_held_back
+import homesafe.shared.generated.resources.fitness_sync_saved
+import homesafe.shared.generated.resources.fitness_sync_signed_out
+import homesafe.shared.generated.resources.fitness_sync_waiting
 import homesafe.shared.generated.resources.fitness_today_exercises
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -156,6 +161,12 @@ internal fun LiftsScreen(
                 }
             }
         }
+        if (state.syncStatus == FitnessSyncStatus.HELD_BACK) {
+            // The one thing here that wants doing something about, so where it will be seen and not at the foot of a long list.
+            item(key = "sync_held_back") {
+                Text(stringResource(Res.string.fitness_sync_held_back), style = type.label, color = colors.amber, modifier = Modifier.padding(bottom = 6.dp).testTag("fitness_lifts_sync_held_back"))
+            }
+        }
         if (state.isEmpty) {
             item(key = "empty") { Text(stringResource(Res.string.fitness_lifts_empty), style = type.body, color = colors.textMuted, modifier = Modifier.padding(vertical = 8.dp)) }
         }
@@ -189,6 +200,18 @@ internal fun LiftsScreen(
                 item(key = "send_copy_unsent") {
                     Text(stringResource(Res.string.fitness_copy_unsent), style = type.label, color = colors.amber, modifier = Modifier.testTag("fitness_lifts_send_copy_unsent"))
                 }
+            }
+        }
+        val syncNote = when (state.syncStatus) {
+            FitnessSyncStatus.SAVED -> Res.string.fitness_sync_saved
+            FitnessSyncStatus.WAITING -> Res.string.fitness_sync_waiting
+            FitnessSyncStatus.SIGNED_OUT -> Res.string.fitness_sync_signed_out
+            // Said at the top instead.
+            FitnessSyncStatus.HELD_BACK -> null
+        }
+        if (state.copyable && syncNote != null) {
+            item(key = "sync_status") {
+                Text(stringResource(syncNote), style = type.label, color = colors.textFaint, modifier = Modifier.padding(top = 4.dp).testTag("fitness_lifts_sync_status"))
             }
         }
     }

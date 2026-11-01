@@ -10,7 +10,9 @@ import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
+import com.meticulouscreations.homesafe.fitness.domain.FitnessLogSync
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
+import com.meticulouscreations.homesafe.fitness.domain.FitnessSyncStatus
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartRateMonitor
 import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
@@ -160,6 +162,8 @@ data class FitnessUiState(
     val figureStyle: FigureStyle = FigureStyle.DEFAULT,
     /** The set deleted last, offered back for a few seconds under its exercise's logger. */
     val deletedSet: LoggedSet? = null,
+    /** Where the log stands with the server. */
+    val syncStatus: FitnessSyncStatus = FitnessSyncStatus.SIGNED_OUT,
 ) {
     fun board(exerciseId: String): ExerciseBoard? = boards.firstOrNull { it.exercise.id == exerciseId }
 
@@ -192,6 +196,7 @@ class FitnessViewModel(
     private val monitor: HeartRateMonitor,
     private val clock: Clock,
     private val preferences: FitnessPreferencesRepository,
+    private val logSync: FitnessLogSync,
     /**
      * Where the boards are built from the log, off the main thread: every set logged and every
      * minute rebuilds all of them. A test hands in its own.
@@ -207,6 +212,7 @@ class FitnessViewModel(
 
     private var log = FitnessLog()
     private var follow: Job? = null
+    private var keepingInStep: Job? = null
     private var tick: Job? = null
     private var starting: Job? = null
     private var importing: Job? = null
@@ -240,9 +246,15 @@ class FitnessViewModel(
         tick = null
         watching = active && full
         syncHeartLink()
-        if (!active) return
+        if (!active) {
+            keepingInStep?.cancel()
+            keepingInStep = null
+            return
+        }
+        if (keepingInStep == null) keepingInStep = viewModelScope.launch { logSync.follow() }
         if (follow == null) {
             followHeart()
+            viewModelScope.launch { logSync.status.collect { status -> _uiState.update { it.copy(syncStatus = status) } } }
             viewModelScope.launch { preferences.observeFigureStyle().collect { style -> _uiState.update { it.copy(figureStyle = style) } } }
             follow = viewModelScope.launch {
                 combine(repository.exercises, repository.sets, repository.workouts, repository.phases, repository.bodyweights, ::FitnessLog).collect { latest ->

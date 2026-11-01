@@ -446,6 +446,11 @@ def db() -> sqlite3.Connection:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS package_events_key ON package_events (key)")
     conn.execute("CREATE TABLE IF NOT EXISTS package_phones (device_id TEXT PRIMARY KEY, person TEXT NOT NULL)")
+    # The Fitness app's training logs (see "fitness"): a row of a log as the app wrote it, `data` NULL once it is deleted.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS fitness_rows (owner TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, data TEXT, updated REAL NOT NULL, PRIMARY KEY (owner, kind, id))"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS fitness_rows_by_rev ON fitness_rows (owner, rev)")
     # Where each institution's transactions were read up to (Plaid's cursor), when they were last
     # asked for and last changed, and whether Plaid has finished fetching their history.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_items)")}
@@ -14695,6 +14700,112 @@ def charging_summary(now: float, money: bool) -> dict[str, Any]:
 
 class ChargingPlanChoice(BaseModel):
     plan: str
+
+
+# ---------------------------------------------------------------- fitness
+#
+# The training log of each Frigate login, so that every device signed in with it has the same one
+# (docs/fitness.md, "On the server"). The app keeps its own copy to work from, in the gym with no
+# connection as much as at home, and sends what changed: this only holds rows and says what has
+# changed since a device last asked. What a row means is the app's, so it is kept as it came, and
+# the last device to send a row wins. A deleted row stays as a tombstone (`data` NULL), so a device
+# that was away hears of it.
+#
+# `owner` is whose log it is, and is opaque to everything but `fitness_owner`: that is all that
+# would change for profiles under one login.
+
+# What a log is made of. Anything else is refused, rather than kept for ever on a typo.
+FITNESS_KINDS = {"exercise", "set", "workout", "phase", "weigh_in", "heart_profile", "heart_summary", "run"}
+# A device is told about this much of a log at a time, and goes on from where the answer stopped.
+FITNESS_PAGE_BYTES = 1_000_000
+# A recorded run is the largest row: its GPS positions, once a second, come to about 300 KB an hour.
+FITNESS_MAX_ROW_BYTES = 8_000_000
+FITNESS_MAX_CHANGES = 5_000
+
+
+def fitness_owner(request: Request) -> str:
+    """Whose log a request is about: the Frigate login it is signed in with, or a 401. A session Frigate can't name gets no log at all, not a shared one."""
+    owner = require_frigate_session(request)
+    if owner == "?":
+        raise HTTPException(status_code=502, detail="Frigate didn't say who is signed in")
+    return owner
+
+
+def fitness_changes(body: dict[str, Any]) -> list[tuple[str, str, str | None]]:
+    """The changes a device sent, each as (kind, id, the row as text, or None for deleted). 400 for anything that can't be one."""
+    changes = body.get("changes", [])
+    if not isinstance(changes, list) or len(changes) > FITNESS_MAX_CHANGES:
+        raise HTTPException(status_code=400, detail="Not a list of changes, or too long a one")
+    read = []
+    for change in changes:
+        if not isinstance(change, dict) or change.get("kind") not in FITNESS_KINDS:
+            raise HTTPException(status_code=400, detail="Not a kind of row")
+        row_id, data = change.get("id"), change.get("data")
+        if not isinstance(row_id, str) or not row_id or len(row_id) > 200:
+            raise HTTPException(status_code=400, detail="Not a row's id")
+        if data is not None and not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Not a row")
+        text = None if data is None else json.dumps(data, sort_keys=True, separators=(",", ":"))
+        if text is not None and len(text) > FITNESS_MAX_ROW_BYTES:
+            raise HTTPException(status_code=413, detail="Too large a row")
+        read.append((change["kind"], row_id, text))
+    return read
+
+
+def fitness_sync(owner: str, since: int, changes: list[tuple[str, str, str | None]], now: float, expected_owner: str | None = None) -> dict[str, Any]:
+    """
+    Saves `changes` to `owner`'s log and answers with what else has changed since `since`, oldest
+    first and a page at a time. `rev` is where the device goes on from; `more` says it should, with
+    no need to wait. All under the one lock, so nothing lands between the reading and the writing.
+
+    `expected_owner` is whose log the device believes it is sending. If that isn't who is signed in
+    nothing is saved and nothing is told: the answer's `owner` says who it is, and the device decides.
+
+    `reset` says the device has heard of more of this log than there is, so this database isn't the
+    one it was talking to (restored, or begun again). Nothing is saved: it is to send its log anew.
+    """
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        if expected_owner is not None and expected_owner != owner:
+            return {"owner": owner, "reset": False, "rev": 0, "more": False, "rows": []}
+        head = c.execute("SELECT COALESCE(MAX(rev), 0) FROM fitness_rows WHERE owner=?", (owner,)).fetchone()[0]
+        if since > head:
+            return {"owner": owner, "reset": True, "rev": 0, "more": False, "rows": []}
+        # Read before this device's own changes are written, so they aren't handed back to it.
+        rows: list[dict[str, Any]] = []
+        size, reached, more = 0, since, False
+        for kind, row_id, rev, data in c.execute("SELECT kind, id, rev, data FROM fitness_rows WHERE owner=? AND rev>? ORDER BY rev", (owner, since)):
+            if rows and size + len(data or "") > FITNESS_PAGE_BYTES:
+                more = True
+                break
+            rows.append({"kind": kind, "id": row_id, "data": json.loads(data) if data is not None else None})
+            size += len(data or "")
+            reached = rev
+        for kind, row_id, data in changes:
+            held = c.execute("SELECT data FROM fitness_rows WHERE owner=? AND kind=? AND id=?", (owner, kind, row_id)).fetchone()
+            # The same row sent again (the answer to the last send never arrived) is no news to anyone, and neither is deleting what was never here.
+            if (held is not None and held[0] == data) or (held is None and data is None):
+                continue
+            head += 1
+            c.execute("INSERT OR REPLACE INTO fitness_rows (owner, kind, id, rev, data, updated) VALUES (?,?,?,?,?,?)", (owner, kind, row_id, head, data, now))
+        c.commit()
+        # Part-way through what there was to hear, this device's own changes will come back to it further on, which does no harm.
+        return {"owner": owner, "reset": False, "rev": reached if more else head, "more": more, "rows": rows}
+
+    return with_db(work)
+
+
+@app.post("/fitness/sync")
+def post_fitness_sync(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Saves what changed in this device's training log, and says what changed on the others (see "fitness")."""
+    owner = fitness_owner(request)
+    since = body.get("since", 0)
+    if not isinstance(since, int) or isinstance(since, bool) or since < 0:
+        raise HTTPException(status_code=400, detail="Not a place in the log")
+    expected = body.get("owner")
+    if expected is not None and not isinstance(expected, str):
+        raise HTTPException(status_code=400, detail="Not a login")
+    return fitness_sync(owner, since, fitness_changes(body), time.time(), expected)
 
 
 class ChargingSessionPatch(BaseModel):
