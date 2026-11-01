@@ -194,6 +194,9 @@ internal data class RelayCarMonth(
     @SerialName("fast_battery_kwh") val fastBatteryKwh: Double = 0.0,
     @SerialName("other_battery_kwh") val otherBatteryKwh: Double = 0.0,
     @SerialName("fast_idle") val fastIdle: Double = 0.0,
+    @SerialName("home_priced_cost") val homePricedCost: Double = 0.0,
+    @SerialName("fast_priced_cost") val fastPricedCost: Double = 0.0,
+    @SerialName("other_priced_cost") val otherPricedCost: Double = 0.0,
 )
 
 @Serializable
@@ -295,6 +298,7 @@ internal data class RelayCharging(
                     CarMonth(
                         it.car, it.name.ifBlank { it.car }, it.homeKwh, it.homeCost, it.fastKwh, it.fastCost, it.otherKwh, it.otherCost, it.sessions, it.miles, it.usedKwh, it.unpriced,
                         it.homePricedKwh, it.fastPricedKwh, it.otherPricedKwh, it.homeBatteryKwh, it.fastBatteryKwh, it.otherBatteryKwh, it.fastIdle,
+                        it.homePricedCost, it.fastPricedCost, it.otherPricedCost,
                     )
                 },
                 cardFast = m.cardFast,

@@ -16,8 +16,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ChargingModelsTest {
-    private val alex = CarMonth("a", "Alex", homeKwh = 100.0, homeCost = 28.0, fastKwh = 40.0, fastCost = 16.0, sessions = 5, miles = 600.0, usedKwh = 150.0)
-    private val sam = CarMonth("b", "Sam", homeKwh = 50.0, homeCost = 14.0, otherKwh = 10.0, otherCost = 3.0, sessions = 3)
+    private val alex = CarMonth("a", "Alex", homeKwh = 100.0, homeCost = 28.0, fastKwh = 40.0, fastCost = 16.0, sessions = 5, miles = 600.0, usedKwh = 150.0, homePricedKwh = 100.0, homePricedCost = 28.0)
+    private val sam = CarMonth("b", "Sam", homeKwh = 50.0, homeCost = 14.0, otherKwh = 10.0, otherCost = 3.0, sessions = 3, homePricedKwh = 50.0, homePricedCost = 14.0)
 
     @Test
     fun aCarsMonthAddsUpAndSaysWhatAMileCost() {
@@ -62,6 +62,16 @@ class ChargingModelsTest {
     @Test
     fun energyAtHomeWithNoPriceYetHasNoAverageRatherThanAFreeOne() {
         assertNull(ChargingMonth("2026-10", cars = listOf(CarMonth("a", "Alex", homeKwh = 50.0))).homePerKwh)
+    }
+
+    @Test
+    fun freeEnergyHasARateOfZeroAndAReceiptWithoutEnergyDoesNotRaiseOne() {
+        val free = CarMonth("a", "Alex", homeKwh = 20.0, homePricedKwh = 20.0)
+        assertEquals(0.0, free.homePerKwh)
+        assertEquals(0.0, ChargingMonth("2026-10", listOf(free)).homePerKwh)
+        val receipts = CarMonth("a", "Alex", fastKwh = 20.0, fastCost = 20.0, fastPricedKwh = 20.0, fastPricedCost = 10.0)
+        assertEquals(0.5, receipts.fastPerKwh)
+        assertEquals(0.5, ChargingMonth("2026-10", listOf(receipts)).fastPerKwh)
     }
 
     @Test
@@ -123,6 +133,7 @@ class ChargingModelsTest {
     private val priced = CarMonth(
         "a", "Alex", homeKwh = 100.0, homeCost = 28.0, fastKwh = 50.0, fastCost = 22.0, otherKwh = 10.0, miles = 500.0, usedKwh = 125.0,
         homePricedKwh = 100.0, fastPricedKwh = 40.0, homeBatteryKwh = 90.0, fastBatteryKwh = 40.0, fastIdle = 2.0, unpriced = 1,
+        homePricedCost = 28.0, fastPricedCost = 20.0,
     )
 
     @Test
@@ -152,9 +163,9 @@ class ChargingModelsTest {
 
     @Test
     fun aMonthsMilePriceGoesByEachCarsOwnMileage() {
-        val thrifty = CarMonth("a", "Alex", homeCost = 10.0, miles = 400.0, usedKwh = 100.0, homeBatteryKwh = 100.0)
-        val thirsty = CarMonth("b", "Sam", homeCost = 10.0, miles = 200.0, usedKwh = 100.0, homeBatteryKwh = 100.0)
-        val unknown = CarMonth("c", "Kit", homeCost = 99.0, homeBatteryKwh = 100.0)
+        val thrifty = CarMonth("a", "Alex", homeCost = 10.0, miles = 400.0, usedKwh = 100.0, homeBatteryKwh = 100.0, homePricedCost = 10.0)
+        val thirsty = CarMonth("b", "Sam", homeCost = 10.0, miles = 200.0, usedKwh = 100.0, homeBatteryKwh = 100.0, homePricedCost = 10.0)
+        val unknown = CarMonth("c", "Kit", homeCost = 99.0, homeBatteryKwh = 100.0, homePricedCost = 99.0)
         assertEquals(20.0 / 600.0, ChargingMonth("2026-10", listOf(thrifty, thirsty, unknown)).homePerMile)
     }
 
@@ -175,7 +186,7 @@ class ChargingModelsTest {
 
     @Test
     fun aCarsMonthsAddUpAndAMileOnlyKnownInSomeOfThemStaysKnown() {
-        val together = priced + CarMonth("a", "Alex", homeKwh = 10.0, homeCost = 2.0, sessions = 2, homePricedKwh = 10.0, homeBatteryKwh = 9.0)
+        val together = priced + CarMonth("a", "Alex", homeKwh = 10.0, homeCost = 2.0, sessions = 2, homePricedKwh = 10.0, homeBatteryKwh = 9.0, homePricedCost = 2.0)
         assertEquals(110.0, together.homeKwh)
         assertEquals(30.0, together.homeCost)
         assertEquals(500.0, together.miles)

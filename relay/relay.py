@@ -14519,6 +14519,7 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
             "car": name, "name": display_name(name), "home_kwh": 0.0, "home_cost": 0.0, "fast_kwh": 0.0, "fast_cost": 0.0,
             "other_kwh": 0.0, "other_cost": 0.0, "sessions": 0, "miles": None, "used_kwh": None, "unpriced": 0,
             "home_priced_kwh": 0.0, "fast_priced_kwh": 0.0, "other_priced_kwh": 0.0, "home_battery_kwh": 0.0, "fast_battery_kwh": 0.0, "other_battery_kwh": 0.0, "fast_idle": 0.0,
+            "home_priced_cost": 0.0, "fast_priced_cost": 0.0, "other_priced_cost": 0.0,
         })
 
     plan_ids = list((rates.get("plans") or {}).keys())
@@ -14535,6 +14536,8 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
             # Not more than went in, which a battery's rounded percent can claim of a short charge.
             battery = float(session.get("kwh_battery") or 0) or session["kwh"] * (1.0 if prefix == "fast" else CHARGING_AC_EFFICIENCY)
             car[f"{prefix}_priced_kwh"] += session["kwh"]
+            # What those kWh cost, idle fee aside: a receipt with a price and no energy can't raise their rate.
+            car[f"{prefix}_priced_cost"] += session["cost"] - (session["idle_fee"] if prefix == "fast" else 0.0)
             car[f"{prefix}_battery_kwh"] += min(battery, session["kwh"])
         car["fast_idle"] += session["idle_fee"]
         if session["cost"] is None and session["kwh"] > 0:
@@ -14578,7 +14581,7 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         month = months[key]
         cars = sorted(month["cars"].values(), key=lambda c: c["car"])
         for car in cars:
-            for field in ("home_kwh", "home_cost", "fast_kwh", "fast_cost", "other_kwh", "other_cost", "miles", "used_kwh", "home_priced_kwh", "fast_priced_kwh", "other_priced_kwh", "home_battery_kwh", "fast_battery_kwh", "other_battery_kwh", "fast_idle"):
+            for field in ("home_kwh", "home_cost", "fast_kwh", "fast_cost", "other_kwh", "other_cost", "miles", "used_kwh", "home_priced_kwh", "fast_priced_kwh", "other_priced_kwh", "home_battery_kwh", "fast_battery_kwh", "other_battery_kwh", "fast_idle", "home_priced_cost", "fast_priced_cost", "other_priced_cost"):
                 if car[field] is not None:
                     car[field] = round(car[field], 2)
         answer.append({

@@ -70,7 +70,9 @@ internal fun CarScreen(state: ChargingUiState, car: String, padding: PaddingValu
             Text(stringResource(Res.string.charging_charges_empty), style = ChargingTheme.type.body, color = colors.textMuted, modifier = Modifier.padding(vertical = 24.dp))
         } else {
             // Miles are only known from when the relay began listening, so what they are set against is those months' alone.
-            val driven = all.filter { it.miles != null }.reduceOrNull(CarMonth::plus)
+            // Where the car has also said what it used, only those months: a mile with no energy would make it look thrifty.
+            val driven = all.filter { it.miles != null && (it.usedKwh ?: 0.0) > 0 }.reduceOrNull(CarMonth::plus)
+                ?: all.filter { it.miles != null }.reduceOrNull(CarMonth::plus)
             TotalsCard(total, driven, months)
             if (months.size > 1) {
                 ChargingCard(title = stringResource(Res.string.charging_months_title)) {

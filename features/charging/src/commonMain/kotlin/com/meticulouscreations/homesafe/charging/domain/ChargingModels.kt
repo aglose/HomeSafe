@@ -163,19 +163,20 @@ data class CarMonth(
     val otherBatteryKwh: Double = 0.0,
     /** What of [fastCost] was for staying plugged in. */
     val fastIdle: Double = 0.0,
+    /** What those priced charges cost, idle fees aside: a receipt with a price and no energy is in [cost] but not here. */
+    val homePricedCost: Double = 0.0,
+    val fastPricedCost: Double = 0.0,
+    val otherPricedCost: Double = 0.0,
 ) {
     val cost: Double get() = homeCost + fastCost + otherCost
     val kwh: Double get() = homeKwh + fastKwh + otherKwh
 
-    /** Each place's cost of the energy itself, idle fees aside. */
-    val fastEnergyCost: Double get() = fastCost - fastIdle
-
-    val homePerKwh: Double? get() = priceOf(homeCost, homePricedKwh)
-    val fastPerKwh: Double? get() = priceOf(fastEnergyCost, fastPricedKwh)
-    val otherPerKwh: Double? get() = priceOf(otherCost, otherPricedKwh)
+    val homePerKwh: Double? get() = priceOf(homePricedCost, homePricedKwh)
+    val fastPerKwh: Double? get() = priceOf(fastPricedCost, fastPricedKwh)
+    val otherPerKwh: Double? get() = priceOf(otherPricedCost, otherPricedKwh)
 
     /** All its charging together, idle fees aside. */
-    val perKwh: Double? get() = priceOf(cost - fastIdle, homePricedKwh + fastPricedKwh + otherPricedKwh)
+    val perKwh: Double? get() = priceOf(homePricedCost + fastPricedCost + otherPricedCost, homePricedKwh + fastPricedKwh + otherPricedKwh)
 
     /** The battery's kWh a mile took; null until both are known. */
     val kwhPerMile: Double? get() = miles?.takeIf { it > 0 }?.let { driven -> usedKwh?.takeIf { it > 0 }?.let { it / driven } }
@@ -202,6 +203,9 @@ data class CarMonth(
         fastBatteryKwh = fastBatteryKwh + other.fastBatteryKwh,
         otherBatteryKwh = otherBatteryKwh + other.otherBatteryKwh,
         fastIdle = fastIdle + other.fastIdle,
+        homePricedCost = homePricedCost + other.homePricedCost,
+        fastPricedCost = fastPricedCost + other.fastPricedCost,
+        otherPricedCost = otherPricedCost + other.otherPricedCost,
     )
 
     /** Dollars to go a mile; null without miles, or while part of what they cost is unknown. */
@@ -211,7 +215,8 @@ data class CarMonth(
     val milesPerKwh: Double? get() = usedKwh?.takeIf { it > 0 }?.let { used -> miles?.let { it / used } }
 }
 
-private fun priceOf(cost: Double, kwh: Double): Double? = kwh.takeIf { it > 0 && cost > 0 }?.let { cost / it }
+/** Priced energy is what makes a price known, so energy that was free has a rate of zero; null without any. */
+private fun priceOf(cost: Double, kwh: Double): Double? = kwh.takeIf { it > 0 }?.let { cost.coerceAtLeast(0.0) / it }
 
 private fun sumOfKnown(a: Double?, b: Double?): Double? = if (a == null && b == null) null else (a ?: 0.0) + (b ?: 0.0)
 
@@ -222,16 +227,16 @@ private fun sumOfKnown(a: Double?, b: Double?): Double? = if (a == null && b == 
  * car whose mileage and energy from there are both known.
  */
 private fun List<CarMonth>.perMile(cost: (CarMonth) -> Double, battery: (CarMonth) -> Double): Double? {
-    val known = filter { it.kwhPerMile != null && battery(it) > 0 && cost(it) > 0 }
+    val known = filter { it.kwhPerMile != null && battery(it) > 0 }
     val miles = known.sumOf { car -> car.kwhPerMile?.let { battery(car) / it } ?: 0.0 }
     return miles.takeIf { it > 0 }?.let { known.sumOf(cost) / it }
 }
 
-internal fun List<CarMonth>.homePerMile(): Double? = perMile({ it.homeCost }, { it.homeBatteryKwh })
+internal fun List<CarMonth>.homePerMile(): Double? = perMile({ it.homePricedCost }, { it.homeBatteryKwh })
 
-internal fun List<CarMonth>.fastPerMile(): Double? = perMile({ it.fastEnergyCost }, { it.fastBatteryKwh })
+internal fun List<CarMonth>.fastPerMile(): Double? = perMile({ it.fastPricedCost }, { it.fastBatteryKwh })
 
-internal fun List<CarMonth>.otherPerMile(): Double? = perMile({ it.otherCost }, { it.otherBatteryKwh })
+internal fun List<CarMonth>.otherPerMile(): Double? = perMile({ it.otherPricedCost }, { it.otherBatteryKwh })
 
 /** One month of the household's charging. */
 @Immutable
@@ -277,11 +282,11 @@ data class ChargingMonth(
     val costPerMile: Double? get() = milesOfEveryCar?.takeIf { it > 0 && unpriced == 0 }?.let { cost / it }
 
     /** What a kWh came to at home; null with no price for it yet, which isn't free. */
-    val homePerKwh: Double? get() = homeKwh.takeIf { it > 0 && homeCost > 0 }?.let { homeCost / it }
+    val homePerKwh: Double? get() = priceOf(cars.sumOf { it.homePricedCost }, cars.sumOf { it.homePricedKwh })
 
     /** What a kWh came to at fast chargers and elsewhere, idle fees aside. What the cards paid beyond the receipts has no kWh, so it doesn't come into it. */
-    val fastPerKwh: Double? get() = priceOf(cars.sumOf { it.fastEnergyCost }, cars.sumOf { it.fastPricedKwh })
-    val otherPerKwh: Double? get() = priceOf(cars.sumOf { it.otherCost }, cars.sumOf { it.otherPricedKwh })
+    val fastPerKwh: Double? get() = priceOf(cars.sumOf { it.fastPricedCost }, cars.sumOf { it.fastPricedKwh })
+    val otherPerKwh: Double? get() = priceOf(cars.sumOf { it.otherPricedCost }, cars.sumOf { it.otherPricedKwh })
 
     val homePerMile: Double? get() = cars.homePerMile()
     val fastPerMile: Double? get() = cars.fastPerMile()
