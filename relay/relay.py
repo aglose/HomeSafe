@@ -14517,7 +14517,7 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
     def car_of(key: str, name: str) -> dict[str, Any]:
         return month_of(key)["cars"].setdefault(name, {
             "car": name, "name": display_name(name), "home_kwh": 0.0, "home_cost": 0.0, "fast_kwh": 0.0, "fast_cost": 0.0,
-            "other_kwh": 0.0, "other_cost": 0.0, "sessions": 0, "miles": None, "used_kwh": None, "unpriced": 0,
+            "other_kwh": 0.0, "other_cost": 0.0, "sessions": 0, "miles": None, "used_kwh": None, "used_miles": None, "unpriced": 0,
             "home_priced_kwh": 0.0, "fast_priced_kwh": 0.0, "other_priced_kwh": 0.0, "home_battery_kwh": 0.0, "fast_battery_kwh": 0.0, "other_battery_kwh": 0.0, "fast_idle": 0.0,
             "home_priced_cost": 0.0, "fast_priced_cost": 0.0, "other_priced_cost": 0.0,
         })
@@ -14560,16 +14560,27 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         for key, paid in charging_bills(rates.get("bill_match")).items():
             month_of(key)["electric_paid"] += paid
     days = with_db(lambda c: c.execute("SELECT car, day, odometer, energy_used FROM car_days ORDER BY car, day").fetchall())
-    last: dict[tuple[str, str], float] = {}
+    # Miles go by the odometer alone. What was used goes only between days with both counters, with
+    # `used_miles` the miles of those same days: the two can start apart, and energy from part of a
+    # month over all its miles would make a car look thrifty.
+    odometers: dict[str, float] = {}
+    both: dict[str, tuple[float, float]] = {}
     for name, day, odometer, used in days:
-        for column, value in (("miles", odometer), ("used_kwh", used)):
-            if value is None:
-                continue
-            before = last.get((name, column))
-            last[(name, column)] = float(value)
-            if before is not None and value >= before:
-                car = car_of(day[:7], name)
-                car[column] = (car[column] or 0.0) + float(value) - before
+        if odometer is None:
+            continue
+        before = odometers.get(name)
+        odometers[name] = float(odometer)
+        if before is not None and odometer >= before:
+            car = car_of(day[:7], name)
+            car["miles"] = (car["miles"] or 0.0) + float(odometer) - before
+        if used is None:
+            continue
+        paired = both.get(name)
+        both[name] = (float(odometer), float(used))
+        if paired and odometer >= paired[0] and used >= paired[1]:
+            car = car_of(day[:7], name)
+            car["used_miles"] = (car["used_miles"] or 0.0) + float(odometer) - paired[0]
+            car["used_kwh"] = (car["used_kwh"] or 0.0) + float(used) - paired[1]
     # A charge at the end of a month reaches the card in the next.
     unmatched: dict[str, float] = {}
     carried = 0.0
@@ -14581,7 +14592,7 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         month = months[key]
         cars = sorted(month["cars"].values(), key=lambda c: c["car"])
         for car in cars:
-            for field in ("home_kwh", "home_cost", "fast_kwh", "fast_cost", "other_kwh", "other_cost", "miles", "used_kwh", "home_priced_kwh", "fast_priced_kwh", "other_priced_kwh", "home_battery_kwh", "fast_battery_kwh", "other_battery_kwh", "fast_idle", "home_priced_cost", "fast_priced_cost", "other_priced_cost"):
+            for field in ("home_kwh", "home_cost", "fast_kwh", "fast_cost", "other_kwh", "other_cost", "miles", "used_kwh", "used_miles", "home_priced_kwh", "fast_priced_kwh", "other_priced_kwh", "home_battery_kwh", "fast_battery_kwh", "other_battery_kwh", "fast_idle", "home_priced_cost", "fast_priced_cost", "other_priced_cost"):
                 if car[field] is not None:
                     car[field] = round(car[field], 2)
         answer.append({

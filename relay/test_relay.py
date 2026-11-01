@@ -11219,7 +11219,25 @@ class ChargingTest(unittest.TestCase):
         self.say(self.MONDAY, Odometer=1100, LifetimeEnergyUsed=330)
         self.say(self.MONDAY + day, Odometer=1150, LifetimeEnergyUsed=345)
         car = relay.charging_summary(self.MONDAY + day, True)["months"][0]["cars"][0]
-        self.assertEqual((150.0, 45.0), (car["miles"], car["used_kwh"]))
+        self.assertEqual((150.0, 45.0, 150.0), (car["miles"], car["used_kwh"], car["used_miles"]))
+
+    def test_energy_used_only_goes_against_the_miles_of_the_same_days(self):
+        day = 86400
+        self.say(self.MONDAY, Odometer=1000)
+        self.say(self.MONDAY + day, Odometer=1100)
+        # The car only starts saying what it has used here, a hundred miles in.
+        self.say(self.MONDAY + 2 * day, Odometer=1200, LifetimeEnergyUsed=300)
+        self.say(self.MONDAY + 3 * day, Odometer=1300)
+        self.say(self.MONDAY + 4 * day, Odometer=1400, LifetimeEnergyUsed=350)
+        car = relay.charging_summary(self.MONDAY + 4 * day, True)["months"][0]["cars"][0]
+        self.assertEqual((400.0, 50.0, 200.0), (car["miles"], car["used_kwh"], car["used_miles"]))
+
+    def test_energy_with_no_odometer_to_set_it_against_counts_for_nothing(self):
+        day = 86400
+        self.say(self.MONDAY, LifetimeEnergyUsed=300)
+        self.say(self.MONDAY + day, LifetimeEnergyUsed=350)
+        months = relay.charging_summary(self.MONDAY + day, True)["months"]
+        self.assertEqual([], months)
 
     def test_a_typed_price_wins_and_can_be_taken_away(self):
         start = self.MONDAY + 3600

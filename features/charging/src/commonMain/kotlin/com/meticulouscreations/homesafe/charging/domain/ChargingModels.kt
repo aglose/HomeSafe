@@ -151,6 +151,8 @@ data class CarMonth(
     val miles: Double? = null,
     /** What it used, by the car's lifetime counter. */
     val usedKwh: Double? = null,
+    /** The miles of the days [usedKwh] covers, which may be fewer than [miles]: the car's counters can start apart. */
+    val usedMiles: Double? = null,
     /** Charges with energy and no known price, which [cost] leaves out. */
     val unpriced: Int = 0,
     /** The energy of the charges that have a price, at each place: what a price per kWh divides by. */
@@ -179,7 +181,7 @@ data class CarMonth(
     val perKwh: Double? get() = priceOf(homePricedCost + fastPricedCost + otherPricedCost, homePricedKwh + fastPricedKwh + otherPricedKwh)
 
     /** The battery's kWh a mile took; null until both are known. */
-    val kwhPerMile: Double? get() = miles?.takeIf { it > 0 }?.let { driven -> usedKwh?.takeIf { it > 0 }?.let { it / driven } }
+    val kwhPerMile: Double? get() = usedMiles?.takeIf { it > 0 }?.let { driven -> usedKwh?.takeIf { it > 0 }?.let { it / driven } }
 
     val homePerMile: Double? get() = listOf(this).homePerMile()
     val fastPerMile: Double? get() = listOf(this).fastPerMile()
@@ -195,6 +197,7 @@ data class CarMonth(
         sessions = sessions + other.sessions,
         miles = sumOfKnown(miles, other.miles),
         usedKwh = sumOfKnown(usedKwh, other.usedKwh),
+        usedMiles = sumOfKnown(usedMiles, other.usedMiles),
         unpriced = unpriced + other.unpriced,
         homePricedKwh = homePricedKwh + other.homePricedKwh,
         fastPricedKwh = fastPricedKwh + other.fastPricedKwh,
@@ -212,7 +215,7 @@ data class CarMonth(
     val costPerMile: Double? get() = miles?.takeIf { it > 0 && unpriced == 0 }?.let { cost / it }
 
     /** Miles out of each kWh it used; null until both are known. */
-    val milesPerKwh: Double? get() = usedKwh?.takeIf { it > 0 }?.let { used -> miles?.let { it / used } }
+    val milesPerKwh: Double? get() = usedKwh?.takeIf { it > 0 }?.let { used -> usedMiles?.let { it / used } }
 }
 
 /** Priced energy is what makes a price known, so energy that was free has a rate of zero; null without any. */
