@@ -57,6 +57,24 @@ internal object ChargingFormat {
         return if (digits == 0) sign + whole else sign + whole + "." + (scaled % scale).toString().padStart(digits, '0')
     }
 
+    /**
+     * A typed price, whichever way its decimals are written: "3.50", "3,50", "1,234.50", "1.234,50".
+     * One separator with three digits after it groups thousands, since prices have cents. Null for
+     * anything else.
+     */
+    fun price(text: String): Double? {
+        val plain = text.trim().removePrefix("$").trim()
+        val plainNumber = when {
+            plain.matches(Regex("""\d+""")) -> plain
+            plain.matches(Regex("""\d{1,3}([.,]\d{3})+""")) -> plain.filter { it.isDigit() }
+            plain.matches(Regex("""\d{1,3}(,\d{3})+\.\d*""")) -> plain.replace(",", "")
+            plain.matches(Regex("""\d{1,3}(\.\d{3})+,\d*""")) -> plain.replace(".", "").replace(',', '.')
+            plain.matches(Regex("""\d*[.,]\d*""")) && plain.length > 1 -> plain.replace(',', '.')
+            else -> return null
+        }
+        return plainNumber.toDoubleOrNull()
+    }
+
     /** Short kWh figures lose their decimals once they are big enough not to need them. */
     fun energy(kwh: Double): String = fixed(kwh, if (abs(kwh) >= 100) 0 else 1)
 

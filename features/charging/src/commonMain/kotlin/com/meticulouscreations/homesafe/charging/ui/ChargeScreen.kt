@@ -18,16 +18,20 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.charging.ChargingUiState
 import com.meticulouscreations.homesafe.charging.domain.ChargeCostSource
@@ -39,6 +43,7 @@ import com.meticulouscreations.homesafe.charging.domain.ChargingSummary
 import com.meticulouscreations.homesafe.charging.domain.RatePeriod
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.handCursor
+import com.meticulouscreations.homesafe.ui.rememberKeyboardClearance
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.charging_battery_range
 import homesafe.shared.generated.resources.charging_charge_avg_kw
@@ -90,9 +95,9 @@ internal fun ChargeScreen(state: ChargingUiState, id: Long, padding: PaddingValu
         if (detail != null && detail.plans.isNotEmpty()) PlansCard(detail, state.summary)
         // Tesla's receipt says what a Supercharger cost; everywhere else what was paid can be typed in.
         if (session.costSource != ChargeCostSource.RECEIPT) {
-            // Keyed so a saved charge's answer, or the next charge's page, starts the fields again.
-            key(session.id, session.cost, session.note) {
-                EditCard(session, state.saving, onSave)
+            // Keyed so the next charge's page starts the fields again.
+            key(session.id) {
+                EditCard(session, state.saving, padding.calculateTopPadding(), onSave)
             }
         } else if (session.note != null) {
             ChargingCard(title = stringResource(Res.string.charging_charge_note)) { Text(session.note, style = ChargingTheme.type.body, color = colors.text) }
@@ -200,12 +205,26 @@ private fun PlansCard(detail: ChargeSessionDetail, summary: ChargingSummary) {
 
 /** What was actually paid, and a note. An empty price takes a typed one away. */
 @Composable
-private fun EditCard(session: ChargeSession, saving: Boolean, onSave: (Long, Double?, String?) -> Unit) {
+private fun EditCard(session: ChargeSession, saving: Boolean, clearAbove: Dp, onSave: (Long, Double?, String?) -> Unit) {
     val colors = ChargingTheme.colors
     val typed = session.cost?.takeIf { session.costSource == ChargeCostSource.TYPED }
-    var costText by rememberSaveable { mutableStateOf(typed?.let { ChargingFormat.fixed(it).replace(",", "") }.orEmpty()) }
-    var note by rememberSaveable { mutableStateOf(session.note.orEmpty()) }
-    val cost = costText.trim().removePrefix("$").toDoubleOrNull()
+    val typedText = typed?.let { ChargingFormat.fixed(it).replace(",", "") }.orEmpty()
+    val savedNote = session.note.orEmpty()
+    var costText by rememberSaveable { mutableStateOf(typedText) }
+    var note by rememberSaveable { mutableStateOf(savedNote) }
+    // What the server last said: a newer answer fills a field no one has touched, and leaves one being typed in alone.
+    var shownCost by rememberSaveable { mutableStateOf(typedText) }
+    var shownNote by rememberSaveable { mutableStateOf(savedNote) }
+    LaunchedEffect(typedText, savedNote) {
+        if (costText == shownCost) costText = typedText
+        if (note == shownNote) note = savedNote
+        shownCost = typedText
+        shownNote = savedNote
+    }
+    // The button that saves is under the fields: the whole card comes up above the keyboard.
+    var typing by remember { mutableStateOf(false) }
+    val clearance = rememberKeyboardClearance(typing, above = clearAbove)
+    val cost = ChargingFormat.price(costText)
     val valid = costText.isBlank() || (cost != null && cost >= 0)
     val changed = (if (costText.isBlank()) null else cost) != typed || note.trim() != session.note.orEmpty()
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -217,7 +236,7 @@ private fun EditCard(session: ChargeSession, saving: Boolean, onSave: (Long, Dou
         unfocusedLabelColor = colors.textFaint,
         cursorColor = colors.home,
     )
-    ChargingCard(title = stringResource(if (session.place == ChargePlace.HOME && typed == null) Res.string.charging_charge_note else Res.string.charging_charge_saved_title)) {
+    ChargingCard(clearance.modifier, title = stringResource(if (session.place == ChargePlace.HOME && typed == null) Res.string.charging_charge_note else Res.string.charging_charge_saved_title)) {
         // A charge at home is on the electric bill, at the plan's price: there is nothing else it was paid.
         if (session.place != ChargePlace.HOME || typed != null) {
             OutlinedTextField(
@@ -229,7 +248,7 @@ private fun EditCard(session: ChargeSession, saving: Boolean, onSave: (Long, Dou
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 colors = fieldColors,
-                modifier = Modifier.fillMaxWidth().testTag("charging_charge_cost_field"),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { typing = it.isFocused }.testTag("charging_charge_cost_field"),
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -238,7 +257,7 @@ private fun EditCard(session: ChargeSession, saving: Boolean, onSave: (Long, Dou
             onValueChange = { note = it },
             label = { Text(stringResource(Res.string.charging_charge_note)) },
             colors = fieldColors,
-            modifier = Modifier.fillMaxWidth().testTag("charging_charge_note_field"),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { typing = it.isFocused }.testTag("charging_charge_note_field"),
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(

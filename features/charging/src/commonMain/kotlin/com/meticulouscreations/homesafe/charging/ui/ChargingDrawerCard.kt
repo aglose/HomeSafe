@@ -50,17 +50,17 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.charging_drawer_charging
 import homesafe.shared.generated.resources.charging_drawer_detail
 import homesafe.shared.generated.resources.charging_drawer_empty
+import homesafe.shared.generated.resources.charging_drawer_month
 import homesafe.shared.generated.resources.charging_drawer_open
 import homesafe.shared.generated.resources.charging_drawer_subtitle
-import homesafe.shared.generated.resources.charging_drawer_this_month
 import homesafe.shared.generated.resources.charging_drawer_title
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * The charging app's door: current running along wires while the drawer is open, with what this
- * month has cost so far, or who's charging now. Before the relay has answered it says only what
+ * The charging app's door: current running along wires while the drawer is open, with what the
+ * latest month with any charging cost, or who's charging now. Before the relay has answered it says only what
  * the app is.
  */
 @Composable
@@ -101,7 +101,7 @@ fun ChargingDrawerCard(charging: ChargingUiState, animated: Boolean, onOpen: (Of
 
                 else -> {
                     if (month != null) {
-                        Text(stringResource(Res.string.charging_drawer_this_month, moneyText(month.cost)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+                        Text(stringResource(Res.string.charging_drawer_month, moneyText(month.cost), monthYearText(month)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
                     }
                     if (now != null) {
                         Text(stringResource(Res.string.charging_drawer_charging, now.name, (now.battery ?: 0).toString()), style = MaterialTheme.typography.labelSmall, color = secondary, maxLines = 1)

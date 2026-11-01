@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.charging.domain.ChargingMonth
 import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.charging_chart_hour_value
+import homesafe.shared.generated.resources.charging_chart_with_hours
 import homesafe.shared.generated.resources.charging_month_bar
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
@@ -127,13 +129,18 @@ internal fun MonthBars(months: List<ChargingMonth>, selected: String?, onSelect:
 
 /**
  * Bars for each of a day's hours. [color] says what colour each is. Under them the hours 0, 6, 12
- * and 18 are named, each under its own bar's start. What the chart says goes in [description].
+ * and 18 are named, each under its own bar's start. What the chart says goes in [description], and
+ * a screen reader hears it followed by each hour with something in it, as [valueText] words it.
  */
 @Composable
-internal fun HourBars(values: List<Double>, description: String, modifier: Modifier = Modifier, height: Dp = 96.dp, color: (Int) -> Color) {
+internal fun HourBars(values: List<Double>, description: String, valueText: @Composable (Double) -> String, modifier: Modifier = Modifier, height: Dp = 96.dp, color: (Int) -> Color) {
     val colors = ChargingTheme.colors
     val highest = values.maxOrNull()?.takeIf { it > 0 } ?: 1.0
-    Column(modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = description }) {
+    val words = values.mapIndexed { hour, value -> value to stringResource(Res.string.charging_chart_hour_value, hourText(hour), valueText(value)) }
+        .filter { (value) -> value > 0 }
+        .joinToString("; ") { (_, hour) -> hour }
+    val spoken = stringResource(Res.string.charging_chart_with_hours, description, words)
+    Column(modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = spoken }) {
         Canvas(Modifier.fillMaxWidth().height(height)) { hourBars(values, highest, colors.surfaceRaised, color) }
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth()) {

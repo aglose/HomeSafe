@@ -47,6 +47,31 @@ class ChargingModelsTest {
     }
 
     @Test
+    fun aMonthsMilesOnlyMatchItsCostOnceEveryCarHasSaid() {
+        val known = CarMonth("a", "Alex", homeCost = 10.0, miles = 100.0)
+        val unknown = CarMonth("b", "Sam", homeCost = 10.0)
+        val partly = ChargingMonth("2026-10", cars = listOf(known, unknown))
+        assertEquals(100.0, partly.miles)
+        assertNull(partly.milesOfEveryCar)
+        assertNull(partly.costPerMile)
+        val whole = ChargingMonth("2026-10", cars = listOf(known, unknown.copy(miles = 100.0)))
+        assertEquals(200.0, whole.milesOfEveryCar)
+        assertEquals(0.1, whole.costPerMile)
+    }
+
+    @Test
+    fun aPriceCanBeTypedEitherWayItsDecimalsAreWritten() {
+        for ((text, price) in listOf(
+            "3.50" to 3.5, "3,50" to 3.5, "$12" to 12.0, " 7 " to 7.0, ".5" to 0.5, "3." to 3.0, "1,234.50" to 1234.5, "1.234,50" to 1234.5, "1,234" to 1234.0, "1.234" to 1234.0, "1,234,567" to 1234567.0,
+        )) {
+            assertEquals(price, ChargingFormat.price(text), text)
+        }
+        for (text in listOf("", ".", ",", "abc", "1,2,3", "-5", "1e5", "NaN", "1.2.3", "12,34.5")) {
+            assertNull(ChargingFormat.price(text), text)
+        }
+    }
+
+    @Test
     fun aMonthKnownOnlyFromTheCardsCostsWhatTheyPaid() {
         val month = ChargingMonth("2026-08", cardFast = 22.0, unmatched = 22.0)
         assertEquals(22.0, month.cost)

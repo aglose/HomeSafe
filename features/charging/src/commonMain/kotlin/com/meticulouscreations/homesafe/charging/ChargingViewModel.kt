@@ -66,16 +66,21 @@ class ChargingViewModel(
     val uiState: StateFlow<ChargingUiState> = _uiState.asStateFlow()
 
     private var follow: Job? = null
+    private var detailAsked: Job? = null
     private var askedAt = 0L
 
     /** Asks the relay as long as [active]: every little while with a car charging, otherwise now and then. */
     fun setActive(active: Boolean) {
-        follow?.cancel()
-        follow = null
-        if (!active) return
+        if (!active) {
+            follow?.cancel()
+            follow = null
+            return
+        }
+        // The drawer's card already asking when the app opens: what it asked is still on its way.
+        if (follow?.isActive == true) return
         follow = viewModelScope.launch {
-            // The drawer's card asked a moment ago: the app opening doesn't ask again.
-            delay((every() - (clock.now().epochSeconds - askedAt)).coerceAtLeast(0) * 1000)
+            // The drawer's card asked a moment ago: the app opening doesn't ask again. With no answer yet, there is nothing to wait on.
+            if (_uiState.value.loaded) delay((every() - (clock.now().epochSeconds - askedAt)).coerceAtLeast(0) * 1000)
             while (isActive) {
                 ask()
                 delay(every() * 1000)
@@ -94,22 +99,28 @@ class ChargingViewModel(
         askedAt = clock.now().epochSeconds
         _uiState.update { it.copy(refreshing = true) }
         api.summary(server).fold(
-            onSuccess = { summary -> show(summary) },
+            onSuccess = { summary ->
+                show(summary)
+                // A charge's page was fetched while it ran: it goes on running, and has an end to come.
+                _uiState.value.detail?.session?.takeIf { it.isOpen }?.let { fetchDetail(server, it.id, quietly = true) }
+            },
             onFailure = { failure -> fail(failure) },
         )
     }
 
     private fun show(summary: ChargingSummary) {
         _uiState.update {
+            // Older charges follow on from where the newest page ended. Where it now ends elsewhere, they may not: the list starts again from the new page.
+            val sameEnd = it.summary.sessions.lastOrNull()?.id == summary.sessions.lastOrNull()?.id
+            val older = if (sameEnd) it.older else emptyList()
             it.copy(
                 loaded = true,
                 summary = summary,
                 refreshing = false,
                 error = null,
                 saving = false,
-                // Older charges are taken up where the newest page ends, whatever it now holds.
-                older = it.older.filter { old -> summary.sessions.none { new -> new.id == old.id } },
-                moreSessions = if (it.older.isEmpty()) summary.moreSessions else it.moreSessions,
+                older = older,
+                moreSessions = if (older.isEmpty()) summary.moreSessions else it.moreSessions,
                 nowEpochSeconds = clock.now().epochSeconds,
             )
         }
@@ -136,9 +147,14 @@ class ChargingViewModel(
             api.olderSessions(server, oldest).fold(
                 onSuccess = { (sessions, more) ->
                     _uiState.update { state ->
-                        // A list keyed by id can't hold a charge twice, and one can start between two pages being asked for.
-                        val older = (state.older + sessions).distinctBy { it.id }.filter { old -> state.summary.sessions.none { it.id == old.id } }
-                        state.copy(older = older, moreSessions = more, loadingMore = false)
+                        if (state.sessions.lastOrNull()?.pageKey != oldest) {
+                            // The list started again while this was on its way: it no longer follows on from what's there.
+                            state.copy(loadingMore = false)
+                        } else {
+                            // A list keyed by id can't hold a charge twice, and one can start between two pages being asked for.
+                            val older = (state.older + sessions).distinctBy { it.id }.filter { old -> state.summary.sessions.none { it.id == old.id } }
+                            state.copy(older = older, moreSessions = more, loadingMore = false)
+                        }
                     }
                 },
                 onFailure = { fail(it) },
@@ -150,10 +166,16 @@ class ChargingViewModel(
     fun openSession(id: Long) {
         val server = server() ?: return
         _uiState.update { state -> state.copy(detail = state.detail?.takeIf { it.session.id == id }) }
-        viewModelScope.launch {
+        fetchDetail(server, id, quietly = false)
+    }
+
+    /** The one charge's page there is: asking for another calls off what was on its way. A refresh that fails ([quietly]) leaves the page as it was. */
+    private fun fetchDetail(server: String, id: Long, quietly: Boolean) {
+        detailAsked?.cancel()
+        detailAsked = viewModelScope.launch {
             api.session(server, id).fold(
-                onSuccess = { detail -> _uiState.update { it.copy(detail = detail, error = null) } },
-                onFailure = { fail(it) },
+                onSuccess = { detail -> _uiState.update { it.copy(detail = detail, error = if (quietly) it.error else null) } },
+                onFailure = { if (!quietly) fail(it) },
             )
         }
     }
@@ -161,6 +183,8 @@ class ChargingViewModel(
     /** What was paid for a charge, and a note on it; null takes either away. */
     fun saveSession(id: Long, cost: Double?, note: String?) {
         val server = server() ?: return
+        // An answer from before this is saved mustn't land after it.
+        detailAsked?.cancel()
         _uiState.update { it.copy(saving = true) }
         viewModelScope.launch {
             api.saveSession(server, id, cost, note).fold(

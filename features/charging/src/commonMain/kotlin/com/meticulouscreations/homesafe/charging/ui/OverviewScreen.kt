@@ -42,7 +42,6 @@ import com.meticulouscreations.homesafe.charging.domain.ChargingMonth
 import com.meticulouscreations.homesafe.charging.domain.ChargingSetup
 import com.meticulouscreations.homesafe.charging.domain.ChargingSummary
 import com.meticulouscreations.homesafe.charging.domain.RatePlan
-import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.charging_car_efficiency
@@ -100,7 +99,6 @@ internal fun OverviewScreen(state: ChargingUiState, padding: PaddingValues, onOp
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).testTag("charging_overview"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        state.error?.let { Text(it.resolve(), style = ChargingTheme.type.label, color = ChargingTheme.colors.danger) }
         summary.charging.forEach { LiveCard(it, state.nowEpochSeconds, onOpenCharge) }
         if (month == null) {
             EmptyCard()
@@ -283,7 +281,7 @@ private fun PlanLine(other: RatePlan, otherCost: Double, currentCost: Double) {
 @Composable
 private fun GasCard(month: ChargingMonth, summary: ChargingSummary) {
     val gas = summary.gas ?: return
-    val miles = month.miles?.takeIf { it > 0 } ?: return
+    val miles = month.milesOfEveryCar?.takeIf { it > 0 } ?: return
     val colors = ChargingTheme.colors
     val gasCost = gas.costOf(miles)
     ChargingCard(title = stringResource(Res.string.charging_gas_title)) {

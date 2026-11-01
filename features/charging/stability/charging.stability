@@ -96,6 +96,15 @@ public fun com.meticulouscreations.homesafe.charging.ui.ChargingDrawerCard(charg
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.charging.ui.ChargingErrorBanner(message: kotlin.String, onRetry: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - message: STABLE (String is immutable)
+    - onRetry: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.charging.ui.ChargingNav(selected: com.meticulouscreations.homesafe.charging.ui.ChargingTab, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.charging.ui.ChargingTab, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -156,12 +165,13 @@ internal fun com.meticulouscreations.homesafe.charging.ui.ChargingWires(running:
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.charging.ui.EditCard(session: com.meticulouscreations.homesafe.charging.domain.ChargeSession, saving: kotlin.Boolean, onSave: kotlin.Function3<kotlin.Long, kotlin.Double?, kotlin.String?, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.charging.ui.EditCard(session: com.meticulouscreations.homesafe.charging.domain.ChargeSession, saving: kotlin.Boolean, clearAbove: androidx.compose.ui.unit.Dp, onSave: kotlin.Function3<kotlin.Long, kotlin.Double?, kotlin.String?, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - session: STABLE (marked @Stable or @Immutable)
     - saving: STABLE (primitive type)
+    - clearAbove: STABLE (marked @Stable or @Immutable)
     - onSave: STABLE (function type)
 
 @Composable
@@ -217,12 +227,13 @@ private fun com.meticulouscreations.homesafe.charging.ui.HomeCard(month: com.met
     - onSeeRates: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.charging.ui.HourBars(values: kotlin.collections.List<kotlin.Double>, description: kotlin.String, modifier: androidx.compose.ui.Modifier, height: androidx.compose.ui.unit.Dp, color: kotlin.Function1<kotlin.Int, androidx.compose.ui.graphics.Color>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.charging.ui.HourBars(values: kotlin.collections.List<kotlin.Double>, description: kotlin.String, valueText: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<kotlin.Double, kotlin.String>, modifier: androidx.compose.ui.Modifier, height: androidx.compose.ui.unit.Dp, color: kotlin.Function1<kotlin.Int, androidx.compose.ui.graphics.Color>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - values: RUNTIME (requires runtime check)
     - description: STABLE (String is immutable)
+    - valueText: STABLE (composable function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - height: STABLE (marked @Stable or @Immutable)
     - color: STABLE (function type)

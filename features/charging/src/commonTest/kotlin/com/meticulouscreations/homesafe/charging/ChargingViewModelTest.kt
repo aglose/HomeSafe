@@ -19,6 +19,7 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -60,6 +61,9 @@ class ChargingViewModelTest {
     private val calls = mutableListOf<String>()
     private var charging = false
     private var refuse = false
+    private var newest = """{"id": 2, "car": "c", "started": 200}"""
+    private var detailEnded = false
+    private val detailDelayMillis = mutableMapOf<String, Long>()
     private var olderRepeats = false
     private val clock = object : Clock {
         override fun now(): Instant = Instant.fromEpochMilliseconds(dispatcher.scheduler.currentTime + 1_000_000_000L)
@@ -67,10 +71,10 @@ class ChargingViewModelTest {
 
     private fun answer(path: String, method: HttpMethod): String = when {
         path == "/charging" || (path == "/charging/plan" && method == HttpMethod.Post) ->
-            """{"plan": "a", "sessions": [{"id": 2, "car": "c", "started": 200}], "more_sessions": true,
+            """{"plan": "a", "sessions": [$newest], "more_sessions": true,
                 "now": [{"car": "c", "session": ${if (charging) """{"id": 2, "car": "c", "started": 200}""" else "null"}}]}"""
 
-        path.startsWith("/charging/sessions/") -> """{"id": 2, "car": "c", "started": 200, "kwh": 1, "cost": 3.5, "cost_is": "typed", "note": "kept"}"""
+        path.startsWith("/charging/sessions/") -> """{"id": ${path.substringAfterLast('/')}, "car": "c", "started": 200, ${if (detailEnded) """"ended": 300, """ else ""}"kwh": 1, "cost": 3.5, "cost_is": "typed", "note": "kept"}"""
 
         path == "/charging/sessions" && olderRepeats ->
             """{"sessions": [{"id": 2, "car": "c", "started": 200}, {"id": 1, "car": "c", "started": 100}, {"id": 1, "car": "c", "started": 100}], "more_sessions": false}"""
@@ -88,6 +92,7 @@ class ChargingViewModelTest {
                 addHandler { request ->
                     val path = request.url.encodedPath
                     calls += "${request.method.value} $path"
+                    detailDelayMillis[path]?.let { delay(it) }
                     if (refuse) respond("{}", HttpStatusCode.InternalServerError) else respond(answer(path, request.method), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
                 }
             }
@@ -129,6 +134,77 @@ class ChargingViewModelTest {
         settle()
         eventually { calls.size == 2 }
         model.setActive(false)
+    }
+
+    @Test
+    fun theAppOpeningWhileTheCardAsksLetsTheAskFinish() = runTest(dispatcher) {
+        val model = viewModel()
+        model.setActive(true)
+        model.setActive(true)
+        eventually { model.uiState.value.loaded }
+        assertEquals(1, calls.size)
+        model.setActive(false)
+    }
+
+    @Test
+    fun withNoAnswerYetOpeningAgainAsksStraightAway() = runTest(dispatcher) {
+        refuse = true
+        val model = viewModel()
+        model.setActive(true)
+        settle()
+        model.setActive(false)
+        refuse = false
+        model.setActive(true)
+        settle()
+        assertTrue(model.uiState.value.loaded)
+        model.setActive(false)
+    }
+
+    @Test
+    fun aChargesOpenPageKeepsUpUntilItEnds() = runTest(dispatcher) {
+        charging = true
+        val model = viewModel()
+        model.setActive(true)
+        eventually { model.uiState.value.loaded }
+        model.openSession(2)
+        eventually { model.uiState.value.detail != null }
+        assertTrue(model.uiState.value.detail?.session?.isOpen == true)
+        detailEnded = true
+        advanceTimeBy(31_000)
+        settle()
+        eventually { model.uiState.value.detail?.session?.isOpen == false }
+        val asked = calls.count { it.endsWith("/charging/sessions/2") }
+        advanceTimeBy(31_000)
+        settle()
+        assertEquals(asked, calls.count { it.endsWith("/charging/sessions/2") })
+        model.setActive(false)
+    }
+
+    @Test
+    fun aRefreshWhoseNewestPageEndsElsewhereStartsTheListAgain() = runTest(dispatcher) {
+        val model = viewModel()
+        model.refresh()
+        eventually { model.uiState.value.loaded }
+        model.loadMore()
+        eventually { model.uiState.value.older.isNotEmpty() }
+        newest = """{"id": 3, "car": "c", "started": 300}"""
+        model.refresh()
+        eventually { model.uiState.value.summary.sessions.single().id == 3L }
+        assertEquals(listOf(3L), model.uiState.value.sessions.map { it.id })
+        assertTrue(model.uiState.value.moreSessions)
+    }
+
+    @Test
+    fun aSlowAnswerForTheLastChargeDoesntReplaceTheOneOpenNow() = runTest(dispatcher) {
+        detailDelayMillis["/charging/sessions/1"] = 5_000
+        val model = viewModel()
+        model.openSession(1)
+        settle()
+        model.openSession(2)
+        eventually { model.uiState.value.detail?.session?.id == 2L }
+        advanceTimeBy(6_000)
+        settle()
+        assertEquals(2L, model.uiState.value.detail?.session?.id)
     }
 
     @Test

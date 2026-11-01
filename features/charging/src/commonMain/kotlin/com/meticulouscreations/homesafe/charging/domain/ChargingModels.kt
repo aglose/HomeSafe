@@ -193,8 +193,11 @@ data class ChargingMonth(
     val sessions: Int get() = cars.sumOf { it.sessions }
     val miles: Double? get() = cars.mapNotNull { it.miles }.takeIf { it.isNotEmpty() }?.sum()
 
-    /** Dollars to go a mile; null without miles. */
-    val costPerMile: Double? get() = miles?.takeIf { it > 0 }?.let { cost / it }
+    /** The miles the whole month's [cost] went on: null until every car has said its own, or a total would set one car's miles against both cars' charging. */
+    val milesOfEveryCar: Double? get() = if (cars.isNotEmpty() && cars.all { it.miles != null }) miles else null
+
+    /** Dollars to go a mile; null without every car's miles. */
+    val costPerMile: Double? get() = milesOfEveryCar?.takeIf { it > 0 }?.let { cost / it }
 
     /** What a kWh came to at home. */
     val homePerKwh: Double? get() = homeKwh.takeIf { it > 0 }?.let { homeCost / it }

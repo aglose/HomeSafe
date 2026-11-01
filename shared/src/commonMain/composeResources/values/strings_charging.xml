@@ -3,7 +3,7 @@
     <string name="charging_drawer_subtitle">What the cars cost to charge</string>
     <string name="charging_drawer_open">Open Charging</string>
     <string name="charging_drawer_empty">Keeps every charge from the first one on</string>
-    <string name="charging_drawer_this_month">%1$s this month</string>
+    <string name="charging_drawer_month">%1$s in %2$s</string>
     <string name="charging_drawer_detail">%1$s over %2$s charges</string>
     <string name="charging_drawer_charging">%1$s is charging, at %2$s%</string>
 
@@ -133,5 +133,7 @@
     <string name="charging_rates_effective">Rates from %1$s.</string>
     <string name="charging_rates_when_title">When you charge at home</string>
     <string name="charging_rates_when_chart">How much is charged at home in each hour of the day, over the last 90 days.</string>
+    <string name="charging_chart_hour_value">%1$s: %2$s</string>
+    <string name="charging_chart_with_hours">%1$s %2$s</string>
     <string name="charging_rates_when_peak">%1$s% of it falls in time-of-use peak hours, over the last 90 days.</string>
 </resources>

@@ -68,3 +68,9 @@ private fun ChargingDrawerCardPreview() {
         }
     }
 }
+
+@Preview(name = "Charging, an error over what's loaded", widthDp = 390, heightDp = 844)
+@Composable
+private fun ChargingLoadedErrorPreview() {
+    FrigateTheme { ChargingAppContent(ChargingFixtures.state().copy(error = UiText.of(Res.string.charging_error_unreachable)), ChargingActions(), initialTab = ChargingTab.RATES) }
+}

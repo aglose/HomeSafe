@@ -140,6 +140,7 @@ private fun PricesCard(plan: RatePlan) {
             HourBars(
                 plan.weekday,
                 stringResource(Res.string.charging_rates_day_chart, rateText(low), rateText(top)),
+                valueText = { rateText(it) },
                 height = 72.dp,
                 color = { hour -> if (hour in start until end) colors.peak else colors.home },
             )
@@ -201,6 +202,7 @@ private fun WhenCard(summary: ChargingSummary) {
         HourBars(
             summary.byHour,
             stringResource(Res.string.charging_rates_when_chart),
+            valueText = { kwhText(it) },
             color = { hour -> if (start != null && end != null && hour in start until end) colors.peak else colors.home },
         )
         if (share != null) {

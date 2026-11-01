@@ -241,6 +241,12 @@ fun ChargingAppContent(
                 }
             }
 
+            // The answer to whatever just failed, over what's still there. A charge's page with nothing to show says so itself.
+            val error = state.error
+            if (state.loaded && error != null && (page !is ChargingPage.Charge || state.sessions.any { it.id == page.id } || state.detail?.session?.id == page.id)) {
+                ChargingErrorBanner(error.resolve(), actions.onRefresh, Modifier.align(Alignment.TopCenter).padding(start = gutter, end = gutter, top = top))
+            }
+
             ChargingTopBar(
                 title = stringResource(if (page == null) Res.string.charging_title else Res.string.charging_title_charge),
                 paged = page != null,
@@ -279,6 +285,25 @@ private fun ChargingWaiting(state: ChargingUiState, actions: ChargingActions) {
                     Text(stringResource(Res.string.common_retry), color = colors.home)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ChargingErrorBanner(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = ChargingTheme.colors
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(ChargingCardShape)
+            .background(colors.surfaceRaised)
+            .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+            .testTag("charging_error"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(message, style = ChargingTheme.type.label, color = colors.danger, modifier = Modifier.weight(1f))
+        TextButton(onClick = onRetry, modifier = Modifier.handCursor().testTag("charging_error_retry")) {
+            Text(stringResource(Res.string.common_retry), color = colors.home)
         }
     }
 }

@@ -3,7 +3,7 @@
     <string name="charging_drawer_subtitle">Lo que cuesta cargar los coches</string>
     <string name="charging_drawer_open">Abrir Carga</string>
     <string name="charging_drawer_empty">Guarda cada carga desde la primera</string>
-    <string name="charging_drawer_this_month">%1$s este mes</string>
+    <string name="charging_drawer_month">%1$s en %2$s</string>
     <string name="charging_drawer_detail">%1$s en %2$s cargas</string>
     <string name="charging_drawer_charging">%1$s está cargando, al %2$s%</string>
 
@@ -133,5 +133,7 @@
     <string name="charging_rates_effective">Tarifas desde %1$s.</string>
     <string name="charging_rates_when_title">Cuándo cargas en casa</string>
     <string name="charging_rates_when_chart">Cuánto se carga en casa en cada hora del día, en los últimos 90 días.</string>
+    <string name="charging_chart_hour_value">%1$s: %2$s</string>
+    <string name="charging_chart_with_hours">%1$s %2$s</string>
     <string name="charging_rates_when_peak">El %1$s% cae en horas punta de la tarifa horaria, en los últimos 90 días.</string>
 </resources>
