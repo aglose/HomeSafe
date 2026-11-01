@@ -44,6 +44,8 @@ data class WeatherNotification(
     val eventEpochSeconds: Long? = null,
     val expiresEpochSeconds: Long? = null,
     val link: WeatherDeepLink = WeatherDeepLink(),
+    /** The same thing is already showing as a push the platform drew itself: take its place without alerting again. */
+    val replacesPush: Boolean = false,
 )
 
 /**

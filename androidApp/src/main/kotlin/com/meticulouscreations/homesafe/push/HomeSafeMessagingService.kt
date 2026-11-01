@@ -5,6 +5,7 @@ import android.text.format.DateUtils
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.meticulouscreations.homesafe.data.AlertNotificationPoster
+import com.meticulouscreations.homesafe.data.BackgroundGraph
 import com.meticulouscreations.homesafe.data.BudgetNotificationPoster
 import com.meticulouscreations.homesafe.data.NotificationMuteStore
 import com.meticulouscreations.homesafe.domain.model.DoorAlert
@@ -19,6 +20,8 @@ import com.meticulouscreations.homesafe.navigation.PackageDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
 import com.meticulouscreations.homesafe.shared.R
+import com.meticulouscreations.homesafe.weather.data.WeatherBackgroundServices
+import com.meticulouscreations.homesafe.weather.data.WeatherSoonPush
 import kotlinx.coroutines.runBlocking
 import java.util.Date
 
@@ -34,6 +37,7 @@ import java.util.Date
  * A door opening (`door=<id>`) is worded here and posted like an alert, with no picture to fetch.
  * So is a Nest camera Google stopped streaming, and its return (`system=nest`), and a household
  * car parked on the street that must move (`parking=1`), which goes on its own Parking channel.
+ * Rain on the way (`weather_soon=<a small forecast>`) is the weather app's own to plan and post.
  * With every notification muted (Settings → Notifications) nothing is shown at all.
  */
 class HomeSafeMessagingService : FirebaseMessagingService() {
@@ -50,6 +54,7 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         if (PackageAlert.isPackage { message.data[it] }) return showPackageAlert(message)
         if (NestOutageAlert.isNestOutage { message.data[it] }) return showNestOutageAlert(message)
         if (ParkingAlert.isParking { message.data[it] }) return showParkingAlert(message)
+        message.data[WeatherSoonPush.KEY]?.let { return showWeatherSoon(it, message) }
         val title = message.data["title"] ?: message.notification?.title ?: return
         val body = message.data["body"] ?: message.notification?.body ?: ""
         val target = MomentDeepLink.from { message.data[it] }
@@ -86,6 +91,13 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         val eventId = message.data["event_id"]
         val eventStart = message.data["event_start"]?.toDoubleOrNull()
         if (!text.summary && target != null && !eventId.isNullOrBlank()) AlertMediaWorker.enqueue(applicationContext, text, eventId, eventStart ?: target.startEpochSeconds)
+    }
+
+    /** The relay saw a shower coming at home (see docs/weather.md): the weather app says so, as it would itself, with its picture. */
+    private fun showWeatherSoon(payload: String, message: RemoteMessage) {
+        val check = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).weatherAlertCheck
+        val key = message.data[WeatherSoonPush.KEY_ID] ?: message.messageId ?: return
+        runBlocking { check.onRelayPush(payload, key, message.data["title"].orEmpty(), message.data["body"].orEmpty(), shown = false) }
     }
 
     /**

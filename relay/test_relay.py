@@ -11395,7 +11395,7 @@ class RainSoonForecastTest(unittest.TestCase):
         forecast = self.forecast(0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0)
         forecast["quarters"], forecast["hours"] = forecast["quarters"][:3], forecast["hours"][:2]
         data = relay.rain_soon_data(forecast, {"key": "soon:1", "start": self.T + 1800, "end": None, "family": "rain", "peak": 2.0})
-        # The same text is in WeatherSoonPushTest.
+        # The same text is in WeatherAlertCheckTest.
         self.assertEqual(
             '{"zone":"America/Los_Angeles","offset":-25200,"day":1,"code":3,"mm":0.0,"q0":1760047200,"qmm":[0.0,0.0,0.5],"qcm":[0.0,0.0,0.0],'
             '"h0":1760047200,"hmm":[0.0,0.0],"hcm":[0.0,0.0],"hp":[null,null],"hc":[3,3]}',

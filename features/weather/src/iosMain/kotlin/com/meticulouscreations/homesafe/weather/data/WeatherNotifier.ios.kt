@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.weather.data
 
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.data.KEY_UPDATE
 import com.meticulouscreations.homesafe.data.writeFile
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
@@ -84,7 +85,16 @@ private class IosWeatherNotifier : WeatherNotifier {
             setBody(notification.detail ?: notification.body)
             setThreadIdentifier(THREAD)
             setCategoryIdentifier(IosWeatherActions.CATEGORY)
-            setInterruptionLevel(if (notification.urgent) UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive else UNNotificationInterruptionLevel.UNNotificationInterruptionLevelActive)
+            setInterruptionLevel(
+                when {
+                    notification.urgent -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive
+
+                    // The relay's banner is already up: this only gives it its picture.
+                    notification.replacesPush -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelPassive
+
+                    else -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelActive
+                },
+            )
             // Which of the app's notifications the summary leads with: a warning, then rain about to start, then the day's outlook.
             setRelevanceScore(
                 when {
@@ -93,7 +103,14 @@ private class IosWeatherNotifier : WeatherNotifier {
                     else -> 0.5
                 },
             )
-            setUserInfo(notification.link.toMap() + listOfNotNull(notification.expiresEpochSeconds?.let { KEY_EXPIRES to it.toString() }))
+            setUserInfo(
+                notification.link.toMap() +
+                    listOfNotNull(
+                        notification.expiresEpochSeconds?.let { KEY_EXPIRES to it.toString() },
+                        // In front of the open app, it refreshes the list rather than showing a second banner.
+                        (KEY_UPDATE to "1").takeIf { notification.replacesPush },
+                    ),
+            )
             picture?.let { setAttachments(listOf(it)) }
         }
         val request = UNNotificationRequest.requestWithIdentifier(notification.id, content, trigger = null)

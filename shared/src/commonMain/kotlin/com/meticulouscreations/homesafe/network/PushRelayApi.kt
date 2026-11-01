@@ -117,6 +117,23 @@ class PushRelayApi(private val httpClient: HttpClient) {
         }
     }
 
+    /**
+     * Asks whether this install may announce the shower [key], before its own check does: the relay
+     * pushes the same notification, and one shower is said once. Asked from the background job,
+     * so by the device's own secret, and not for long: a relay out of reach mustn't hold up a
+     * check that can go ahead without it.
+     */
+    suspend fun claimRainSoon(serverUrl: String, deviceId: String, secret: String, key: String): Result<RainSoonClaim> = runCatching {
+        val response = httpClient.post(relayUrl(serverUrl, "/devices/$deviceId/rain-soon")) {
+            contentType(ContentType.Application.Json)
+            bearer(secret)
+            setBody(RainSoonClaimRequest(key))
+            timeout { requestTimeoutMillis = RAIN_SOON_CLAIM_TIMEOUT_MILLIS }
+        }
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RainSoonClaim>()
+    }
+
     /** Asks the relay to push a sample alert to every registered phone. */
     suspend fun sendTestPush(serverUrl: String): Result<Unit> = runCatching {
         val response = httpClient.post(relayUrl(serverUrl, "/test"))
@@ -510,6 +527,8 @@ class PushRelayApi(private val httpClient: HttpClient) {
         /** How much longer than its wait a held `/doors` may take before it counts as failed. */
         private const val DOOR_WAIT_SLACK_SECONDS = 10
 
+        private const val RAIN_SOON_CLAIM_TIMEOUT_MILLIS = 5_000L
+
         /** Same host as Frigate, the relay's port, no query — works for both the LAN and Tailscale addresses. */
         fun relayUrl(serverUrl: String, path: String): String =
             URLBuilder(serverUrl).apply {
@@ -541,7 +560,16 @@ data class DeviceRegistration(
     /** Where the phone's quiet hours are read: its IANA zone, and its UTC offset now for a relay that can't resolve the zone. */
     val tz: String? = null,
     @SerialName("utc_offset") val utcOffsetMinutes: Int? = null,
+    /** The weather's "rain on the way" is wanted here, so the relay may push it (docs/weather.md). */
+    @SerialName("rain_soon") val rainSoon: Boolean = false,
 )
+
+@Serializable
+internal data class RainSoonClaimRequest(val key: String)
+
+/** The relay's answer to [PushRelayApi.claimRainSoon]: not [granted], this phone was told of a shower at [at] (epoch seconds). */
+@Serializable
+data class RainSoonClaim(val granted: Boolean, val at: Double? = null)
 
 /**
  * What the relay knows this install as, and the secret that proves it; and whether it can push

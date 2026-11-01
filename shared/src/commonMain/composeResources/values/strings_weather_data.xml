@@ -169,6 +169,9 @@
 
     <!-- Notifications: the picture. Short marks beside a small icon, and the day's range in large figures. -->
     <!-- %1$s the high, %2$s the low ("68° / 52°") -->
+    <!-- The place a notification from the household's server is for: the home. -->
+    <string name="weather_notice_place_home">Home</string>
+
     <string name="weather_notice_art_range">%1$s / %2$s</string>
     <!-- %1$d the UV index, beside a sun -->
     <string name="weather_notice_fact_uv">UV %1$d</string>

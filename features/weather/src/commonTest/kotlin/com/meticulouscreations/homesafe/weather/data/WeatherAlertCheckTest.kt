@@ -18,9 +18,12 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeChart
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeIcon
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
+import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_minutes_short
+import homesafe.shared.generated.resources.weather_notice_place_home
 import homesafe.shared.generated.resources.weather_notice_soon_body_lasting
+import homesafe.shared.generated.resources.weather_notice_soon_here
 import homesafe.shared.generated.resources.weather_notice_soon_here_lasting
 import homesafe.shared.generated.resources.weather_now
 import homesafe.shared.generated.resources.weather_story_rain_starting
@@ -56,6 +59,17 @@ class WeatherAlertCheckTest {
         minutely = WeatherData.slices(now, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0),
     )
 
+    /** The relay, as far as the check can tell. Null is a relay out of reach. */
+    private class FakeClaims : WeatherSoonClaims {
+        val asked = mutableListOf<String>()
+        var answer: WeatherSoonClaims.Claim? = WeatherSoonClaims.Claim(granted = true, atEpochSeconds = null)
+
+        override suspend fun claim(key: String): WeatherSoonClaims.Claim? {
+            asked += key
+            return answer
+        }
+    }
+
     private class Harness(scope: CoroutineScope, now: Long) {
         val dao = InMemoryWeatherDao()
         val repository = FakeWeatherRepository().apply { onName = { _, _ -> "Portland" to "OR" } }
@@ -76,7 +90,8 @@ class WeatherAlertCheckTest {
                 this@Harness.muted.value = muted
             }
         }
-        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope, mute)
+        val claims = FakeClaims()
+        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope, mute, claims)
     }
 
     private fun TestScope.harness(report: WeatherReport? = stormyReport()) = Harness(backgroundScope, now).apply {
@@ -94,6 +109,172 @@ class WeatherAlertCheckTest {
             withContext(Dispatchers.Default) { delay(10) }
         }
         repeat(20) { yield() }
+    }
+
+    // ---- what the relay says ----------------------------------------------------------------
+
+    /** What `rain_soon_data` in relay/relay.py sends: dry now, and half a millimetre a quarter-hour from half an hour on, for 45 minutes. */
+    private val payload = buildString {
+        val wet = listOf(0.0, 0.0, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0)
+        append("""{"zone":"America/Los_Angeles","offset":-25200,"day":1,"code":3,"mm":0.0,"q0":$now,"qmm":$wet,"qcm":${wet.map { 0.0 }},""")
+        append(""""h0":$now,"hmm":[0.0,0.0],"hcm":[0.0,0.0],"hp":[null,null],"hc":[3,3]}""")
+    }
+
+    private val rainKey = "soon:${at(0, 15, 30) / 3_600}"
+
+    private suspend fun Harness.pushed(shown: Boolean = false, text: String = payload) = check.onRelayPush(text, rainKey, "Rain at 3:30 PM", "Around 3:30 PM", shown)
+
+    @Test
+    fun aPushedShowerIsPostedAsTheAppsOwnWithItsPictureAtHomeAndOpeningOnWhereThePhoneIs() = runTest {
+        val h = harness(report = null)
+        assertTrue(h.pushed())
+        val posted = h.notifier.posted.single()
+        assertEquals(rainKey, posted.id)
+        assertEquals(keyed(UiText.of(Res.string.weather_story_rain_starting, 30)), posted.title)
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_here_lasting, pm("3:30"), 45)), posted.body)
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_place_home)), posted.place)
+        assertEquals(WeatherNoticeIcon.RAIN, posted.art.icon)
+        assertTrue(posted.art.chart is WeatherNoticeChart.Soon)
+        assertEquals(at(0, 15, 30), posted.eventEpochSeconds)
+        assertEquals(WeatherDeepLink(placeId = Place.CURRENT_ID), posted.link)
+        assertFalse(posted.replacesPush)
+    }
+
+    /** Word for word what `test_the_payload_is_what_the_apps_parser_is_tested_against` in relay/test_relay.py has the relay write. */
+    @Test
+    fun whatTheRelayWritesIsWhatThisReads() = runTest {
+        val h = harness(report = null)
+        val written = """{"zone":"America/Los_Angeles","offset":-25200,"day":1,"code":3,"mm":0.0,"q0":1760047200,"qmm":[0.0,0.0,0.5],"qcm":[0.0,0.0,0.0],""" +
+            """"h0":1760047200,"hmm":[0.0,0.0],"hcm":[0.0,0.0],"hp":[null,null],"hc":[3,3]}"""
+        assertEquals(1760047200, now)
+        assertTrue(h.pushed(text = written))
+        val posted = h.notifier.posted.single()
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_here, pm("3:30"))), posted.body)
+        assertEquals(at(0, 15, 30), posted.eventEpochSeconds)
+    }
+
+    @Test
+    fun aPushedShowerNeedsNoForecastFromThePhone() = runTest {
+        val h = harness(report = null)
+        h.repository.onReport = { error("a push carries its own forecast") }
+        assertTrue(h.pushed())
+    }
+
+    @Test
+    fun oncePushedThePhonesOwnCheckSaysNothingOfIt() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        h.pushed()
+        assertEquals(0, h.check.run())
+        assertEquals(1, h.notifier.posted.size)
+    }
+
+    @Test
+    fun aShowerThePhoneHasAlreadySaidIsntPostedAgainWhenTheRelayPushesIt() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        assertEquals(1, h.check.run())
+        assertFalse(h.pushed())
+        assertEquals(1, h.notifier.posted.size)
+    }
+
+    @Test
+    fun aPushRespectsTheSwitchesTheMuteAndThePermission() = runTest {
+        val h = harness(report = null)
+        h.preferences.update { it.copy(notices = it.notices.copy(precipitationSoon = false)) }
+        assertFalse(h.pushed())
+        h.preferences.update { it.copy(notices = it.notices.copy(precipitationSoon = true, enabled = false)) }
+        assertFalse(h.pushed())
+        h.preferences.update { it.copy(notices = it.notices.copy(enabled = true)) }
+        h.muted.value = true
+        assertFalse(h.pushed())
+        h.muted.value = false
+        h.notifier.allowed = false
+        assertFalse(h.pushed())
+        assertTrue(h.notifier.posted.isEmpty())
+        assertTrue(h.ledger.sent(now).isEmpty())
+    }
+
+    @Test
+    fun aPushThatArrivesAtNightIsHeldBackAsAnyOtherWould() = runTest {
+        val h = harness(report = null)
+        h.clock.seconds = at(0, 23)
+        assertFalse(h.pushed())
+    }
+
+    @Test
+    fun aPushAfterTheRainHasBegunSaysNothing() = runTest {
+        val h = harness(report = null)
+        h.clock.seconds = at(0, 15, 35)
+        assertFalse(h.pushed())
+    }
+
+    @Test
+    fun aForecastThisBuildCantReadGoesOutAsTheRelayWordedIt() = runTest {
+        val h = harness(report = null)
+        assertTrue(h.pushed(text = "a newer relay's"))
+        val posted = h.notifier.posted.single()
+        assertEquals(listOf(rainKey, "Rain at 3:30 PM", "Around 3:30 PM"), listOf(posted.id, posted.title, posted.body))
+        assertEquals(WeatherNoticeIcon.RAIN, posted.art.icon)
+        assertTrue(h.ledger.sent(now).containsKey(rainKey))
+    }
+
+    @Test
+    fun aBannerIOSHasDrawnGetsItsPictureWithoutAlertingAgain() = runTest {
+        val h = harness(report = null)
+        assertTrue(h.pushed(shown = true))
+        assertTrue(h.notifier.posted.single().replacesPush)
+        assertEquals(rainKey, h.notifier.posted.single().id)
+    }
+
+    @Test
+    fun aBannerIOSHasDrawnCountsAsSaidEvenWhenItCantBeImprovedOn() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        h.notifier.allowed = false
+        assertFalse(h.pushed(shown = true))
+        assertTrue(h.ledger.sent(now).containsKey(rainKey))
+        h.notifier.allowed = true
+        assertEquals(0, h.check.run())
+        assertTrue(h.notifier.posted.isEmpty())
+    }
+
+    @Test
+    fun aBannerIOSHasDrawnKeepsItsWordsWhereTheForecastCantBeRead() = runTest {
+        val h = harness(report = null)
+        assertFalse(h.pushed(shown = true, text = "a newer relay's"))
+        assertTrue(h.notifier.posted.isEmpty())
+        assertTrue(h.ledger.sent(now).containsKey(rainKey))
+    }
+
+    @Test
+    fun theCheckAsksTheRelayBeforeAnnouncingAShowerAndGoesAheadWhenGranted() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        assertEquals(1, h.check.run())
+        assertEquals(listOf(rainKey), h.claims.asked)
+    }
+
+    @Test
+    fun aShowerTheRelayAlreadyToldThisPhoneOfIsntAnnouncedAndHoldsForTheCooldownFromThen() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        h.claims.answer = WeatherSoonClaims.Claim(granted = false, atEpochSeconds = now - 600)
+        assertEquals(0, h.check.run())
+        assertTrue(h.notifier.posted.isEmpty())
+        assertEquals(now - 600, h.ledger.sent(now)[rainKey])
+        // Not asked again: the phone knows, now.
+        assertEquals(0, h.check.run())
+        assertEquals(1, h.claims.asked.size)
+    }
+
+    @Test
+    fun aRelayOutOfReachIsNoReasonToStayQuiet() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        h.claims.answer = null
+        assertEquals(1, h.check.run())
+    }
+
+    @Test
+    fun aWarningIsNobodyElsesToClaim() = runTest {
+        val h = harness(stormyReport().copy(minutely = emptyList()))
+        assertEquals(1, h.check.run())
+        assertTrue(h.claims.asked.isEmpty())
     }
 
     // ---- run ----------------------------------------------------------------------------------

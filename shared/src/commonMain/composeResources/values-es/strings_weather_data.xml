@@ -148,6 +148,9 @@
     <string name="weather_notice_warmer_tomorrow">Máxima de %1$s, %2$s más que hoy</string>
     <string name="weather_notice_high_tomorrow">Máxima de %1$s</string>
 
+    <!-- The place a notification from the household's server is for: the home. -->
+    <string name="weather_notice_place_home">Casa</string>
+
     <string name="weather_notice_art_range">%1$s / %2$s</string>
     <string name="weather_notice_fact_uv">UV %1$d</string>
     <string name="weather_notice_fact_aqi">ICA %1$d</string>

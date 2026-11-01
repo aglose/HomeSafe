@@ -72,7 +72,9 @@ observation.
 ## Where the data comes from
 
 Nothing here needs a key or an account, and none of it goes through the relay. The weather
-services are asked directly, by a client of their own that never carries Frigate's cookies.
+services are asked directly, by a client of their own that never carries Frigate's cookies. The
+relay does ask Open-Meteo one thing on its own account, about home, to push rain on the way (see
+[below](#rain-soon-from-the-relay)).
 
 | What | From | Notes |
 |---|---|---|
@@ -104,7 +106,8 @@ or from the suggestions, and can be reordered and removed with *Edit*.
 
 The last position is kept on the phone (so there is somewhere to forecast for when a fix can't be
 had) and goes nowhere but, rounded as above, to Open-Meteo and the National Weather Service. The
-permission prompts on iOS say so.
+permission prompts on iOS say so. That includes the relay: it forecasts for home, which it already
+holds for the geofences, and is never told where a phone is.
 
 ## Notifications
 
@@ -170,6 +173,63 @@ check runs:
   opened. iOS decides how often that is, from how the app is used.
 - Whenever the weather app is opened, on any platform with notifications.
 
+### Rain soon, from the relay
+
+A shower is only worth announcing before it arrives, and neither of those schedules promises that:
+Android's job drifts when the phone dozes, and iOS may not grant a refresh for hours. So the relay
+watches for rain too (`relay.py`, "rain soon"), and pushes **Rain starting** itself. The phone's own
+check stays, for when the phone is somewhere else and for when the relay is down. The rest of the
+notifications are the phone's alone.
+
+**Where.** Home, only for a phone the relay has at home: one of the two tracked phones
+([away-mode.md](away-mode.md)), not away and not on its way out, with the app's switches on and a
+push token. Home is what the relay already holds for the geofences; it goes to Open-Meteo rounded
+to the hundredth of a degree, the same as a phone's position does. A phone's position never goes to
+the relay, so this gives up rain where you are when you're out: away from home a phone has only
+its own check, as it always did. The notification says **Home**, so it can't be read as being about
+anywhere else.
+
+A debug build isn't told, since nothing says where it is; nor is a phone with its cameras' switch
+off, which registers no token (see [notifications.md](notifications.md)).
+
+**How often.** Every 15 minutes, which is as fast as those quarter-hours change, and only from 6 AM
+to 10 PM on the household's clock and while there is a phone to tell. One call a time, of nine
+variables: at most 64 a day, against Open-Meteo's free 10,000. Told to slow down (HTTP 429), it waits an hour.
+
+**Once per shower.** Each phone's row on the relay says what it was last told of, and when. Whoever
+is about to say so takes that first (`POST /devices/{id}/rain-soon`, for the phone), and
+it holds the other off for the three hours the planner would:
+
+| | What stops the second one |
+|---|---|
+| The relay pushed first | The phone's check asks, is told no, and notes it in its ledger as if it had said so itself. An Android phone already has: the push went through the ledger |
+| The phone's check said first | The relay finds it taken and doesn't push |
+| The relay was out of reach when the phone asked | The phone goes ahead: better twice than never. An Android phone drops the later push against its ledger. On an iPhone the push is drawn by iOS, so it can be seen a second time, on the same notification |
+
+**What it looks like.** The push is a small forecast (`weather_soon`, read by `WeatherSoonPush`), not
+a finished notification. `WeatherNoticePlanner` plans from it as from any other, so the words, the
+card, the channel, the switches and the quiet hours are all the app's, and a shower that has
+already begun by the time it lands says nothing.
+
+- **Android** does that at once, from the high-priority data message; no network is needed.
+- **iOS** draws the push's own text first: English, from the relay, a time rather than a countdown,
+  with **Home** as its subtitle, in the weather's stack with the **Radar** button, and a tap that
+  lands on Today as any weather notification's does. `content-available` also wakes the app, if iOS
+  allows, and the same planning puts the app's card in its place without alerting again. iOS
+  won't wake an app swiped away from the switcher, and throttles these as it likes: then the text
+  is all there is, until the next check takes it down.
+
+Neither service delivers one once its shower has started (`push_until`).
+
+Rain can't be summoned, so to see it work, on the box:
+
+```sh
+docker exec homesafe-relay python relay.py rain-soon-test
+```
+
+That pushes a made-up shower to every phone that wants these, at home or not; the phone still plans
+from it, so a real shower in the last three hours or the quiet hours will hold it back on Android.
+
 ## Tests
 
 - `weather/domain`: the astronomy against known sunrises and lunations, the forecast's sentences,
@@ -183,3 +243,6 @@ check runs:
 - `WeatherShadersCompileTest` (JVM) compiles every shader with Skia; `WeatherShadersTest` (Android
   device) compiles them as AGSL on a real Android, where AGSL's own compiler gets the final say.
 - `WeatherAppUiTest` drives the whole app from fixtures.
+- `relay/test_relay.py` (stdlib only): the relay's reading of a forecast against the same cases as
+  the planner's, who is told, when the forecast is asked for, and one shower being said once
+  from either end. `WeatherAlertCheckTest` has the other side of that, and reads the same payload.

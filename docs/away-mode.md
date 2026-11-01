@@ -20,10 +20,11 @@ Registration answers with the id and a **device secret**:
 
 | Route | Auth | Body | Answer |
 | --- | --- | --- | --- |
-| `POST /devices` | cookie, or bearer | `{"device_id","token"?, "platform","name","quiet_familiar","build","hardware_id","emulator"}` | `{"ok", "device_id", "secret"}` |
+| `POST /devices` | cookie, or bearer | `{"device_id","token"?, "platform","name","quiet_familiar","build","hardware_id","emulator","rain_soon"?}` | `{"ok", "device_id", "secret"}` |
 | `DELETE /devices/{id}` | cookie (any device), or bearer (itself) | — | `{"ok"}` |
 | `PUT /devices/{id}/presence` | cookie, or bearer | `{"away": bool, "source": "manual"\|"geofence"\|"lan", "dwell_seconds": n}` | presence snapshot |
 | `GET /presence?device={id}` | cookie, or bearer | — | presence snapshot |
+| `POST /devices/{id}/rain-soon` | cookie, or bearer | `{"key"}` | `{"granted", "key", "at"}` ([weather.md](weather.md#rain-soon-from-the-relay)) |
 | `PUT /home` / `DELETE /home` | cookie | `{"lat","lng","radius_m"}` | presence snapshot |
 
 **Two ways in** (`authenticate`). A signed-in user's Frigate session cookie may do anything. An
