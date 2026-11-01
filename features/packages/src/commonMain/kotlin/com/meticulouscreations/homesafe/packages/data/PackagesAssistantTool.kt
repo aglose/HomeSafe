@@ -31,7 +31,8 @@ class PackagesAssistantTool(private val packages: PackagesRepository) : Assistan
     override suspend fun run(input: JsonObject): String {
         packages.refresh()
         val snapshot = packages.snapshot.value ?: return "The package list isn't available right now: the home server isn't answering, or the app isn't signed in."
-        val coming = snapshot.parcels.filter { !it.delivered }
+        // Gone quiet or cancelled: kept for the record, and not on its way.
+        val coming = snapshot.parcels.filter { !it.delivered && !it.archived }
         val recent = snapshot.parcels.filter { it.delivered && (it.deliveredAt ?: 0) > snapshot.nowEpochSeconds - RECENT_SECONDS }
         return buildString {
             // An old list read as today's would be worse than none: it says "on its way" of what may have come.

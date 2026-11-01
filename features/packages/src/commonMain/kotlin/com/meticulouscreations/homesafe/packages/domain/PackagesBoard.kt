@@ -125,7 +125,7 @@ data class ParcelFilter(val query: String = "", val owner: String? = null, val c
     fun matches(parcel: Parcel): Boolean {
         if (owner != null && parcel.owner != owner) return false
         if (carrier != null && parcel.carrier != carrier) return false
-        if (onlyActive && parcel.delivered) return false
+        if (onlyActive && (parcel.delivered || parcel.archived)) return false
         val words = query.trim().lowercase()
         if (words.isEmpty()) return true
         val haystack = listOfNotNull(parcel.nickname, parcel.title, parcel.shop, parcel.tracking, parcel.orderId, parcel.notes, parcel.carrier.label.ifEmpty { null }, parcel.carrierName).joinToString(" ").lowercase()

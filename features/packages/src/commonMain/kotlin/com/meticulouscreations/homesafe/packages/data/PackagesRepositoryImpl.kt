@@ -91,7 +91,7 @@ class PackagesRepositoryImpl(
 
     override suspend fun refresh(readMail: Boolean) {
         forgetIfSignedOut()
-        val endpoint = endpoint() ?: return
+        val askedOf = server() ?: return
         // A second ask while one is under way is the same ask, unless this one also wants the mail read.
         if (readMail) {
             refreshing.lock()
@@ -99,15 +99,21 @@ class PackagesRepositoryImpl(
             return
         }
         try {
+            // Waiting its turn can outlast the session it was asked in.
+            val endpoint = endpoint()?.takeIf { askedOf == server() } ?: return
             _sync.update { it.copy(syncing = true) }
             val device = identity.deviceId()
             val asked = edits.value
-            val askedOf = server()
             val answer = if (readMail) api.sync(endpoint, device) else api.snapshot(endpoint, device)
             answer.onSuccess { body ->
                 if (edits.value == asked) hold(body, askedOf)
                 _sync.value = PackagesSync(checkedAt = body.now.toLong())
             }.onFailure { failure ->
+                // The server that session was on failing is no news about this one.
+                if (askedOf != server()) {
+                    _sync.update { it.copy(syncing = false) }
+                    return@onFailure
+                }
                 val known = failure as? PackagesUnavailableException
                 _sync.update {
                     it.copy(syncing = false, problem = known?.problem ?: PackagesProblem.UNREACHABLE, message = known?.text ?: UiText.of(Res.string.packages_error_unreachable))

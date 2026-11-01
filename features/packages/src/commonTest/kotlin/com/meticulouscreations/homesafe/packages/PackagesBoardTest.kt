@@ -194,6 +194,13 @@ class PackagesBoardTest {
     }
 
     @Test
+    fun whatWentQuietIsntOnItsWayButCanStillBeFound() {
+        val quiet = Parcel(id = "quiet", stage = ParcelStage.SHIPPED, archived = true, shop = "Everlane")
+        assertFalse(ParcelFilter(onlyActive = true).matches(quiet))
+        assertTrue(ParcelFilter(query = "everlane").matches(quiet))
+    }
+
+    @Test
     fun whatNeedsYouAndHasntComeIsStillOnItsWay() {
         val board = board(Parcel(id = "sign", stage = ParcelStage.SHIPPED, signature = true))
         assertEquals(1, board.onTheWay)

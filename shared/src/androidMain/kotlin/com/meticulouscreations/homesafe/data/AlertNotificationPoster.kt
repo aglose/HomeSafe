@@ -204,8 +204,8 @@ object AlertNotificationPoster {
         }
         if (dropped) return@withContext
         val postedAt = if (!isUpdate) {
-            // A visit keeps the time it began; each summary replaces the last under the one id, but is news of its own time.
-            if (notification.summary) now else remembered ?: now
+            // A visit keeps the time it began; each summary or parcel's news replaces the last under the one id, but is news of its own time.
+            if (notification.summary || notification.parcel != null) now else remembered ?: now
         } else {
             val showing = active(context, notification.id)
             when {
@@ -467,6 +467,7 @@ object AlertNotificationPoster {
             notification.summary -> summaryGroup.post(context, NotificationGlyph.SUMMARY, ACCENT_COLOR)
             groupFor(notification) === doorsGroup -> doorsGroup.post(context, NotificationGlyph.DOOR, ACCENT_COLOR, channel = channelFor(notification))
             groupFor(notification) === parkingGroup -> parkingGroup.post(context, NotificationGlyph.CAR, ACCENT_COLOR, channel = channelFor(notification))
+            groupFor(notification) === packagesGroup -> packagesGroup.post(context, NotificationGlyph.PARCEL, ACCENT_COLOR, channel = channelFor(notification))
             else -> alertGroup.post(context, NotificationGlyph.CAMERA, ACCENT_COLOR, channel = channelFor(notification))
         }
     }
