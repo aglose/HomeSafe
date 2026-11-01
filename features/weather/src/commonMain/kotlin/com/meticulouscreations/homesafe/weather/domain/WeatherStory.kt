@@ -361,12 +361,17 @@ object WeatherStory {
         // The quarter-hours can run past midnight, and rain that starts then is tomorrow's.
         val near = nowEpochSeconds?.let { now -> nearTerm(report, now).takeUnless { it is NearTerm.Starting && it.startEpochSeconds >= end } } ?: NearTerm.Dry
         val notable = wetSpans(hours).filter { it.totalMm >= WeatherNoticePlanner.NOTABLE_MM || it.snowCm >= WeatherNoticePlanner.NOTABLE_SNOW_CM }
+        val first = notable.firstOrNull()
+        val starting = near as? NearTerm.Starting
         // An hour counts as wet from its start, however late in it the rain comes: the quarter-hours know when.
-        val spans = notable.mapIndexed { i, span ->
-            // Only a span the shower runs into: a separate, earlier shower is not this one's start.
-            if (i == 0 && near is NearTerm.Starting && near.startEpochSeconds < span.endEpochSeconds &&
-                near.startEpochSeconds >= span.startEpochSeconds - WeatherReport.HOUR_SECONDS
-            ) span.copy(startEpochSeconds = near.startEpochSeconds) else span
+        val runsInto = starting != null && first != null && starting.startEpochSeconds < first.endEpochSeconds &&
+            starting.startEpochSeconds >= first.startEpochSeconds - WeatherReport.HOUR_SECONDS
+        // Rain due soon that isn't the day's notable spell is a spell of its own, told and counted as one.
+        val separate = starting != null && first != null && !runsInto
+        val spans = when {
+            runsInto -> listOf(first.copy(startEpochSeconds = starting.startEpochSeconds)) + notable.drop(1)
+            separate -> (listOf(nearSpan(report, starting)) + notable).sortedBy { it.startEpochSeconds }
+            else -> notable
         }
         val range = UiText.of(Res.string.weather_notice_art_range, WeatherFormat.degrees(day.highC, units), WeatherFormat.degrees(day.lowC, units))
         if (spans.isNotEmpty() || near != NearTerm.Dry) {
@@ -382,6 +387,8 @@ object WeatherStory {
                 timing = when {
                     // Unless more follows after it stops: the tile's amount counts that too.
                     near is NearTerm.Stopping && spans.none { it.startEpochSeconds >= near.endEpochSeconds } -> UiText.of(Res.string.weather_outlook_until, WeatherFormat.hourOrClock(near.endEpochSeconds, report.offsetAt(near.endEpochSeconds)))
+
+                    separate -> UiText.of(Res.string.weather_outlook_on_off)
 
                     spans.isNotEmpty() -> spanTiming(spans, from, end, nowEpochSeconds != null, report::offsetAt)
 
@@ -405,6 +412,19 @@ object WeatherStory {
             coldest != null && coldest <= WeatherNoticePlanner.BITTER_FEELS_C -> DayOutlook(OutlookKind.COLD, UiText.of(Res.string.weather_outlook_feels, WeatherFormat.degrees(coldest, units)), null, listOf(range))
             else -> DayOutlook(OutlookKind.DRY, UiText.of(if (nowEpochSeconds != null) Res.string.weather_outlook_rest_of_today else Res.string.weather_outlook_all_day), null, listOf(range))
         }
+    }
+
+    /** The rain [near] sees coming, from the quarter-hours, as a spell like any the hours would make. */
+    private fun nearSpan(report: WeatherReport, near: NearTerm.Starting): WetSpan {
+        val slices = report.slicesFrom(near.startEpochSeconds).take(NEAR_TERM_SLICES).takeWhile { near.endEpochSeconds == null || it.epochSeconds < near.endEpochSeconds }
+        return WetSpan(
+            startEpochSeconds = near.startEpochSeconds,
+            endEpochSeconds = near.endEpochSeconds ?: ((slices.lastOrNull()?.epochSeconds ?: near.startEpochSeconds) + WeatherReport.SLICE_SECONDS),
+            family = near.family,
+            totalMm = slices.sumOf { it.precipitationMm },
+            snowCm = slices.sumOf { it.snowfallCm },
+            peakMmPerHour = near.peakMmPerHour,
+        )
     }
 
     /**

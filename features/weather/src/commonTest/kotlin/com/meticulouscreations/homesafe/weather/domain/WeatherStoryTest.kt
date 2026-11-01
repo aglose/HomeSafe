@@ -14,6 +14,7 @@ import homesafe.shared.generated.resources.weather_outlook_all_day
 import homesafe.shared.generated.resources.weather_outlook_from_to
 import homesafe.shared.generated.resources.weather_outlook_in_hours_minutes
 import homesafe.shared.generated.resources.weather_outlook_in_minutes
+import homesafe.shared.generated.resources.weather_outlook_on_off
 import homesafe.shared.generated.resources.weather_outlook_rest_of_today
 import homesafe.shared.generated.resources.weather_outlook_until
 import homesafe.shared.generated.resources.weather_span_mix_around
@@ -856,6 +857,17 @@ class WeatherStoryTest {
         val today = WeatherStory.outlooks(r, us, now)!!.today
         assertEquals(UiText.of(Res.string.weather_outlook_from_to, UiText.of(Res.string.weather_time_pm, "3:30"), UiText.of(Res.string.weather_time_pm, "6")), today.timing)
         assertEquals(UiText.of(Res.string.weather_outlook_in_minutes, 30), today.note)
+    }
+
+    @Test
+    fun aShortShowerBeforeTheDaysRealRainIsToldAndCountedApart() {
+        val now = at(0, 15)
+        val r = report(now, hourly = rainFrom(19, 21), minutely = slices(now, 0.0, 0.0, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0))
+        val today = WeatherStory.outlooks(r, us, now)!!.today
+        assertEquals(OutlookKind.RAIN, today.kind)
+        assertEquals(UiText.of(Res.string.weather_outlook_on_off), today.timing)
+        assertEquals(UiText.of(Res.string.weather_outlook_in_minutes, 30), today.note)
+        assertEquals(WeatherFormat.precipitation(2.4, us), today.marks.first())
     }
 
     @Test

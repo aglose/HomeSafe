@@ -265,6 +265,17 @@ class WeatherAlertCheckTest {
     }
 
     @Test
+    fun startingTwiceWatchesTheSwitchesOnce() = runTest {
+        val h = harness()
+        h.check.start()
+        h.check.start()
+        settle()
+        h.muted.value = true
+        settle()
+        assertEquals(1, h.notifier.remindersCancelled)
+    }
+
+    @Test
     fun turningRainOffOrMutingCallsOffRemindersAlreadySet() = runTest {
         val h = harness()
         h.check.start()
