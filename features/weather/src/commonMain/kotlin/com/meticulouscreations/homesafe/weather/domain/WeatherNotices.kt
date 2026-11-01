@@ -243,7 +243,7 @@ object WeatherNoticePlanner {
         if (!settings.enabled) return emptyList()
         val notices = ArrayList<WeatherNotice>()
         val hour = report.localHour(nowEpochSeconds)
-        val quiet = hour < QUIET_UNTIL_HOUR || hour >= QUIET_FROM_HOUR
+        val quiet = isQuiet(hour)
 
         if (settings.severeAlerts) {
             report.alerts
@@ -259,6 +259,15 @@ object WeatherNoticePlanner {
         }
         return notices.filter { it.key !in sent }.map { it.copy(place = placeName) }
     }
+
+    /**
+     * Whether a shower's notification is held back at [localHour] on the place's clock, whatever
+     * the forecast says: the rules of [plan] that don't need one to go by.
+     */
+    fun holdsBackSoon(localHour: Int, nowEpochSeconds: Long, sent: Map<String, Long>): Boolean =
+        isQuiet(localHour) || recentlyWarned(nowEpochSeconds, sent)
+
+    private fun isQuiet(hour: Int): Boolean = hour < QUIET_UNTIL_HOUR || hour >= QUIET_FROM_HOUR
 
     /**
      * The shower's notification again, asked for by its "Remind me" button: from a fresh forecast,

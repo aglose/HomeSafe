@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.ui.components.IosWebRtcPeerFactory
 import com.meticulouscreations.homesafe.weather.data.IosWeatherRefresh
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
 /**
@@ -40,6 +41,21 @@ fun startIosApp() {
 fun startIosApp(webRtc: IosWebRtcPeerFactory?) {
     IosWebRtc.peerFactory = webRtc
     startIosApp()
+}
+
+/**
+ * The relay's "rain on the way", when iOS wakes the app for it (`AppDelegate.swift`): [done] tells
+ * iOS the app has finished. Its banner is already up; this gives it the app's own picture.
+ */
+@Suppress("unused")
+fun onWeatherPush(payload: String, key: String, done: () -> Unit) {
+    MainScope().launch {
+        try {
+            IosApp.graph.weatherAlertCheck.onRelayPush(payload, key, fallbackTitle = "", fallbackBody = "", shown = true)
+        } finally {
+            done()
+        }
+    }
 }
 
 /**

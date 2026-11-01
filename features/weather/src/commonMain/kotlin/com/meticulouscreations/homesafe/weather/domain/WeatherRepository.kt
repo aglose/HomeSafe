@@ -68,6 +68,23 @@ interface WeatherPreferencesRepository {
     suspend fun update(change: (WeatherPreferences) -> WeatherPreferences)
 }
 
+/**
+ * The relay pushes "rain on the way" as well as the phone's own check announcing it, so each asks
+ * before it says so (docs/weather.md). One shower is said once, by whichever got there first.
+ */
+interface WeatherSoonClaims {
+    /** May this phone announce the shower [key]? Null when the relay can't say, which is no reason to stay quiet. */
+    suspend fun claim(key: String): Claim?
+
+    /** Not [granted]: the relay has told this phone of a shower, or is about to. */
+    data class Claim(val granted: Boolean)
+
+    /** No relay to ask. */
+    object Never : WeatherSoonClaims {
+        override suspend fun claim(key: String): Claim? = null
+    }
+}
+
 /** Which weather notifications have gone out, so none is sent twice. */
 interface WeatherNoticeLedger {
     /** Every key sent and when, with anything older than a few days forgotten. */

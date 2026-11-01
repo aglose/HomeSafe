@@ -3,11 +3,13 @@ package com.meticulouscreations.homesafe.weather.data
 import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
+import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotice
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeIcon
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeKind
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeLedger
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
@@ -16,9 +18,12 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import com.meticulouscreations.homesafe.weather.domain.WeatherPlacesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherPreferencesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherRepository
+import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.weather_notice_place_home
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
@@ -27,8 +32,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * One look at the forecast for notifications: fetch it for where the phone is, ask
@@ -39,6 +47,10 @@ import kotlin.time.Duration.Companion.seconds
  * The place is wherever the phone is if a fix can be had, else where it last was, else the
  * household's home, else the first city on the list: the weather that affects your day is the
  * weather where you are.
+ *
+ * The relay watches the forecast at home and pushes rain on the way too, which is what lets a
+ * shower be announced in time when this hasn't run lately: [onRelayPush] is that push arriving.
+ * [claims] keeps the two from saying the same shower twice.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -55,6 +67,7 @@ class WeatherAlertCheck(
     private val appScope: CoroutineScope,
     /** Settings → Notifications' "Mute all notifications": while it's on, a check posts nothing. */
     private val mute: NotificationMute,
+    private val claims: WeatherSoonClaims,
 ) {
     private val running = Mutex()
     private var watching = false
@@ -100,6 +113,62 @@ class WeatherAlertCheck(
             posted
         }.getOrDefault(false)
     }
+
+    /**
+     * A shower the relay pushed (see "rain soon" in relay/relay.py): the forecast it carries goes
+     * through the same planner as a check's, so what is posted looks like any other, in the
+     * reader's language, and the switches, the quiet hours and what was already said all still
+     * have their say. For [key], at home, which is where the relay only ever looks. Never throws.
+     *
+     * [shown] says the platform has drawn the push's own banner already (iOS, which then only
+     * sometimes wakes the app to get here): what is posted takes its place, without alerting
+     * again. Android draws nothing itself; a forecast this build can't read goes out as the relay
+     * worded it, [fallbackTitle] and [fallbackBody], with no card, under the same cooldown and the
+     * same quiet hours, read from this phone's clock since the relay only tells a phone at home,
+     * and comes down at [fallbackExpiresEpochSeconds].
+     *
+     * Doesn't wait on [running]: a check might be fetching a forecast, longer than a push's
+     * handler may run, and at worst posts the same id again, which alerts nobody twice.
+     */
+    suspend fun onRelayPush(
+        payload: String,
+        key: String,
+        fallbackTitle: String,
+        fallbackBody: String,
+        shown: Boolean,
+        fallbackExpiresEpochSeconds: Long? = null,
+    ): Boolean = runCatching {
+        if (!notifier.isSupported) return@runCatching false
+        val now = clock.now().epochSeconds
+        val sent = ledger.sent(now)
+        // On the screen, whatever else happens here: the phone's own check mustn't say it again.
+        if (shown) ledger.record(key, now)
+        val prefs = preferences.observe().first()
+        if (!prefs.notices.enabled || !prefs.notices.precipitationSoon || mute.muted.value || !notifier.isAllowed()) return@runCatching false
+        val report = WeatherSoonPush.report(payload, now)
+        val home = textLoader.load(UiText.of(Res.string.weather_notice_place_home))
+        val notification = if (report != null) {
+            val settings = prefs.notices.copy(dailyOutlook = false, severeAlerts = false)
+            val notice = WeatherNoticePlanner.plan(report, null, settings, prefs.units, now, sent).firstOrNull() ?: return@runCatching false
+            notice.copy(place = home).toNotification(HERE)
+        } else {
+            val hour = Instant.fromEpochSeconds(now).toLocalDateTime(TimeZone.currentSystemDefault()).hour
+            if (shown || WeatherNoticePlanner.holdsBackSoon(hour, now, sent)) return@runCatching false
+            WeatherNotification(
+                key,
+                fallbackTitle,
+                fallbackBody,
+                WeatherNoticeArt(WeatherNoticeIcon.RAIN),
+                place = home,
+                headsUp = true,
+                expiresEpochSeconds = fallbackExpiresEpochSeconds,
+                link = WeatherDeepLink(placeId = Place.CURRENT_ID),
+            )
+        }
+        val posted = notifier.notify(notification.copy(replacesPush = shown))
+        if (posted) ledger.record(notification.id, now)
+        posted
+    }.getOrDefault(false)
 
     /**
      * What a shower's "Remind me" button asked for: its notification again, from a fresh forecast,
@@ -155,6 +224,9 @@ class WeatherAlertCheck(
         return notices.count { notice ->
             // Muted while the forecast was being fetched: held back, and not marked as said.
             if (mute.muted.value) return@count false
+            // The relay has this one. Nothing is marked as said: its push may still be on its way, and
+            // if that fails the relay lets go of the claim, so the next check asks again and says it.
+            if (notice.kind == WeatherNoticeKind.PRECIPITATION_SOON && claims.claim(notice.key)?.granted == false) return@count false
             val posted = notifier.notify(notice.toNotification(place))
             if (posted) ledger.record(notice.key, now)
             posted
@@ -196,6 +268,9 @@ class WeatherAlertCheck(
             ?: places.observe().first().firstOrNull()
 
     private companion object {
+        /** Where a shower from the relay lands: the phone's own position, since the relay only tells a phone at home. Only its id is read. */
+        val HERE = Place(Place.CURRENT_ID, name = "", latitude = 0.0, longitude = 0.0)
+
         /** The forecast's own quarter-hour step: a check never reasons from anything older. */
         const val MAX_AGE_SECONDS = 300L
 

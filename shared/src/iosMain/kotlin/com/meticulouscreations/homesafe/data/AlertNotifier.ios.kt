@@ -50,7 +50,7 @@ import platform.posix.fwrite
 import kotlin.coroutines.resume
 
 /** `userInfo` key marking a post as an update to one already shown (its picture or clip arriving). */
-private const val KEY_UPDATE = "homesafe_update"
+const val KEY_UPDATE = "homesafe_update"
 
 /** The thread the summaries stack in, apart from any camera's. */
 private const val THREAD_SUMMARY = "summary"
