@@ -32,7 +32,7 @@ def check_in(workflow):
 class ProtectedFiles:
     workflow = None
 
-    def run_check(self, staged, sha=None):
+    def run_check(self, staged, sha=None, before=""):
         """Runs the workflow's check with `staged(repo)` having changed the scratch repository.
 
         Returns (exit code, the message for a person or None, whether it went on to push)."""
@@ -59,6 +59,7 @@ class ProtectedFiles:
             pushed = os.path.join(temp, "pushed")
             script = "\n".join([
                 f'needs_a_human() {{ printf "%s" "$1" > "{message}"; exit 0; }}',
+                before,
                 check_in(self.workflow),
                 f': > "{pushed}"',
             ])
@@ -118,6 +119,14 @@ class ProtectedFiles:
 
     def test_when_git_fails_nothing_is_pushed(self):
         code, said, pushed = self.run_check(lambda repo: self.write(repo, "shared/a.kt", "changed\n"), sha="not-a-commit")
+        self.assertNotEqual(code, 0)
+        self.assertFalse(pushed)
+        self.assertIsNone(said)
+
+    def test_when_grep_fails_nothing_is_pushed(self):
+        code, said, pushed = self.run_check(
+            lambda repo: self.write(repo, "shared/a.kt", "changed\n"), before="grep() { return 2; }",
+        )
         self.assertNotEqual(code, 0)
         self.assertFalse(pushed)
         self.assertIsNone(said)
