@@ -185,6 +185,21 @@ class PackagesBoardTest {
     }
 
     @Test
+    fun theHourSaidWithTheBusiestDayIsThatDaysHour() {
+        // Four on one day at 9, and five at 13 spread over other days: "around 13" would be a time nothing came that day.
+        val parcels = List(4) { came(9, daysAgo = 7 * it) } + List(3) { came(13, daysAgo = 1 + 7 * it) } + List(2) { came(13, daysAgo = 2 + 7 * it) }
+        val insights = PackagesAnalysis.insights(parcels, today, ParcelZone.fixed(0))
+        assertEquals(ParcelDays.weekday(today), insights.busiestWeekday)
+        assertEquals(9, insights.busiestHour)
+    }
+
+    @Test
+    fun whatNeedsYouAndHasntComeIsStillOnItsWay() {
+        val board = board(Parcel(id = "sign", stage = ParcelStage.SHIPPED, signature = true))
+        assertEquals(1, board.onTheWay)
+    }
+
+    @Test
     fun hoursAreOnTheHouseholdsClock() {
         val insights = PackagesAnalysis.insights(listOf(came(20)), today, ParcelZone.fixed(-7 * 3600))
         assertEquals(13, insights.busiestHour)

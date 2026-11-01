@@ -34,7 +34,11 @@ class PackagesAssistantTool(private val packages: PackagesRepository) : Assistan
         val coming = snapshot.parcels.filter { !it.delivered }
         val recent = snapshot.parcels.filter { it.delivered && (it.deliveredAt ?: 0) > snapshot.nowEpochSeconds - RECENT_SECONDS }
         return buildString {
-            appendLine("Today is ${ParcelDays.format(snapshot.today)}. Nobody home right now: ${snapshot.away}.")
+            // An old list read as today's would be worse than none: it says "on its way" of what may have come.
+            if (packages.sync.value.problem != null) {
+                appendLine("The home server isn't answering right now, so this is the list as last heard, from Unix second ${snapshot.nowEpochSeconds}, and may be out of date. Say so.")
+            }
+            appendLine("Today is ${ParcelDays.format(snapshot.today)}. Nobody home at the last word: ${snapshot.away}.")
             appendLine("On the way:")
             appendLine(listing(coming, limit = 40, describe = ::describe))
             appendLine("Delivered in the last three weeks:")

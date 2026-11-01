@@ -72,6 +72,7 @@ import homesafe.shared.generated.resources.packages_whose_title
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.time.Clock
 
 /** What's on its way, what needs someone, and what's at the door, with a box under the porch light at the head of it. */
 @OptIn(ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -202,7 +203,7 @@ internal fun WhosePhoneCard(people: List<String>, onPick: (String?) -> Unit, mod
 private fun PorchPeek(cameraName: String, active: Boolean, actions: PackagesActions, modifier: Modifier = Modifier) {
     val colors = PackagesTheme.colors
     var bump by remember { mutableIntStateOf(0) }
-    val url by produceState<String?>(null, bump) { value = actions.pictureUrl(null, "now")?.let { "$it&t=$bump" } }
+    val url by produceState<String?>(null, bump) { value = actions.pictureUrl(null, "now")?.let { "$it&t=${Clock.System.now().toEpochMilliseconds()}" } }
     LaunchedEffect(active) {
         while (active) {
             delay(30_000)

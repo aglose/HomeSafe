@@ -79,7 +79,9 @@ data class PackagesBoard(
     val arrived: List<Parcel> = emptyList(),
 ) {
     val isEmpty: Boolean get() = attention.isEmpty() && onPorch.isEmpty() && today.isEmpty() && tomorrow.isEmpty() && later.isEmpty() && arrived.isEmpty()
-    val onTheWay: Int get() = today.size + tomorrow.size + later.size
+
+    /** Everything not here yet, including what is under [attention] for it. */
+    val onTheWay: Int get() = today.size + tomorrow.size + later.size + attention.count { !it.delivered }
 
     companion object {
         private const val ARRIVED_DAYS = 5
@@ -240,7 +242,7 @@ object PackagesAnalysis {
             MonthCount(y, m, inMonth(y, m).size)
         }
         val weekdayTotals = heat.map { it.sum() }
-        val hourTotals = List(24) { hour -> heat.sumOf { it[hour] } }
+        val busiestWeekday = weekdayTotals.indices.maxByOrNull { weekdayTotals[it] }
         return PackagesInsights(
             deliveredAll = delivered.size,
             deliveredThisYear = thisYear.size,
@@ -251,8 +253,9 @@ object PackagesAnalysis {
             carriers = carriers,
             heat = heat,
             heatMax = heat.maxOf { it.max() },
-            busiestWeekday = weekdayTotals.indices.maxByOrNull { weekdayTotals[it] }.takeIf { delivered.isNotEmpty() },
-            busiestHour = hourTotals.indices.maxByOrNull { hourTotals[it] }.takeIf { delivered.isNotEmpty() },
+            busiestWeekday = busiestWeekday.takeIf { delivered.isNotEmpty() },
+            // Said together with the day ("most often on Friday, around 5 PM"), so it is that day's hour.
+            busiestHour = busiestWeekday?.let { day -> heat[day].indices.maxByOrNull { heat[day][it] } }.takeIf { delivered.isNotEmpty() },
             perPerson = delivered.filter { it.owner.isNotBlank() }.groupingBy { it.owner }.eachCount().toList().sortedByDescending { it.second },
             topShops = delivered.mapNotNull { it.shop }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second }.take(6),
             months = months,

@@ -62,13 +62,31 @@ class PackagesRepositoryImpl(
     /** Goes up when an edit starts and when it lands: a list asked for before then may not have it. */
     private val edits = MutableStateFlow(0)
 
+    /** The server the list in [_snapshot] came from. The same across its addresses: only signing in elsewhere changes it. */
+    private var heldFrom: String? = null
+
     private fun endpoint(): String? = connectionRepository.currentServerUrl.value.takeIf { connectionRepository.activeConnection.value != null }
+
+    private fun server(): String? = connectionRepository.activeConnection.value?.serverUrl
 
     override fun forgetIfSignedOut() {
         if (endpoint() == null) {
             _snapshot.value = null
+            heldFrom = null
             _sync.value = PackagesSync(problem = PackagesProblem.SIGNED_OUT, message = UiText.of(Res.string.packages_error_signed_out))
+        } else if (heldFrom != null && heldFrom != server()) {
+            // Signed in to another server: what the last one said isn't this one's to show.
+            _snapshot.value = null
+            heldFrom = null
+            _sync.value = PackagesSync()
         }
+    }
+
+    /** An answer, unless the session it was asked for has ended while it was on its way. */
+    private fun hold(body: RelayPackages, askedOf: String?) {
+        if (askedOf == null || askedOf != server()) return
+        _snapshot.value = body.toSnapshot()
+        heldFrom = askedOf
     }
 
     override suspend fun refresh(readMail: Boolean) {
@@ -84,9 +102,10 @@ class PackagesRepositoryImpl(
             _sync.update { it.copy(syncing = true) }
             val device = identity.deviceId()
             val asked = edits.value
+            val askedOf = server()
             val answer = if (readMail) api.sync(endpoint, device) else api.snapshot(endpoint, device)
             answer.onSuccess { body ->
-                if (edits.value == asked) _snapshot.value = body.toSnapshot()
+                if (edits.value == asked) hold(body, askedOf)
                 _sync.value = PackagesSync(checkedAt = body.now.toLong())
             }.onFailure { failure ->
                 val known = failure as? PackagesUnavailableException
@@ -100,11 +119,14 @@ class PackagesRepositoryImpl(
     }
 
     private suspend fun apply(call: suspend (String, String) -> Result<RelayPackages>): Result<Unit> {
-        val endpoint = endpoint() ?: return Result.failure(PackagesUnavailableException(PackagesProblem.SIGNED_OUT, UiText.of(Res.string.packages_error_signed_out)))
+        val askedOf = server()
         return editing.withLock {
+            // Asked for before a sign-out or a switch of server, and only now its turn: it was never meant for whoever is signed in now.
+            val endpoint = endpoint()?.takeIf { askedOf != null && askedOf == server() }
+                ?: return@withLock Result.failure(PackagesUnavailableException(PackagesProblem.SIGNED_OUT, UiText.of(Res.string.packages_error_signed_out)))
             edits.update { it + 1 }
             call(endpoint, identity.deviceId()).map { body ->
-                _snapshot.value = body.toSnapshot()
+                hold(body, askedOf)
                 edits.update { it + 1 }
             }
         }

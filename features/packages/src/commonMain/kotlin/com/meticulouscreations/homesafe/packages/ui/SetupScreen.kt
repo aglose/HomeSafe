@@ -25,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.packages.PackagesUiState
 import homesafe.shared.generated.resources.Res
@@ -122,7 +124,7 @@ private fun SwitchRow(title: String, on: Boolean, tint: androidx.compose.ui.grap
     val colors = PackagesTheme.colors
     Row(modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = PackagesTheme.type.body, color = colors.text, modifier = Modifier.weight(1f))
-        Switch(on, onChange, colors = SwitchDefaults.colors(checkedTrackColor = tint))
+        Switch(on, onChange, Modifier.semantics { contentDescription = title }, colors = SwitchDefaults.colors(checkedTrackColor = tint))
     }
 }
 

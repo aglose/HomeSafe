@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.packages.PackagesUiState
 import homesafe.shared.generated.resources.Res
@@ -81,12 +83,13 @@ internal fun AddScreen(state: PackagesUiState, padding: PaddingValues, actions: 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.CardGiftcard, contentDescription = null, tint = colors.gift, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
+                val surpriseLabel = stringResource(Res.string.packages_action_surprise)
                 Column(Modifier.weight(1f)) {
-                    Text(stringResource(Res.string.packages_action_surprise), style = PackagesTheme.type.bodyStrong, color = colors.text)
+                    Text(surpriseLabel, style = PackagesTheme.type.bodyStrong, color = colors.text)
                     Text(stringResource(Res.string.packages_action_surprise_body), style = PackagesTheme.type.label, color = colors.textFaint)
                 }
                 // Kept from everyone but its owner, so it needs one.
-                Switch(surprise && owner != null, { surprise = it }, enabled = owner != null, colors = SwitchDefaults.colors(checkedTrackColor = colors.gift))
+                Switch(surprise && owner != null, { surprise = it }, Modifier.semantics { contentDescription = surpriseLabel }, enabled = owner != null, colors = SwitchDefaults.colors(checkedTrackColor = colors.gift))
             }
         }
         PackagesButton(

@@ -135,7 +135,8 @@ each go out once, by a `told:<what>` line in `package_events`. Pictures of a del
 
 To change how emails are read, change `parse_package_email` and bump `PACKAGE_PARSER`: every email
 in the lookback is read again. An email goes back to the package it was filed under, deleted or not,
-and one that still says the same only fills in blanks, so what someone said about a package stays.
+and one that still says the same only fills in blanks and can put another order into its box, so
+what someone said about a package stays.
 Its tests are written from the shapes real emails took, with made-up names and numbers.
 
 The app (`features/packages`) holds nothing on the device, so unlike Finance and Atlas it has no

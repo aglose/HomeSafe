@@ -60,12 +60,19 @@ internal fun ParcelCard(parcel: Parcel, today: Int, zone: ParcelZone, running: B
     val name = parcelName(parcel)
     val status = parcelStatus(parcel, today, zone)
     val open = stringResource(Res.string.packages_open_parcel)
+    // Its badges and camera mark are drawn but not read one by one (see below), so the card says them.
+    val carrier = carrierName(parcel)
+    val owner = parcel.owner.takeIf { it.isNotBlank() }?.let(PackagesFormat::person)
+    val surpriseBadge = stringResource(Res.string.packages_surprise_badge).takeIf { parcel.surprise && !parcel.masked }
+    val signatureBadge = stringResource(Res.string.packages_signature_badge).takeIf { parcel.signature && !parcel.delivered }
+    val verdict = parcel.verdict?.takeIf { parcel.delivered && !parcel.masked }?.let { stringResource(verdictShort(it)) }
+    val spoken = listOfNotNull(name, status, verdict, signatureBadge, surpriseBadge, carrier, owner).joinToString(", ")
     Box(
         modifier
             .fillMaxWidth()
             .riseIn(index)
             .pressable({ onOpen(parcel.id) }, open)
-            .semantics { contentDescription = "$name, $status" }
+            .semantics { contentDescription = spoken }
             .testTag("parcel_${parcel.id}")
             .clip(shape)
             .background(colors.surface)
