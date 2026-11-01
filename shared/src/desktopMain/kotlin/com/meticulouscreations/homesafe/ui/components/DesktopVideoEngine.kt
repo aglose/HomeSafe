@@ -220,6 +220,12 @@ internal class DesktopVideoEngine(val key: String?) {
 
     private fun mayDraw(mine: Int) = isCurrent(mine) || (running && outgoing.get() == mine)
 
+    /** One stream at a time is heard: the one on screen, so the sound moves over with the picture. */
+    private fun isHeard(mine: Int): Boolean {
+        val drawing = outgoing.get()
+        return if (drawing == NO_SESSION) isCurrent(mine) else drawing == mine && running
+    }
+
     private fun decodeLoop(mine: Int) {
         try {
             playUntilReplaced(mine)
@@ -241,7 +247,7 @@ internal class DesktopVideoEngine(val key: String?) {
             val attempt = PlayAttempt()
             val outcome = runCatching { play(playing, mine, attempt) }
             if (!isCurrent(mine)) break
-            if (isHeldLive(playing)) continue
+            if (attempt.paused || isHeldLive(playing)) continue
             if (playing is VideoSource.Recording) {
                 ui.launch {
                     if (session != mine) return@launch
@@ -260,7 +266,7 @@ internal class DesktopVideoEngine(val key: String?) {
             }
             // In short steps, so a thread that has been replaced doesn't sleep out the whole back-off.
             val wakeAt = System.nanoTime() + LivePlaybackPolicy.retryDelayMs(failures) * 1_000_000
-            while (isCurrent(mine) && System.nanoTime() < wakeAt) Thread.sleep(BACKOFF_STEP_MS)
+            while (isCurrent(mine) && !isHeldLive(playing) && System.nanoTime() < wakeAt) Thread.sleep(BACKOFF_STEP_MS)
         }
     }
 
@@ -314,13 +320,16 @@ internal class DesktopVideoEngine(val key: String?) {
                     line?.flush()
                 }
                 if (!playWhenReady) {
-                    if (playing is VideoSource.Live) return
+                    if (playing is VideoSource.Live) {
+                        attempt.paused = true
+                        return
+                    }
                     pacer.restart()
                     line?.stop()
                     Thread.sleep(PAUSED_POLL_MS)
                     continue
                 }
-                val wantAudio = audio && !muted
+                val wantAudio = audio && !muted && isHeard(mine)
                 val frame: Frame = grabber.grabFrame(wantAudio, true, true, false, false) ?: return
                 if (frame.samples != null) {
                     if (wantAudio) {
@@ -382,8 +391,8 @@ internal class DesktopVideoEngine(val key: String?) {
         val bytes = if (scratch.size == size) scratch else ByteArray(size)
         buffer.duplicate().apply { rewind() }.get(bytes, 0, minOf(size, buffer.limit()))
         val image = Image.makeRaster(ImageInfo(width, height, ColorType.BGRA_8888, ColorAlphaType.OPAQUE), bytes, rowBytes)
-        pending.getAndSet(PendingPicture(image, mine))?.image?.close()
         lastPictureAtNanos = System.nanoTime()
+        if (!offerPicture(PendingPicture(image, mine))) return bytes
         ui.launch {
             val next = pending.getAndSet(null) ?: return@launch
             val fromCurrent = isCurrent(next.session)
@@ -401,6 +410,25 @@ internal class DesktopVideoEngine(val key: String?) {
             if (stalled) stalled = false
         }
         return bytes
+    }
+
+    /**
+     * Leaves [offered] for the UI thread in place of what is waiting there, unless that is the first
+     * picture of the stream taking over and this one is from the stream it replaces: the handover
+     * isn't put off, or lost if the new stream then stalls. False if [offered] was dropped for that.
+     */
+    private fun offerPicture(offered: PendingPicture): Boolean {
+        while (true) {
+            val waiting = pending.get()
+            if (waiting != null && isCurrent(waiting.session) && !isCurrent(offered.session)) {
+                offered.image.close()
+                return false
+            }
+            if (pending.compareAndSet(waiting, offered)) {
+                waiting?.image?.close()
+                return true
+            }
+        }
     }
 
     private fun openAudioLine(): SourceDataLine? = runCatching {
@@ -429,6 +457,9 @@ internal class DesktopVideoEngine(val key: String?) {
 
     private class PlayAttempt {
         var drewPicture = false
+
+        /** It ended because live playback was paused, whatever the play state has become since. */
+        var paused = false
     }
 
     private companion object {

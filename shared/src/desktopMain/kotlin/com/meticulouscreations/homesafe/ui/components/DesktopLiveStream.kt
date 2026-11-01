@@ -1,6 +1,5 @@
 package com.meticulouscreations.homesafe.ui.components
 
-import kotlin.math.abs
 import kotlin.math.min
 
 private const val HLS_PATH = "/api/stream.m3u8?"
@@ -23,10 +22,12 @@ internal fun go2rtcContinuousUrl(url: String): String? {
 /**
  * Says how long to hold each decoded frame so that pictures appear at the pace their timestamps
  * say, against the wall clock. The clock starts from the first frame, and starts again from the
- * frame in hand when the two have come more than [MAX_DRIFT_NANOS] apart: a slow network or a
- * laptop waking up on one side, a jump in the timestamps on the other, neither worth playing out.
+ * frame in hand when it has fallen more than [MAX_DRIFT_NANOS] behind: a slow network or a laptop
+ * waking up, not worth playing out.
  *
- * For [live] video the clock also moves to suit how the frames have been arriving, looked at every
+ * For [live] video a jump forward in the timestamps does the same, as there is nothing to wait for:
+ * a recording's gap is part of what was recorded, and is played out. The live clock also moves to
+ * suit how the frames have been arriving, looked at every
  * [ADJUST_WINDOW_NANOS]. Any that came late give it that much room, up to [MAX_ROOM_NANOS], so that
  * jitter of that size next time passes without a gap. All of them early by more than that means it
  * is running behind what has already arrived, which only makes the picture older, and it catches
@@ -47,7 +48,7 @@ internal class FramePacer(private val live: Boolean) {
     fun holdNanos(timestampUs: Long, nowNanos: Long): Long {
         if (originUs == UNSET || timestampUs < originUs) return startFrom(timestampUs, nowNanos)
         val hold = originNanos + (timestampUs - originUs) * NANOS_PER_US - nowNanos
-        if (abs(hold) > MAX_DRIFT_NANOS) return startFrom(timestampUs, nowNanos)
+        if (hold < -MAX_DRIFT_NANOS || (live && hold > MAX_DRIFT_NANOS)) return startFrom(timestampUs, nowNanos)
         if (!live) return hold.coerceAtLeast(0)
         shortestHoldNanos = min(shortestHoldNanos, hold)
         if (nowNanos < windowEndsAtNanos) return hold.coerceAtLeast(0)

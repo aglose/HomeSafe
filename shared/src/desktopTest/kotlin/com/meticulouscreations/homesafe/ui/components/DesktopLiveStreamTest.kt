@@ -65,6 +65,21 @@ class DesktopLiveStreamTest {
     }
 
     @Test
+    fun `a gap in a recording's timestamps is played out`() {
+        val pacer = FramePacer(live = false)
+        pacer.holdNanos(timestampUs = 0, nowNanos = 0)
+        assertEquals(2_000 * MS, pacer.holdNanos(timestampUs = 2_000_000, nowNanos = 0))
+    }
+
+    @Test
+    fun `a recording that has fallen a long way behind starts its clock again`() {
+        val pacer = FramePacer(live = false)
+        pacer.holdNanos(timestampUs = 0, nowNanos = 0)
+        assertEquals(0, pacer.holdNanos(timestampUs = 40_000, nowNanos = 5_000 * MS))
+        assertEquals(40 * MS, pacer.holdNanos(timestampUs = 80_000, nowNanos = 5_000 * MS))
+    }
+
+    @Test
     fun `a stream steadily ahead of the clock is caught up with`() {
         val pacer = FramePacer(live = true)
         pacer.holdNanos(timestampUs = 0, nowNanos = 0)

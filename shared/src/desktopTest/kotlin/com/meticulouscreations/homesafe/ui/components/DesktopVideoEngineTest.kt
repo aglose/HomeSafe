@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.ui.components
 
+import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import org.bytedeco.ffmpeg.global.avcodec
 import org.bytedeco.ffmpeg.global.avutil
@@ -14,8 +15,12 @@ import java.io.File
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
+import java.nio.ShortBuffer
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -143,6 +148,44 @@ class DesktopVideoEngineTest {
         assertEquals(1, decodeThreads())
     }
 
+    @Test
+    fun `a pause during a long back-off is not waited out on resuming`() {
+        val clip = server.clip("flaky", width = SD_WIDTH, height = 36)
+        clip.refusing.set(true)
+        onUi { engine.load(VideoSource.Live(clip.url)) }
+        // A try after a wait of four seconds, so the next is eight seconds away.
+        awaitTrue("the back-off to grow") { clip.longestRequestGapMs.get() >= LONG_BACKOFF_MS }
+
+        onUi { engine.setPlayWhenReady(false) }
+        clip.refusing.set(false)
+        Thread.sleep(PAUSE_OBSERVED_MS)
+        onUi { engine.setPlayWhenReady(true) }
+
+        awaitTrue("the picture, well inside that back-off", withinNanos = SHORTER_THAN_BACKOFF_NANOS) { engine.picture?.width == SD_WIDTH }
+    }
+
+    @Test
+    fun `a go2rtc playlist plays as its continuous stream, said to be silent`() {
+        val silent = server.continuousClip("silent", width = SD_WIDTH, height = 36)
+        onUi { engine.load(VideoSource.Live(silent.url)) }
+        awaitTrue("the picture") { engine.picture?.width == SD_WIDTH }
+        awaitTrue("the stats") { engine.stats != null }
+        assertEquals(1, silent.requests.get())
+        assertEquals(LiveTransport.FMP4, engine.stats?.transport)
+        assertEquals(SD_WIDTH, engine.stats?.width)
+        assertEquals(36, engine.stats?.height)
+        assertFalse(engine.hasAudio)
+    }
+
+    @Test
+    fun `a continuous stream with a sound track says so, unsampled`() {
+        val talking = server.continuousClip("talking", width = SD_WIDTH, height = 36, withAudio = true)
+        onUi { engine.load(VideoSource.Live(talking.url + "&video&audio=opus,aac")) }
+        awaitTrue("the picture") { engine.picture?.width == SD_WIDTH }
+        awaitTrue("the sound track to be noticed") { engine.hasAudio }
+        assertEquals(1, talking.requests.get())
+    }
+
     /** [DesktopVideoEngine] hands the same array over for every frame, which only works if a picture keeps its own copy. */
     @Test
     fun `a raster image keeps its own copy of the pixels it was made from`() {
@@ -178,6 +221,9 @@ class DesktopVideoEngineTest {
         const val STALE_CHECK_STEP_MS = 50L
         const val AWAIT_STEP_MS = 5L
         const val AWAIT_NANOS = 30_000_000_000L
+        const val LONG_BACKOFF_MS = 3_500L
+        const val PAUSE_OBSERVED_MS = 300L
+        const val SHORTER_THAN_BACKOFF_NANOS = 5_000_000_000L
         const val BEFORE_READ_TIMEOUT_NANOS = 8_000_000_000L
     }
 }
@@ -190,34 +236,66 @@ private class LiveClipServer {
     class Clip(val url: String) {
         val connections = AtomicInteger(0)
         val requests = AtomicInteger(0)
+
+        /** Answers every request with a 503 while set. */
+        val refusing = AtomicBoolean(false)
+
+        /** The longest wait between two requests so far. */
+        val longestRequestGapMs = AtomicLong(0)
+        val lastRequestAtMs = AtomicLong(0)
     }
+
+    private val continuousClips = ConcurrentHashMap<String, Pair<Clip, ByteArray>>()
 
     private val http = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         executor = Executors.newCachedThreadPool { runnable -> Thread(runnable).apply { isDaemon = true } }
         start()
+    }.also { server ->
+        server.createContext("/api/stream.mp4") { exchange ->
+            val name = exchange.requestURI.query.split('&').first().substringAfter("src=")
+            val (clip, bytes) = continuousClips.getValue(name)
+            serve(exchange, clip, bytes, "video/mp4", joinDelayMs = 0)
+        }
     }
 
     fun clip(name: String, width: Int, height: Int, joinDelayMs: Long = 0): Clip {
-        val bytes = encodeClip(width, height)
+        val bytes = encodeClip(width, height, format = "mpegts", withAudio = false)
         val clip = Clip("http://127.0.0.1:${http.address.port}/$name.ts")
-        http.createContext("/$name.ts") { exchange ->
-            clip.requests.incrementAndGet()
-            clip.connections.incrementAndGet()
-            try {
-                Thread.sleep(joinDelayMs)
-                exchange.responseHeaders.add("Content-Type", "video/mp2t")
-                exchange.sendResponseHeaders(200, 0)
-                exchange.responseBody.use { body -> sendAtLivePace(bytes, body) }
-            } catch (_: IOException) {
-                // The client went away.
-            } catch (_: InterruptedException) {
-                // The test is over.
-            } finally {
-                clip.connections.decrementAndGet()
-                exchange.close()
-            }
-        }
+        http.createContext("/$name.ts") { exchange -> serve(exchange, clip, bytes, "video/mp2t", joinDelayMs) }
         return clip
+    }
+
+    /** A clip at the address of a go2rtc playlist, served only as what that playlist's continuous stream would be: fragmented MP4. */
+    fun continuousClip(name: String, width: Int, height: Int, withAudio: Boolean = false): Clip {
+        val clip = Clip("http://127.0.0.1:${http.address.port}/api/stream.m3u8?src=$name")
+        continuousClips[name] = clip to encodeClip(width, height, format = "mp4", withAudio = withAudio)
+        return clip
+    }
+
+    private fun serve(exchange: HttpExchange, clip: Clip, bytes: ByteArray, contentType: String, joinDelayMs: Long) {
+        clip.requests.incrementAndGet()
+        val now = System.currentTimeMillis()
+        val last = clip.lastRequestAtMs.getAndSet(now)
+        if (last != 0L) clip.longestRequestGapMs.accumulateAndGet(now - last, ::maxOf)
+        if (clip.refusing.get()) {
+            exchange.sendResponseHeaders(HTTP_UNAVAILABLE, -1)
+            exchange.close()
+            return
+        }
+        clip.connections.incrementAndGet()
+        try {
+            Thread.sleep(joinDelayMs)
+            exchange.responseHeaders.add("Content-Type", contentType)
+            exchange.sendResponseHeaders(200, 0)
+            exchange.responseBody.use { body -> sendAtLivePace(bytes, body) }
+        } catch (_: IOException) {
+            // The client went away.
+        } catch (_: InterruptedException) {
+            // The test is over.
+        } finally {
+            clip.connections.decrementAndGet()
+            exchange.close()
+        }
     }
 
     fun stop() = http.stop(0)
@@ -237,11 +315,17 @@ private class LiveClipServer {
         }
     }
 
-    private fun encodeClip(width: Int, height: Int): ByteArray {
-        val file = File.createTempFile("homesafe-clip", ".ts")
+    private fun encodeClip(width: Int, height: Int, format: String, withAudio: Boolean): ByteArray {
+        val file = File.createTempFile("homesafe-clip", ".$format")
         try {
-            FFmpegFrameRecorder(file, width, height).run {
-                format = "mpegts"
+            FFmpegFrameRecorder(file, width, height, if (withAudio) 1 else 0).run {
+                this.format = format
+                // As go2rtc sends it: the opening at once, with no index to seek back for.
+                if (format == "mp4") setOption("movflags", "empty_moov+default_base_moof+frag_keyframe")
+                if (withAudio) {
+                    audioCodec = avcodec.AV_CODEC_ID_AAC
+                    sampleRate = AUDIO_RATE
+                }
                 videoCodec = avcodec.AV_CODEC_ID_MPEG4
                 pixelFormat = avutil.AV_PIX_FMT_YUV420P
                 frameRate = CLIP_FPS.toDouble()
@@ -254,6 +338,7 @@ private class LiveClipServer {
                     repeat(pixels.capacity()) { pixels.put((index + it).toByte()) }
                     pixels.clear()
                     record(frame)
+                    if (withAudio) recordSamples(AUDIO_RATE, 1, ShortBuffer.allocate(AUDIO_RATE / CLIP_FPS))
                 }
                 stop()
                 release()
@@ -269,5 +354,7 @@ private class LiveClipServer {
         const val CLIP_FPS = 20
         const val WRITE_STEP_MS = 20
         const val OPENING_STEPS = 100
+        const val AUDIO_RATE = 48_000
+        const val HTTP_UNAVAILABLE = 503
     }
 }
