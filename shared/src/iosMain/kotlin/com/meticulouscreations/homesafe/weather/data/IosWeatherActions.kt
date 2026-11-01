@@ -88,8 +88,17 @@ object IosWeatherActions {
             // Its own identifier, so what is on show and what is to come aren't one request to the centre.
             val reminder = UNNotificationRequest.requestWithIdentifier(REMINDER_PREFIX + request.identifier, content, trigger)
             center.addNotificationRequest(reminder) { error ->
-                if (error == null) center.removeDeliveredNotificationsWithIdentifiers(listOf(request.identifier))
-                done()
+                if (error == null) {
+                    center.removeDeliveredNotificationsWithIdentifiers(listOf(request.identifier))
+                    // Switched off while this was being added: the cancel may have looked before it landed.
+                    MainScope().launch {
+                        val stillAllowed = runCatching { mayRemind?.invoke() ?: true }.getOrDefault(true)
+                        if (!stillAllowed) center.removePendingNotificationRequestsWithIdentifiers(listOf(REMINDER_PREFIX + request.identifier))
+                        done()
+                    }
+                } else {
+                    done()
+                }
             }
         }
     }

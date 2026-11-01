@@ -57,10 +57,14 @@ class WeatherAlertCheck(
     private val mute: NotificationMute,
 ) {
     private val running = Mutex()
+    private var watching = false
 
     /** Called once at launch: makes the background job match the notification switch, and calls off reminders the switches turn off. */
     fun start() {
         appScope.launch { runCatching { syncSchedule() } }
+        // Called from each root that comes up (the iOS sign-in, the native shell): one collector will do.
+        if (watching) return
+        watching = true
         appScope.launch {
             combine(preferences.observe(), mute.muted) { prefs, muted -> prefs.notices.enabled && prefs.notices.precipitationSoon && !muted }
                 .distinctUntilChanged()
@@ -108,7 +112,10 @@ class WeatherAlertCheck(
             val place = place() ?: return@runCatching ReminderResult.NOTHING_TO_SAY
             val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return@runCatching ReminderResult.TRY_AGAIN
             val notice = WeatherNoticePlanner.reminder(report, place.name.takeIf { it.isNotBlank() }, prefs.units, clock.now().epochSeconds) ?: return@runCatching ReminderResult.NOTHING_TO_SAY
-            if (notifier.notify(notice.toNotification(place))) ReminderResult.POSTED else ReminderResult.TRY_AGAIN
+            val notification = notice.toNotification(place)
+            // The fetch and the text loading suspend: the switches may have gone off meanwhile.
+            if (!mayRemind()) return@runCatching ReminderResult.NOTHING_TO_SAY
+            if (notifier.notify(notification)) ReminderResult.POSTED else ReminderResult.TRY_AGAIN
         }.getOrDefault(ReminderResult.TRY_AGAIN)
     }
 

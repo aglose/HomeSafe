@@ -363,7 +363,10 @@ object WeatherStory {
         val notable = wetSpans(hours).filter { it.totalMm >= WeatherNoticePlanner.NOTABLE_MM || it.snowCm >= WeatherNoticePlanner.NOTABLE_SNOW_CM }
         // An hour counts as wet from its start, however late in it the rain comes: the quarter-hours know when.
         val spans = notable.mapIndexed { i, span ->
-            if (i == 0 && near is NearTerm.Starting && near.startEpochSeconds < span.endEpochSeconds) span.copy(startEpochSeconds = near.startEpochSeconds) else span
+            // Only a span the shower runs into: a separate, earlier shower is not this one's start.
+            if (i == 0 && near is NearTerm.Starting && near.startEpochSeconds < span.endEpochSeconds &&
+                near.startEpochSeconds >= span.startEpochSeconds - WeatherReport.HOUR_SECONDS
+            ) span.copy(startEpochSeconds = near.startEpochSeconds) else span
         }
         val range = UiText.of(Res.string.weather_notice_art_range, WeatherFormat.degrees(day.highC, units), WeatherFormat.degrees(day.lowC, units))
         if (spans.isNotEmpty() || near != NearTerm.Dry) {
