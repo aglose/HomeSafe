@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.weather.domain.Place
+import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotice
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
@@ -25,6 +26,8 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_notice_place_home
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -67,10 +70,19 @@ class WeatherAlertCheck(
     private val claims: WeatherSoonClaims,
 ) {
     private val running = Mutex()
+    private var watching = false
 
-    /** Called once at launch: makes the background job match the notification switch. */
+    /** Called once at launch: makes the background job match the notification switch, and calls off reminders the switches turn off. */
     fun start() {
         appScope.launch { runCatching { syncSchedule() } }
+        // Called from each root that comes up (the iOS sign-in, the native shell): one collector will do.
+        if (watching) return
+        watching = true
+        appScope.launch {
+            combine(preferences.observe(), mute.muted) { prefs, muted -> prefs.notices.enabled && prefs.notices.precipitationSoon && !muted }
+                .distinctUntilChanged()
+                .collect { allowed -> if (!allowed) runCatching { notifier.cancelReminders() } }
+        }
     }
 
     /** Starts or stops the background check to match the notification switch. Call at launch and when the switch changes. */
@@ -148,6 +160,7 @@ class WeatherAlertCheck(
                 fallbackBody,
                 WeatherNoticeArt(WeatherNoticeIcon.RAIN),
                 place = home,
+                headsUp = true,
                 expiresEpochSeconds = fallbackExpiresEpochSeconds,
                 link = WeatherDeepLink(placeId = Place.CURRENT_ID),
             )
@@ -156,6 +169,27 @@ class WeatherAlertCheck(
         if (posted) ledger.record(notification.id, now)
         posted
     }.getOrDefault(false)
+
+    /**
+     * What a shower's "Remind me" button asked for: its notification again, from a fresh forecast,
+     * if the rain is still coming and nothing has been switched off since.
+     */
+    suspend fun remind(): ReminderResult = running.withLock {
+        runCatching {
+            if (!notifier.isSupported || !mayRemind() || !notifier.isAllowed()) return@runCatching ReminderResult.NOTHING_TO_SAY
+            val prefs = preferences.observe().first()
+            val place = place() ?: return@runCatching ReminderResult.NOTHING_TO_SAY
+            val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return@runCatching ReminderResult.TRY_AGAIN
+            val notice = WeatherNoticePlanner.reminder(report, place.name.takeIf { it.isNotBlank() }, prefs.units, clock.now().epochSeconds) ?: return@runCatching ReminderResult.NOTHING_TO_SAY
+            val notification = notice.toNotification(place)
+            // The fetch and the text loading suspend: the switches may have gone off meanwhile.
+            if (!mayRemind()) return@runCatching ReminderResult.NOTHING_TO_SAY
+            if (notifier.notify(notification)) ReminderResult.POSTED else ReminderResult.TRY_AGAIN
+        }.getOrDefault(ReminderResult.TRY_AGAIN)
+    }
+
+    /** Whether the switches still let a shower's reminder go out. */
+    suspend fun mayRemind(): Boolean = preferences.observe().first().notices.let { it.enabled && it.precipitationSoon } && !mute.muted.value
 
     /**
      * Takes down what is over at [epochSeconds], from here rather than from the next check. A
@@ -214,6 +248,9 @@ class WeatherAlertCheck(
             ticks = chart?.ticks.orEmpty().map { textLoader.load(it) },
         ),
         urgent = urgent,
+        headsUp = headsUp,
+        reminderEpochSeconds = reminderEpochSeconds,
+        reminderLabel = reminderLabel?.let { textLoader.load(it) },
         place = this.place,
         detail = detail?.let { textLoader.load(it) },
         eventEpochSeconds = eventEpochSeconds,

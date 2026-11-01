@@ -76,8 +76,9 @@ twenty times between 12:39 and 13:37 on the 28th without moving.
   camera within 5 minutes of each other are one visit. Nothing kept, no summary. A slot the relay
   slept through is covered by the next. The push is `summary=1`, `silent=1`, `notif_id=summary`
   with no moment to open; Android posts it on its own low-importance "Summaries" channel.
-- **Away, grouped.** Every alert and every person detection goes through the same visits the old
-  rules used for ordinary alerts: the first of a camera's run sounds on the loud channel ("Away ·
+- **Away, grouped.** Every alert and every person detection (on a camera with a `property` zone,
+  every person inside it; see [away-mode.md](away-mode.md), "On the property") goes through the
+  same visits the old rules used for ordinary alerts: the first of a camera's run sounds on the loud channel ("Away ·
   Front Door"), more of the same updates it quietly, something new in it sounds again. Replayed
   over 2026-09-26 to 29 as if nobody had been home, 970 pushes become 220 that sound — though most
   of those days' traffic was the household itself, which isn't there when everyone's away.

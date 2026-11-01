@@ -84,7 +84,8 @@ private class IosWeatherNotifier : WeatherNotifier {
             // iOS shows as much of the body as fits and the rest on a long press: a warning gets its excerpt, not just its headline.
             setBody(notification.detail ?: notification.body)
             setThreadIdentifier(THREAD)
-            setCategoryIdentifier(IosWeatherActions.CATEGORY)
+            // iOS declares a notification's buttons ahead of time: one that can be put off wears the set with "Remind me".
+            setCategoryIdentifier(if (notification.reminderEpochSeconds != null) IosWeatherActions.CATEGORY_SOON else IosWeatherActions.CATEGORY)
             setInterruptionLevel(
                 when {
                     notification.urgent -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive
@@ -107,6 +108,7 @@ private class IosWeatherNotifier : WeatherNotifier {
                 notification.link.toMap() +
                     listOfNotNull(
                         notification.expiresEpochSeconds?.let { KEY_EXPIRES to it.toString() },
+                        notification.reminderEpochSeconds?.let { IosWeatherActions.KEY_REMIND_AT to it.toString() },
                         // In front of the open app, it refreshes the list rather than showing a second banner.
                         (KEY_UPDATE to "1").takeIf { notification.replacesPush },
                     ),
@@ -146,6 +148,8 @@ private class IosWeatherNotifier : WeatherNotifier {
         if (over.isNotEmpty()) center.removeDeliveredNotificationsWithIdentifiers(over)
     }
 
+    override suspend fun cancelReminders() = IosWeatherActions.cancelReminders()
+
     private companion object {
         /** One stack for the weather's notifications in Notification Centre, apart from each camera's. */
         const val THREAD = "weather"
@@ -173,6 +177,8 @@ object IosWeatherRefresh {
     private var registered = false
 
     fun register(alertCheck: () -> WeatherAlertCheck) {
+        // Whether or not this host can refresh in the background, the buttons need to read the switches.
+        IosWeatherActions.mayRemind = { alertCheck().mayRemind() }
         if (registered) return
         // Registering an identifier the bundle doesn't list is an exception, not an error to handle:
         // look before asking, so a host without the Info.plist entry simply has no background check.

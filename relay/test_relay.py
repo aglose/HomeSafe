@@ -500,6 +500,49 @@ def review(rid, start, objects, sub_labels=(), end=None, camera="hikvision_1", z
     }
 
 
+class AwayOnThePropertyTest(unittest.TestCase):
+    """With everyone away, a camera that has a property zone only tells of people who set foot in it."""
+
+    def setUp(self):
+        self.recent_review, self.zoned = relay.recent_review, relay.property_cameras
+        self.items = {"alert": [], "detection": []}
+        relay.recent_review = lambda severity: self.items[severity]
+        relay.property_cameras = lambda: {"hikvision_1"}
+
+    def tearDown(self):
+        relay.recent_review, relay.property_cameras = self.recent_review, self.zoned
+
+    def ids(self, since=100.0):
+        return [item["id"] for item in relay.away_items(since)]
+
+    def test_a_person_on_the_sidewalk_is_not_news_and_one_on_the_property_is(self):
+        self.items["detection"] = [
+            review("walker", 200.0, ["person", "car"], zones=()),
+            review("visitor", 201.0, ["person"], zones=("property",)),
+        ]
+        self.assertEqual(["visitor"], self.ids())
+
+    def test_another_zone_is_not_the_property(self):
+        """A car in the driveway while someone walks past: the review names the driveway, and the person isn't on our ground."""
+        self.items["alert"] = [review("walker", 200.0, ["person", "car"], zones=("driveway",))]
+        self.assertEqual([], self.ids())
+
+    def test_someone_who_steps_off_the_sidewalk_is_found_on_a_later_poll(self):
+        walking = review("r", 200.0, ["person"], zones=())
+        self.items["detection"] = [walking]
+        self.assertEqual([], self.ids())
+        walking["data"]["zones"] = ["property"]
+        self.assertEqual(["r"], self.ids())
+
+    def test_a_camera_without_the_zone_still_tells_of_everyone(self):
+        self.items["detection"] = [review("door", 200.0, ["person"], camera="amcrest_1", zones=())]
+        self.assertEqual(["door"], self.ids())
+
+    def test_what_began_before_everyone_left_stays_history(self):
+        self.items["detection"] = [review("old", 50.0, ["person"], zones=("property",))]
+        self.assertEqual([], self.ids())
+
+
 class SubjectTest(unittest.TestCase):
     def setUp(self):
         self.cars, relay.HOUSEHOLD_CARS = relay.HOUSEHOLD_CARS, {"andrews_tesla": {}, "sarahs_car": {}}
@@ -11394,7 +11437,7 @@ class RainSoonForecastTest(unittest.TestCase):
     def test_the_payload_is_what_the_apps_parser_is_tested_against(self):
         forecast = self.forecast(0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0)
         forecast["quarters"], forecast["hours"] = forecast["quarters"][:3], forecast["hours"][:2]
-        data = relay.rain_soon_data(forecast, {"key": "soon:1", "start": self.T + 1800, "end": None, "family": "rain", "peak": 2.0})
+        data = relay.rain_soon_data(forecast, {"key": "soon:1", "start": self.T + 1800, "end": None, "family": "rain", "peak": 2.0}, self.T)
         # The same text is in WeatherAlertCheckTest.
         self.assertEqual(
             '{"zone":"America/Los_Angeles","offset":-25200,"day":1,"code":3,"mm":0.0,"q0":1760047200,"qmm":[0.0,0.0,0.5],"qcm":[0.0,0.0,0.0],'
@@ -11409,7 +11452,7 @@ class RainSoonForecastTest(unittest.TestCase):
             "hourly": {"time": [1760047200 + 3600 * i for i in range(10)], "precipitation": [12.34] * 10, "snowfall": [12.34] * 10, "precipitation_probability": [100] * 10, "weather_code": [99] * 10},
         })
         soon = {"key": "soon:1760047", "start": 1760047200, "end": 1760050800, "family": "storm", "peak": 49.4}
-        data = relay.rain_soon_data(forecast, soon)
+        data = relay.rain_soon_data(forecast, soon, 1760045400)
         title, body = relay.rain_soon_text(soon, relay.timezone.utc)
         self.assertLess(len(json.dumps(relay.push_message("t" * 200, title, body, data))), 4000)
 
@@ -11420,7 +11463,7 @@ class RainSoonPushShapeTest(unittest.TestCase):
     SOON = {"key": "soon:488902", "start": T + 1800, "end": T + 4500, "family": "rain", "peak": 2.0}
 
     def data(self):
-        return relay.rain_soon_data(self.FORECAST, self.SOON)
+        return relay.rain_soon_data(self.FORECAST, self.SOON, self.T)
 
     def test_an_iphones_banner_taps_through_as_a_weather_notification_does(self):
         data = self.data()
@@ -11428,17 +11471,24 @@ class RainSoonPushShapeTest(unittest.TestCase):
         self.assertEqual(str(self.T + 4500), data["homesafe_weather_expires"])
 
     def test_one_with_no_end_in_sight_comes_down_after_the_planners_two_hours(self):
-        data = relay.rain_soon_data(self.FORECAST, {**self.SOON, "end": None})
+        data = relay.rain_soon_data(self.FORECAST, {**self.SOON, "end": None}, self.T)
         self.assertEqual(str(self.T + 1800 + 7200), data["homesafe_weather_expires"])
 
     def test_an_iphone_gets_the_stack_and_button_of_the_apps_own_and_the_shower_as_its_identifier(self):
         headers, aps = relay.apns_parts("Rain at 3:30 PM", "Around 3:30 PM", self.data(), False)
         self.assertEqual("weather", aps["thread-id"])
-        self.assertEqual("weather", aps["category"])
+        self.assertEqual("weather.soon", aps["category"])
         self.assertEqual(1, aps["content-available"])
         self.assertEqual("Home", aps["alert"]["subtitle"])
         self.assertEqual("soon:488902", headers["apns-collapse-id"])
         self.assertNotIn("sound", aps)
+
+    def test_its_remind_me_button_goes_off_fifteen_minutes_before_with_half_an_hour_or_more_to_go(self):
+        self.assertEqual(str(self.T + 900), self.data()["homesafe_weather_remind_at"])
+        close = relay.rain_soon_data(self.FORECAST, self.SOON, self.T + 1)
+        self.assertNotIn("homesafe_weather_remind_at", close)
+        _, aps = relay.apns_parts("t", "b", close, False)
+        self.assertEqual("weather", aps["category"])
 
     def test_neither_service_delivers_it_after_the_shower_has_started(self):
         headers, _ = relay.apns_parts("t", "b", self.data(), False)

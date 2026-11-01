@@ -83,7 +83,7 @@ object IosNotificationTaps {
         // The buttons notifications may carry, declared once: their words are resources, which load off this call.
         if (!categoriesSet) {
             categoriesSet = true
-            MainScope().launch { runCatching { center.setNotificationCategories(setOf(IosWeatherActions.category())) } }
+            MainScope().launch { runCatching { center.setNotificationCategories(IosWeatherActions.categories()) } }
         }
     }
 }
@@ -112,6 +112,11 @@ private class NotificationCenterDelegate :
         withCompletionHandler: () -> Unit,
     ) {
         val info = didReceiveNotificationResponse.notification.request.content.userInfo
+        if (didReceiveNotificationResponse.actionIdentifier == IosWeatherActions.REMIND) {
+            // Nothing to open: the app stays where it is, and says it again later.
+            IosWeatherActions.remind(didReceiveNotificationResponse.notification.request, withCompletionHandler)
+            return
+        }
         if (info[WeatherDeepLink.KEY] != null) {
             // A tap opens what the notification was about; its "Radar" button, the radar over the same place.
             val link = WeatherDeepLink.from { key -> info[key] as? String }

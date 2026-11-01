@@ -12,21 +12,23 @@ import com.meticulouscreations.homesafe.weather.WeatherData
 import com.meticulouscreations.homesafe.weather.WeatherData.at
 import com.meticulouscreations.homesafe.weather.domain.AlertSeverity
 import com.meticulouscreations.homesafe.weather.domain.Place
+import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
+import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeChart
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeIcon
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
 import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
+import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_minutes_short
 import homesafe.shared.generated.resources.weather_notice_place_home
-import homesafe.shared.generated.resources.weather_notice_soon_body_lasting
-import homesafe.shared.generated.resources.weather_notice_soon_here
-import homesafe.shared.generated.resources.weather_notice_soon_here_lasting
+import homesafe.shared.generated.resources.weather_notice_soon_amount
+import homesafe.shared.generated.resources.weather_notice_soon_lasting
+import homesafe.shared.generated.resources.weather_notice_title_soon_rain
 import homesafe.shared.generated.resources.weather_now
-import homesafe.shared.generated.resources.weather_story_rain_starting
 import homesafe.shared.generated.resources.weather_time_pm
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,6 +107,9 @@ class WeatherAlertCheckTest {
 
     private fun pm(text: String) = UiText.of(Res.string.weather_time_pm, text)
 
+    /** What [stormyReport]'s half hour of rain comes to, in the default units. */
+    private fun rainBody() = UiText.of(Res.string.weather_notice_soon_lasting, UiText.of(Res.string.weather_minutes_short, 30), WeatherFormat.precipitation(1.0, WeatherUnits()))
+
     /** Lets what was launched on `backgroundScope` run: `advanceUntilIdle()` drives only the foreground here. */
     private suspend fun settle() {
         repeat(5) {
@@ -134,8 +139,8 @@ class WeatherAlertCheckTest {
         assertTrue(h.pushed())
         val posted = h.notifier.posted.single()
         assertEquals(rainKey, posted.id)
-        assertEquals(keyed(UiText.of(Res.string.weather_story_rain_starting, 30)), posted.title)
-        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_here_lasting, pm("3:30"), 45)), posted.body)
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_title_soon_rain, pm("3:30"))), posted.title)
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_lasting, UiText.of(Res.string.weather_minutes_short, 45), WeatherFormat.precipitation(1.5, WeatherUnits()))), posted.body)
         assertEquals(keyed(UiText.of(Res.string.weather_notice_place_home)), posted.place)
         assertEquals(WeatherNoticeIcon.RAIN, posted.art.icon)
         assertTrue(posted.art.chart is WeatherNoticeChart.Soon)
@@ -153,7 +158,7 @@ class WeatherAlertCheckTest {
         assertEquals(1760047200, now)
         assertTrue(h.pushed(text = written))
         val posted = h.notifier.posted.single()
-        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_here, pm("3:30"))), posted.body)
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_amount, WeatherFormat.precipitation(0.5, WeatherUnits()))), posted.body)
         assertEquals(at(0, 15, 30), posted.eventEpochSeconds)
     }
 
@@ -223,6 +228,7 @@ class WeatherAlertCheckTest {
         assertEquals(listOf(rainKey, "Rain at 3:30 PM", "Around 3:30 PM"), listOf(posted.id, posted.title, posted.body))
         assertEquals(WeatherNoticeIcon.RAIN, posted.art.icon)
         assertEquals(h.clock.seconds + 3_600, posted.expiresEpochSeconds)
+        assertTrue(posted.headsUp)
         assertEquals(keyed(UiText.of(Res.string.weather_notice_place_home)), posted.place)
         assertTrue(h.ledger.sent(h.clock.seconds).containsKey(rainKey))
     }
@@ -336,8 +342,10 @@ class WeatherAlertCheckTest {
         assertEquals(listOf("alert:urn:tornado", "Tornado Warning", "Tornado warning until 5 PM"), listOf(warning.id, warning.title, warning.body))
         assertTrue(warning.urgent)
         assertEquals("soon:${at(0, 15, 30) / 3_600}", rain.id)
-        assertEquals(keyed(UiText.of(Res.string.weather_story_rain_starting, 30)), rain.title)
-        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_body_lasting, pm("3:30"), "Portland", 30)), rain.body)
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_title_soon_rain, pm("3:30"))), rain.title)
+        assertEquals(keyed(rainBody()), rain.body)
+        assertEquals("Portland", rain.place)
+        assertTrue(rain.headsUp)
         assertFalse(rain.urgent)
     }
 
@@ -361,7 +369,7 @@ class WeatherAlertCheckTest {
         assertEquals(WeatherNoticeArt(icon = WeatherNoticeIcon.TORNADO), warning.art)
         assertEquals(WeatherNoticeIcon.RAIN, rain.art.icon)
         assertEquals(keyed(pm("3:30")), rain.art.headline)
-        assertEquals(listOf(WeatherNoticeArt.Fact(WeatherNoticeIcon.RAIN, keyed(UiText.of(Res.string.weather_minutes_short, 30)))), rain.art.facts)
+        assertEquals(WeatherNoticeArt.Fact(WeatherNoticeIcon.RAIN, keyed(UiText.of(Res.string.weather_minutes_short, 30))), rain.art.facts.first())
         // Now, then each half hour of the two the chart covers.
         assertEquals(listOf(keyed(UiText.of(Res.string.weather_now)), keyed(pm("3:30")), keyed(pm("4")), keyed(pm("4:30")), keyed(pm("5"))), rain.art.ticks)
         assertEquals(at(0, 15, 30), (rain.art.chart as WeatherNoticeChart.Soon).startEpochSeconds)
@@ -445,10 +453,72 @@ class WeatherAlertCheckTest {
     }
 
     @Test
-    fun aNoticeFromAnUnnamedPlaceSaysHere() = runTest {
+    fun aNoticeFromAnUnnamedPlaceNamesNone() = runTest {
         val h = harness().apply { repository.onName = { _, _ -> null } }
         h.check.run()
-        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_here_lasting, pm("3:30"), 30)), h.notifier.posted.last().body)
+        assertEquals(null, h.notifier.posted.last().place)
+    }
+
+    @Test
+    fun aReminderPostsTheShowerAgainThoughItWasAnnouncedAndMarksNothing() = runTest {
+        val h = harness()
+        h.check.run()
+        val sent = h.ledger.sent(now)
+        h.notifier.posted.clear()
+        assertEquals(ReminderResult.POSTED, h.check.remind())
+        assertEquals("soon:${at(0, 15, 30) / 3_600}", h.notifier.posted.single().id)
+        assertEquals(sent, h.ledger.sent(now))
+    }
+
+    @Test
+    fun aReminderHeldBackByTheSwitchesOrAMutePostsNothing() = runTest {
+        val h = harness()
+        h.muted.value = true
+        assertEquals(ReminderResult.NOTHING_TO_SAY, h.check.remind())
+        assertFalse(h.check.mayRemind())
+        h.muted.value = false
+        assertTrue(h.check.mayRemind())
+        h.preferences.update { it.copy(notices = it.notices.copy(precipitationSoon = false)) }
+        assertEquals(ReminderResult.NOTHING_TO_SAY, h.check.remind())
+        assertFalse(h.check.mayRemind())
+        assertTrue(h.notifier.posted.isEmpty())
+    }
+
+    @Test
+    fun aReminderIsWorthAnotherGoWhenTheForecastCantBeHadOrTheOsRefuses() = runTest {
+        val h = harness()
+        h.repository.onReport = { Result.failure(RuntimeException("offline")) }
+        assertEquals(ReminderResult.TRY_AGAIN, h.check.remind())
+        h.repository.onReport = { Result.success(stormyReport()) }
+        h.notifier.accepts = false
+        assertEquals(ReminderResult.TRY_AGAIN, h.check.remind())
+    }
+
+    @Test
+    fun startingTwiceWatchesTheSwitchesOnce() = runTest {
+        val h = harness()
+        h.check.start()
+        h.check.start()
+        settle()
+        h.muted.value = true
+        settle()
+        assertEquals(1, h.notifier.remindersCancelled)
+    }
+
+    @Test
+    fun turningRainOffOrMutingCallsOffRemindersAlreadySet() = runTest {
+        val h = harness()
+        h.check.start()
+        settle()
+        assertEquals(0, h.notifier.remindersCancelled)
+        h.muted.value = true
+        settle()
+        assertEquals(1, h.notifier.remindersCancelled)
+        h.muted.value = false
+        settle()
+        h.preferences.update { it.copy(notices = it.notices.copy(precipitationSoon = false)) }
+        settle()
+        assertEquals(2, h.notifier.remindersCancelled)
     }
 
     @Test
@@ -612,7 +682,7 @@ class WeatherAlertCheckTest {
         val h = harness().apply { fence.here = null }
         h.places.add(Place(Place.idFor(47.6, -122.3), "Seattle", "WA", 47.6, -122.3))
         h.check.run()
-        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_body_lasting, pm("3:30"), "Seattle", 30)), h.notifier.posted.last().body)
+        assertEquals("Seattle", h.notifier.posted.last().place)
     }
 
     @Test

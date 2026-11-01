@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.weather_alert_until
+import homesafe.shared.generated.resources.weather_duration_hours
 import homesafe.shared.generated.resources.weather_minutes_short
 import homesafe.shared.generated.resources.weather_notice_air
 import homesafe.shared.generated.resources.weather_notice_amount
@@ -17,14 +18,14 @@ import homesafe.shared.generated.resources.weather_notice_fact_uv
 import homesafe.shared.generated.resources.weather_notice_freeze
 import homesafe.shared.generated.resources.weather_notice_gusts
 import homesafe.shared.generated.resources.weather_notice_heat
+import homesafe.shared.generated.resources.weather_notice_heaviest_around
 import homesafe.shared.generated.resources.weather_notice_heavy_at_times
 import homesafe.shared.generated.resources.weather_notice_high_tomorrow
+import homesafe.shared.generated.resources.weather_notice_remind_at
 import homesafe.shared.generated.resources.weather_notice_sample_body
 import homesafe.shared.generated.resources.weather_notice_snow_amount
-import homesafe.shared.generated.resources.weather_notice_soon_body
-import homesafe.shared.generated.resources.weather_notice_soon_body_lasting
-import homesafe.shared.generated.resources.weather_notice_soon_here
-import homesafe.shared.generated.resources.weather_notice_soon_here_lasting
+import homesafe.shared.generated.resources.weather_notice_soon_amount
+import homesafe.shared.generated.resources.weather_notice_soon_lasting
 import homesafe.shared.generated.resources.weather_notice_title_air
 import homesafe.shared.generated.resources.weather_notice_title_cold
 import homesafe.shared.generated.resources.weather_notice_title_colder_tomorrow
@@ -36,6 +37,10 @@ import homesafe.shared.generated.resources.weather_notice_title_rain_today
 import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_snow_today
 import homesafe.shared.generated.resources.weather_notice_title_snow_tomorrow
+import homesafe.shared.generated.resources.weather_notice_title_soon_mix
+import homesafe.shared.generated.resources.weather_notice_title_soon_rain
+import homesafe.shared.generated.resources.weather_notice_title_soon_snow
+import homesafe.shared.generated.resources.weather_notice_title_soon_storm
 import homesafe.shared.generated.resources.weather_notice_title_storm_today
 import homesafe.shared.generated.resources.weather_notice_title_storm_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_uv
@@ -46,6 +51,7 @@ import homesafe.shared.generated.resources.weather_notice_warmer_tomorrow
 import homesafe.shared.generated.resources.weather_now
 import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 enum class WeatherNoticeKind {
     /** A government warning. Sent whatever the hour. */
@@ -200,8 +206,14 @@ data class WeatherNotice(
     val chart: WeatherNoticeChart? = null,
     /** For a government warning, its [WeatherAlert.key]: a tap opens the warning itself. */
     val alertKey: String? = null,
+    /** When its "Remind me" button would say it again, and the button's words; null where there is no time to wait. */
+    val reminderEpochSeconds: Long? = null,
+    val reminderLabel: UiText? = null,
 ) {
     val urgent: Boolean get() = kind == WeatherNoticeKind.SEVERE_ALERT
+
+    /** Worth coming up over whatever is on the screen: rain is about to start, or a warning is in force. */
+    val headsUp: Boolean get() = urgent || kind == WeatherNoticeKind.PRECIPITATION_SOON
 }
 
 /**
@@ -239,7 +251,7 @@ object WeatherNoticePlanner {
                 .forEach { alert -> notices += warning(alert, report) }
         }
 
-        if (!quiet && settings.precipitationSoon) soon(report, placeName, nowEpochSeconds, sent)?.let { notices += it }
+        if (!quiet && settings.precipitationSoon && !recentlyWarned(nowEpochSeconds, sent)) soon(report, units, nowEpochSeconds)?.let { notices += it }
 
         if (!quiet && settings.dailyOutlook) {
             if (hour in MORNING_HOURS) today(report, settings, units, nowEpochSeconds)?.let { notices += it }
@@ -253,12 +265,18 @@ object WeatherNoticePlanner {
      * the forecast says: the rules of [plan] that don't need one to go by.
      */
     fun holdsBackSoon(localHour: Int, nowEpochSeconds: Long, sent: Map<String, Long>): Boolean =
-        isQuiet(localHour) || saidSoonLately(nowEpochSeconds, sent)
+        isQuiet(localHour) || recentlyWarned(nowEpochSeconds, sent)
 
     private fun isQuiet(hour: Int): Boolean = hour < QUIET_UNTIL_HOUR || hour >= QUIET_FROM_HOUR
 
-    private fun saidSoonLately(now: Long, sent: Map<String, Long>): Boolean =
-        sent.any { (key, at) -> key.startsWith(SOON_PREFIX) && now - at < SOON_COOLDOWN_SECONDS }
+    /**
+     * The shower's notification again, asked for by its "Remind me" button: from a fresh forecast,
+     * so it says when the rain starts by now, and nothing at all if the rain has already begun or
+     * is no longer coming. No part of [plan]: it was asked for, so neither the cooldown nor the
+     * quiet hours hold it back.
+     */
+    fun reminder(report: WeatherReport, placeName: String?, units: WeatherUnits, nowEpochSeconds: Long): WeatherNotice? =
+        soon(report, units, nowEpochSeconds)?.copy(place = placeName)
 
     /**
      * A notification to look at, asked for from Settings: today as the forecast has it, whether
@@ -331,49 +349,98 @@ object WeatherNoticePlanner {
     private fun unwrapped(text: String): String =
         text.trim().split(PARAGRAPH_BREAK).joinToString("\n\n") { paragraph -> paragraph.trim().replace(LINE_BREAK, " ") }
 
-    private fun soon(report: WeatherReport, placeName: String?, now: Long, sent: Map<String, Long>): WeatherNotice? {
+    /** One shower, one notification: the next check will see the same start a little nearer. */
+    private fun recentlyWarned(now: Long, sent: Map<String, Long>): Boolean = sent.any { (key, at) -> key.startsWith(SOON_PREFIX) && now - at < SOON_COOLDOWN_SECONDS }
+
+    private fun soon(report: WeatherReport, units: WeatherUnits, now: Long): WeatherNotice? {
         val near = WeatherStory.nearTerm(report, now) as? NearTerm.Starting ?: return null
-        val lead = near.startEpochSeconds - now
+        val start = near.startEpochSeconds
+        val lead = start - now
         if (lead > SOON_LEAD_SECONDS) return null
-        // One shower, one notification: the next check will see the same start a little nearer.
-        if (saidSoonLately(now, sent)) return null
-        val title = WeatherStory.nearTermPhrase(near, now) ?: return null
-        val at = WeatherFormat.clock(near.startEpochSeconds, report.offsetAt(near.startEpochSeconds))
-        val lasting = near.endEpochSeconds?.let { end -> WeatherFormat.roundedMinutes(end - near.startEpochSeconds) }
-        val where = when {
-            placeName != null && lasting != null -> UiText.of(Res.string.weather_notice_soon_body_lasting, at, placeName, lasting)
-            placeName != null -> UiText.of(Res.string.weather_notice_soon_body, at, placeName)
-            lasting != null -> UiText.of(Res.string.weather_notice_soon_here_lasting, at, lasting)
-            else -> UiText.of(Res.string.weather_notice_soon_here, at)
-        }
-        val heavy = near.peakMmPerHour >= HEAVY_MM_PER_HOUR
-        val body = if (heavy) dotted(listOf(where, UiText.of(Res.string.weather_notice_heavy_at_times))) else where
-        val icon = WeatherNoticeIcon.of(near.family)
         val slices = report.slicesFrom(now).take(SOON_CHART_SLICES)
+        val falling = slices.filter { it.epochSeconds >= start && (near.endEpochSeconds == null || it.epochSeconds < near.endEpochSeconds) }
+        val lastWet = falling.lastOrNull { it.isWet }?.let { it.epochSeconds + WeatherReport.SLICE_SECONDS }
+        // The quarter-hours see two hours. Where the shower runs past them the hours say how it goes
+        // on, unless they have it over while the quarter-hours still have it falling.
+        val span = if (near.endEpochSeconds != null) {
+            null
+        } else {
+            WeatherStory.wetSpans(report.hoursFrom(now))
+                .firstOrNull { it.endEpochSeconds > start && it.startEpochSeconds <= start + WeatherReport.HOUR_SECONDS }
+                ?.takeIf { lastWet == null || it.endEpochSeconds >= lastWet }
+        }
+        val end = near.endEpochSeconds ?: span?.endEpochSeconds
+        val amount = if (near.family == Precipitation.SNOW) {
+            WeatherFormat.snow(span?.snowCm ?: falling.sumOf { it.snowfallCm }, units)
+        } else {
+            WeatherFormat.precipitation(span?.totalMm ?: falling.sumOf { it.precipitationMm }, units)
+        }
+        val lasting = end?.let { duration(it - start) }
+        val said = if (lasting != null) UiText.of(Res.string.weather_notice_soon_lasting, lasting, amount) else UiText.of(Res.string.weather_notice_soon_amount, amount)
+        val heavy = near.peakMmPerHour >= HEAVY_MM_PER_HOUR
+        val icon = WeatherNoticeIcon.of(near.family)
+        val heaviest = heaviest(falling, seenToTheEnd = near.endEpochSeconds != null)?.let { UiText.of(Res.string.weather_notice_heaviest_around, WeatherFormat.hourOrClock(it, report.offsetAt(it))) }
+        val reminder = (start - REMIND_BEFORE_SECONDS).takeIf { lead >= REMIND_FROM_LEAD_SECONDS }
         return WeatherNotice(
-            key = "$SOON_PREFIX${near.startEpochSeconds / WeatherReport.HOUR_SECONDS}",
+            key = "$SOON_PREFIX${start / WeatherReport.HOUR_SECONDS}",
             kind = WeatherNoticeKind.PRECIPITATION_SOON,
-            title = title,
-            body = body,
+            title = UiText.of(soonTitle(near.family), WeatherFormat.hourOrClock(start, report.offsetAt(start))),
+            // The picture isn't always seen: the peak goes in the words too.
+            body = when {
+                heaviest != null -> dotted(listOf(said, heaviest))
+                heavy -> dotted(listOf(said, UiText.of(Res.string.weather_notice_heavy_at_times)))
+                else -> said
+            },
             icon = icon,
             isDay = report.current.isDay,
-            eventEpochSeconds = near.startEpochSeconds,
+            eventEpochSeconds = start,
             // Until it has stopped; where the forecast doesn't see it stop, for as long as it sees at all.
-            expiresEpochSeconds = near.endEpochSeconds ?: (near.startEpochSeconds + SOON_LINGER_SECONDS),
-            headline = at,
+            expiresEpochSeconds = end ?: (start + SOON_LINGER_SECONDS),
+            headline = WeatherFormat.clock(start, report.offsetAt(start)),
             facts = listOfNotNull(
-                lasting?.let { WeatherNoticeFact(icon, UiText.of(Res.string.weather_minutes_short, it)) },
-                WeatherNoticeFact(null, UiText.of(Res.string.weather_notice_heavy_at_times)).takeIf { heavy },
+                lasting?.let { WeatherNoticeFact(icon, it) },
+                WeatherNoticeFact(if (lasting == null) icon else null, amount),
+                when {
+                    heaviest != null -> WeatherNoticeFact(null, heaviest)
+                    heavy -> WeatherNoticeFact(null, UiText.of(Res.string.weather_notice_heavy_at_times))
+                    else -> null
+                },
             ),
             chart = WeatherNoticeChart.Soon(
                 slices = slices,
-                startEpochSeconds = near.startEpochSeconds,
+                startEpochSeconds = start,
                 // "Now", then the clock at each half hour after it.
                 ticks = slices.indices.filter { it % 2 == 0 }.map { i ->
                     if (i == 0) UiText.of(Res.string.weather_now) else slices[i].epochSeconds.let { WeatherFormat.hourOrClock(it, report.offsetAt(it)) }
                 },
             ),
+            reminderEpochSeconds = reminder,
+            reminderLabel = reminder?.let { UiText.of(Res.string.weather_notice_remind_at, WeatherFormat.clock(it, report.offsetAt(it))) },
         )
+    }
+
+    private fun soonTitle(family: Precipitation): StringResource = when (family) {
+        Precipitation.SNOW -> Res.string.weather_notice_title_soon_snow
+        Precipitation.MIX -> Res.string.weather_notice_title_soon_mix
+        Precipitation.STORM -> Res.string.weather_notice_title_soon_storm
+        else -> Res.string.weather_notice_title_soon_rain
+    }
+
+    /** How long a shower lasts, in the words someone would use: minutes for a short one, hours from an hour and a half. */
+    private fun duration(seconds: Long): UiText {
+        val hours = (seconds / WeatherReport.HOUR_SECONDS.toDouble()).roundToInt()
+        return if (seconds >= LONG_SHOWER_SECONDS) UiText.plural(Res.plurals.weather_duration_hours, hours) else UiText.of(Res.string.weather_minutes_short, WeatherFormat.roundedMinutes(seconds))
+    }
+
+    /**
+     * The quarter-hour [falling] peaks in, when it plainly has a peak: a steady rain has none, and
+     * the last of them is no peak unless the forecast sees the rain end after it ([seenToTheEnd]).
+     */
+    private fun heaviest(falling: List<PrecipSlice>, seenToTheEnd: Boolean): Long? {
+        if (falling.size < 3) return null
+        val peak = falling.maxBy { it.ratePerHourMm }
+        if (peak.ratePerHourMm < falling.first().ratePerHourMm * PLAIN_PEAK) return null
+        return peak.epochSeconds.takeIf { seenToTheEnd || peak != falling.last() }
     }
 
     /** One thing an outlook has to say: the title it would give the notification, its clause of the body, and its mark on the picture. */
@@ -523,7 +590,7 @@ object WeatherNoticePlanner {
     }
 
     /** How much falls in [spans]: as a clause for the body ("About 0.4 in"), and as the number alone for the picture. */
-    private fun amount(spans: List<WetSpan>, units: WeatherUnits): Pair<UiText, UiText> {
+    internal fun amount(spans: List<WetSpan>, units: WeatherUnits): Pair<UiText, UiText> {
         val snow = spans.sumOf { it.snowCm }
         val water = spans.sumOf { it.totalMm }
         return if (WeatherStory.dominantFamily(spans) == Precipitation.SNOW && snow >= NOTABLE_SNOW_CM) {
@@ -577,6 +644,18 @@ object WeatherNoticePlanner {
     /** After announcing one shower, how long before another is worth a second buzz. */
     const val SOON_COOLDOWN_SECONDS = 3 * 3600L
 
+    /** How long before the rain its "Remind me" button says it again. */
+    const val REMIND_BEFORE_SECONDS = 15 * 60L
+
+    /** With less warning than this a reminder would hardly come any later than the notification did. */
+    const val REMIND_FROM_LEAD_SECONDS = 30 * 60L
+
+    /** A shower this long is told in hours. */
+    private const val LONG_SHOWER_SECONDS = 90 * 60L
+
+    /** How much harder than its start a shower has to fall for "heaviest around" to mean anything. */
+    private const val PLAIN_PEAK = 1.25
+
     private const val QUIET_UNTIL_HOUR = 6
     private const val QUIET_FROM_HOUR = 22
     private val MORNING_HOURS = 6..10
@@ -591,18 +670,18 @@ object WeatherNoticePlanner {
     private const val ALERT_DETAIL_CHARS = 700
 
     /** Less than this over a spell is a sprinkle. */
-    private const val NOTABLE_MM = 1.0
-    private const val NOTABLE_SNOW_CM = 1.0
+    internal const val NOTABLE_MM = 1.0
+    internal const val NOTABLE_SNOW_CM = 1.0
     private const val HEAVY_MM_PER_HOUR = 7.6
 
     /** 40 mph: branches down, bins over. */
-    private const val WINDY_GUST_KMH = 64.0
+    internal const val WINDY_GUST_KMH = 64.0
 
     /** 100 °F as felt. */
-    private const val HOT_FEELS_C = 37.8
+    internal const val HOT_FEELS_C = 37.8
 
     /** 0 °F as felt. */
-    private const val BITTER_FEELS_C = -17.8
+    internal const val BITTER_FEELS_C = -17.8
     private const val STRONG_UV = 8.0
     private const val UNHEALTHY_AQI = 151
 

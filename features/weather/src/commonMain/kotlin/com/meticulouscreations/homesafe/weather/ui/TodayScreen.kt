@@ -123,6 +123,7 @@ internal fun TodayScreen(
     onScrub: (Long?) -> Unit,
     onOpenAlert: (String) -> Unit,
     onOpenRadar: () -> Unit,
+    onOpenForecast: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     animated: Boolean = true,
@@ -134,6 +135,10 @@ internal fun TodayScreen(
     }
     val near = remember(report, nowEpochSeconds) { WeatherStory.nearTerm(report, nowEpochSeconds) }
     val showNextHours = near != NearTerm.Dry || remember(report, nowEpochSeconds) { report.slicesFrom(nowEpochSeconds).take(9).any { it.isWet } }
+    val units = WeatherTheme.units
+    val outlooks = remember(report, units, nowEpochSeconds) { WeatherStory.outlooks(report, units, nowEpochSeconds) }
+    val showTiles = outlooks?.hasNews == true
+    val nextWet = remember(report, nowEpochSeconds) { WeatherStory.nextWetDay(report, nowEpochSeconds) }
     LazyColumn(
         modifier.fillMaxSize().testTag("weather_today"),
         state = listState,
@@ -142,7 +147,8 @@ internal fun TodayScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "hero", contentType = "hero") {
-            Hero(report, nowEpochSeconds, scrubbed, Modifier.widthIn(max = WeatherContentWidth).fillMaxWidth().padding(horizontal = 24.dp))
+            // With the tiles on screen, the day's one sentence would only say what they say.
+            Hero(report, nowEpochSeconds, scrubbed, Modifier.widthIn(max = WeatherContentWidth).fillMaxWidth().padding(horizontal = 24.dp), showHeadline = !showTiles)
         }
         if (entry.error != null) {
             item(key = "stale") {
@@ -156,6 +162,14 @@ internal fun TodayScreen(
         items(report.alerts.size, key = { "alert-${report.alerts[it].id}" }, contentType = { "alert" }) { i ->
             val alert = report.alerts[i]
             AlertBanner(alert, report::offsetAt, nowEpochSeconds, onOpenAlert, Modifier.cardWidth())
+        }
+        if (showTiles) {
+            item(key = "outlook", contentType = "outlook") {
+                OutlookTiles(outlooks, report.current.kind, report.tomorrow(nowEpochSeconds)?.kind, Modifier.cardWidth())
+            }
+        }
+        if (nextWet != null) {
+            item(key = "next-wet", contentType = "next-wet") { NextWetDayRow(report, nextWet, onOpenForecast, Modifier.cardWidth()) }
         }
         if (showNextHours) {
             item(key = "next", contentType = "card") {
@@ -202,7 +216,7 @@ internal fun Modifier.cardWidth(): Modifier = widthIn(max = WeatherContentWidth)
 
 /** The top of the Today tab: the temperature, the sky in a word, the high and low, the day's one sentence, and what to bring. */
 @Composable
-private fun Hero(report: WeatherReport, nowEpochSeconds: Long, scrubbed: HourForecast?, modifier: Modifier = Modifier) {
+private fun Hero(report: WeatherReport, nowEpochSeconds: Long, scrubbed: HourForecast?, modifier: Modifier = Modifier, showHeadline: Boolean = true) {
     val colors = WeatherTheme.colors
     val type = WeatherTheme.type
     val units = WeatherTheme.units
@@ -238,13 +252,15 @@ private fun Hero(report: WeatherReport, nowEpochSeconds: Long, scrubbed: HourFor
                 }
             }
         }
-        Spacer(Modifier.height(18.dp))
-        Text(headline.resolve(), style = type.headline, color = colors.onSky, modifier = Modifier.testTag("weather_headline"))
+        if (showHeadline) {
+            Spacer(Modifier.height(18.dp))
+            Text(headline.resolve(), style = type.headline, color = colors.onSky, modifier = Modifier.testTag("weather_headline"))
+        }
         if (tips.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { tips.forEach { TipChip(it) } }
         }
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(if (showHeadline) 28.dp else 16.dp))
     }
 }
 

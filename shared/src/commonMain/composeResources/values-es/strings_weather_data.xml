@@ -114,6 +114,10 @@
     <string name="weather_story_cooler">%1$s más fresco que ayer</string>
     <string name="weather_story_high_low">Máxima de %1$s, mínima de %2$s</string>
 
+    <string name="weather_notice_title_soon_rain">Lluvia a las %1$s</string>
+    <string name="weather_notice_title_soon_snow">Nieve a las %1$s</string>
+    <string name="weather_notice_title_soon_mix">Mezcla invernal a las %1$s</string>
+    <string name="weather_notice_title_soon_storm">Tormentas a las %1$s</string>
     <string name="weather_notice_title_rain_today">Lluvia hoy</string>
     <string name="weather_notice_title_snow_today">Nieve hoy</string>
     <string name="weather_notice_title_mix_today">Aguanieve hoy</string>
@@ -131,10 +135,15 @@
     <string name="weather_notice_title_colder_tomorrow">Mucho más frío mañana</string>
     <string name="weather_notice_title_warmer_tomorrow">Mucho más cálido mañana</string>
 
-    <string name="weather_notice_soon_body">Alrededor de %1$s en %2$s</string>
-    <string name="weather_notice_soon_body_lasting">Alrededor de %1$s en %2$s, durante unos %3$d min</string>
-    <string name="weather_notice_soon_here">Alrededor de %1$s</string>
-    <string name="weather_notice_soon_here_lasting">Alrededor de %1$s, durante unos %2$d min</string>
+    <string name="weather_notice_soon_lasting">Durante unas %1$s, alrededor de %2$s</string>
+    <string name="weather_notice_soon_amount">Alrededor de %1$s</string>
+    <string name="weather_notice_heaviest_around">Más intensa hacia las %1$s</string>
+    <string name="weather_notice_remind_at">Recordarme a las %1$s</string>
+    <string name="weather_notice_remind_before">Recordarme 15 min antes</string>
+    <plurals name="weather_duration_hours">
+        <item quantity="one">%1$d hora</item>
+        <item quantity="other">%1$d horas</item>
+    </plurals>
     <string name="weather_notice_heavy_at_times">Con momentos intensos</string>
     <string name="weather_notice_amount">Unos %1$s</string>
     <string name="weather_notice_snow_amount">Unos %1$s de nieve</string>
@@ -162,4 +171,30 @@
     <string name="weather_error_forecast">No se pudo conectar con el servicio del clima. Revisa tu conexión.</string>
     <string name="weather_error_search">No se pudo buscar en este momento. Revisa tu conexión.</string>
     <string name="weather_error_radar">El radar no responde</string>
+
+    <string name="weather_outlook_tomorrow">Mañana</string>
+    <string name="weather_outlook_dry">Seco</string>
+    <string name="weather_outlook_rain">Lluvia</string>
+    <string name="weather_outlook_snow">Nieve</string>
+    <string name="weather_outlook_mix">Mezcla invernal</string>
+    <string name="weather_outlook_storm">Tormentas</string>
+    <string name="weather_outlook_wind">Ventoso</string>
+    <string name="weather_outlook_heat">Mucho calor</string>
+    <string name="weather_outlook_cold">Frío intenso</string>
+    <string name="weather_outlook_from_to">De %1$s a %2$s</string>
+    <string name="weather_outlook_around">Hacia las %1$s</string>
+    <string name="weather_outlook_until">Hasta las %1$s</string>
+    <string name="weather_outlook_all_day">Todo el día</string>
+    <string name="weather_outlook_rest_of_today">El resto de hoy</string>
+    <string name="weather_outlook_on_off">A ratos</string>
+    <string name="weather_outlook_now">Ahora mismo</string>
+    <string name="weather_outlook_in_minutes">En unos %1$d min</string>
+    <string name="weather_outlook_in_hours">En unas %1$d h</string>
+    <string name="weather_outlook_in_hours_minutes">En %1$d h %2$d min aprox.</string>
+    <string name="weather_outlook_gusts">Rachas de %1$s</string>
+    <string name="weather_outlook_feels">Sensación de %1$s</string>
+    <string name="weather_outlook_next_rain">Próxima lluvia: %1$s</string>
+    <string name="weather_outlook_next_snow">Próxima nieve: %1$s</string>
+    <string name="weather_outlook_next_mix">Próxima mezcla invernal: %1$s</string>
+    <string name="weather_outlook_next_storm">Próximas tormentas: %1$s</string>
 </resources>

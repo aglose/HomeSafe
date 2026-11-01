@@ -635,10 +635,10 @@ def apns_parts(title: str, body: str, data: dict[str, str], away: bool) -> tuple
     if data.get("push_until"):
         headers["apns-expiration"] = data["push_until"]
     if data.get("weather_soon"):
-        # Dressed as the app's own weather notifications are (WeatherNotifier.ios.kt), with its
-        # Radar button, in their stack. `content-available` wakes the app, when iOS allows it, to
+        # Dressed as the app's own weather notifications are (WeatherNotifier.ios.kt), with their
+        # buttons (IosWeatherActions), in their stack. `content-available` wakes the app, when iOS allows it, to
         # draw its picture (see "rain soon").
-        aps.update({"thread-id": "weather", "category": "weather", "relevance-score": 0.8, "content-available": 1})
+        aps.update({"thread-id": "weather", "category": "weather.soon" if data.get("homesafe_weather_remind_at") else "weather", "relevance-score": 0.8, "content-available": 1})
         aps["alert"]["subtitle"] = data.get("weather_place", "")
     return headers, aps
 
@@ -863,7 +863,15 @@ _car_zone_polygons: dict[str, list[list[tuple[float, float]]]] = {}
 _car_zone_outlines: dict[str, dict[str, list[tuple[float, float]]]] = {}
 _live_streams: dict[str, list[str]] = {}
 _detect_sizes: dict[str, tuple[int, int]] = {}
+_property_cameras: set[str] = set()
 _config_loaded_at = 0.0
+
+# The zone that says where the household's own ground ends. On a camera with one, Away mode's "any
+# person" means any person inside it; a camera with none still hears about everyone. It wants
+# people only, so a review's `data.zones` naming it means a person set foot there, whoever else was
+# in the frame. Measured on the Front Yard, 2026-10-25 to 11-01: 226 of 301 pushes were Away mode
+# telling of people on the public sidewalk (docs/away-mode.md, "On the property").
+PROPERTY_ZONE = "property"
 
 
 def zones_wanting(cam: dict[str, Any], label: str) -> list[str]:
@@ -884,7 +892,7 @@ def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def refresh_config() -> None:
-    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _detect_sizes, _config_loaded_at
+    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _detect_sizes, _property_cameras, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
@@ -901,6 +909,7 @@ def refresh_config() -> None:
                 name: (int(d["width"]), int(d["height"])) for name, cam in cameras.items()
                 if (d := cam.get("detect") or {}).get("width") and d.get("height")
             }
+            _property_cameras = {name for name, cam in cameras.items() if PROPERTY_ZONE in (cam.get("zones") or {})}
             _config_loaded_at = time.time()
         except Exception as e:  # keep the last known maps
             log.warning("config refresh failed: %s", e)
@@ -910,6 +919,12 @@ def refresh_config() -> None:
 def required_zones() -> dict[str, list[str]]:
     refresh_config()
     return _required_zones
+
+
+def property_cameras() -> set[str]:
+    """The cameras with a `PROPERTY_ZONE` drawn."""
+    refresh_config()
+    return _property_cameras
 
 
 def car_zones() -> dict[str, list[str]]:
@@ -1175,11 +1190,17 @@ def promote_pending() -> None:
 
 
 def away_items(since: float) -> list[dict[str, Any]]:
-    """Every review item — alerts *and* detections — with a person in it that started after everyone left, oldest first."""
+    """
+    Every review item — alerts *and* detections — with a person in it that started after everyone
+    left, oldest first. On a camera with a `PROPERTY_ZONE`, the person has to have set foot in it;
+    one who hasn't yet is looked at again next poll.
+    """
     items = {item["id"]: item for severity in ("alert", "detection") for item in recent_review(severity)}
+    zoned = property_cameras()
     fresh = [
         item for item in items.values()
         if float(item.get("start_time") or 0) >= since and "person" in ((item.get("data") or {}).get("objects") or [])
+        and (item.get("camera") not in zoned or PROPERTY_ZONE in ((item.get("data") or {}).get("zones") or []))
     ]
     return sorted(fresh, key=lambda item: float(item.get("start_time") or 0))
 
@@ -5462,6 +5483,8 @@ RAIN_SOON_BACKOFF_SECONDS = 60 * 60
 RAIN_SOON_LEAD_SECONDS = 75 * 60
 RAIN_SOON_COOLDOWN_SECONDS = 3 * 3600
 RAIN_SOON_LINGER_SECONDS = 2 * 3600
+RAIN_SOON_REMIND_BEFORE_SECONDS = 15 * 60
+RAIN_SOON_REMIND_FROM_LEAD_SECONDS = 30 * 60
 RAIN_SOON_QUIET_FROM_HOUR = 22
 RAIN_SOON_QUIET_UNTIL_HOUR = 6
 RAIN_SOON_SLICES = 9
@@ -5601,12 +5624,13 @@ def rain_soon_text(soon: dict[str, Any], zone: Any) -> tuple[str, str]:
     return title, body
 
 
-def rain_soon_data(forecast: dict[str, Any], soon: dict[str, Any]) -> dict[str, str]:
+def rain_soon_data(forecast: dict[str, Any], soon: dict[str, Any], now: float) -> dict[str, str]:
     """
     The push's data. `weather_soon` is the forecast, for the app to plan from (`WeatherSoonPush`);
     `homesafe_weather`, `view` and `place` are `WeatherDeepLink.toMap`, so a tap on an iPhone's banner
     lands where any weather notification's does, and `place` is the phone's own position (Place.CURRENT_ID)
-    since these phones are at home. It stops being news when the shower starts.
+    since these phones are at home. It stops being news when the shower starts. With half an hour or
+    more to go, `homesafe_weather_remind_at` is what the "Remind me" button goes by, as on the app's own.
     """
     quarters, hours = forecast["quarters"], forecast["hours"]
     payload = {
@@ -5614,7 +5638,9 @@ def rain_soon_data(forecast: dict[str, Any], soon: dict[str, Any]) -> dict[str, 
         "q0": quarters[0][0] if quarters else 0, "qmm": [q[1] for q in quarters], "qcm": [q[2] for q in quarters],
         "h0": hours[0][0] if hours else 0, "hmm": [h[1] for h in hours], "hcm": [h[2] for h in hours], "hp": [h[3] for h in hours], "hc": [h[4] for h in hours],
     }
+    remind = {"homesafe_weather_remind_at": str(soon["start"] - RAIN_SOON_REMIND_BEFORE_SECONDS)} if soon["start"] - now >= RAIN_SOON_REMIND_FROM_LEAD_SECONDS else {}
     return {
+        **remind,
         "weather_soon": json.dumps(payload, separators=(",", ":")),
         "weather_place": "Home",
         "notif_id": soon["key"],
@@ -5672,7 +5698,7 @@ def rain_soon_tick(now: float, fetch: Callable[[dict[str, Any]], dict[str, Any]]
     if soon is None or rain_soon_quiet(now, zone):
         return None
     title, body = rain_soon_text(soon, zone)
-    data = rain_soon_data(forecast, soon)
+    data = rain_soon_data(forecast, soon, now)
     results = []
     # Asked afresh, since the forecast took a moment: a phone's own check may have got there meanwhile.
     for device_id, token in rain_soon_phones(now):
@@ -5722,7 +5748,7 @@ def rain_soon_test(now: float | None = None) -> dict[str, int]:
     }
     soon = rain_soon_starting(forecast, now)
     title, body = rain_soon_text(soon, rain_soon_zone(forecast))
-    data = rain_soon_data(forecast, soon)
+    data = rain_soon_data(forecast, soon, now)
     tokens = with_db(lambda c: [row[0] for row in c.execute("SELECT token FROM devices WHERE token IS NOT NULL AND rain_soon=1").fetchall()])
     results = [deliver(token, title, body, data) for token in tokens]
     return {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed")}
