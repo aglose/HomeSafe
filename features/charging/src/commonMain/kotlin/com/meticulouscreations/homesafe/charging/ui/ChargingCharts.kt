@@ -42,6 +42,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.charging_chart_hour_value
 import homesafe.shared.generated.resources.charging_chart_with_hours
 import homesafe.shared.generated.resources.charging_month_bar
+import homesafe.shared.generated.resources.charging_month_bar_fast_only
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 
@@ -78,11 +79,13 @@ internal fun LegendRow(color: Color, label: String, value: String, modifier: Mod
 }
 
 /**
- * Each month's cost as a stack of where it was charged, oldest at the start. A tap picks that month.
- * Only as many as fit are drawn; the whole list is on the history below it.
+ * Each month's cost as a stack of where it was charged, oldest at the start. A tap picks that month,
+ * where there is something to pick it for. A month with only Superchargers to go on is drawn faded, so
+ * its short bar isn't read as little charging. Only as many as fit are drawn; the whole list is on the
+ * history below it.
  */
 @Composable
-internal fun MonthBars(months: List<ChargingMonth>, selected: String?, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+internal fun MonthBars(months: List<ChargingMonth>, selected: String?, modifier: Modifier = Modifier, onSelect: ((String) -> Unit)? = null) {
     val colors = ChargingTheme.colors
     val shown = months.take(MONTH_BARS).reversed()
     val highest = shown.maxOfOrNull { it.cost }?.takeIf { it > 0 } ?: 1.0
@@ -90,15 +93,15 @@ internal fun MonthBars(months: List<ChargingMonth>, selected: String?, onSelect:
         shown.forEach { month ->
             val isSelected = month.key == selected
             val label = stringResource(ChargingFormat.month(month.month))
-            val said = stringResource(Res.string.charging_month_bar, monthYearText(month), moneyText(month.cost))
+            val said = stringResource(if (month.homeRecorded) Res.string.charging_month_bar else Res.string.charging_month_bar_fast_only, monthYearText(month), moneyText(month.cost))
+            val fade = if (month.homeRecorded) 1f else 0.45f
             Column(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (isSelected) colors.surfaceRaised else Color.Transparent)
-                    .clickable(role = Role.Button) { onSelect(month.key) }
-                    .handCursor()
+                    .then(if (onSelect != null) Modifier.clickable(role = Role.Button) { onSelect(month.key) }.handCursor() else Modifier)
                     .semantics(mergeDescendants = true) {
                         contentDescription = said
                         this.selected = isSelected
@@ -115,7 +118,7 @@ internal fun MonthBars(months: List<ChargingMonth>, selected: String?, onSelect:
                     parts.forEach { (amount, color) ->
                         if (amount > 0) {
                             val tall = max(amount.toFloat() * scale, 2.dp.toPx())
-                            drawRoundRect(color, Offset(0f, bottom - tall), Size(size.width, tall), CornerRadius(3.dp.toPx()))
+                            drawRoundRect(color.copy(alpha = fade), Offset(0f, bottom - tall), Size(size.width, tall), CornerRadius(3.dp.toPx()))
                             bottom -= tall + 1.dp.toPx()
                         }
                     }

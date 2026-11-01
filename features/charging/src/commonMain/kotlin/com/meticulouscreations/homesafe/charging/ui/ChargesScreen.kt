@@ -198,6 +198,7 @@ private fun ChargeRow(session: ChargeSession, nowEpochSeconds: Long, onOpen: (Lo
             val cost = session.cost
             Text(if (cost != null) moneyText(cost) else stringResource(Res.string.charging_charge_no_price), style = ChargingTheme.type.bodyStrong, color = if (cost != null) colors.text else colors.textFaint)
             Text(kwhText(session.kwh), style = ChargingTheme.type.label, color = colors.textMuted)
+            session.pricePerKwh?.takeIf { !session.isOpen }?.let { Text(rateText(it), style = ChargingTheme.type.label, color = colors.textFaint) }
             if (session.isOpen) Text(stringResource(Res.string.charging_charge_now), style = ChargingTheme.type.label, color = colors.home)
         }
     }

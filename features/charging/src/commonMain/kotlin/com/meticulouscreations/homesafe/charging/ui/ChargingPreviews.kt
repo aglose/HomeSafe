@@ -15,7 +15,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.charging_error_unreachable
 
 // Whole screens from the made-up household in ChargingFixtures.
-@Preview(widthDp = 412, heightDp = 1700)
+@Preview(widthDp = 412, heightDp = 1950)
 @Composable
 private fun ChargingOverviewPreview() {
     FrigateTheme { ChargingAppContent(ChargingFixtures.state(), ChargingActions()) }
@@ -27,6 +27,20 @@ private fun ChargingOverviewPreview() {
 private fun ChargingOverviewSettingUpPreview() {
     val summary = ChargingFixtures.summary.copy(now = emptyList(), setup = ChargingSetup(powerStream = false, receipts = false))
     FrigateTheme { ChargingAppContent(ChargingFixtures.state(summary), ChargingActions()) }
+}
+
+// The months from before the relay was listening: Superchargers are all they can say.
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun ChargingOverviewSuperchargersOnlyPreview() {
+    val summary = ChargingFixtures.summary.run { copy(now = emptyList(), months = months.filter { !it.homeRecorded }) }
+    FrigateTheme { ChargingAppContent(ChargingFixtures.state(summary), ChargingActions()) }
+}
+
+@Preview(widthDp = 412, heightDp = 1700)
+@Composable
+private fun ChargingCarPreview() {
+    FrigateTheme { ChargingAppContent(ChargingFixtures.state(), ChargingActions(), initialPage = ChargingPage.Car("car_a")) }
 }
 
 @Preview(widthDp = 412, heightDp = 915)
@@ -51,6 +65,14 @@ private fun ChargingRatesPreview() {
 @Composable
 private fun ChargingChargePreview() {
     FrigateTheme { ChargingAppContent(ChargingFixtures.state(detail = ChargingFixtures.detail), ChargingActions(), initialPage = ChargingPage.Charge(ChargingFixtures.detail.session.id)) }
+}
+
+// A Supercharger's receipt, with an idle fee the price per kWh leaves out.
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun ChargingSuperchargerChargePreview() {
+    val detail = ChargingFixtures.detail.copy(session = ChargingFixtures.sessions.first { it.idleFee > 0 }, hours = emptyList(), plans = emptyMap())
+    FrigateTheme { ChargingAppContent(ChargingFixtures.state(detail = detail), ChargingActions(), initialPage = ChargingPage.Charge(detail.session.id)) }
 }
 
 @Preview(widthDp = 412, heightDp = 915)

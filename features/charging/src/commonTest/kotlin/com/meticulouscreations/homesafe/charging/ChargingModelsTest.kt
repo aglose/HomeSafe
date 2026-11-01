@@ -116,6 +116,92 @@ class ChargingModelsTest {
     }
 
     @Test
+    fun aChargesPricePerKwhLeavesOutItsIdleFee() {
+        assertEquals(0.2, session(cost = 5.0, kwh = 20.0).copy(idleFee = 1.0).pricePerKwh)
+    }
+
+    private val priced = CarMonth(
+        "a", "Alex", homeKwh = 100.0, homeCost = 28.0, fastKwh = 50.0, fastCost = 22.0, otherKwh = 10.0, miles = 500.0, usedKwh = 125.0,
+        homePricedKwh = 100.0, fastPricedKwh = 40.0, homeBatteryKwh = 90.0, fastBatteryKwh = 40.0, fastIdle = 2.0, unpriced = 1,
+    )
+
+    @Test
+    fun aKwhsPriceOnlyCountsEnergyThatHasAPriceAndLeavesOutIdleFees() {
+        assertEquals(0.28, priced.homePerKwh)
+        // $20 of energy over the 40 kWh with a receipt, not the 50 charged.
+        assertEquals(0.5, priced.fastPerKwh)
+        assertNull(priced.otherPerKwh)
+        assertEquals(48.0 / 140.0, priced.perKwh)
+    }
+
+    @Test
+    fun aMilesPriceByPlaceTakesInWhatChargingLoses() {
+        assertEquals(0.25, priced.kwhPerMile)
+        // Dearer per mile than its price per kWh alone says: 90 of the 100 kWh reached the battery.
+        assertEquals(28.0 / (90.0 / 0.25), priced.homePerMile)
+        assertEquals(20.0 / (40.0 / 0.25), priced.fastPerMile)
+        assertNull(priced.otherPerMile)
+    }
+
+    @Test
+    fun aMilesPriceNeedsTheCarsMileage() {
+        assertNull(priced.copy(usedKwh = null).kwhPerMile)
+        assertNull(priced.copy(usedKwh = null).homePerMile)
+        assertNull(priced.copy(miles = 0.0).homePerMile)
+    }
+
+    @Test
+    fun aMonthsMilePriceGoesByEachCarsOwnMileage() {
+        val thrifty = CarMonth("a", "Alex", homeCost = 10.0, miles = 400.0, usedKwh = 100.0, homeBatteryKwh = 100.0)
+        val thirsty = CarMonth("b", "Sam", homeCost = 10.0, miles = 200.0, usedKwh = 100.0, homeBatteryKwh = 100.0)
+        val unknown = CarMonth("c", "Kit", homeCost = 99.0, homeBatteryKwh = 100.0)
+        assertEquals(20.0 / 600.0, ChargingMonth("2026-10", listOf(thrifty, thirsty, unknown)).homePerMile)
+    }
+
+    @Test
+    fun whatTheCardsPaidBeyondTheReceiptsHasNoEnergyToPriceAKwhBy() {
+        assertEquals(0.5, ChargingMonth("2026-09", listOf(priced), cardFast = 100.0, unmatched = 78.0).fastPerKwh)
+        assertNull(ChargingMonth("2026-08", cardFast = 22.0, unmatched = 22.0).fastPerKwh)
+    }
+
+    @Test
+    fun monthsAreOnlySetSideBySideWithOthersThatKnowAsMuch() {
+        val whole = ChargingMonth("2026-11")
+        val cardsOnly = ChargingMonth("2026-10", homeRecorded = false)
+        assertFalse(whole.comparesWith(cardsOnly))
+        assertTrue(cardsOnly.comparesWith(ChargingMonth("2026-09", homeRecorded = false)))
+        assertTrue(whole.comparesWith(ChargingMonth("2026-12")))
+    }
+
+    @Test
+    fun aCarsMonthsAddUpAndAMileOnlyKnownInSomeOfThemStaysKnown() {
+        val together = priced + CarMonth("a", "Alex", homeKwh = 10.0, homeCost = 2.0, sessions = 2, homePricedKwh = 10.0, homeBatteryKwh = 9.0)
+        assertEquals(110.0, together.homeKwh)
+        assertEquals(30.0, together.homeCost)
+        assertEquals(500.0, together.miles)
+        assertEquals(2, together.sessions)
+        assertEquals(1, together.unpriced)
+        assertNull((CarMonth("a", "Alex") + CarMonth("a", "Alex")).miles)
+    }
+
+    @Test
+    fun aCarsHistoryIsItsOwnPartOfEachMonth() {
+        val summary = ChargingSummary(
+            months = listOf(
+                ChargingMonth("2026-10", listOf(alex, sam), cardFast = 21.0, unmatched = 5.0),
+                ChargingMonth("2026-09", listOf(sam), cardFast = 30.0, unmatched = 30.0, homeRecorded = false),
+                ChargingMonth("2026-08", listOf(alex)),
+            ),
+        )
+        val months = summary.monthsOf("b")
+        assertEquals(listOf("2026-10", "2026-09"), months.map { it.key })
+        // What the cards paid is no one car's.
+        assertEquals(sam.cost, months.first().cost)
+        assertEquals(listOf(true, false), months.map { it.homeRecorded })
+        assertTrue(summary.monthsOf("nobody").isEmpty())
+    }
+
+    @Test
     fun gasCostsItsPriceOverItsMileage() {
         assertEquals(48.0, GasComparison(4.8, 30.0).costOf(300.0))
     }

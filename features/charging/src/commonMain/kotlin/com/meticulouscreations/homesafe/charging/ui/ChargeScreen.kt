@@ -55,6 +55,7 @@ import homesafe.shared.generated.resources.charging_charge_cost_typed
 import homesafe.shared.generated.resources.charging_charge_duration
 import homesafe.shared.generated.resources.charging_charge_energy
 import homesafe.shared.generated.resources.charging_charge_hours_title
+import homesafe.shared.generated.resources.charging_charge_idle
 import homesafe.shared.generated.resources.charging_charge_loading
 import homesafe.shared.generated.resources.charging_charge_measure_battery
 import homesafe.shared.generated.resources.charging_charge_measure_missed
@@ -133,6 +134,7 @@ private fun SummaryCard(session: ChargeSession, nowEpochSeconds: Long) {
         StatRow(stringResource(Res.string.charging_charge_duration), durationText(seconds))
         if (from != null && to != null && to >= from) StatRow(stringResource(Res.string.charging_charge_battery), stringResource(Res.string.charging_battery_range, from.toString(), to.toString()))
         session.pricePerKwh?.let { StatRow(stringResource(Res.string.charging_charge_price), rateText(it)) }
+        if (session.idleFee > 0) StatRow(stringResource(Res.string.charging_charge_idle), moneyText(session.idleFee))
         if (seconds > 0 && session.kwh > 0) StatRow(stringResource(Res.string.charging_charge_avg_kw), ChargingFormat.fixed(session.kwh / (seconds / 3600.0), 1))
         session.peakKw?.let { StatRow(stringResource(Res.string.charging_charge_peak_kw), ChargingFormat.fixed(it, 1)) }
         Spacer(Modifier.height(10.dp))

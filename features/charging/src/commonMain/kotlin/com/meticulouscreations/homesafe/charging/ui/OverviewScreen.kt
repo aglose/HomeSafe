@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,11 +45,7 @@ import com.meticulouscreations.homesafe.charging.domain.ChargingSummary
 import com.meticulouscreations.homesafe.charging.domain.RatePlan
 import com.meticulouscreations.homesafe.ui.handCursor
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.charging_car_efficiency
-import homesafe.shared.generated.resources.charging_car_fast
-import homesafe.shared.generated.resources.charging_car_home
-import homesafe.shared.generated.resources.charging_car_other
-import homesafe.shared.generated.resources.charging_car_per_mile
+import homesafe.shared.generated.resources.charging_car_open
 import homesafe.shared.generated.resources.charging_cars_title
 import homesafe.shared.generated.resources.charging_empty_body
 import homesafe.shared.generated.resources.charging_empty_title
@@ -65,9 +62,12 @@ import homesafe.shared.generated.resources.charging_live_so_far
 import homesafe.shared.generated.resources.charging_live_title
 import homesafe.shared.generated.resources.charging_month_charges
 import homesafe.shared.generated.resources.charging_month_down
+import homesafe.shared.generated.resources.charging_month_fast_only
+import homesafe.shared.generated.resources.charging_month_fast_only_note
 import homesafe.shared.generated.resources.charging_month_newer
 import homesafe.shared.generated.resources.charging_month_older
 import homesafe.shared.generated.resources.charging_month_up
+import homesafe.shared.generated.resources.charging_months_faded_note
 import homesafe.shared.generated.resources.charging_months_title
 import homesafe.shared.generated.resources.charging_paid_provider
 import homesafe.shared.generated.resources.charging_paid_provider_detail
@@ -90,7 +90,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /** One month at a time: what it came to, where, for each car, and how that compares. */
 @Composable
-internal fun OverviewScreen(state: ChargingUiState, padding: PaddingValues, onOpenCharge: (Long) -> Unit, onSeeRates: () -> Unit) {
+internal fun OverviewScreen(state: ChargingUiState, padding: PaddingValues, onOpenCharge: (Long) -> Unit, onOpenCar: (String) -> Unit, onSeeRates: () -> Unit) {
     val summary = state.summary
     var picked by rememberSaveable { mutableStateOf<String?>(null) }
     val month = summary.months.firstOrNull { it.key == picked } ?: summary.months.firstOrNull()
@@ -111,14 +111,16 @@ internal fun OverviewScreen(state: ChargingUiState, padding: PaddingValues, onOp
             )
             if (month.cars.isNotEmpty()) {
                 ChargingCard(title = stringResource(Res.string.charging_cars_title)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { month.cars.forEach { CarRow(it, month) } }
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { month.cars.forEach { CarRow(it, onOpenCar) } }
                 }
             }
             if (summary.months.size > 1) {
                 ChargingCard(title = stringResource(Res.string.charging_months_title)) {
                     MonthBars(summary.months, month.key, onSelect = { picked = it })
+                    FadedMonthsNote(summary.months)
                 }
             }
+            PerMileCard(month.homePerMile, month.fastPerMile, month.otherPerMile)
             if (month.homeKwh > 0) HomeCard(month, summary, onSeeRates)
             GasCard(month, summary)
             PaidCard(month, summary)
@@ -188,12 +190,18 @@ private fun HeroCard(month: ChargingMonth, previous: ChargingMonth?, onOlder: ((
             if (onNewer != null) ChargingRoundButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(Res.string.charging_month_newer), onNewer, Modifier.testTag("charging_month_newer"), size = 40.dp) else Spacer(Modifier.size(40.dp))
         }
         Text(moneyText(month.cost), style = ChargingTheme.type.hero, color = colors.text, modifier = Modifier.testTag("charging_month_total"))
-        Text(
-            pluralStringResource(Res.plurals.charging_month_charges, month.sessions, kwhText(month.kwh), month.sessions),
-            style = ChargingTheme.type.label,
-            color = colors.textMuted,
-        )
-        if (previous != null && previous.cost > 0) {
+        // A month known only from the cards has no energy or charges to speak of.
+        if (month.sessions > 0) {
+            Text(
+                pluralStringResource(Res.plurals.charging_month_charges, month.sessions, kwhText(month.kwh), month.sessions),
+                style = ChargingTheme.type.label,
+                color = colors.textMuted,
+            )
+        }
+        if (!month.homeRecorded) {
+            Text(stringResource(Res.string.charging_month_fast_only_note), style = ChargingTheme.type.label, color = colors.peak, modifier = Modifier.testTag("charging_month_fast_only"))
+        }
+        if (previous != null && previous.cost > 0 && month.comparesWith(previous)) {
             val change = month.cost - previous.cost
             Text(
                 stringResource(if (change >= 0) Res.string.charging_month_up else Res.string.charging_month_down, moneyText(if (change >= 0) change else -change), monthYearText(previous)),
@@ -204,10 +212,10 @@ private fun HeroCard(month: ChargingMonth, previous: ChargingMonth?, onOlder: ((
         Spacer(Modifier.height(14.dp))
         StackedBar(listOf(BarPart(month.homeCost, colors.home), BarPart(month.fastCost, colors.fast), BarPart(month.otherCost, colors.other)))
         Spacer(Modifier.height(10.dp))
-        LegendRow(colors.home, stringResource(Res.string.charging_place_home), moneyText(month.homeCost), detail = kwhText(month.homeKwh))
-        LegendRow(colors.fast, stringResource(Res.string.charging_place_fast_short), moneyText(month.fastCost), detail = kwhText(month.fastKwh))
+        if (month.homeRecorded) LegendRow(colors.home, stringResource(Res.string.charging_place_home), moneyText(month.homeCost), detail = placeDetail(month.homeKwh, month.homePerKwh))
+        LegendRow(colors.fast, stringResource(Res.string.charging_place_fast_short), moneyText(month.fastCost), detail = placeDetail(month.fastKwh, month.fastPerKwh))
         if (month.otherKwh > 0 || month.otherCost > 0) {
-            LegendRow(colors.other, stringResource(Res.string.charging_place_other), moneyText(month.otherCost), detail = kwhText(month.otherKwh))
+            LegendRow(colors.other, stringResource(Res.string.charging_place_other), moneyText(month.otherCost), detail = placeDetail(month.otherKwh, month.otherPerKwh))
         }
         if (month.unmatched > 0) {
             Spacer(Modifier.height(4.dp))
@@ -216,32 +224,26 @@ private fun HeroCard(month: ChargingMonth, previous: ChargingMonth?, onOlder: ((
     }
 }
 
+/** One car's month: what it came to, what a kWh cost it at each place, and how far it went. A tap opens its history. */
 @Composable
-private fun CarRow(car: CarMonth, month: ChargingMonth) {
+private fun CarRow(car: CarMonth, onOpen: (String) -> Unit) {
     val colors = ChargingTheme.colors
-    Column(Modifier.testTag("charging_car_${car.car}")) {
+    Column(
+        Modifier
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.charging_car_open)) { onOpen(car.car) }
+            .handCursor()
+            .testTag("charging_car_${car.car}"),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(car.name, style = ChargingTheme.type.headline, color = colors.text, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(moneyText(car.cost), style = ChargingTheme.type.headline, color = colors.text)
+            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textFaint, modifier = Modifier.size(22.dp))
         }
         Spacer(Modifier.height(6.dp))
         StackedBar(listOf(BarPart(car.homeCost, colors.home), BarPart(car.fastCost, colors.fast), BarPart(car.otherCost, colors.other)), height = 6.dp)
         Spacer(Modifier.height(6.dp))
-        Text(
-            buildList {
-                if (car.homeKwh > 0) add(stringResource(Res.string.charging_car_home, kwhText(car.homeKwh), moneyText(car.homeCost)))
-                if (car.fastKwh > 0) add(stringResource(Res.string.charging_car_fast, kwhText(car.fastKwh), moneyText(car.fastCost)))
-                if (car.otherKwh > 0) add(stringResource(Res.string.charging_car_other, kwhText(car.otherKwh)))
-            }.joinToString(" · "),
-            style = ChargingTheme.type.label,
-            color = colors.textMuted,
-        )
-        val driving = buildList {
-            car.miles?.let { add(milesText(it)) }
-            car.costPerMile?.let { add(stringResource(Res.string.charging_car_per_mile, ChargingFormat.fixed(it * 100, 1))) }
-            car.milesPerKwh?.let { add(stringResource(Res.string.charging_car_efficiency, ChargingFormat.fixed(it, 2))) }
-        }
-        if (driving.isNotEmpty()) Text(driving.joinToString(" · "), style = ChargingTheme.type.label, color = colors.textFaint)
+        CarPlaces(car)
+        CarDriving(car)
     }
 }
 
@@ -321,11 +323,22 @@ private fun HistoryCard(months: List<ChargingMonth>, selected: String, onSelect:
             ) {
                 Text(monthYearText(month), style = if (month.key == selected) ChargingTheme.type.bodyStrong else ChargingTheme.type.body, color = colors.text, modifier = Modifier.weight(1f))
                 // A month known only from the cards has a price and no energy.
-                if (month.kwh > 0) Text(kwhText(month.kwh), style = ChargingTheme.type.label, color = colors.textFaint, modifier = Modifier.padding(end = 14.dp))
+                if (!month.homeRecorded) {
+                    Text(stringResource(Res.string.charging_month_fast_only), style = ChargingTheme.type.label, color = colors.textFaint, modifier = Modifier.padding(end = 14.dp))
+                } else if (month.kwh > 0) {
+                    Text(kwhText(month.kwh), style = ChargingTheme.type.label, color = colors.textFaint, modifier = Modifier.padding(end = 14.dp))
+                }
                 Text(moneyText(month.cost), style = ChargingTheme.type.bodyStrong, color = colors.text)
             }
         }
     }
+}
+
+/** What the bars' faded months are, when any are shown. */
+@Composable
+internal fun FadedMonthsNote(months: List<ChargingMonth>) {
+    if (months.none { !it.homeRecorded }) return
+    Text(stringResource(Res.string.charging_months_faded_note), style = ChargingTheme.type.label, color = ChargingTheme.colors.textFaint, modifier = Modifier.padding(top = 8.dp))
 }
 
 /** What the box still owes: only the parts not done. */
