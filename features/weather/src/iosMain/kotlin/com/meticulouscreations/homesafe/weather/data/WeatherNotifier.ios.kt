@@ -83,7 +83,8 @@ private class IosWeatherNotifier : WeatherNotifier {
             // iOS shows as much of the body as fits and the rest on a long press: a warning gets its excerpt, not just its headline.
             setBody(notification.detail ?: notification.body)
             setThreadIdentifier(THREAD)
-            setCategoryIdentifier(IosWeatherActions.CATEGORY)
+            // iOS declares a notification's buttons ahead of time: one that can be put off wears the set with "Remind me".
+            setCategoryIdentifier(if (notification.reminderEpochSeconds != null) IosWeatherActions.CATEGORY_SOON else IosWeatherActions.CATEGORY)
             setInterruptionLevel(if (notification.urgent) UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive else UNNotificationInterruptionLevel.UNNotificationInterruptionLevelActive)
             // Which of the app's notifications the summary leads with: a warning, then rain about to start, then the day's outlook.
             setRelevanceScore(
@@ -93,7 +94,12 @@ private class IosWeatherNotifier : WeatherNotifier {
                     else -> 0.5
                 },
             )
-            setUserInfo(notification.link.toMap() + listOfNotNull(notification.expiresEpochSeconds?.let { KEY_EXPIRES to it.toString() }))
+            setUserInfo(
+                notification.link.toMap() + listOfNotNull(
+                    notification.expiresEpochSeconds?.let { KEY_EXPIRES to it.toString() },
+                    notification.reminderEpochSeconds?.let { IosWeatherActions.KEY_REMIND_AT to it.toString() },
+                ),
+            )
             picture?.let { setAttachments(listOf(it)) }
         }
         val request = UNNotificationRequest.requestWithIdentifier(notification.id, content, trigger = null)
@@ -129,6 +135,8 @@ private class IosWeatherNotifier : WeatherNotifier {
         if (over.isNotEmpty()) center.removeDeliveredNotificationsWithIdentifiers(over)
     }
 
+    override suspend fun cancelReminders() = IosWeatherActions.cancelReminders()
+
     private companion object {
         /** One stack for the weather's notifications in Notification Centre, apart from each camera's. */
         const val THREAD = "weather"
@@ -156,6 +164,8 @@ object IosWeatherRefresh {
     private var registered = false
 
     fun register(alertCheck: () -> WeatherAlertCheck) {
+        // Whether or not this host can refresh in the background, the buttons need to read the switches.
+        IosWeatherActions.mayRemind = { alertCheck().mayRemind() }
         if (registered) return
         // Registering an identifier the bundle doesn't list is an exception, not an error to handle:
         // look before asking, so a host without the Info.plist entry simply has no background check.

@@ -169,7 +169,7 @@ class WeatherNoticePictureTest {
         assertEquals(at(0, 15, 30), notice.eventEpochSeconds)
         assertEquals(at(0, 16), notice.expiresEpochSeconds)
         assertEquals(pm("3:30"), notice.headline)
-        assertEquals(listOf(WeatherNoticeFact(WeatherNoticeIcon.RAIN, UiText.of(Res.string.weather_minutes_short, 30))), notice.facts)
+        assertEquals(listOf(WeatherNoticeFact(WeatherNoticeIcon.RAIN, UiText.of(Res.string.weather_minutes_short, 30)), WeatherNoticeFact(null, WeatherFormat.precipitation(1.0, metric))), notice.facts)
         val chart = notice.chart as WeatherNoticeChart.Soon
         assertEquals(minutely.take(9), chart.slices, "the quarter-hour in progress and two hours after it")
         assertEquals(at(0, 15, 30), chart.startEpochSeconds)
@@ -180,7 +180,7 @@ class WeatherNoticePictureTest {
     fun aHeavyShowerWithNoEndInSightSaysSoAndStaysUpTwoHours() {
         val now = at(0, 15)
         val notice = plan(now, report(now, minutely = slices(now, 0.0, 0.0, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5))).single()
-        assertEquals(listOf(WeatherNoticeFact(null, UiText.of(Res.string.weather_notice_heavy_at_times))), notice.facts)
+        assertEquals(listOf(WeatherNoticeFact(WeatherNoticeIcon.RAIN, WeatherFormat.precipitation(17.5, metric)), WeatherNoticeFact(null, UiText.of(Res.string.weather_notice_heavy_at_times))), notice.facts)
         assertEquals(at(0, 15, 30) + 2 * HOUR, notice.expiresEpochSeconds)
         assertNull(notice.place)
     }

@@ -89,7 +89,7 @@ private fun NoticeRainSoonPreview() {
             icon = WeatherNoticeIcon.RAIN,
             caption = "Portland",
             headline = "3:30 PM",
-            facts = listOf(WeatherNoticeArt.Fact(WeatherNoticeIcon.RAIN, "45 min"), WeatherNoticeArt.Fact(null, "Heavy at times")),
+            facts = listOf(WeatherNoticeArt.Fact(WeatherNoticeIcon.RAIN, "3 hours"), WeatherNoticeArt.Fact(null, "0.22 in"), WeatherNoticeArt.Fact(null, "Heaviest around 4 PM")),
             chart = shower(2, 1.2, 4.0, 9.5, 6.0, 2.2, 0.6),
             ticks = HALF_HOURS,
         ),

@@ -170,6 +170,8 @@
     <string name="weather_forecast_less_certain">The fainter days are a week or more off, and less certain.</string>
     <!-- For a screen reader, one day: %1$s its name, %2$s the sky, %3$s the high, %4$s the low -->
     <string name="weather_day_description">%1$s: %2$s, high %3$s, low %4$s</string>
+    <!-- The same with what falls: %5$s when ("Rain from 3 PM to 6 PM"), %6$s how much and how likely -->
+    <string name="weather_day_description_wet">%1$s: %2$s, high %3$s, low %4$s. %5$s, %6$s</string>
     <string name="weather_day_expanded">Expanded</string>
     <string name="weather_day_collapsed">Collapsed</string>
     <!-- %1$s a weekday's full name, %2$s a date -->
