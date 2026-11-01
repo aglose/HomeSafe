@@ -58,10 +58,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.charging.ui.ChargingLink
 import com.meticulouscreations.homesafe.domain.model.CarLive
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
 import com.meticulouscreations.homesafe.maps.BaseMap
+import com.meticulouscreations.homesafe.navigation.ShellCommand
+import com.meticulouscreations.homesafe.navigation.ShellCommands
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.viewmodel.CarsUiState
 import com.meticulouscreations.homesafe.viewmodel.CarsViewModel
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
@@ -86,6 +90,7 @@ import homesafe.shared.generated.resources.household_cars_battery_km
 import homesafe.shared.generated.resources.household_cars_battery_miles
 import homesafe.shared.generated.resources.household_cars_charged
 import homesafe.shared.generated.resources.household_cars_charging
+import homesafe.shared.generated.resources.household_cars_charging_costs
 import homesafe.shared.generated.resources.household_cars_charging_full_in
 import homesafe.shared.generated.resources.household_cars_duration_hours
 import homesafe.shared.generated.resources.household_cars_duration_minutes
@@ -408,10 +413,21 @@ private fun CarCard(car: HouseholdCar, nowEpochSeconds: Long, units: WeatherUnit
         }
         val latitude = car.latitude
         val longitude = car.longitude
-        if (latitude != null && longitude != null) {
-            Spacer(Modifier.size(4.dp))
-            TextButton(onClick = { runCatching { uriHandler.openUri("https://www.google.com/maps/search/?api=1&query=$latitude,$longitude") } }) {
-                Text(stringResource(Res.string.parking_map_directions))
+        Spacer(Modifier.size(4.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            if (latitude != null && longitude != null) {
+                TextButton(onClick = { runCatching { uriHandler.openUri("https://www.google.com/maps/search/?api=1&query=$latitude,$longitude") } }, modifier = Modifier.handCursor()) {
+                    Text(stringResource(Res.string.parking_map_directions))
+                }
+            }
+            TextButton(
+                onClick = {
+                    ChargingLink.show(car.id)
+                    ShellCommands.send(ShellCommand.Open(InnerApp.CHARGING))
+                },
+                modifier = Modifier.handCursor().testTag("cars_charging_${car.id}"),
+            ) {
+                Text(stringResource(Res.string.household_cars_charging_costs))
             }
         }
     }

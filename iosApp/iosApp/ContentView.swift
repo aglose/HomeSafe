@@ -78,7 +78,7 @@ struct LiquidGlassShell: View {
 /// Outside the iOS 26 shell because the menu bar's commands (`ShellCommands`) name it too.
 enum ShellSelection: Hashable {
     case home, moments, settings
-    case weather, atlas, packages, fitness, finance
+    case weather, atlas, packages, fitness, finance, charging
 
     init(_ tab: IosTab) {
         if tab == IosTab.moments {
@@ -99,6 +99,8 @@ enum ShellSelection: Hashable {
             self = .packages
         } else if app == IosAppTab.fitness {
             self = .fitness
+        } else if app == IosAppTab.charging {
+            self = .charging
         } else {
             self = .finance
         }
@@ -108,7 +110,7 @@ enum ShellSelection: Hashable {
     var isApp: Bool {
         switch self {
         case .home, .moments, .settings: false
-        case .weather, .atlas, .packages, .fitness, .finance: true
+        case .weather, .atlas, .packages, .fitness, .finance, .charging: true
         }
     }
 }
@@ -152,6 +154,7 @@ final class ShellCoordinator {
         case .packages: shell.toggleAppAssistant(app: IosAppTab.packages, x: x, y: y, width: width, height: height)
         case .fitness: shell.toggleAppAssistant(app: IosAppTab.fitness, x: x, y: y, width: width, height: height)
         case .finance: shell.toggleAppAssistant(app: IosAppTab.finance, x: x, y: y, width: width, height: height)
+        case .charging: shell.toggleAppAssistant(app: IosAppTab.charging, x: x, y: y, width: width, height: height)
         }
     }
 }
@@ -235,6 +238,7 @@ struct ShellTabView: View {
                 appTab("Fitness", systemImage: "figure.strengthtraining.traditional", value: .fitness, app: IosAppTab.fitness)
                 appTab("Finance", systemImage: "chart.line.uptrend.xyaxis", value: .finance, app: IosAppTab.finance)
                 appTab("Packages", systemImage: "shippingbox.fill", value: .packages, app: IosAppTab.packages)
+                appTab("Charging", systemImage: "bolt.car.fill", value: .charging, app: IosAppTab.charging)
             }
             .hidden(!appsInSidebar)
         }

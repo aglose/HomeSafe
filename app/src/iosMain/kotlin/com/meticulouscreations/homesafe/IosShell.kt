@@ -174,6 +174,7 @@ enum class IosAppTab(internal val app: InnerApp) {
     PACKAGES(InnerApp.PACKAGES),
     FITNESS(InnerApp.FITNESS),
     FINANCE(InnerApp.FINANCE),
+    CHARGING(InnerApp.CHARGING),
     ;
 
     internal companion object {

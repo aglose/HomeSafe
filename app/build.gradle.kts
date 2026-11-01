@@ -68,6 +68,7 @@ kotlin {
             api(project(":fitness"))
             api(project(":atlas"))
             api(project(":packages"))
+            api(project(":charging"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -250,5 +251,5 @@ composeCompiler {
 // One emulator runs one instrumented suite at a time (see androidApp/build.gradle.kts), so the
 // modules' device tests queue up behind each other rather than run side by side.
 tasks.matching { it.name == "connectedAndroidDeviceTest" }.configureEach {
-    mustRunAfter(":atlas:connectedAndroidDeviceTest", ":packages:connectedAndroidDeviceTest")
+    mustRunAfter(":atlas:connectedAndroidDeviceTest", ":packages:connectedAndroidDeviceTest", ":charging:connectedAndroidDeviceTest")
 }

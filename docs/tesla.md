@@ -81,7 +81,8 @@ name, `debian-surveillance.tail4c441a.ts.net`.
    account that has MFA on, create an application:
    - Allowed origin: `https://<host>`
    - Redirect URI: `https://<host>/tesla/callback`
-   - Scopes: *Vehicle Information* and *Vehicle Location* (profile/openid are added automatically).
+   - Scopes: *Vehicle Information*, *Vehicle Location* and *Vehicle Charging Management* (for the
+     Supercharger receipts, see [charging.md](charging.md)). Profile and openid are added automatically.
    - Add a payment method under billing; the monthly credit covers this use.
 
    Note the **client id** and **client secret**.
@@ -130,8 +131,9 @@ lines like `tesla: sarahs_car is 42 m from home -> home` whenever it asks.
 
 With Fleet Telemetry each car, whenever it is awake, opens a mutual-TLS connection to a server of
 the application's and streams the fields it was told to (relay.py, "Tesla telemetry",
-`TESLA_TELEMETRY_FIELDS`: where it is, its heading, speed and gear, battery and range, charging,
-locks, Sentry Mode, odometer, the route's destination and time to it, the temperatures). That
+`TESLA_TELEMETRY_FIELDS`: where it is, its heading, speed and gear, battery and range, charging and
+the power it draws, locks, Sentry Mode, odometer and energy used, the route's destination and time
+to it, the temperatures; what the charging fields are for is in [charging.md](charging.md)). That
 server is Tesla's own [fleet-telemetry](https://github.com/teslamotors/fleet-telemetry), the
 `tesla-telemetry` container beside the relay, which publishes each value to the Mosquitto broker
 the door sensors use (`tesla/<VIN>/v/<field>`), where the relay listens. The relay takes in only

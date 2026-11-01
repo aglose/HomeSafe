@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.di
 
 import com.meticulouscreations.homesafe.atlas.AtlasViewModel
+import com.meticulouscreations.homesafe.charging.ChargingViewModel
 import com.meticulouscreations.homesafe.finance.BankSyncViewModel
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
@@ -55,6 +56,7 @@ class AppGraphViewModelWiringTest {
                 NestCameraViewModel::class,
                 AtlasViewModel::class,
                 PackagesViewModel::class,
+                ChargingViewModel::class,
                 MomentsViewModel::class,
                 SettingsViewModel::class,
                 SecureConnectionViewModel::class,

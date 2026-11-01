@@ -10659,3 +10659,545 @@ class ApnsTest(unittest.TestCase):
         ok, err = relay.apns_send(self.TOKEN, "t", "b", {})
         self.assertFalse(ok)
         self.assertIn("Could not deserialize key data", err)
+
+
+class ChargingTest(unittest.TestCase):
+    """The charging ledger (see "charging" in relay.py): charges from the stream, their energy by the hour, and what each cost."""
+
+    HOME = {"lat": 37.4220, "lng": -122.0841, "radius_m": 150}
+    AT_HOME = {"latitude": 37.4221, "longitude": -122.0842}
+    AWAY = {"latitude": 37.6, "longitude": -122.4}
+    RATES = {
+        "provider": "Example Power", "url": "https://example.com", "bill_match": "example power", "tax_percent": 10, "surcharge_per_kwh": 0.001,
+        "customer_charge": 20, "default_plan": "tiered",
+        "plans": {
+            "tiered": {"name": "Tiered", "kind": "tiered", "versions": [{"from": "2026-07-01", "tier1": 0.10, "tier2": 0.20}]},
+            "ev_tou": {"name": "EV", "kind": "tou", "versions": [
+                {"from": "2025-07-01", "off_peak": 0.05, "peak": 0.40, "peak_start": 17, "peak_end": 21, "holidays": []},
+                {"from": "2026-07-01", "off_peak": 0.10, "peak": 0.50, "peak_start": 17, "peak_end": 21, "holidays": ["2026-09-07"]},
+            ]},
+        },
+    }
+    # Monday 2026-09-14, in UTC: the household's zone until a phone says otherwise.
+    MONDAY = 1789344000.0
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {n: getattr(relay, n) for n in ("DB_PATH", "CONN", "TESLA_CARS", "CHARGING_RATES_FILE", "frigate_profile", "tesla_spend", "tesla_access")}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        relay.TESLA_CARS = {"andrews_tesla": "VIN_A", "sarahs_car": "VIN_S"}
+        relay.CHARGING_RATES_FILE = os.path.join(self._dir.name, "rates.json")
+        with open(relay.CHARGING_RATES_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.RATES, f)
+        self._card_spend = relay.charging_card_spend
+        relay._charging_file.update(mtime=None, config={})
+        for held in (relay._charging_heard, relay._charging_open, relay._tesla_live, relay._tesla_answers):
+            held.clear()
+        relay.state_set(relay.HOME_KEY, self.HOME)
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        self._dir.cleanup()
+
+    def say(self, at, car="VIN_A", **fields):
+        for field, value in fields.items():
+            relay.charging_receive(f"tesla/{car}/v/{field}", json.dumps(value).encode(), at)
+
+    def charge_at_home(self, start, hours, kw_amps=(240, 32), soc=(50, 70), car="VIN_A"):
+        """A charge of steady power: plugged in at `start`, done `hours` later, with a reading a minute in and every 5 minutes after."""
+        volts, amps = kw_amps
+        self.say(start, car, Location=self.AT_HOME, Soc=soc[0], ChargerVoltage=volts, ChargeAmps=amps, DetailedChargeState="DetailedChargeStateCharging")
+        steps = int(hours * 12)
+        for i in range(1, steps + 1):
+            self.say(start + i * 300, car, ChargerVoltage=volts)
+        self.say(start + hours * 3600, car, Soc=soc[1], DetailedChargeState="DetailedChargeStateComplete")
+
+    def sessions(self):
+        return relay.charging_sessions()
+
+    def test_a_charge_at_home_is_measured_from_the_wall_and_filed_by_the_hour(self):
+        self.charge_at_home(self.MONDAY + 16.5 * 3600, 2)
+        session = self.sessions()[0]
+        self.assertEqual(("andrews_tesla", "home", "stream", "power"), (session["car"], session["place"], session["source"], session["how"]))
+        self.assertAlmostEqual(7.68 * 2, session["kwh"], places=1)
+        hours = relay.with_db(lambda c: c.execute("SELECT hour, kwh FROM charge_hours ORDER BY hour").fetchall())
+        self.assertEqual(3, len(hours))
+        self.assertEqual(self.MONDAY + 16 * 3600, hours[0][0])
+        self.assertAlmostEqual(3.84, hours[0][1], places=1)
+        self.assertAlmostEqual(7.68, hours[1][1], places=1)
+
+    def test_a_home_charge_costs_the_top_tier_and_tax_on_a_tiered_plan(self):
+        self.charge_at_home(self.MONDAY + 1 * 3600, 1)
+        session = self.sessions()[0]
+        self.assertEqual("plan", session["cost_is"])
+        self.assertAlmostEqual(session["kwh"] * (0.20 * 1.1 + 0.001), session["cost"], places=1)
+
+    def test_on_time_of_use_each_hour_costs_its_own_rate(self):
+        relay.state_set(relay.CHARGING_PLAN_KEY, "ev_tou")
+        self.charge_at_home(self.MONDAY + 16 * 3600, 2)
+        detail = relay.charging_session_detail(self.sessions()[0]["id"])
+        by_period = [h["period"] for h in detail["hours"]]
+        self.assertEqual(["off_peak", "peak"], by_period)
+        off, peak = 0.10 * 1.1 + 0.001, 0.50 * 1.1 + 0.001
+        self.assertEqual([round(off, 5), round(peak, 5)], [h["price"] for h in detail["hours"]])
+        self.assertAlmostEqual(detail["kwh"] / 2 * (off + peak), detail["cost"], places=1)
+        self.assertAlmostEqual(detail["kwh"] * (0.2 * 1.1 + 0.001), detail["plans"]["tiered"], places=1)
+
+    def test_weekends_holidays_and_old_rates(self):
+        rates = relay.charging_rates()
+        saturday = self.MONDAY - 2 * 86400 + 18 * 3600
+        labor_day = self.MONDAY - 7 * 86400 + 18 * 3600
+        last_year = self.MONDAY - 364 * 86400 + 18 * 3600
+        self.assertEqual("off_peak", relay.charging_price(rates, "ev_tou", saturday, None)[1])
+        self.assertEqual("off_peak", relay.charging_price(rates, "ev_tou", labor_day, None)[1])
+        self.assertAlmostEqual(0.40 * 1.1 + 0.001, relay.charging_price(rates, "ev_tou", last_year, None)[0])
+
+    def test_changing_the_plan_reprices_what_was_already_charged(self):
+        self.charge_at_home(self.MONDAY + 18 * 3600, 1)
+        tiered = self.sessions()[0]["cost"]
+        relay.state_set(relay.CHARGING_PLAN_KEY, "ev_tou")
+        self.assertGreater(self.sessions()[0]["cost"], tiered)
+
+    def test_without_power_readings_the_batterys_gain_stands_in_with_losses(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=50, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 2 * 3600, Soc=60, DetailedChargeState="DetailedChargeStateComplete")
+        session = self.sessions()[0]
+        self.assertEqual("battery", session["how"])
+        self.assertAlmostEqual(0.10 * relay.CHARGING_PACK_KWH / relay.CHARGING_AC_EFFICIENCY, session["kwh"], places=1)
+        hours = relay.with_db(lambda c: c.execute("SELECT kwh FROM charge_hours ORDER BY hour").fetchall())
+        self.assertEqual(2, len(hours))
+        self.assertAlmostEqual(hours[0][0], hours[1][0], places=3)
+
+    def test_a_charge_in_progress_without_power_readings_says_what_the_battery_gained(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=50, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 3600, Soc=60)
+        session = self.sessions()[0]
+        self.assertIsNone(session["ended"])
+        self.assertAlmostEqual(0.10 * relay.CHARGING_PACK_KWH / relay.CHARGING_AC_EFFICIENCY, session["kwh"], places=1)
+        self.assertAlmostEqual(session["kwh"] * (0.2 * 1.1 + 0.001), session["cost"], places=1)
+
+    def test_measured_energy_well_short_of_the_batterys_gain_isnt_believed(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=20, ChargerVoltage=240, ChargeAmps=10, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 300, ChargerVoltage=241, Soc=80, DetailedChargeState="DetailedChargeStateComplete")
+        self.assertEqual("battery", self.sessions()[0]["how"])
+
+    def test_a_pause_is_one_charge(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=50, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 3600, ChargerVoltage=239, DetailedChargeState="DetailedChargeStateStopped")
+        self.say(start + 3900, ChargerVoltage=240, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 7500, ChargerVoltage=239, DetailedChargeState="DetailedChargeStateComplete")
+        sessions = self.sessions()
+        self.assertEqual(1, len(sessions))
+        self.assertEqual(start + 7500, sessions[0]["ended"])
+
+    def test_plugging_in_and_out_leaves_nothing(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=50, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 30, DetailedChargeState="DetailedChargeStateDisconnected")
+        self.assertEqual([], self.sessions())
+
+    def test_a_charge_state_from_before_the_car_went_quiet_opens_nothing(self):
+        start = self.MONDAY + 3600
+        self.say(start, Soc=50, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 600, DetailedChargeState="DetailedChargeStateComplete")
+        count = len(self.sessions())
+        relay.charging_receive("tesla/VIN_A/connectivity", b'{"Status": "CONNECTED"}', start + 7200)
+        self.say(start + 7200, Soc=50)
+        self.assertEqual(count, len(self.sessions()))
+        self.assertIsNone(relay.charging_session_open("andrews_tesla"))
+
+    def test_a_charge_outlives_a_restart_of_the_relay(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=50, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 900, ChargerVoltage=241)
+        self.say(start + 1800, ChargerVoltage=240)
+        relay._charging_open.clear()
+        relay._charging_heard.clear()
+        self.say(start + 2000, ChargerVoltage=240, ChargeAmps=32)
+        self.say(start + 2800, ChargerVoltage=241)
+        self.say(start + 3600, ChargerVoltage=240, Soc=60, DetailedChargeState="DetailedChargeStateComplete")
+        session = self.sessions()[0]
+        self.assertEqual(1, len(self.sessions()))
+        self.assertEqual("power", session["how"])
+        self.assertAlmostEqual(7.68 * (3600 - 200) / 3600, session["kwh"], places=1)
+
+    def test_a_car_gone_quiet_mid_charge_ends_where_it_was_last_heard(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=50, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 600, ChargerVoltage=241)
+        relay.charging_close_stale(start + 600 + relay.CHARGING_STALE_SECONDS - 1)
+        self.assertIsNone(self.sessions()[0]["ended"])
+        relay.charging_close_stale(start + 600 + relay.CHARGING_STALE_SECONDS)
+        self.assertEqual(start + 600, self.sessions()[0]["ended"])
+
+    def test_a_battery_that_rose_unheard_is_written_down_as_an_estimate(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40)
+        self.say(start + 3 * 86400, Soc=80)
+        session = self.sessions()[0]
+        self.assertEqual(("soc", "home"), (session["source"], session["place"]))
+        self.assertAlmostEqual(0.40 * 75 / relay.CHARGING_AC_EFFICIENCY, session["kwh"], places=1)
+        self.assertAlmostEqual(start + 3 * 86400, session["ended"])
+        self.assertGreater(session["started"], start)
+
+    def test_a_small_rise_or_one_while_driving_isnt_a_charge(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40)
+        self.say(start + 600, Soc=41)
+        relay._tesla_live["andrews_tesla"] = {"fields": {"Gear": "ShiftStateD"}}
+        self.say(start + 1200, Soc=50)
+        self.assertEqual([], self.sessions())
+
+    def test_a_charges_last_reading_after_its_end_goes_on_that_charge(self):
+        self.charge_at_home(self.MONDAY + 3600, 1, kw_amps=(0, 0), soc=(40, 44))
+        self.say(self.MONDAY + 2 * 3600 + 300, Soc=48)
+        sessions = self.sessions()
+        self.assertEqual(1, len(sessions))
+        self.assertEqual(48, sessions[0]["soc_end"])
+        self.assertAlmostEqual(8 / 100 * relay.CHARGING_PACK_KWH / relay.CHARGING_AC_EFFICIENCY, sessions[0]["kwh"], places=1)
+
+    def test_a_charge_cut_off_by_an_outage_doesnt_lose_the_rest_of_it(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 600, ChargerVoltage=240)
+        relay.charging_close_stale(start + 600 + relay.CHARGING_STALE_SECONDS)
+        self.say(start + 8 * 3600, Soc=80)
+        sessions = self.sessions()
+        self.assertEqual(["soc", "stream"], sorted(s["source"] for s in sessions))
+        missed = next(s for s in sessions if s["source"] == "soc")
+        self.assertAlmostEqual(40 / 100 * relay.CHARGING_PACK_KWH / relay.CHARGING_AC_EFFICIENCY, missed["kwh"], places=1)
+
+    def test_a_rise_hours_after_a_charge_was_charged_unheard(self):
+        self.charge_at_home(self.MONDAY + 3600, 1, soc=(40, 44))
+        self.say(self.MONDAY + 3 * 3600, Soc=48)
+        self.assertEqual(["soc", "stream"], sorted(s["source"] for s in self.sessions()))
+
+    def test_a_rise_a_receipt_already_paid_for_isnt_written_down_at_home(self):
+        relay.charging_note_soc("andrews_tesla", 40, self.MONDAY)
+        relay.charging_keep_receipt("andrews_tesla", {"tesla_id": "r1", "vin": "VIN_A", "started": self.MONDAY + 600, "ended": self.MONDAY + 1800, "site": "Plaza", "paid": 12.0, "kwh": 30}, self.MONDAY + 1900)
+        self.say(self.MONDAY + 7200, Location=self.AT_HOME, Soc=80)
+        self.assertEqual(["tesla"], [s["source"] for s in self.sessions()])
+
+    def test_a_receipt_replaces_the_guess_from_the_batterys_rise(self):
+        relay.charging_note_soc("andrews_tesla", 40, self.MONDAY)
+        self.say(self.MONDAY + 7200, Location=self.AT_HOME, Soc=80)
+        self.assertEqual(["home"], [s["place"] for s in self.sessions()])
+        relay.charging_keep_receipt("andrews_tesla", {"tesla_id": "r1", "vin": "VIN_A", "started": self.MONDAY + 600, "ended": self.MONDAY + 1800, "site": "Plaza", "paid": 12.0, "kwh": 30}, self.MONDAY + 9000)
+        session = self.sessions()[0]
+        self.assertEqual(1, len(self.sessions()))
+        self.assertEqual(("supercharger", 12.0, 30.0), (session["place"], session["cost"], session["kwh"]))
+        self.assertAlmostEqual(30, sum(hour["kwh"] for hour in relay.charging_session_detail(session["id"])["hours"]), places=1)
+
+    def test_a_receipt_waits_for_a_charge_still_open(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, FastChargerType="FastChargerSupercharger", DCChargingPower=120, DetailedChargeState="DetailedChargeStateCharging")
+        receipt = {"tesla_id": "r1", "vin": "VIN_A", "started": start, "ended": start + 1800, "site": "Plaza", "paid": 12.0, "kwh": 30}
+        relay.charging_keep_receipt("andrews_tesla", receipt, start + 1900)
+        self.assertEqual(1, len(self.sessions()))
+        self.say(start + 2000, Soc=60, DetailedChargeState="DetailedChargeStateComplete")
+        relay.charging_keep_receipt("andrews_tesla", receipt, start + 3000)
+        sessions = self.sessions()
+        self.assertEqual(1, len(sessions))
+        self.assertEqual(12.0, sessions[0]["cost"])
+
+    def test_what_was_typed_on_a_charge_in_progress_stays(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        session_id = self.sessions()[0]["id"]
+        relay.frigate_profile = lambda request: {"username": "a", "role": "viewer"}
+        relay.set_charging_session(session_id, types.SimpleNamespace(cost=6.5, note="hotel"), object())
+        self.say(start + 300, ChargerVoltage=240)
+        session = self.sessions()[0]
+        self.assertEqual((6.5, "hotel"), (session["cost"], session["note"]))
+
+    def test_a_lost_broker_link_doesnt_bill_the_drive_as_charging(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 1800, Soc=50, ChargerVoltage=240)
+        relay.tesla_stream_lost()
+        for i in range(1, 13):
+            self.say(start + 7200 + i * 300, Location=self.AWAY, Odometer=1000 + i)
+        kwh = self.sessions()[0]["kwh"]
+        self.assertLess(kwh, 7)
+        relay.charging_close_stale(start + 1800 + relay.CHARGING_STALE_SECONDS)
+        self.assertIsNotNone(self.sessions()[0]["ended"])
+
+    def test_a_car_in_gear_is_not_charging(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 1800, Soc=50, ChargerVoltage=240)
+        relay._tesla_live["andrews_tesla"] = {"fields": {"Gear": "ShiftStateD"}}
+        self.say(start + 3600, Location=self.AWAY)
+        session = self.sessions()[0]
+        self.assertIsNotNone(session["ended"])
+        self.assertLess(session["kwh"], 11)
+
+    def test_a_resumed_charge_files_one_set_of_hours(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 1800, Soc=44, DetailedChargeState="DetailedChargeStateStopped")
+        first = self.sessions()[0]
+        self.assertEqual("battery", first["how"])
+        self.say(start + 2100, DetailedChargeState="DetailedChargeStateCharging", ChargerVoltage=240, ChargeAmps=32)
+        self.assertIsNone(self.sessions()[0]["ended"])
+        self.say(start + 5700, ChargerVoltage=240)
+        self.say(start + 5760, Soc=60, DetailedChargeState="DetailedChargeStateComplete")
+        session = self.sessions()[0]
+        self.assertEqual(1, len(self.sessions()))
+        hours = relay.charging_session_detail(session["id"])["hours"]
+        self.assertAlmostEqual(session["kwh"], sum(hour["kwh"] for hour in hours), places=1)
+
+    def test_the_last_charges_counter_doesnt_count_towards_the_next(self):
+        self.charge_at_home(self.MONDAY + 3600, 1, soc=(40, 70))
+        self.say(self.MONDAY + 2 * 3600 + 10, ACChargingEnergyIn=30)
+        start = self.MONDAY + 4 * 3600
+        self.say(start, Soc=70, DetailedChargeState="DetailedChargeStateCharging", ChargerVoltage=240, ChargeAmps=2)
+        self.say(start + 240, DetailedChargeState="DetailedChargeStateComplete")
+        self.assertLess(self.sessions()[0]["kwh"], 1)
+
+    def test_a_card_charge_a_month_after_its_receipt_isnt_counted_twice(self):
+        september_30 = 1790726400.0
+        relay.charging_keep_receipt("andrews_tesla", {"tesla_id": "r1", "vin": "VIN_A", "started": september_30, "ended": september_30 + 1800, "site": "Plaza", "paid": 20.4, "kwh": 40}, september_30 + 3600)
+        relay.charging_card_spend = lambda: [("2026-10-01", 20.4)]
+        try:
+            months = {m["month"]: m for m in relay.charging_summary(september_30 + 86400 * 2, True)["months"]}
+        finally:
+            relay.charging_card_spend = self._card_spend
+        self.assertEqual(0, months["2026-10"]["unmatched"])
+
+    def test_a_price_typed_at_someone_elses_charger_doesnt_cover_a_supercharger(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, FastChargerType="FastChargerCombo", DCChargingPower=50, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 900, Soc=40, DCChargingPower=50, DetailedChargeState="DetailedChargeStateComplete")
+        session_id = self.sessions()[0]["id"]
+        relay.with_db(lambda c: (c.execute("UPDATE charge_sessions SET typed_cost=25 WHERE id=?", (session_id,)), c.commit()))
+        relay.charging_card_spend = lambda: [("2026-09-14", 25.0)]
+        try:
+            month = relay.charging_summary(start + 3600, True)["months"][0]
+        finally:
+            relay.charging_card_spend = self._card_spend
+        self.assertEqual(25, month["unmatched"])
+
+    def test_a_month_counts_the_charges_it_has_no_price_for(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 3600, Soc=30, ChargerVoltage=240, DetailedChargeState="DetailedChargeStateComplete")
+        month = relay.charging_summary(start + 7200, False)["months"][0]
+        self.assertEqual(1, month["unpriced"])
+        self.assertEqual(1, month["cars"][0]["unpriced"])
+        relay.with_db(lambda c: (c.execute("UPDATE charge_sessions SET typed_cost=5"), c.commit()))
+        self.assertEqual(0, relay.charging_summary(start + 7200, False)["months"][0]["unpriced"])
+
+    def test_the_cards_stand_in_for_a_superchargers_price_only_for_who_may_see_them(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, FastChargerType="FastChargerSupercharger", DCChargingPower=120, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 900, Soc=40, DCChargingPower=120, DetailedChargeState="DetailedChargeStateComplete")
+        self.assertEqual(0, relay.charging_summary(start + 7200, True)["months"][0]["unpriced"])
+        self.assertEqual(1, relay.charging_summary(start + 7200, False)["months"][0]["unpriced"])
+
+    def test_the_rates_file_can_name_its_clock(self):
+        rates = {**self.RATES, "time_zone": "America/New_York"}
+        self.assertEqual("America/New_York", str(relay.charging_zone(rates)))
+        self.assertIsNone(relay.charging_zone({**self.RATES, "time_zone": "Nowhere/Land"}))
+
+    def test_a_rates_file_with_a_version_undated_keeps_the_last_that_read(self):
+        self.assertTrue(relay.charging_rates())
+        bad = {"plans": {"tiered": {"versions": [{"tier1": 0.1}]}}}
+        with open(relay.CHARGING_RATES_FILE, "w", encoding="utf-8") as f:
+            json.dump(bad, f)
+        os.utime(relay.CHARGING_RATES_FILE, (self.MONDAY, self.MONDAY))
+        self.assertEqual("Example Power", relay.charging_rates()["provider"])
+
+    def test_the_share_at_peak_goes_by_the_day_not_just_the_hour(self):
+        saturday = self.MONDAY + 5 * 86400
+        self.charge_at_home(saturday + 18 * 3600, 1)
+        now = saturday + 86400
+        self.assertEqual(0, relay.charging_summary(now, False)["recent_peak_share"])
+        self.charge_at_home(self.MONDAY + 7 * 86400 + 18 * 3600, 1)
+        self.assertEqual(0.5, relay.charging_summary(self.MONDAY + 8 * 86400, False)["recent_peak_share"])
+
+    def test_receipts_are_only_set_up_when_they_can_be_read(self):
+        for history, expected in (
+            ({}, False), ({"accounts": 0, "kept": 0}, False), ({"accounts": 1, "kept": 0, "error": "HTTP 500"}, False),
+            ({"accounts": 1, "kept": 0, "scope_missing": True}, False), ({"accounts": 1, "kept": 0}, True), ({"accounts": 1, "kept": 3, "error": "HTTP 500"}, True),
+        ):
+            relay.state_set(relay.CHARGING_HISTORY_KEY, history)
+            self.assertEqual(expected, relay.charging_summary(self.MONDAY, False)["setup"]["receipts"], history)
+
+    def test_a_supercharger_is_told_by_its_fast_charger(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, FastChargerType="FastChargerSupercharger", DCChargingPower=120, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 900, DCChargingPower=120.5)
+        self.say(start + 1800, DCChargingPower=121, Soc=60, DetailedChargeState="DetailedChargeStateComplete")
+        session = self.sessions()[0]
+        self.assertEqual("supercharger", session["place"])
+        self.assertIsNone(session["cost"])
+        self.assertAlmostEqual(60, session["kwh"], places=0)
+
+    def test_a_superchargers_hours_have_no_price_of_the_utilitys(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, FastChargerType="FastChargerSupercharger", DCChargingPower=120, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 900, DCChargingPower=120, DetailedChargeState="DetailedChargeStateComplete")
+        detail = relay.charging_session_detail(self.sessions()[0]["id"])
+        self.assertTrue(detail["hours"])
+        self.assertEqual({None}, {hour["price"] for hour in detail["hours"]})
+        self.assertEqual({None}, {hour["period"] for hour in detail["hours"]})
+
+    def test_a_charge_in_progress_says_how_it_is_being_measured(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 600, Soc=41, ChargerVoltage=240, ChargeAmps=32)
+        self.assertEqual("power", self.sessions()[0]["how"])
+
+    def test_a_charge_in_progress_with_no_power_is_said_to_be_from_the_battery(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AT_HOME, Soc=40, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 600, Soc=42)
+        self.assertEqual("battery", self.sessions()[0]["how"])
+
+    def test_someone_elses_fast_charger_and_an_ac_charger_away(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, FastChargerType="FastChargerCombo", DCChargingPower=50, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 1800, DCChargingPower=51, DetailedChargeState="DetailedChargeStateComplete")
+        self.assertEqual("fast", self.sessions()[0]["place"])
+        self.say(start + 7200, "VIN_S", Location=self.AWAY, Soc=20, ChargerVoltage=240, ChargeAmps=16, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 10800, "VIN_S", ChargerVoltage=241, DetailedChargeState="DetailedChargeStateComplete")
+        self.assertEqual("other", self.sessions()[0]["place"])
+
+    RECEIPT = {
+        "sessionId": 123, "vin": "VIN_A", "siteLocationName": "Example Plaza", "chargeStartDateTime": "2026-09-14T01:05:00+00:00",
+        "chargeStopDateTime": "2026-09-14T01:35:00+00:00", "fees": [
+            {"feeType": "CHARGING", "uom": "kwh", "usageBase": 40, "usageTier1": 2, "usageTier2": 0, "totalDue": 18.4},
+            {"feeType": "PARKING", "uom": "min", "usageBase": 2, "totalDue": 2.0},
+        ],
+    }
+
+    def test_a_receipt_prices_the_charge_the_stream_saw_of_it(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, DCChargingPower=120, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 1800, DCChargingPower=121, Soc=60, DetailedChargeState="DetailedChargeStateComplete")
+        relay.charging_keep_receipt("andrews_tesla", relay.charging_receipt(self.RECEIPT), start + 7200)
+        sessions = self.sessions()
+        self.assertEqual(1, len(sessions))
+        self.assertEqual(("stream", "Example Plaza", 20.4, "receipt", 42.0), (sessions[0]["source"], sessions[0]["site"], sessions[0]["cost"], sessions[0]["cost_is"], sessions[0]["kwh"]))
+
+    def test_a_receipt_with_no_charge_heard_is_a_row_of_its_own_once(self):
+        receipt = relay.charging_receipt(self.RECEIPT)
+        relay.charging_keep_receipt("andrews_tesla", receipt, self.MONDAY)
+        relay.charging_keep_receipt("andrews_tesla", receipt, self.MONDAY + 60)
+        sessions = self.sessions()
+        self.assertEqual(1, len(sessions))
+        self.assertEqual(("tesla", "supercharger", 20.4), (sessions[0]["source"], sessions[0]["place"], sessions[0]["cost"]))
+
+    def test_a_receipt_never_lands_on_a_charge_at_home(self):
+        self.charge_at_home(self.MONDAY + 3600, 1)
+        relay.charging_keep_receipt("andrews_tesla", relay.charging_receipt(self.RECEIPT), self.MONDAY + 7200)
+        places = sorted(s["place"] for s in self.sessions())
+        self.assertEqual(["home", "supercharger"], places)
+
+    def test_tesla_refusing_the_history_says_a_relink_is_owed(self):
+        relay.with_db(lambda c: (c.execute("INSERT INTO tesla_vehicles VALUES (?,?,?,?)", ("VIN_A", "andrew", "", 0)), c.commit()))
+        relay.tesla_access = lambda account: "token"
+        relay.tesla_spend = lambda: True
+
+        class Refused:
+            status_code, ok, text = 403, False, '{"message":"missing scope: vehicle_charging_cmds"}'
+
+        real, relay.requests.get = relay.requests.get, lambda *a, **k: Refused()
+        try:
+            report = relay.charging_history_sync(self.MONDAY)
+        finally:
+            relay.requests.get = real
+        self.assertTrue(report["scope_missing"])
+        self.assertFalse(relay.charging_summary(self.MONDAY, True)["setup"]["receipts"])
+
+    def store_card_row(self, txn, name, amount, date, kind="spend"):
+        relay.with_db(lambda c: (c.execute(
+            "INSERT INTO plaid_transactions (txn_id, item_id, account_id, date, amount, name, kind) VALUES (?,?,?,?,?,?,?)", (txn, "item", "account", date, amount, name, kind)), c.commit()))
+
+    def test_a_month_adds_each_car_and_what_the_cards_paid_beyond_the_receipts(self):
+        self.charge_at_home(self.MONDAY + 3600, 1)
+        self.charge_at_home(self.MONDAY + 86400, 1, car="VIN_S")
+        relay.charging_keep_receipt("andrews_tesla", relay.charging_receipt(self.RECEIPT), self.MONDAY)
+        self.store_card_row("a", "TESLA SUPERCHARGER US", 25.0, "2026-09-05")
+        self.store_card_row("b", "TESLA SUBSCRIPTION US", 9.99, "2026-09-01")
+        self.store_card_row("c", "TESLA SUPERCHARGER US", 12.0, "2026-08-03")
+        self.store_card_row("d", "EXAMPLE POWER", 120.0, "2026-09-11")
+        summary = relay.charging_summary(self.MONDAY + 2 * 86400, True)
+        september, august = summary["months"]
+        self.assertEqual(("2026-09", "2026-08"), (september["month"], august["month"]))
+        self.assertEqual(["andrews_tesla", "sarahs_car"], [c["car"] for c in september["cars"]])
+        self.assertEqual(20.4, september["cars"][0]["fast_cost"])
+        self.assertEqual((25.0, 4.6), (september["card_fast"], september["unmatched"]))
+        self.assertEqual(120.0, september["electric_paid"])
+        self.assertEqual(([], 12.0, 12.0), (august["cars"], august["card_fast"], august["unmatched"]))
+        self.assertIn("ev_tou", september["plans"])
+
+    def test_whats_on_the_cards_is_only_for_who_may_see_the_finances(self):
+        self.store_card_row("a", "TESLA SUPERCHARGER US", 25.0, "2026-09-05")
+        self.store_card_row("d", "EXAMPLE POWER", 120.0, "2026-09-11")
+        self.charge_at_home(self.MONDAY + 3600, 1)
+        month = relay.charging_summary(self.MONDAY + 86400, False)["months"][0]
+        self.assertEqual((None, None, 0.0), (month["card_fast"], month["electric_paid"], month["unmatched"]))
+
+    def test_miles_and_energy_used_come_from_the_days(self):
+        day = 86400
+        self.say(self.MONDAY - 20 * day, Odometer=1000, LifetimeEnergyUsed=300)
+        self.say(self.MONDAY, Odometer=1100, LifetimeEnergyUsed=330)
+        self.say(self.MONDAY + day, Odometer=1150, LifetimeEnergyUsed=345)
+        car = relay.charging_summary(self.MONDAY + day, True)["months"][0]["cars"][0]
+        self.assertEqual((150.0, 45.0), (car["miles"], car["used_kwh"]))
+
+    def test_a_typed_price_wins_and_can_be_taken_away(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, ChargerVoltage=240, ChargeAmps=16, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 3600, ChargerVoltage=241, DetailedChargeState="DetailedChargeStateComplete")
+        session = self.sessions()[0]
+        self.assertIsNone(session["cost"])
+        relay.frigate_profile = lambda request: {"role": "admin", "username": "andrew"}
+        body = types.SimpleNamespace(cost=6.5, note=" hotel ")
+        answered = relay.set_charging_session(session["id"], body, object())
+        self.assertEqual((6.5, "typed", "hotel"), (answered["cost"], answered["cost_is"], answered["note"]))
+        cleared = relay.set_charging_session(session["id"], types.SimpleNamespace(cost=None, note=None), object())
+        self.assertEqual((None, None), (cleared["cost"], cleared["cost_is"]))
+
+    def test_the_answer_needs_a_session_and_a_real_plan(self):
+        relay.frigate_profile = lambda request: None
+        with self.assertRaises(_HTTPException) as refused:
+            relay.get_charging(object())
+        self.assertEqual(401, refused.exception.status_code)
+        relay.frigate_profile = lambda request: {"role": "viewer", "username": "guest"}
+        with self.assertRaises(_HTTPException) as bad:
+            relay.set_charging_plan(types.SimpleNamespace(plan="nope"), object())
+        self.assertEqual(400, bad.exception.status_code)
+        self.assertEqual("ev_tou", relay.set_charging_plan(types.SimpleNamespace(plan="ev_tou"), object())["plan"])
+
+    def test_a_plans_day_is_priced_hour_by_hour(self):
+        plans = relay.charging_summary(self.MONDAY, True)["plans"]
+        tou = next(p for p in plans if p["id"] == "ev_tou")
+        peak, off = round(0.50 * 1.1 + 0.001, 5), round(0.10 * 1.1 + 0.001, 5)
+        self.assertEqual(peak, tou["weekday"][17])
+        self.assertEqual(off, tou["weekday"][21])
+        self.assertEqual({off}, set(tou["weekend"]))
+        self.assertEqual({round(0.20 * 1.1 + 0.001, 5)}, set(next(p for p in plans if p["id"] == "tiered")["weekday"]))
+
+    def test_with_no_rates_file_it_still_keeps_the_energy(self):
+        os.remove(relay.CHARGING_RATES_FILE)
+        self.charge_at_home(self.MONDAY + 3600, 1)
+        summary = relay.charging_summary(self.MONDAY + 86400, True)
+        self.assertFalse(summary["setup"]["rates"])
+        self.assertIsNone(summary["sessions"][0]["cost"])
+        self.assertGreater(summary["months"][0]["cars"][0]["home_kwh"], 5)
+
+    def test_someone_elses_car_is_ignored(self):
+        relay.charging_receive("tesla/VIN_X/v/DetailedChargeState", b'"DetailedChargeStateCharging"', self.MONDAY)
+        self.assertEqual([], self.sessions())

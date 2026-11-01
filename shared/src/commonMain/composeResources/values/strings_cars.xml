@@ -11,6 +11,7 @@
     <string name="household_cars_where_driving">Driving</string>
     <string name="household_cars_where_away">Away</string>
     <string name="household_cars_where_unknown">Not seen yet</string>
+    <string name="household_cars_charging_costs">Charging costs</string>
     <string name="household_cars_move_by">Move by %1$s</string>
     <string name="household_cars_move_now">Move it now</string>
     <string name="household_cars_seen_just_now">Seen just now</string>

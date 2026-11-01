@@ -161,7 +161,7 @@ import org.jetbrains.compose.resources.stringResource
  * about a tab switch Compose asked for; the Compose-drawn nav needs nothing more than the state.
  */
 /** The apps that live inside PercySafe beside the cameras, each opened from the drawer over the whole shell. */
-enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS, PACKAGES }
+enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS, PACKAGES, CHARGING }
 
 @Stable
 class ShellNavigation(

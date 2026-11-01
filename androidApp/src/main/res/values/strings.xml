@@ -10,6 +10,7 @@
     <string name="shortcut_weather">Weather</string>
     <string name="shortcut_atlas">Atlas</string>
     <string name="shortcut_packages">Packages</string>
+    <string name="shortcut_charging">Charging</string>
     <string name="shortcut_fitness">Fitness</string>
     <string name="shortcut_finance">Finance</string>
     <string name="shortcut_assistant">Ask Claude about this screen</string>

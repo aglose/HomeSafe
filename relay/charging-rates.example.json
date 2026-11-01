@@ -1,0 +1,30 @@
+{
+  "provider": "Example Power",
+  "url": "https://example.com/rates",
+  "bill_match": "example power",
+  "tax_percent": 5,
+  "surcharge_per_kwh": 0.0003,
+  "customer_charge": 20,
+  "time_zone": "America/New_York",
+  "default_plan": "tiered",
+  "gas": { "price": 4.5, "mpg": 30 },
+  "plans": {
+    "tiered": {
+      "name": "Standard residential",
+      "kind": "tiered",
+      "url": "https://example.com/rates/standard",
+      "versions": [
+        { "from": "2026-07-01", "tier1": 0.12, "tier2": 0.24, "baseline_summer": 200, "baseline_winter": 250 }
+      ]
+    },
+    "ev_tou": {
+      "name": "EV time of use",
+      "kind": "tou",
+      "url": "https://example.com/rates/ev",
+      "versions": [
+        { "from": "2025-07-01", "off_peak": 0.14, "peak": 0.45, "peak_start": 17, "peak_end": 21, "holidays": ["2025-07-04"] },
+        { "from": "2026-07-01", "off_peak": 0.15, "peak": 0.45, "peak_start": 17, "peak_end": 21, "holidays": ["2026-07-03", "2026-12-25"] }
+      ]
+    }
+  }
+}

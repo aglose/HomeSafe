@@ -101,7 +101,7 @@ The Mac's menu bar has every shortcut, so they can be found there; Ctrl stands i
 | Shortcut | Does |
 | --- | --- |
 | ⌘1 · ⌘2 · ⌘3 | Home · Moments · Settings |
-| ⌘4 · ⌘5 · ⌘6 · ⌘7 · ⌘8 | Weather · Atlas · Fitness · Finance · Packages |
+| ⌘4 · ⌘5 · ⌘6 · ⌘7 · ⌘8 · ⌘9 | Weather · Atlas · Fitness · Finance · Packages · Charging |
 | ⌘K | The assistant, over what is on screen |
 | ⌘[ (or the mouse's back button) | Back |
 | Esc | Closes what Back would: a dialog, a sheet, a page |

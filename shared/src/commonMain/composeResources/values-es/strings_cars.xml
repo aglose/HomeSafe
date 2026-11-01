@@ -6,6 +6,7 @@
     <string name="household_cars_where_driving">En marcha</string>
     <string name="household_cars_where_away">Fuera</string>
     <string name="household_cars_where_unknown">Aún sin ver</string>
+    <string name="household_cars_charging_costs">Costes de carga</string>
     <string name="household_cars_move_by">Moverlo antes de %1$s</string>
     <string name="household_cars_move_now">Hay que moverlo ya</string>
     <string name="household_cars_seen_just_now">Visto ahora mismo</string>
