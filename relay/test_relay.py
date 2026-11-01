@@ -2725,7 +2725,7 @@ class CarPresenceTest(_FakeFrigate):
         self.events["standing"] = {"id": "standing", "camera": "hikvision_1", "label": "car",
                                    "data": {"box": [0.21, 0.37, 0.2, 0.23], "path_data": [[[0.31, 0.6], self.T + 50]]}}
         self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
-        self.assertEqual("go", self.cars.cars["andrews_tesla"]["skip"])
+        self.assertEqual(self.T + 100, self.cars.cars["andrews_tesla"]["stayed"])
         del self.events["standing"]
         self.visits.clear()
         self.assertEqual([], self.tick(self.T + 3000), "turned down for good")
@@ -3124,7 +3124,29 @@ class TeslaTest(CarPresenceTest):
         self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
         self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
         self.assertTrue(self.cars.cars["andrews_tesla"]["here"])
-        self.assertEqual("go", self.cars.cars["andrews_tesla"]["skip"], "turned down for good")
+        self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS + 120))
+        self.assertEqual(1, relay.state_get(relay.TESLA_CALLS_KEY)["why"]["departure"], "turned down for good")
+
+    def test_two_departures_turned_down_dont_take_turns_asking_tesla(self):
+        # 2026-11-01: each turned down the other's skip, a call a minute, until the day's calls were gone.
+        self.tick(self.T)
+        self.where = {"VIN_A": "asleep"}
+        self.seen("old", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.seen("new", "andrews_tesla", "left", self.T + 200, self.T + 230)
+        start = self.T + 230 + relay.CAR_LEFT_CONFIRM_SECONDS
+        for minute in range(30):
+            self.assertEqual([], self.tick(start + minute * 120))
+        self.assertEqual(1, relay.state_get(relay.TESLA_CALLS_KEY)["why"]["departure"])
+        self.assertTrue(self.cars.cars["andrews_tesla"]["here"])
+
+    def test_a_departure_after_one_turned_down_is_still_judged(self):
+        self.tick(self.T)
+        self.where = {"VIN_A": "asleep"}
+        self.seen("flicker", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+        self.where = {"VIN_A": self.FAR}
+        self.seen("go", "andrews_tesla", "left", self.T + 3000, self.T + 3030)
+        self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T + 3030 + relay.CAR_LEFT_CONFIRM_SECONDS))
 
     def test_a_car_asleep_at_an_arrival_leaves_it_to_the_camera(self):
         relay.OLLAMA = "http://ollama"

@@ -1946,7 +1946,7 @@ class CarPresence:
             if name in self.cars or name in found:
                 continue
             here, since = starting_state(name, now)
-            found[name] = {"here": here, "since": since, "camera": camera, "skip": None, "known": False}
+            found[name] = {"here": here, "since": since, "camera": camera, "known": False}
         for name, car in found.items():
             self.cars[name] = car
             log.info("car presence: %s starts %s", name, "home" if car["here"] else "away")
@@ -1989,7 +1989,8 @@ class CarPresence:
         return self.change(name, car, float(row["start"]), row)
 
     def departure(self, name: str, car: dict[str, Any], rows: list[dict[str, Any]], now: float) -> dict[str, Any] | None:
-        lefts = [r for r in rows if r["movement"] == "left" and r["final"] and r["event_id"] != car.get("skip")]
+        # A car found to be still here was still here for every departure before that one too.
+        lefts = [r for r in rows if r["movement"] == "left" and r["final"] and float(r["start"]) > float(car.get("stayed") or 0)]
         if not lefts:
             return None
         gone = lefts[-1]
@@ -2011,7 +2012,7 @@ class CarPresence:
             reason = {"home": "Tesla has the car at home", "asleep": "Tesla has the car asleep, so it never drove off"}
             log.info("car presence: %s's departure %s turned down, %s", name, gone["event_id"],
                      reason.get(verdict, "a car still stands in its spot"))
-            car["skip"], car["dirty"] = gone["event_id"], True
+            car["stayed"], car["dirty"] = float(gone["start"]), True
             return None
         return self.change(name, car, gone_at, gone)
 
@@ -2041,7 +2042,7 @@ class CarPresence:
     def change(self, name: str, car: dict[str, Any], at: float, row: dict[str, Any], via: str = "camera") -> dict[str, Any]:
         here = not car["here"]
         was = at - float(car["since"]) if car.get("known") else None
-        self.cars[name] = {"here": here, "since": at, "camera": row["camera"], "skip": None, "known": True, "checked": car.get("checked")}
+        self.cars[name] = {"here": here, "since": at, "camera": row["camera"], "known": True, "checked": car.get("checked")}
         movement = "left" if not here else "arrived" if row["movement"] == "arrived" else "is home"
         return {"name": name, "movement": movement, "camera": row["camera"], "event_id": row["event_id"], "at": at, "was": was, "via": via}
 
