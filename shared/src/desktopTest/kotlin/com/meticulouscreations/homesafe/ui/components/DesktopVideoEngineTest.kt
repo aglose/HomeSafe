@@ -42,7 +42,7 @@ class DesktopVideoEngineTest {
     @Test
     fun `the stream on screen plays on with no poster until the next has a picture, then lets go`() {
         val sd = server.clip("sd", width = SD_WIDTH, height = 36)
-        val hd = server.clip("hd", width = HD_WIDTH, height = 72, joinDelayMs = 1_500)
+        val hd = server.clip("hd", width = HD_WIDTH, height = 72, joinDelayMs = 3_000)
         onUi { engine.load(VideoSource.Live(sd.url)) }
         awaitTrue("the first stream's picture") { engine.picture?.width == SD_WIDTH }
         val generation = engine.coldStartGeneration
@@ -78,7 +78,7 @@ class DesktopVideoEngineTest {
     fun `changing mind during a join drops the join and keeps the picture on screen until the last choice lands`() {
         val sd = server.clip("sd", width = SD_WIDTH, height = 36)
         val slow = server.clip("slow", width = HD_WIDTH, height = 72, joinDelayMs = 60_000)
-        val other = server.clip("other", width = OTHER_WIDTH, height = 54, joinDelayMs = 500)
+        val other = server.clip("other", width = OTHER_WIDTH, height = 54, joinDelayMs = 3_000)
         onUi { engine.load(VideoSource.Live(sd.url)) }
         awaitTrue("the first stream's picture") { engine.picture?.width == SD_WIDTH }
 
@@ -101,7 +101,8 @@ class DesktopVideoEngineTest {
             onUi { slowEngine.load(VideoSource.Live(slow.url)) }
             awaitTrue("the slow camera's join to begin") { slow.requests.get() == 1 }
             onUi { engine.load(VideoSource.Live(quick.url)) }
-            awaitTrue("the quick camera's picture") { engine.picture?.width == SD_WIDTH }
+            // Sooner than the slow camera's join gives up (the engine's read timeout), which would free anything it held.
+            awaitTrue("the quick camera's picture", withinNanos = BEFORE_READ_TIMEOUT_NANOS) { engine.picture?.width == SD_WIDTH }
         } finally {
             onUi { slowEngine.release() }
         }
@@ -155,8 +156,8 @@ class DesktopVideoEngineTest {
 
     private fun decodeThreads() = Thread.getAllStackTraces().keys.count { it.isAlive && it.name == "HomeSafe video test" }
 
-    private fun awaitTrue(what: String, check: () -> Boolean) {
-        val deadline = System.nanoTime() + AWAIT_NANOS
+    private fun awaitTrue(what: String, withinNanos: Long = AWAIT_NANOS, check: () -> Boolean) {
+        val deadline = System.nanoTime() + withinNanos
         while (!check()) {
             assertTrue(System.nanoTime() < deadline, "timed out waiting for $what")
             Thread.sleep(AWAIT_STEP_MS)
@@ -177,6 +178,7 @@ class DesktopVideoEngineTest {
         const val STALE_CHECK_STEP_MS = 50L
         const val AWAIT_STEP_MS = 5L
         const val AWAIT_NANOS = 30_000_000_000L
+        const val BEFORE_READ_TIMEOUT_NANOS = 8_000_000_000L
     }
 }
 
