@@ -35,6 +35,7 @@ import homesafe.shared.generated.resources.desktop_zoom_in
 import homesafe.shared.generated.resources.desktop_zoom_out
 import homesafe.shared.generated.resources.desktop_zoom_window
 import homesafe.shared.generated.resources.fitness_drawer_title
+import homesafe.shared.generated.resources.packages_drawer_title
 import homesafe.shared.generated.resources.shell_drawer_finance
 import homesafe.shared.generated.resources.shell_sidebar_assistant
 import homesafe.shared.generated.resources.shell_tab_home
@@ -104,6 +105,7 @@ fun FrameWindowScope.HomeSafeMenuBar(
             destination(Res.string.atlas_drawer_title, Key.Five, shellUp) { open(InnerApp.ATLAS) }
             destination(Res.string.fitness_drawer_title, Key.Six, shellUp) { open(InnerApp.FITNESS) }
             destination(Res.string.shell_drawer_finance, Key.Seven, shellUp) { open(InnerApp.FINANCE) }
+            destination(Res.string.packages_drawer_title, Key.Eight, shellUp) { open(InnerApp.PACKAGES) }
             Separator()
             destination(Res.string.shell_sidebar_assistant, Key.K, shellUp) { ShellCommands.send(ShellCommand.Assistant) }
         }

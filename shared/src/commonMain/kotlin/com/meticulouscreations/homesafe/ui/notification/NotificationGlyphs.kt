@@ -141,6 +141,11 @@ enum class NotificationGlyph(val resourceName: String, val layers: List<GlyphLay
         "ic_notification_away",
         listOf(fill("M12,2.5l7.5,3v5.5c0,5 -3.2,8.9 -7.5,10.5c-4.3,-1.6 -7.5,-5.5 -7.5,-10.5V5.5zM11,7h2v6h-2zM11,15h2v2h-2z", evenOdd = true)),
     ),
+    PARCEL(
+        "ic_notification_parcel",
+        // A box seen from a little above: its top and two sides, with the tape down the middle of it.
+        listOf(fill("M12,2.5l8.5,4.4v10.2L12,21.5l-8.5,-4.4V6.900zM12,5l-5.300,2.700L12,10.400l5.300,-2.700z", evenOdd = true), line("M12,10.400v11.100")),
+    ),
     DOOR(
         "ic_notification_door",
         // The frame, and the door swung open into the room on its left hinge: the dark gap on the right is the way through.

@@ -8,7 +8,7 @@ This is a Kotlin Multiplatform project targeting Android, iOS and the desktop (a
   everything:
   - [/shared](./shared/src) is the core: the cameras, moments and settings, the data layer (one Room database),
     networking, the shell, and every string and picture (one `Res`, one place to translate).
-  - [/features](./features) has the drawer's apps, a module each: `finance`, `weather`, `fitness` and `atlas`.
+  - [/features](./features) has the drawer's apps, a module each: `finance`, `weather`, `fitness`, `atlas` and `packages`.
     Each builds on `:shared`; `fitness` also uses `finance`'s charts, and `atlas` `weather`'s maps and
     `finance`'s lock.
   - [/app](./app/src) is the composition root: the Metro app graph, `App()`, the drawer's apps (`ShellApps`) and
@@ -77,7 +77,7 @@ refreshed behind the grid (in place, so the list never blinks empty). A first si
 still waits for the list.
 
 **Before sign-in.** Weather, Atlas, Fitness and Finance don't need the camera server, so they don't
-wait for it. The sign-in screen opens the shell's drawer with just those four in it: from a button
+wait for it (Packages does, and says so). The sign-in screen opens the shell's drawer with them in it: from a button
 under the form, and from the menu button of the skeleton shown while the server is being asked.
 Weather and the markets fetch from the public internet and fall back to the last forecast and
 quotes the device kept; Fitness is all on the device; Finance and Atlas open on what they kept,

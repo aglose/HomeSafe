@@ -6,6 +6,8 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
+import com.meticulouscreations.homesafe.navigation.PackageDeepLink
+import com.meticulouscreations.homesafe.navigation.PackageDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
@@ -117,8 +119,10 @@ private class NotificationCenterDelegate :
         } else {
             val door = DoorDeepLink.from { key -> info[key] as? String }
             val parking = ParkingDeepLink.from { key -> info[key] as? String }
+            val parcel = PackageDeepLink.from { key -> info[key] as? String }
             when {
                 door != null -> DoorDeepLinks.open(door)
+                parcel != null -> PackageDeepLinks.open(parcel)
                 parking != null -> ParkingDeepLinks.open(parking)
                 else -> MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
             }

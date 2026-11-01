@@ -415,6 +415,25 @@ def db() -> sqlite3.Connection:
         " price REAL, need TEXT, need_by TEXT, PRIMARY KEY (order_id, pos))"
     )
     conn.execute("CREATE TABLE IF NOT EXISTS amazon_shipments (message_id TEXT PRIMARY KEY, order_id TEXT NOT NULL, shipped TEXT NOT NULL, total REAL NOT NULL)")
+    # What the Packages app holds (see "packages"): each shipping email read once, each package with
+    # everything known of it, what happened to it in order, each visit the door camera saw with what
+    # the model made of it, and whose phone is whose.
+    conn.execute("CREATE TABLE IF NOT EXISTS package_emails (message_id TEXT PRIMARY KEY, mailbox TEXT, at REAL, stage TEXT)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS packages (id TEXT PRIMARY KEY, owner TEXT, source TEXT NOT NULL, carrier TEXT, tracking TEXT, order_id TEXT, shop TEXT, title TEXT, nickname TEXT,"
+        " stage TEXT NOT NULL, stage_at REAL, expected_from TEXT, expected_to TEXT, window_start TEXT, window_end TEXT, signature INTEGER NOT NULL DEFAULT 0, problem TEXT, problem_at REAL,"
+        " left_note TEXT, total REAL, created REAL NOT NULL, updated REAL NOT NULL, delivered_at REAL, surprise INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0,"
+        " archived INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0, notes TEXT, return_by TEXT, return_state TEXT, refund_at REAL, porch TEXT, porch_at REAL, porch_by TEXT,"
+        " verdict TEXT, verdict_what TEXT, verdict_confidence REAL, verdict_by TEXT, visit_event TEXT, visit_at REAL, tracker_on INTEGER NOT NULL DEFAULT 0, merged_into TEXT)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS packages_tracking ON packages (tracking)")
+    conn.execute("CREATE INDEX IF NOT EXISTS packages_order ON packages (order_id)")
+    conn.execute("CREATE TABLE IF NOT EXISTS package_events (id INTEGER PRIMARY KEY AUTOINCREMENT, package_id TEXT NOT NULL, at REAL NOT NULL, kind TEXT NOT NULL, detail TEXT, key TEXT NOT NULL, UNIQUE (package_id, key))")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS package_visits (event TEXT PRIMARY KEY, start REAL NOT NULL, end REAL NOT NULL, appeared INTEGER, gone INTEGER, look INTEGER, what TEXT, confidence REAL, door INTEGER, name TEXT, meant INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS package_events_key ON package_events (key)")
+    conn.execute("CREATE TABLE IF NOT EXISTS package_phones (device_id TEXT PRIMARY KEY, person TEXT NOT NULL)")
     # Where each institution's transactions were read up to (Plaid's cursor), when they were last
     # asked for and last changed, and whether Plaid has finished fetching their history.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_items)")}
@@ -4772,6 +4791,7 @@ def startup() -> None:
     threading.Thread(target=doors_forever, name="doors", daemon=True).start()
     threading.Thread(target=parking_forever, name="parking", daemon=True).start()
     threading.Thread(target=tesla_stream_forever, name="tesla-stream", daemon=True).start()
+    threading.Thread(target=packages_forever, name="packages", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -11445,6 +11465,1631 @@ def put_amazon_item(order_id: str, pos: int, body: AmazonNeed, request: Request,
     if body.need is None:
         threading.Thread(target=amazon_sort_items, name="amazon-sort", daemon=True).start()
     return budget_month()
+
+
+# ---------------------------------------------------------------- packages
+
+# What is on its way to the house, for the Packages app (docs/packages.md). Nothing is typed in:
+# every hour's Amazon read has its mailboxes linked already (see "Amazon orders"), so the same
+# read-only Gmail tokens read each carrier's and shop's shipping emails, and each email moves its
+# package along. A key for a tracking service (PACKAGE_17TRACK_KEY) adds the carrier's own scans.
+#
+# Then the Front Door camera says what it saw. Measured on the household's own deliveries
+# (2026-10-31): Amazon's "Delivered" email came 72-130 s after the camera's person event, in all
+# four tried, and each had really left a parcel. The box's vision model is much less sure than the
+# clock is. Shown the landing before and after a visit it found 2 of the 4 (flat mailers behind
+# the railing get past it) and called 5 of 18 ordinary visits a parcel (sunlight, a dog, an open
+# door); shown one picture at a time, 1 of the 4 and none of 12. So it never decides alone:
+# - "confirmed": an email says delivered, a visit fits its time, and the model saw a parcel appear;
+# - "seen": an email says delivered and a visit fits, and the two pictures are there to look at;
+# - "not_seen": an email says delivered and the camera saw nobody at the door, which is worth saying;
+# - a parcel with no email at all is only claimed when both the model's questions agree and nobody
+#   opened the door, and then as "may have".
+# Whether it is still out there is the door sensor's to say more than the model's.
+#
+# Surprises are the household's to keep from each other. A package marked as one is told to its
+# owner in full and to anyone else as "a surprise": here, in each push, and in its pictures. Who is
+# asking is which phone is asking (`package_phones`), since one Frigate login may serve a family;
+# a phone that hasn't said whose it is sees every surprise masked.
+PACKAGE_CAMERA = os.environ.get("PACKAGE_CAMERA", "amcrest_1")
+# Where parcels are left, as fractions of the frame: x, y, width, height. Default: the top landing.
+PACKAGE_SPOT = tuple(float(v) for v in os.environ.get("PACKAGE_SPOT", "0.36,0.34,0.30,0.30").split(","))
+PACKAGE_DOOR = re.compile(os.environ.get("PACKAGE_DOOR", "front"), re.IGNORECASE)
+PACKAGE_17TRACK_KEY = os.environ.get("PACKAGE_17TRACK_KEY", "").strip()
+PACKAGE_FRAME_DIR = os.environ.get("PACKAGE_FRAME_DIR", os.path.join(os.path.dirname(DB_PATH), "package_frames"))
+PACKAGE_LOOKBACK_DAYS = int(os.environ.get("PACKAGE_LOOKBACK_DAYS", "100"))
+PACKAGE_TICK_SECONDS = 30.0
+# New mail matters to the minute here (a parcel on the step), so the last two days are asked every
+# couple of minutes, which costs one list per mailbox; the whole lookback once an hour.
+PACKAGE_RECENT_SECONDS = 120.0
+PACKAGE_FULL_SECONDS = 3600.0
+PACKAGE_TRACKER_SECONDS = 1800.0
+PACKAGE_MAX_EMAILS = 300
+PACKAGE_FETCH_GAP = 0.25
+# Bump to read every email in the lookback again when they are read differently.
+PACKAGE_PARSER = 1
+PACKAGE_PARSER_KEY = "package_parser"
+PACKAGE_SYNCED_KEY = "package_synced"
+PACKAGE_FULL_KEY = "package_full_read"
+PACKAGE_SETTINGS_KEY = "package_settings"
+PACKAGE_VISITS_KEY = "package_visits_after"
+PACKAGE_NAGS_KEY = "package_nags_started"
+# An old email read for the first time moves its package without telling anyone.
+PACKAGE_FRESH_SECONDS = 3 * 3600.0
+# A person's events this close together are one visit.
+PACKAGE_VISIT_GAP = 45.0
+# Recordings reach disk a segment behind: a visit is judged this long after it ended.
+PACKAGE_VISIT_SETTLE = 40.0
+PACKAGE_BEFORE_SECONDS = 10.0
+PACKAGE_AFTER_SECONDS = 15.0
+# How long before an email saying "delivered" a visit can be the delivery. Amazon's driver scans at
+# the door (72-130 s, above); a carrier's email can follow its scan by hours.
+PACKAGE_AMAZON_WINDOW = 20 * 60.0
+PACKAGE_OTHER_WINDOW = 4 * 3600.0
+PACKAGE_AFTER_EMAIL = 5 * 60.0
+# An email-less parcel the camera saw is taken for the email that comes this soon after it.
+PACKAGE_CAMERA_MERGE = 6 * 3600.0
+# Past this an email's delivery is older than what the camera can still be asked about.
+PACKAGE_CAMERA_REACH = 7 * 86400.0
+PACKAGE_MODEL_SURE = 0.6
+PACKAGE_REMIND_AFTER = 2 * 3600.0
+# Past this, nobody is still wondering whether it was taken in.
+PACKAGE_PORCH_GIVE_UP = 3 * 86400.0
+PACKAGE_QUIET_EXPECTED = 3 * 86400.0
+# `archived` when the relay did it rather than someone: news of the parcel brings it back.
+PACKAGE_QUIET = 2
+# Asking the model again about a visit it couldn't answer for.
+PACKAGE_RETRY_SECONDS = 300.0
+PACKAGE_RETRY_REACH = 3600.0
+PACKAGE_QUIET_ANY = 21 * 86400.0
+PACKAGE_LATE_AFTER_DAYS = 1
+PACKAGE_QUIET_LATE_DAYS = 7
+PACKAGE_RAIN_CHANCE = 50
+PACKAGE_RAIN_HOURS = 3
+PACKAGE_RAIN_SECONDS = 1800.0
+PACKAGE_RETURN_WARN_DAYS = 3
+PACKAGE_MORNING_HOUR = 8
+PACKAGE_FRAMES_KEPT_DAYS = 180
+PACKAGE_LISTED_DAYS = 400
+PACKAGE_STAGES = ("ordered", "shipped", "out_for_delivery", "delivered")
+PACKAGE_RETURN_STATES = ("none", "started", "sent", "refunded")
+PACKAGE_NOTICES = ("shipped", "out_for_delivery", "delivered", "porch", "rain", "missing", "problems", "returns", "morning")
+PACKAGE_NOTICE_DEFAULTS = {"shipped": False, "out_for_delivery": True, "delivered": True, "porch": True, "rain": True, "missing": True, "problems": True, "returns": True, "morning": True}
+# What a shop allows, in days from delivery, where the email doesn't say: only what is worth a reminder.
+PACKAGE_RETURN_DAYS = {"Amazon": 30, "Target": 90, "Costco": 90, "The Home Depot": 90, "Best Buy": 15, "Walmart": 30}
+_package_lock = threading.Lock()
+_package_status: dict[str, Any] = {}
+
+PACKAGE_QUERY = ('{from:ups.com from:fedex.com from:usps.com from:dhl.com from:ontrac.com from:lasership.com from:veho.com subject:shipped subject:ordered '
+                 'subject:"on its way" subject:"on the way" subject:"out for delivery" subject:delivered subject:delivery subject:tracking subject:shipment '
+                 'subject:arriving subject:"has shipped" subject:"is here" (from:amazon.com subject:(refund OR return))} -category:promotions')
+
+_PACKAGE_INVISIBLE = re.compile("[­͏​-‏‪-‮⁦-⁩﻿]")
+_PACKAGE_NOT_SHIPPING_SENDERS = re.compile(r"grubhub|doordash|ubereats|uber\.com|postmates|eaze|instacart|drizly|gopuff|caviar|informeddelivery|linkedin|govdelivery|proxyvote", re.IGNORECASE)
+# A carrier's or shop's advertising: "% off, delivered by first pitch". A tracking number outweighs it.
+_PACKAGE_ADVERT = re.compile(r"\d+\s?% off|\b(sale|deals?|coupons?|credit|savings?|save \$|newsletter|last chance|free (delivery|shipping)|preference)\b", re.IGNORECASE)
+_PACKAGE_POSSESSIVE = re.compile(r"\b(your|you)\b.{0,50}\b(order|package|shipment|parcel|box|meals|delivery|item|items)\b", re.IGNORECASE)
+_PACKAGE_STAGE_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = tuple((stage, re.compile(words, re.IGNORECASE)) for stage, words in (
+    ("refund", r"\brefund"),
+    ("return_sent", r"\bdrop-?\s?off confirmed\b|\breturn (was )?(received|dropped)\b"),
+    ("return", r"\breturn(ed|s|ing)?\b"),
+    ("delivered", r"^(\W*)order delivered|\bdelivered\b|\bpackage arrived\b|\bhas arrived\b|\bshipment is here\b|\bis here\b|\bwas dropped off\b"),
+    ("attempted", r"delivery attempt|attempted delivery|attempted to deliver|missed (your )?delivery|we missed you|notice left"),
+    ("exception", r"delivery exception|\bexception\b|unable to deliver|could ?n.t deliver|\bdelayed\b|\bdelay\b|running late|held at|action required|address (issue|problem)"),
+    ("out_for_delivery", r"out for delivery|arriving today|scheduled for delivery today|on the truck"),
+    ("expected", r"expected delivery|delivery estimate|delivery update|updated delivery date|scheduled for delivery|arriving\b"),
+    ("shipped", r"\bshipped\b|has shipped|on its way|on the way|has been sent|\bshipment\b|in transit|tracking (number|information|update)"),
+    ("ordered", r"^ordered\b|order confirm|thanks for your order|thank you for your order|order received|\border\b.*\bconfirmed\b"),
+))
+_PACKAGE_CARRIERS = (("ups", r"\bups\b|ups\.com"), ("usps", r"\busps\b|usps\.com|postal service"), ("fedex", r"\bfed ?ex\b|fedex\.com"), ("dhl", r"\bdhl\b"),
+                     ("ontrac", r"\bontrac\b"), ("lasership", r"\blasership\b"), ("veho", r"\bveho\b"), ("amazon", r"\bamazon logistics\b|\bamzl\b"))
+_PACKAGE_UPS = re.compile(r"\b(1Z[0-9A-Z]{16})\b")
+_PACKAGE_USPS = re.compile(r"\b(9[1-5]\d{18,20}|420\d{5}9[1-5]\d{18,20})\b")
+_PACKAGE_S10 = re.compile(r"\b([A-Z]{2}\d{9}US)\b")
+_PACKAGE_AMAZON_TBA = re.compile(r"\b(TBA\d{12})\b")
+_PACKAGE_LABELLED = re.compile(r"(?i:tracking)(?:\s*(?i:number|no\.?|#|id))?\s*[:#]?\s*#?\s*([A-Za-z0-9][A-Za-z0-9-]{7,34})\b")
+_PACKAGE_NAMED_SERVICE = re.compile(r"\b([A-Z][a-zA-Z]+) (?:Standard|Express|Ground|Priority|Economy) shipping:\s*([A-Za-z0-9-]{8,34})\b")
+_PACKAGE_AMAZON_ORDER = re.compile(r"\b((?:\d{3}|D\d{2})-\d{7}-\d{7})\b")
+_PACKAGE_ORDER = re.compile(r"(?i:order)(?:\s*(?i:number|no\.?))?\s*[:#]?\s*#?\s*([A-Z0-9][A-Z0-9.-]{3,29})\b")
+_PACKAGE_NOT_ORDERS = {"delivered", "shipped", "tracking", "shipment", "confirmed", "confirmation", "received", "cancelled", "canceled", "summary", "details", "updates"}
+_PACKAGE_SIGNATURE = re.compile(r"signature (is |will be )?required|adult signature|must be signed|sign for (this|your)", re.IGNORECASE)
+_PACKAGE_LEFT = re.compile(r"\b(left (near|at|on|in|by|with)|handed (directly )?to|delivered (to|at) (the|a|your)|placed (at|in|on)|in (the|your) (mailroom|mailbox|parcel locker))\b", re.IGNORECASE)
+_PACKAGE_NOT_THE_DOOR = re.compile(r"mailbox|mailroom|locker|garage|back door|side door|neighbou?r|leasing|front desk|reception|handed", re.IGNORECASE)
+_PACKAGE_MONTHS = {m: i + 1 for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"))}
+_PACKAGE_DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_PACKAGE_DATE = re.compile(r"\b(?:(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*,?\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(20\d{2}))?\b", re.IGNORECASE)
+_PACKAGE_NUMERIC_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/(20\d{2}|\d{2}))?\b")
+_PACKAGE_EXPECT_LINE = re.compile(r"(arriving|now arriving|expected delivery|estimated delivery|delivery (date|estimate|by)|deliver(ed|y)? (by|on)|expects to deliver|scheduled for delivery|get it by|arrives? (by|on))", re.IGNORECASE)
+_PACKAGE_TIME = r"(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?"
+_PACKAGE_BETWEEN = re.compile(rf"between\s+{_PACKAGE_TIME}\s+(?:and|-|to)\s+{_PACKAGE_TIME}", re.IGNORECASE)
+_PACKAGE_BY = re.compile(rf"\bby\s+{_PACKAGE_TIME}", re.IGNORECASE)
+_PACKAGE_DOMAINS = (("amazon.", "Amazon"), ("homedepot", "The Home Depot"), ("tiktok", "TikTok Shop"), ("ebay", "eBay"), ("target", "Target"), ("walmart", "Walmart"),
+                    ("costco", "Costco"), ("bestbuy", "Best Buy"), ("etsy", "Etsy"), ("chewy", "Chewy"), ("apple.com", "Apple"), ("google.com", "Google Store"), ("tesla", "Tesla Shop"),
+                    ("mercari", "Mercari"), ("factor75", "Factor"), ("wayfair", "Wayfair"), ("lowes", "Lowe's"), ("ikea", "IKEA"), ("pokemon", "Pokémon Center"))
+_PACKAGE_CARRIER_DOMAINS = {"ups.com": "ups", "usps.com": "usps", "fedex.com": "fedex", "dhl.com": "dhl", "ontrac.com": "ontrac", "lasership.com": "lasership", "veho.com": "veho", "uniuni.com": "uniuni"}
+_PACKAGE_SHOP_IN_SUBJECT = re.compile(r"^[Yy]our ([A-Z][\w'&-]*(?: [A-Z][\w'&-]*){0,3}?) (?i:order|shipment|package|box|meals)\b")
+_PACKAGE_AMAZON_ITEMS = re.compile(r"^(?:ordered|shipped|delivered|out for delivery|arriving)(?: \d{1,3} items?)?:?\s*(?:\d{1,3} items?:?)?\s*(.+)$", re.IGNORECASE)
+PACKAGE_TRACK_URLS = {
+    "ups": "https://www.ups.com/track?tracknum={}", "usps": "https://tools.usps.com/go/TrackConfirmAction?tLabels={}", "fedex": "https://www.fedex.com/fedextrack/?trknbr={}",
+    "dhl": "https://www.dhl.com/us-en/home/tracking.html?tracking-id={}", "ontrac": "https://www.ontrac.com/tracking/?number={}",
+}
+
+
+def package_ups_valid(number: str) -> bool:
+    """A UPS number's check digit: after "1Z", letters count as (ord - 63) % 10 and every second character twice."""
+    body = number[2:17]
+    if len(number) != 18 or not number.startswith("1Z") or not number[17].isdigit():
+        return False
+    values = [int(ch) if ch.isdigit() else (ord(ch) - 63) % 10 for ch in body]
+    total = sum(v * (2 if i % 2 else 1) for i, v in enumerate(values))
+    return (10 - total % 10) % 10 == int(number[17])
+
+
+def package_usps_valid(number: str) -> bool:
+    """A USPS barcode's check digit (mod 10, weighted 3 and 1 from the right), past any ZIP routing prefix."""
+    digits = number[8:] if number.startswith("420") else number
+    if not digits.isdigit() or len(digits) not in (20, 21, 22):
+        return False
+    total = sum(int(ch) * (3 if i % 2 == 0 else 1) for i, ch in enumerate(reversed(digits[:-1])))
+    return (10 - total % 10) % 10 == int(digits[-1])
+
+
+def package_s10_valid(number: str) -> bool:
+    """An international "RR123456789US" number's check digit (S10)."""
+    digits = number[2:10]
+    if len(number) != 13 or not digits.isdigit():
+        return False
+    remainder = 11 - sum(int(ch) * w for ch, w in zip(digits, (8, 6, 4, 2, 3, 5, 9, 7))) % 11
+    return {10: 0, 11: 5}.get(remainder, remainder) == int(number[10])
+
+
+def package_tracking_in(text: str) -> tuple[str | None, str | None]:
+    """The tracking number an email carries and its carrier (None when only the email can say): only what a check digit or a label vouches for."""
+    for number in _PACKAGE_UPS.findall(text):
+        if package_ups_valid(number):
+            return number, "ups"
+    for number in _PACKAGE_USPS.findall(text):
+        if package_usps_valid(number):
+            return number, "usps"
+    for number in _PACKAGE_S10.findall(text):
+        if package_s10_valid(number):
+            return number, "usps"
+    tba = _PACKAGE_AMAZON_TBA.search(text)
+    if tba:
+        return tba.group(1), "amazon"
+    named = _PACKAGE_NAMED_SERVICE.search(text)
+    if named:
+        return named.group(2), named.group(1).lower()
+    for number in _PACKAGE_LABELLED.findall(text):
+        # A word that happens to follow "tracking" ("Tracking information will…") has no digit in it.
+        if sum(ch.isdigit() for ch in number) >= 6:
+            return number, None
+    return None, None
+
+
+def package_classify_number(raw: str) -> tuple[str, str] | None:
+    """A tracking number someone typed, tidied, and its carrier ("other" when only its shape is known); None for what can't be one."""
+    number = re.sub(r"[\s-]", "", raw).upper()
+    if not re.fullmatch(r"[A-Z0-9]{8,34}", number) or not any(ch.isdigit() for ch in number):
+        return None
+    if number.startswith("1Z"):
+        return (number, "ups") if package_ups_valid(number) else None
+    if _PACKAGE_USPS.fullmatch(number) and package_usps_valid(number):
+        return number, "usps"
+    if _PACKAGE_S10.fullmatch(number):
+        return (number, "usps") if package_s10_valid(number) else None
+    if _PACKAGE_AMAZON_TBA.fullmatch(number):
+        return number, "amazon"
+    if number.isdigit() and len(number) in (12, 15, 20, 22):
+        return number, "fedex"
+    if number.isdigit() and len(number) == 10:
+        return number, "dhl"
+    return number, "other"
+
+
+def package_track_url(carrier: str | None, tracking: str | None, order_id: str | None) -> str | None:
+    if carrier == "amazon" or (order_id and _PACKAGE_AMAZON_ORDER.fullmatch(order_id)):
+        return f"https://www.amazon.com/gp/your-account/order-details?orderID={quote(order_id)}" if order_id else None
+    template = PACKAGE_TRACK_URLS.get(carrier or "")
+    return template.format(quote(tracking)) if template and tracking else None
+
+
+def package_domain(sender: str) -> str:
+    found = re.search(r"@([\w.-]+)", sender)
+    return found.group(1).lower() if found else ""
+
+
+def package_shop(sender: str, domain: str, subject: str) -> str | None:
+    """Who the package is from: a known shop's own name, the name in "Your SimpliSafe shipment", or the sender's. None for a carrier writing for itself."""
+    in_subject = _PACKAGE_SHOP_IN_SUBJECT.match(subject.strip())
+    known = next((name for piece, name in _PACKAGE_DOMAINS if piece in domain), None)
+    if known:
+        return known
+    if any(domain == d or domain.endswith("." + d) for d in _PACKAGE_CARRIER_DOMAINS):
+        return None
+    if in_subject:
+        return in_subject.group(1)
+    display = re.sub(r"\s*<.*$", "", sender).strip().strip('"')
+    if display and "@" not in display and not re.search(r"no.?reply|notifications?|support|admin|orders?$", display, re.IGNORECASE):
+        return display[:40]
+    return None
+
+
+def package_stage(subject: str) -> str | None:
+    """What a subject line says happened, by the first of these it matches, most telling first."""
+    return next((stage for stage, words in _PACKAGE_STAGE_WORDS if words.search(subject)), None)
+
+
+def package_day_of(month: str, day: int, year: str | None, sent: datetime) -> str | None:
+    """A date an email named without a year: the coming one, unless it was only just past."""
+    number = _PACKAGE_MONTHS.get(month[:3].lower())
+    if number is None:
+        return None
+    try:
+        if year:
+            return datetime(int(year), number, day).date().isoformat()
+        found = datetime(sent.year, number, day).date()
+        if (sent.date() - found).days > 60:
+            found = datetime(sent.year + 1, number, day).date()
+        return found.isoformat()
+    except ValueError:
+        return None
+
+
+def _package_clock(hour: str, minute: str | None, half: str) -> str:
+    value = int(hour) % 12 + (12 if half.lower() == "p" else 0)
+    return f"{value:02d}:{int(minute or 0):02d}"
+
+
+def package_expected(lines: list[str], subject: str, sent: datetime) -> dict[str, Any] | None:
+    """When an email says it will come: {"from", "to"} days, and a "start"/"end" clock where it narrows the day. None when it says nothing."""
+    today = sent.date()
+    for line in [subject] + lines:
+        if not _PACKAGE_EXPECT_LINE.search(line):
+            continue
+        low = line.lower()
+        tail = line[_PACKAGE_EXPECT_LINE.search(line).start():]
+        dates = [package_day_of(m.group(2), int(m.group(3)), m.group(4), sent) for m in _PACKAGE_DATE.finditer(tail)]
+        dates = [d for d in dates if d]
+        if not dates:
+            for m in _PACKAGE_NUMERIC_DATE.finditer(tail):
+                try:
+                    year = int(m.group(3)) if m.group(3) else sent.year
+                    day = datetime(year + 2000 if year < 100 else year, int(m.group(1)), int(m.group(2))).date()
+                    # "1/2" in a late December email is the coming January.
+                    if not m.group(3) and day < today - timedelta(days=60):
+                        day = day.replace(year=day.year + 1)
+                    dates.append(day.isoformat())
+                except ValueError:
+                    pass
+        if not dates:
+            if re.search(r"\btoday\b", low):
+                dates = [today.isoformat()]
+            elif re.search(r"\btomorrow\b", low):
+                dates = [(today + timedelta(days=1)).isoformat()]
+            else:
+                # "Arriving Tuesday": the next one.
+                named = next((d for d in _PACKAGE_DAYS if re.search(rf"\b{d}\b", low)), None)
+                if named is None:
+                    continue
+                ahead = (_PACKAGE_DAYS.index(named) - today.weekday()) % 7
+                dates = [(today + timedelta(days=ahead)).isoformat()]
+        found: dict[str, Any] = {"from": dates[0], "to": dates[-1] if dates[-1] >= dates[0] else dates[0]}
+        between = _PACKAGE_BETWEEN.search(line)
+        by = _PACKAGE_BY.search(line)
+        if between:
+            found["start"] = _package_clock(between.group(1), between.group(2), between.group(3))
+            found["end"] = _package_clock(between.group(4), between.group(5), between.group(6))
+        elif by:
+            found["end"] = _package_clock(by.group(1), by.group(2), by.group(3))
+        return found
+    return None
+
+
+def package_title(subject: str, domain: str, lines: list[str]) -> str | None:
+    """What is in it, as the email has it: Amazon's categories, or the item an eBay subject quotes. Data, not copy."""
+    subject = subject.strip()
+    if "amazon." in domain:
+        match = _PACKAGE_AMAZON_ITEMS.match(subject)
+        if match and not re.match(r"^(update|estimate)\b", match.group(1), re.IGNORECASE):
+            return match.group(1).strip().rstrip(".")[:120] or None
+        quoted = re.search(r"[\"“](.+?)[\"”]", subject)
+        return quoted.group(1).rstrip(".…")[:120] if quoted else None
+    quoted = re.search(r"[\"“](.+?)[\"”]", subject)
+    if quoted:
+        return quoted.group(1)[:120]
+    colon = re.match(r"^\W*(?:out for delivery|order delivered|delivered|shipped|order shipped)\s*:\s*(.+)$", subject, re.IGNORECASE)
+    return colon.group(1).rstrip(".…")[:120] if colon else None
+
+
+def parse_package_email(sender: str, subject: str, text: str, sent_at: float, zone: Any = None) -> dict[str, Any] | None:
+    """
+    What one email says about one package, or None when it isn't about a package at all: "stage",
+    "tracking", "carrier", "order", "shop", "title", "expected", "signature", "left", "total".
+    It reads loosely, since every shop words these its own way: a subject that says something
+    happened, from somebody who can vouch for it (a tracking number, an order number, a carrier, or
+    "your order"), and not an advert that happens to say "delivered".
+    """
+    subject = " ".join(_PACKAGE_INVISIBLE.sub("", subject).split())
+    text = _PACKAGE_INVISIBLE.sub("", text)
+    domain = package_domain(sender)
+    if _PACKAGE_NOT_SHIPPING_SENDERS.search(domain):
+        return None
+    stage = package_stage(subject)
+    if stage is None or re.match(r"review your upcoming delivery", subject, re.IGNORECASE):
+        return None
+    lines = [" ".join(line.split()) for line in text.splitlines() if line.strip()]
+    body = "\n".join(lines)
+    tracking, tracking_carrier = package_tracking_in(subject + "\n" + body)
+    amazon_order = _PACKAGE_AMAZON_ORDER.search(subject + "\n" + body)
+    # A shop's order number has a digit in it, or is a run of capitals: not the "DELIVERED" of "ORDER DELIVERED".
+    order_match = amazon_order or next((m for m in _PACKAGE_ORDER.finditer(subject + "\n" + body) if any(ch.isdigit() for ch in m.group(1)) or (len(m.group(1)) >= 8 and m.group(1).lower() not in _PACKAGE_NOT_ORDERS)), None)
+    order = order_match.group(1) if order_match else None
+    # Amazon puts several orders in one box, and says so by naming them all.
+    orders = list(dict.fromkeys(_PACKAGE_AMAZON_ORDER.findall(subject + "\n" + body))) if amazon_order else ([order] if order else [])
+    carrier_from = next((c for d, c in _PACKAGE_CARRIER_DOMAINS.items() if domain == d or domain.endswith("." + d)), None)
+    # A carrier's newsletter from its own domain says "delivered" too: it has to be about a parcel.
+    known_shop = any(piece in domain for piece, _ in _PACKAGE_DOMAINS)
+    vouched = bool(tracking or order or _PACKAGE_POSSESSIVE.search(subject) or ((carrier_from or known_shop) and re.search(r"\b(order|package|shipment|delivery|item)\b", subject, re.IGNORECASE)) or "amazon." in domain)
+    if not vouched or (_PACKAGE_ADVERT.search(subject) and not tracking and not amazon_order):
+        return None
+    if "amazon." in domain and not amazon_order and stage not in ("refund", "return", "return_sent"):
+        return None
+    if stage in ("refund", "return", "return_sent") and not (order or tracking):
+        return None
+    sent = datetime.fromtimestamp(sent_at, zone or timezone.utc)
+    carrier = carrier_from or tracking_carrier
+    if carrier is None:
+        lowered = subject + "\n" + body
+        carrier = next((name for name, words in _PACKAGE_CARRIERS if re.search(words, lowered, re.IGNORECASE)), None)
+    if carrier is None and "amazon." in domain:
+        carrier = "amazon"
+    left = next((line for line in lines if len(line) < 120 and _PACKAGE_LEFT.search(line)), None) if stage == "delivered" else None
+    total = amazon_total(body) if stage in ("ordered", "shipped") else None
+    return {
+        "stage": stage, "tracking": tracking, "carrier": carrier, "order": order, "orders": orders, "shop": package_shop(sender, domain, subject),
+        "title": package_title(subject, domain, lines), "expected": package_expected(lines, subject, sent) if stage != "delivered" else None,
+        "signature": bool(_PACKAGE_SIGNATURE.search(body)), "left": left, "total": total,
+    }
+
+
+def package_id_of(*parts: str) -> str:
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
+
+
+def package_settings() -> dict[str, Any]:
+    held = state_get(PACKAGE_SETTINGS_KEY) or {}
+    return {"notify": {**PACKAGE_NOTICE_DEFAULTS, **(held.get("notify") or {})}, "hide_new": dict(held.get("hide_new") or {})}
+
+
+def package_people() -> list[str]:
+    return sorted(AMAZON_GMAIL_TOKENS)
+
+
+_PACKAGE_COLUMNS = ("id", "owner", "source", "carrier", "tracking", "order_id", "shop", "title", "nickname", "stage", "stage_at", "expected_from", "expected_to", "window_start", "window_end",
+                    "signature", "problem", "problem_at", "left_note", "total", "created", "updated", "delivered_at", "surprise", "pinned", "archived", "deleted", "notes", "return_by", "return_state",
+                    "refund_at", "porch", "porch_at", "porch_by", "verdict", "verdict_what", "verdict_confidence", "verdict_by", "visit_event", "visit_at", "tracker_on", "merged_into")
+
+
+def package_row(package_id: str) -> dict[str, Any] | None:
+    row = with_db(lambda c: c.execute(f"SELECT {','.join(_PACKAGE_COLUMNS)} FROM packages WHERE id=?", (package_id,)).fetchone())
+    return dict(zip(_PACKAGE_COLUMNS, row)) if row else None
+
+
+def package_rows(where: str = "1=1", args: tuple = ()) -> list[dict[str, Any]]:
+    rows = with_db(lambda c: c.execute(f"SELECT {','.join(_PACKAGE_COLUMNS)} FROM packages WHERE {where}", args).fetchall())
+    return [dict(zip(_PACKAGE_COLUMNS, row)) for row in rows]
+
+
+def package_update(package_id: str, **fields: Any) -> None:
+    names = ", ".join(f"{name}=?" for name in fields)
+    with_db(lambda c: (c.execute(f"UPDATE packages SET {names} WHERE id=?", (*fields.values(), package_id)), c.commit()))
+
+
+def package_log(package_id: str, at: float, kind: str, detail: str | None = None, key: str | None = None) -> bool:
+    """A line of a package's timeline, once per `key`. Whether it was new."""
+    def write(c: sqlite3.Connection) -> bool:
+        cursor = c.execute("INSERT OR IGNORE INTO package_events (package_id, at, kind, detail, key) VALUES (?,?,?,?,?)", (package_id, at, kind, detail, key or f"{kind}:{at:.0f}"))
+        c.commit()
+        return cursor.rowcount > 0
+    return with_db(write)
+
+
+def package_told(package_id: str, what: str, now: float) -> bool:
+    """Marks a push as sent. False when it had been already, so each goes out once."""
+    return package_log(package_id, now, f"told:{what}", key=f"told:{what}")
+
+
+def package_find(parsed: dict[str, Any], mailbox: str, sent_at: float) -> str | None:
+    """
+    The package this email is about, if one is already held: by tracking number, then by the order
+    (an order's shipments apart by what is in each, or the only one still open), then, for a shop
+    that gives neither, its last open package.
+    """
+    tracking, order, title = parsed.get("tracking"), parsed.get("order"), parsed.get("title")
+    if tracking:
+        row = with_db(lambda c: c.execute("SELECT id FROM packages WHERE tracking=? ORDER BY created LIMIT 1", (tracking,)).fetchone())
+        if row:
+            return row[0]
+    orders = parsed.get("orders") or ([order] if order else [])
+    if orders:
+        marks = ",".join("?" * len(orders))
+        rows = with_db(lambda c: c.execute(f"SELECT id, title, stage, tracking FROM packages WHERE order_id IN ({marks}) ORDER BY created", orders).fetchall())
+        rows = [r for r in rows if not (tracking and r[3] and r[3] != tracking)]
+        same = [r for r in rows if title and r[1] == title]
+        open_ones = [r for r in rows if r[2] != "delivered"]
+        if same:
+            return same[-1][0]
+        if len(open_ones) == 1 and (parsed["stage"] != "shipped" or not open_ones[0][3] and open_ones[0][2] == "ordered"):
+            return open_ones[0][0]
+        # News of the order rather than of a shipment of it: the one still coming that it most likely means.
+        if rows and parsed["stage"] in ("refund", "return", "return_sent", "exception", "attempted", "expected"):
+            return (open_ones or rows)[-1][0]
+        # A box of several orders can be delivered under an order number its "shipped" email didn't give: what it held says which it was.
+        if parsed["stage"] in ("out_for_delivery", "delivered") and title:
+            row = with_db(lambda c: c.execute(
+                "SELECT id FROM packages WHERE title=? AND owner=? AND stage!='delivered' AND deleted=0 AND created>=? ORDER BY created LIMIT 1", (title, mailbox, sent_at - 21 * 86400)
+            ).fetchone())
+            if row:
+                return row[0]
+        return None
+    shop = parsed.get("shop")
+    if shop and not tracking:
+        row = with_db(lambda c: c.execute(
+            "SELECT id FROM packages WHERE shop=? AND owner=? AND stage!='delivered' AND deleted=0 AND created>=? ORDER BY created DESC LIMIT 1", (shop, mailbox, sent_at - 21 * 86400)
+        ).fetchone())
+        return row[0] if row else None
+    return None
+
+
+def package_categories(title: str | None) -> set[str]:
+    """What a title says is in the box, one by one: Amazon's emails name categories, "Coffee, Dairy, and more"."""
+    return {part.strip().lower() for part in re.split(r",", re.sub(r",?\s*and more\s*$", "", title or "", flags=re.IGNORECASE)) if part.strip()}
+
+
+def package_merge_same_box(package_id: str, parsed: dict[str, Any], sent_at: float) -> None:
+    """
+    Amazon puts separate orders in one box, emails "Ordered" for each and then "Shipped" and
+    "Delivered" once, naming what's in all of them. What is left over of the others would be on its
+    way for ever, so whatever this email's list covers goes into this package, its price with it.
+    Two orders of the same thing in different boxes stay apart: only what differs from this package
+    is taken to be part of it.
+    """
+    title = parsed.get("title")
+    named = package_categories(title)
+    package = package_row(package_id)
+    if package is None or parsed["stage"] not in ("shipped", "out_for_delivery", "delivered") or "amazon" != (package["carrier"] or "") or len(named) < 2:
+        return
+    mine = package_categories(package["title"])
+    others = package_rows("id!=? AND owner=? AND carrier='amazon' AND stage!='delivered' AND deleted=0 AND created>=?", (package_id, package["owner"], sent_at - 14 * 86400))
+    total = package["total"]
+    merged = False
+    for other in others:
+        theirs = package_categories(other["title"])
+        if theirs and theirs <= named and theirs != mine:
+            package_update(other["id"], deleted=1, merged_into=package_id)
+            package_log(package_id, sent_at, "same_box", other["title"], key=f"box:{other['id']}")
+            # What someone said of the one that went stays with the box. A surprise in it makes all of it one: the title names it.
+            package = package_row(package_id)
+            kept = {column: other[column] for column in ("nickname", "notes") if other[column] and not package[column]}
+            if other["surprise"]:
+                kept["surprise"] = 1
+            if other["pinned"]:
+                kept["pinned"] = 1
+            if kept:
+                package_update(package_id, **kept)
+            # A shipment's email gives its whole total already; otherwise the prices add up.
+            if other["total"] and parsed.get("total") is None:
+                total = (total or 0) + other["total"]
+            merged = True
+    if mine < named or merged:
+        package_update(package_id, title=title, total=total)
+
+
+def package_create(parsed: dict[str, Any], mailbox: str, sent_at: float) -> str:
+    settings = package_settings()
+    seed = parsed.get("tracking") or (f"{parsed['order']}|{parsed.get('title') or ''}" if parsed.get("order") else f"{mailbox}|{parsed.get('shop')}|{sent_at:.0f}")
+    package_id = package_id_of(seed)
+    surprise = 1 if settings["hide_new"].get(mailbox) else 0
+    with_db(lambda c: (c.execute(
+        "INSERT OR IGNORE INTO packages (id, owner, source, carrier, tracking, order_id, shop, title, stage, stage_at, created, updated, surprise) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (package_id, mailbox, "email", parsed.get("carrier"), parsed.get("tracking"), parsed.get("order"), parsed.get("shop"), parsed.get("title"), "ordered", sent_at, sent_at, sent_at, surprise),
+    ), c.commit()))
+    return package_id
+
+
+def package_placed(message_id: str) -> tuple[str, str] | None:
+    """The package an email was filed under, and what it was read as saying, if it has been read before."""
+    return with_db(lambda c: c.execute("SELECT package_id, kind FROM package_events WHERE key=? ORDER BY id LIMIT 1", (f"mail:{message_id}",)).fetchone())
+
+
+def package_store(mailbox: str, message_id: str, parsed: dict[str, Any], sent_at: float, now: float, push: Callable[..., Any] | None = None) -> str | None:
+    """
+    Moves a package along by what one email said, creating it if this is the first heard of it. Its
+    id, or None when a refund names nothing held. An email read again (`PACKAGE_PARSER`) goes where
+    it went, tombstone or not, so a change in how titles are read can't bring back what someone
+    forgot; and if it still says the same, it only fills in blanks, so what someone said since stays.
+    """
+    placed = package_placed(message_id)
+    package_id = placed[0] if placed else package_find(parsed, mailbox, sent_at)
+    if package_id is None:
+        if parsed["stage"] in ("refund", "return", "return_sent"):
+            return None
+        package_id = package_create(parsed, mailbox, sent_at)
+    package = package_row(package_id)
+    # An order that went in with another's box: its news is that package's now.
+    while package is not None and package["merged_into"]:
+        package_id = package["merged_into"]
+        package = package_row(package_id)
+    if package is None or package["deleted"]:
+        return package_id
+    fresh = now - sent_at < PACKAGE_FRESH_SECONDS
+    fill: dict[str, Any] = {}
+    for column, field in (("tracking", "tracking"), ("carrier", "carrier"), ("order_id", "order"), ("shop", "shop"), ("title", "title"), ("total", "total"), ("left_note", "left")):
+        if parsed.get(field) is not None and not package[column]:
+            fill[column] = parsed[field]
+    # A carrier's own word for who carries it outranks what a shop's email guessed.
+    if parsed.get("carrier") and package["carrier"] in (None, "other"):
+        fill["carrier"] = parsed["carrier"]
+    if parsed.get("signature") and not package["signature"]:
+        fill["signature"] = 1
+    # An order's first shipment takes its place, and is only what is in that shipment: the rest will have their own.
+    if parsed["stage"] == "shipped" and package["stage"] == "ordered":
+        for column, field in (("title", "title"), ("total", "total")):
+            if parsed.get(field) is not None:
+                fill[column] = parsed[field]
+    if parsed.get("expected") and sent_at >= float(package["updated"] or 0) - 60:
+        expected = parsed["expected"]
+        fill.update(expected_from=expected["from"], expected_to=expected["to"], window_start=expected.get("start"), window_end=expected.get("end"))
+    if fill:
+        package_update(package_id, **fill)
+    stage = parsed["stage"]
+    package_merge_same_box(package_id, parsed, sent_at)
+    if placed and placed[1] == stage:
+        return package_id
+    if placed:
+        with_db(lambda c: (c.execute("UPDATE package_events SET kind=? WHERE package_id=? AND key=?", (stage, placed[0], f"mail:{message_id}")), c.commit()))
+    package_log(package_id, sent_at, stage, parsed.get("left"), key=f"mail:{message_id}")
+    if stage in PACKAGE_STAGES:
+        package_advance(package_id, stage, sent_at, now, tell=fresh, push=push)
+    elif stage == "expected":
+        package_update(package_id, updated=max(float(package["updated"] or 0), sent_at))
+        # Someone can promise a day, so it has left wherever it was.
+        if package["stage"] == "ordered":
+            package_advance(package_id, "shipped", sent_at, now, tell=False, push=push)
+    elif stage in ("attempted", "exception"):
+        # A first read goes newest first in batches, so this can be older than the delivery already read.
+        if package["stage"] == "delivered" and sent_at <= float(package["delivered_at"] or 0):
+            return package_id
+        package_update(package_id, problem=stage, problem_at=sent_at, updated=max(float(package["updated"] or 0), sent_at))
+        if fresh and package_told(package_id, f"problem:{stage}:{sent_at:.0f}", now):
+            package_notify(package_id, "problem_" + stage, now, push=push)
+    elif stage in ("refund", "return", "return_sent"):
+        if stage == "refund" and package["stage"] == "ordered":
+            # Money back for something that never left: a cancelled order, so nothing is coming.
+            package_update(package_id, archived=PACKAGE_QUIET)
+        elif package["stage"] != "delivered":
+            # Something going back has been here: Amazon doesn't always write when it delivers. When isn't known, so the camera isn't asked about now, and it isn't on the porch.
+            package_advance(package_id, "delivered", sent_at, now, tell=False, push=push, judge=False)
+            package_update(package_id, verdict_by="return")
+        state = {"refund": "refunded", "return_sent": "sent", "return": "started"}[stage]
+        order_of_states = ("none", "started", "sent", "refunded")
+        if order_of_states.index(state) >= order_of_states.index(package["return_state"] or "none"):
+            package_update(package_id, return_state=state, updated=max(float(package["updated"] or 0), sent_at))
+        if stage == "refund":
+            package_update(package_id, refund_at=sent_at)
+    if parsed.get("signature") and fresh and stage != "delivered" and package["stage"] != "delivered" and package_told(package_id, "signature", now):
+        package_notify(package_id, "signature", now, push=push)
+    return package_id
+
+
+def package_advance(package_id: str, stage: str, at: float, now: float, tell: bool = True, push: Callable[..., Any] | None = None, judge: bool = True) -> None:
+    """A package reached `stage`. Only ever forward: a shop's late "shipped" email doesn't take a delivered parcel off the step."""
+    package = package_row(package_id)
+    if package is None:
+        return
+    if PACKAGE_STAGES.index(stage) < PACKAGE_STAGES.index(package["stage"]):
+        return
+    moved = stage != package["stage"]
+    fields: dict[str, Any] = {"updated": max(float(package["updated"] or 0), at)}
+    if moved:
+        fields.update(stage=stage, stage_at=at)
+        # It went quiet and then didn't: back on the list. Someone's own archiving stays.
+        if package["archived"] == PACKAGE_QUIET:
+            fields["archived"] = 0
+    if stage == "delivered":
+        fields.update(delivered_at=at, problem=None, problem_at=None)
+        # Only on arriving: a window someone cleared stays cleared.
+        if moved and not package["return_by"]:
+            days = PACKAGE_RETURN_DAYS.get(package["shop"] or "")
+            if days:
+                fields["return_by"] = (datetime.fromtimestamp(at, household_zone() or timezone.utc).date() + timedelta(days=days)).isoformat()
+    package_update(package_id, **fields)
+    if not moved:
+        return
+    if stage == "delivered" and judge:
+        # The camera's word comes first, so the push can carry it. Its trouble mustn't cost the push.
+        try:
+            package_judge(package_id, now)
+        except Exception:
+            log.exception("packages: couldn't judge %s", package_id)
+    if tell and stage != "ordered" and package_told(package_id, stage, now):
+        package_notify(package_id, stage, now, push=push)
+
+
+def package_read_mailbox(mailbox: str, now: float, full: bool, push: Callable[..., Any] | None = None) -> int:
+    """Reads one mailbox's shipping emails not read yet, oldest first, so each package moves along in order. How many."""
+    zone = household_zone() or timezone.utc
+    days = PACKAGE_LOOKBACK_DAYS if full else 2
+    seen = {row[0] for row in with_db(lambda c: c.execute("SELECT message_id FROM package_emails WHERE mailbox=?", (mailbox,)).fetchall())}
+    fresh: list[str] = []
+    page: str | None = None
+    for _ in range(AMAZON_MAX_PAGES if full else 2):
+        listed = gmail_get(mailbox, "/messages", now, q=f"{PACKAGE_QUERY} newer_than:{days}d", maxResults=100, **({"pageToken": page} if page else {}))
+        fresh += [m["id"] for m in listed.get("messages") or [] if m["id"] not in seen]
+        page = listed.get("nextPageToken")
+        if not page or len(fresh) >= PACKAGE_MAX_EMAILS:
+            break
+    # Newest first from Gmail, so a first read with more than it takes at once keeps the latest.
+    fresh = list(reversed(fresh[:PACKAGE_MAX_EMAILS]))
+    for message_id in fresh:
+        time.sleep(PACKAGE_FETCH_GAP)
+        message = gmail_get(mailbox, f"/messages/{message_id}", now, format="full")
+        payload = message.get("payload") or {}
+        sent_at = int(message.get("internalDate") or now * 1000) / 1000
+        plain, markup = gmail_parts(payload)
+        text = html_text(markup) if markup else plain
+        # Filed, then marked read, so what fails is read again next time and one bad email holds up nothing else.
+        try:
+            parsed = parse_package_email(gmail_header(payload, "from"), gmail_header(payload, "subject"), text, sent_at, zone)
+            if parsed:
+                package_store(mailbox, message_id, parsed, sent_at, now, push=push)
+        except Exception:
+            log.exception("packages: couldn't file an email in %s", mailbox)
+            continue
+        with_db(lambda c: (c.execute("INSERT OR REPLACE INTO package_emails VALUES (?,?,?,?)", (message_id, mailbox, now, parsed["stage"] if parsed else None)), c.commit()))
+    return len(fresh)
+
+
+def package_reread(now: float) -> None:
+    """Forgets which emails were read, when they are now read differently (`PACKAGE_PARSER`): what someone said about a package stays, since it is on the package."""
+    if state_get(PACKAGE_PARSER_KEY) == PACKAGE_PARSER:
+        return
+    with_db(lambda c: (c.execute("DELETE FROM package_emails"), c.commit()))
+    state_set(PACKAGE_PARSER_KEY, PACKAGE_PARSER)
+    state_set(PACKAGE_FULL_KEY, None)
+
+
+def package_sync(now: float | None = None, full: bool | None = None) -> None:
+    """Every mailbox's new shipping emails. A mailbox that fails is logged, and the next read tries again."""
+    if not amazon_on() or not _package_lock.acquire(blocking=False):
+        return
+    now = time.time() if now is None else now
+    try:
+        package_reread(now)
+        full_due = now - float(state_get(PACKAGE_FULL_KEY) or 0) >= PACKAGE_FULL_SECONDS
+        read, failed = 0, []
+        whole = full_due if full is None else full
+        for mailbox in sorted(AMAZON_GMAIL_TOKENS):
+            try:
+                read += package_read_mailbox(mailbox, now, whole)
+            except Exception as e:
+                log.warning("packages: couldn't read %s: %s", mailbox, e)
+                failed.append(mailbox)
+        if whole:
+            state_set(PACKAGE_FULL_KEY, now)
+        state_set(PACKAGE_SYNCED_KEY, {"at": now, "emails": read, "failed": failed})
+    finally:
+        _package_lock.release()
+
+
+def package_camera_on() -> bool:
+    return bool(PACKAGE_CAMERA) and PACKAGE_CAMERA in detect_sizes()
+
+
+def package_frame(at: float) -> bytes | None:
+    """The door camera's recording at a moment, as JPEG, or None when it isn't there (not on disk yet, or gone)."""
+    try:
+        r = requests.get(f"{FRIGATE}/api/{PACKAGE_CAMERA}/recordings/{at:.1f}/snapshot.jpg", timeout=30)
+    except Exception as e:
+        log.warning("packages: no frame at %.0f: %s", at, e)
+        return None
+    if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image"):
+        return None
+    return r.content
+
+
+def package_crop(jpeg: bytes, edge: int = 1024) -> bytes:
+    """The part of a frame where parcels are left, long edge `edge`, as JPEG."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    frame = Image.open(BytesIO(jpeg)).convert("RGB")
+    x, y, w, h = PACKAGE_SPOT
+    crop = frame.crop((round(x * frame.width), round(y * frame.height), round((x + w) * frame.width), round((y + h) * frame.height)))
+    scale = edge / max(crop.width, crop.height)
+    crop = crop.resize((max(1, round(crop.width * scale)), max(1, round(crop.height * scale))), Image.LANCZOS)
+    out = BytesIO()
+    crop.save(out, format="JPEG", quality=88)
+    return out.getvalue()
+
+
+PACKAGE_COMPARE_PROMPT = (
+    "Two pictures from one fixed security camera, looking down through a railing onto a house's top landing and its doormat. The first was taken BEFORE a visit, the "
+    "second AFTER. The railing, decorations, plants and the mat are always there, and the light may change. Compare the mat and the floor around it. Did a parcel appear in "
+    "the AFTER picture: a cardboard box, a flat brown or white mailer, a padded envelope, or a plastic delivery bag? It may be flat on the mat or partly behind the railing. "
+    "appeared: true if a parcel is in AFTER and not in BEFORE. gone: true if a parcel in BEFORE is not in AFTER. what: box, mailer, bag or none. confidence: 0 to 1."
+)
+PACKAGE_COMPARE_SCHEMA = {"type": "object", "properties": {"appeared": {"type": "boolean"}, "gone": {"type": "boolean"}, "what": {"type": "string", "enum": ["box", "mailer", "bag", "none"]},
+                                                           "confidence": {"type": "number"}}, "required": ["appeared", "gone", "what", "confidence"]}
+PACKAGE_LOOK_PROMPT = (
+    "A security camera looks down through a railing at the top landing of a house's front steps, with a doormat on it. List what lies on the mat and the floor, then say "
+    "whether a delivered parcel is there: a cardboard box, a flat mailer, a padded envelope or a plastic delivery bag. A person, a pet, sunlight, shadow, decorations or an open door are not parcels."
+)
+PACKAGE_LOOK_SCHEMA = {"type": "object", "properties": {"on_landing": {"type": "string"}, "parcel": {"type": "boolean"}}, "required": ["on_landing", "parcel"]}
+
+
+def package_ask_model(prompt: str, schema: dict[str, Any], pictures: list[bytes]) -> dict[str, Any] | None:
+    """What the box's vision model answers, or None when it isn't there or says something else."""
+    import base64
+
+    if not OLLAMA:
+        return None
+    try:
+        r = requests.post(f"{OLLAMA}/api/chat", json={
+            "model": VLM_MODEL,
+            "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(p).decode() for p in pictures]}],
+            "format": schema, "stream": False, "keep_alive": "24h",
+            "options": {"temperature": 0, "num_ctx": 8192, "num_gpu": 99},
+        }, timeout=120)
+        r.raise_for_status()
+        return json.loads(r.json()["message"]["content"])
+    except Exception as e:
+        log.warning("packages: the model couldn't look: %s", e)
+        return None
+
+
+def package_door_ids() -> list[str]:
+    rows = with_db(lambda c: c.execute("SELECT id, name FROM doors").fetchall())
+    return [door_id for door_id, name in rows if name and PACKAGE_DOOR.search(name)]
+
+
+def package_door_opened(first: float, last: float) -> bool | None:
+    """Whether the front door opened between two moments, or None when no sensor could say."""
+    doors = package_door_ids()
+    if not doors:
+        return None
+    marks = ",".join("?" * len(doors))
+    return bool(with_db(lambda c: c.execute(f"SELECT 1 FROM door_events WHERE open=1 AND at BETWEEN ? AND ? AND door IN ({marks}) LIMIT 1", (first, last, *doors)).fetchone()))
+
+
+def package_person_events(after: float, before: float | None = None) -> list[dict[str, Any]]:
+    """
+    The door camera's person events between two moments, oldest first, without the ones Frigate's
+    detector imagined (see "phantom people"). Frigate answers with the newest of what it has, and
+    this camera sees 100 people in a couple of days, so a look further back has to say where it stops.
+    """
+    params: dict[str, Any] = {"cameras": PACKAGE_CAMERA, "labels": "person", "after": after, "limit": 200}
+    if before is not None:
+        params["before"] = before
+    r = requests.get(f"{FRIGATE}/api/events", params=params, timeout=15)
+    r.raise_for_status()
+    spots = phantom_spots(PACKAGE_CAMERA)
+    events = [e for e in r.json() if not is_phantom(e, spots)]
+    return sorted(events, key=lambda e: float(e.get("start_time") or 0))
+
+
+def package_group_visits(events: list[dict[str, Any]], now: float) -> list[dict[str, Any]]:
+    """Events close together as one visit each; a visit still going, or just over, isn't one yet."""
+    visits: list[dict[str, Any]] = []
+    for event in events:
+        start = float(event.get("start_time") or 0)
+        end = event.get("end_time")
+        end = float(end) if end is not None else now
+        name = face_name(event)
+        if visits and start - visits[-1]["end"] <= PACKAGE_VISIT_GAP:
+            visits[-1]["end"] = max(visits[-1]["end"], end)
+            visits[-1]["open"] = visits[-1]["open"] or event.get("end_time") is None
+            visits[-1]["name"] = visits[-1]["name"] or name
+        else:
+            visits.append({"id": event["id"], "start": start, "end": end, "open": event.get("end_time") is None, "name": name})
+    return [v for v in visits if not v["open"] and now - v["end"] >= PACKAGE_VISIT_SETTLE]
+
+
+def package_check_visit(visit: dict[str, Any]) -> dict[str, Any]:
+    """Asks about one visit, keeps what it was told in `package_visits`. Its row: "appeared" is None where there were no pictures or no answer."""
+    before, after = package_frame(visit["start"] - PACKAGE_BEFORE_SECONDS), package_frame(visit["end"] + PACKAGE_AFTER_SECONDS)
+    appeared = gone = look = what = confidence = None
+    if before and after:
+        try:
+            compared = package_ask_model(PACKAGE_COMPARE_PROMPT, PACKAGE_COMPARE_SCHEMA, [package_crop(before), package_crop(after)])
+            if compared is not None:
+                appeared, gone, what, confidence = compared.get("appeared"), compared.get("gone"), compared.get("what"), compared.get("confidence")
+            if appeared or gone:
+                looked = package_ask_model(PACKAGE_LOOK_PROMPT, PACKAGE_LOOK_SCHEMA, [package_crop(after)])
+                look = looked.get("parcel") if looked else None
+        except Exception as e:
+            log.warning("packages: couldn't look at visit %s: %s", visit["id"], e)
+    door = package_door_opened(visit["start"] - 60, visit["end"] + PACKAGE_AFTER_SECONDS)
+    row = {"event": visit["id"], "start": visit["start"], "end": visit["end"], "appeared": appeared, "gone": gone, "look": look, "what": what, "confidence": confidence, "door": door, "name": visit.get("name")}
+    with_db(lambda c: (c.execute(
+        "INSERT OR REPLACE INTO package_visits (event, start, end, appeared, gone, look, what, confidence, door, name) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (visit["id"], visit["start"], visit["end"], appeared, gone, look, what, confidence, door, visit.get("name")),
+    ), c.commit()))
+    return row
+
+
+_PACKAGE_VISIT_COLUMNS = ("event", "start", "end", "appeared", "gone", "look", "what", "confidence", "door", "name")
+
+
+def package_visit_row(event: str) -> dict[str, Any]:
+    row = with_db(lambda c: c.execute(f"SELECT {','.join(_PACKAGE_VISIT_COLUMNS)} FROM package_visits WHERE event=?", (event,)).fetchone())
+    return dict(zip(_PACKAGE_VISIT_COLUMNS, row))
+
+
+def package_visits_between(first: float, last: float) -> list[dict[str, Any]]:
+    rows = with_db(lambda c: c.execute(f"SELECT {','.join(_PACKAGE_VISIT_COLUMNS)} FROM package_visits WHERE start BETWEEN ? AND ? ORDER BY start", (first, last)).fetchall())
+    return [dict(zip(_PACKAGE_VISIT_COLUMNS, row)) for row in rows]
+
+
+def package_window(package: dict[str, Any]) -> float:
+    return PACKAGE_AMAZON_WINDOW if package["carrier"] == "amazon" else PACKAGE_OTHER_WINDOW
+
+
+def package_pick_visit(visits: list[dict[str, Any]], delivered_at: float) -> dict[str, Any] | None:
+    """
+    The visit that was the delivery: where the door didn't open from the inside. Someone in the
+    house going out isn't one. Of those, a parcel the model saw come, or failing that, the last
+    before the email, which on the household's deliveries was it each time.
+    """
+    candidates = [v for v in visits if not v.get("door") and not v.get("name")] or [v for v in visits if not v.get("door")]
+    if not candidates:
+        return None
+    seen = [v for v in candidates if v.get("appeared") and float(v.get("confidence") or 0) >= PACKAGE_MODEL_SURE]
+    pool = seen or candidates
+    return min(pool, key=lambda v: abs(delivered_at - float(v["end"])))
+
+
+def package_save_frames(package_id: str, visit: dict[str, Any]) -> bool:
+    """Keeps the two pictures of a delivery's visit: the recordings they come from don't last."""
+    before, after = package_frame(float(visit["start"]) - PACKAGE_BEFORE_SECONDS), package_frame(float(visit["end"]) + PACKAGE_AFTER_SECONDS)
+    if not before or not after:
+        return False
+    try:
+        os.makedirs(PACKAGE_FRAME_DIR, exist_ok=True)
+        for name, jpeg in (("before", before), ("after", after)):
+            cropped = package_crop(jpeg)
+            with open(os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg"), "wb") as f:
+                f.write(cropped)
+    except Exception as e:
+        log.warning("packages: couldn't keep %s's pictures: %s", package_id, e)
+        return False
+    return True
+
+
+def package_judge(package_id: str, now: float) -> str | None:
+    """
+    What the camera says of a delivery an email told of (the section's head has the levels), kept
+    on the package with its pictures. None while there is nothing to go on: no camera, an email too
+    old to look for, or a visit still too recent to be judged, which the next round looks at again.
+    """
+    package = package_row(package_id)
+    if package is None or package["verdict_by"] or not package["delivered_at"] or not package_camera_on():
+        return package["verdict"] if package else None
+    # Left somewhere the door camera doesn't look: nothing to find, and no alarm in not finding it.
+    if package["left_note"] and _PACKAGE_NOT_THE_DOOR.search(package["left_note"]):
+        return None
+    at = float(package["delivered_at"])
+    if now - at > PACKAGE_CAMERA_REACH:
+        return None
+    first, last = at - package_window(package), at + PACKAGE_AFTER_EMAIL
+    # A visit that ended moments before the email hasn't been asked about yet: ask now rather than make the push wait a round.
+    try:
+        events = [e for e in package_person_events(first, last) if float(e.get("start_time") or 0) <= last]
+        for visit in package_group_visits(events, now):
+            if not package_visits_between(visit["start"], visit["start"]):
+                package_check_visit(visit)
+        settling = any(e.get("end_time") is None or now - float(e["end_time"]) < PACKAGE_VISIT_SETTLE for e in events)
+    except Exception as e:
+        log.warning("packages: no camera events for %s: %s", package_id, e)
+        return None
+    visit = package_pick_visit(package_visits_between(first, last), at)
+    if visit is None:
+        if settling or now < last:
+            return None
+        verdict = "not_seen"
+        package_update(package_id, verdict=verdict, porch=None)
+        package_log(package_id, now, "camera_not_seen", key="camera:not_seen")
+        return verdict
+    sure = bool(visit.get("appeared")) and float(visit.get("confidence") or 0) >= PACKAGE_MODEL_SURE
+    verdict = "confirmed" if sure else "seen"
+    saved = package_save_frames(package_id, visit)
+    porch = package["porch"] or "porch"
+    package_update(package_id, verdict=verdict, verdict_what=visit.get("what") if sure else None, verdict_confidence=visit.get("confidence") if sure else None,
+                   visit_event=visit["event"], visit_at=visit["start"], porch=porch, porch_at=package["porch_at"] or at)
+    package_log(package_id, float(visit["start"]), f"camera_{verdict}", "frames" if saved else None, key=f"camera:{verdict}")
+    return verdict
+
+
+def package_watch_door(now: float, push: Callable[..., Any] | None = None) -> int:
+    """Judges each new visit to the door camera, and what it means for a parcel out there or one with no email. How many."""
+    if not package_camera_on():
+        return 0
+    after = float(state_get(PACKAGE_VISITS_KEY) or now - 3600)
+    visits = package_group_visits(package_person_events(after), now)
+    # A delivery's judging may have asked about a visit first; what it means still happens here, once.
+    asked = dict(with_db(lambda c: c.execute("SELECT event, meant FROM package_visits WHERE start >= ?", (after,)).fetchall()))
+    checked = 0
+    for visit in visits:
+        if asked.get(visit["id"]):
+            continue
+        if visit["id"] in asked:
+            row = package_visit_row(visit["id"])
+        else:
+            row = package_check_visit(visit)
+            checked += 1
+        package_visit_meaning(row, now, push=push)
+        with_db(lambda c: (c.execute("UPDATE package_visits SET meant=1 WHERE event=?", (visit["id"],)), c.commit()))
+        state_set(PACKAGE_VISITS_KEY, float(visit["end"]))
+    if visits:
+        state_set(PACKAGE_VISITS_KEY, max(float(state_get(PACKAGE_VISITS_KEY) or 0), max(v["end"] for v in visits)))
+    return checked
+
+
+def package_retry_visits(now: float, push: Callable[..., Any] | None = None) -> int:
+    """Asks again about the last hour's visits nothing could be said of, the model having been busy or the recording not there yet. How many it now has an answer for."""
+    if now - float(_package_status.get("retry_at") or 0) < PACKAGE_RETRY_SECONDS:
+        return 0
+    _package_status["retry_at"] = now
+    columns = ",".join(_PACKAGE_VISIT_COLUMNS)
+    rows = with_db(lambda c: c.execute(f"SELECT {columns} FROM package_visits WHERE appeared IS NULL AND end >= ?", (now - PACKAGE_RETRY_REACH,)).fetchall())
+    answered = 0
+    for values in rows:
+        held = dict(zip(_PACKAGE_VISIT_COLUMNS, values))
+        row = package_check_visit({"id": held["event"], "start": held["start"], "end": held["end"], "name": held["name"]})
+        if row["appeared"] is None:
+            continue
+        answered += 1
+        package_visit_meaning(row, now, push=push)
+        with_db(lambda c: (c.execute("UPDATE package_visits SET meant=1 WHERE event=?", (row["event"],)), c.commit()))
+        if row["appeared"] and float(row.get("confidence") or 0) >= PACKAGE_MODEL_SURE:
+            for package in package_rows("verdict='seen' AND verdict_by IS NULL AND deleted=0 AND visit_event=?", (row["event"],)):
+                package_update(package["id"], verdict="confirmed", verdict_what=row.get("what"), verdict_confidence=row.get("confidence"))
+                package_log(package["id"], float(row["start"]), "camera_confirmed", "frames", key="camera:confirmed")
+    return answered
+
+
+def package_visit_meaning(visit: dict[str, Any], now: float, push: Callable[..., Any] | None = None) -> None:
+    """One judged visit's consequences: a parcel taken in, one that may be gone, and one that came with no email."""
+    out = package_rows("porch='porch' AND deleted=0 AND delivered_at < ?", (visit["start"],))
+    if out and visit.get("door"):
+        for package in out:
+            package_update(package["id"], porch="inside", porch_at=visit["end"], porch_by="door")
+            package_log(package["id"], float(visit["end"]), "taken_in", visit.get("name"), key=f"taken:{visit['event']}")
+    elif out and visit.get("gone") and visit.get("look") is False and not visit.get("name"):
+        # Named or with the door open, it was somebody of ours; this is neither, and it is a question, with its pictures.
+        for package in out:
+            package_update(package["id"], porch="missing", porch_at=visit["end"])
+            package_save_visit_frames(package["id"], visit, ("missing_before", "missing_after"))
+            package_log(package["id"], float(visit["end"]), "may_be_gone", key=f"gone:{visit['event']}")
+            if package_told(package["id"], "missing", now):
+                package_notify(package["id"], "missing", now, push=push)
+    if visit.get("appeared") and visit.get("look") is True and not visit.get("door") and not visit.get("name") and float(visit.get("confidence") or 0) >= PACKAGE_MODEL_SURE:
+        package_unexpected(visit, now, push=push)
+
+
+def package_save_visit_frames(package_id: str, visit: dict[str, Any], names: tuple[str, str]) -> None:
+    before, after = package_frame(float(visit["start"]) - PACKAGE_BEFORE_SECONDS), package_frame(float(visit["end"]) + PACKAGE_AFTER_SECONDS)
+    if not before or not after:
+        return
+    try:
+        os.makedirs(PACKAGE_FRAME_DIR, exist_ok=True)
+        for name, jpeg in zip(names, (before, after)):
+            cropped = package_crop(jpeg)
+            with open(os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg"), "wb") as f:
+                f.write(cropped)
+    except Exception as e:
+        log.warning("packages: couldn't keep %s's pictures: %s", package_id, e)
+
+
+def package_unexpected(visit: dict[str, Any], now: float, push: Callable[..., Any] | None = None) -> str | None:
+    """A parcel the camera saw land with no email yet. Given to whatever was due today, else a package of its own until an email claims it."""
+    if package_rows("delivered_at BETWEEN ? AND ? AND deleted=0 AND visit_event=?", (visit["start"] - 60, visit["end"] + PACKAGE_AFTER_EMAIL, visit["event"])):
+        return None
+    day = datetime.fromtimestamp(float(visit["end"]), household_zone() or timezone.utc).date().isoformat()
+    due = package_rows("stage!='delivered' AND deleted=0 AND archived=0 AND (stage='out_for_delivery' OR (expected_from<=? AND expected_to>=?))", (day, day))
+    package_id = due[0]["id"] if len(due) == 1 else None
+    if package_id is None:
+        package_id = package_id_of("camera", visit["event"])
+        with_db(lambda c: (c.execute(
+            "INSERT OR IGNORE INTO packages (id, owner, source, stage, stage_at, created, updated, surprise) VALUES (?,?,?,?,?,?,?,0)",
+            (package_id, "", "camera", "delivered", visit["end"], visit["end"], visit["end"]),
+        ), c.commit()))
+    package_update(package_id, stage="delivered", stage_at=visit["end"], delivered_at=visit["end"], verdict="camera_only", verdict_what=visit.get("what"), verdict_confidence=visit.get("confidence"),
+                   visit_event=visit["event"], visit_at=visit["start"], porch="porch", porch_at=visit["end"])
+    package_save_frames(package_id, visit)
+    package_log(package_id, float(visit["start"]), "camera_only", key=f"camera:{visit['event']}")
+    if package_told(package_id, "camera_only", now):
+        package_notify(package_id, "camera_only", now, push=push)
+    return package_id
+
+
+def package_merge_camera(now: float) -> None:
+    """An email that says delivered, soon after a parcel with no email: they are one package, so the one the camera made goes, and the email's takes its pictures."""
+    camera = package_rows("source='camera' AND deleted=0")
+    for parcel in camera:
+        at = float(parcel["delivered_at"] or 0)
+        claimed = package_rows("source!='camera' AND deleted=0 AND delivered_at BETWEEN ? AND ?", (at, at + PACKAGE_CAMERA_MERGE))
+        if not claimed:
+            continue
+        package = min(claimed, key=lambda p: float(p["delivered_at"]))
+        if not package["verdict_by"] and (not package["visit_event"] or package["verdict"] in (None, "not_seen", "seen")):
+            package_update(package["id"], verdict="confirmed", verdict_what=parcel["verdict_what"], verdict_confidence=parcel["verdict_confidence"], visit_event=parcel["visit_event"], visit_at=parcel["visit_at"],
+                           porch=package["porch"] or parcel["porch"], porch_at=package["porch_at"] or parcel["porch_at"])
+            for name in ("before", "after"):
+                source = os.path.join(PACKAGE_FRAME_DIR, f"{parcel['id']}_{name}.jpg")
+                if os.path.exists(source):
+                    os.replace(source, os.path.join(PACKAGE_FRAME_DIR, f"{package['id']}_{name}.jpg"))
+        package_update(parcel["id"], deleted=1)
+
+
+def package_forecast_rain(home: dict[str, Any], now: float) -> int | None:
+    """The highest chance of rain in the next few hours at the house, in percent (Open-Meteo, which needs no key), or None if it won't say."""
+    try:
+        r = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": home["lat"], "longitude": home["lng"], "hourly": "precipitation_probability", "timeformat": "unixtime", "forecast_days": 2}, timeout=15)
+        r.raise_for_status()
+        hourly = r.json()["hourly"]
+    except Exception as e:
+        log.warning("packages: no forecast: %s", e)
+        return None
+    chances = [c for t, c in zip(hourly["time"], hourly["precipitation_probability"]) if now - 1800 <= t <= now + PACKAGE_RAIN_HOURS * 3600 and c is not None]
+    return max(chances) if chances else None
+
+
+def package_writes_again(package: dict[str, Any]) -> bool:
+    """Whether silence means something: Amazon always writes when it has delivered, and a tracking service would say. Most shops write "shipped" and never again."""
+    return package["carrier"] == "amazon" or bool(package["tracker_on"])
+
+
+def package_late(package: dict[str, Any], today: str) -> bool:
+    """
+    Well past its promised day with no word of it, from someone who would usually have said. Only
+    usually: 3 of about 120 Amazon parcels on 2026-10-31 had no "Delivered" email at all, so the
+    day after is no news, and what is said about it is a question.
+    """
+    if package["stage"] == "delivered" or not package["expected_to"] or not package_writes_again(package):
+        return False
+    return package["expected_to"] < (datetime.fromisoformat(today).date() - timedelta(days=PACKAGE_LATE_AFTER_DAYS)).isoformat()
+
+
+def package_gone_quiet(package: dict[str, Any], now: float, today: str) -> bool:
+    """Nothing more will be heard of it, so it comes off the list, rather than being on its way for ever because nobody wrote again."""
+    if package["stage"] == "delivered" or package["pinned"] or package["archived"]:
+        return False
+    if package["expected_to"]:
+        if not package_writes_again(package) and package["expected_to"] < (datetime.fromisoformat(today).date() - timedelta(seconds=PACKAGE_QUIET_EXPECTED)).isoformat():
+            return True
+        if package["expected_to"] < (datetime.fromisoformat(today).date() - timedelta(days=PACKAGE_QUIET_LATE_DAYS)).isoformat():
+            return True
+    return now - float(package["updated"] or 0) > PACKAGE_QUIET_ANY
+
+
+def package_first_round(active: list[dict[str, Any]], now: float, today: str) -> None:
+    """
+    The first round after the relay first reads the mail would otherwise tell of months of things
+    all at once: what is already so counts as told. That goes on until a read has gone through for
+    every mailbox, so a mailbox that failed the first time doesn't bring it all on later.
+    """
+    if state_get(PACKAGE_NAGS_KEY):
+        return
+    synced = state_get(PACKAGE_SYNCED_KEY)
+    if not amazon_on() or (synced and not synced.get("failed")):
+        state_set(PACKAGE_NAGS_KEY, True)
+    for package in active:
+        package_told(package["id"], f"late:{package['expected_to']}", now)
+        package_told(package["id"], f"porch:{float(package['porch_at'] or package['delivered_at'] or now):.0f}", now)
+        package_told(package["id"], f"rain:{today}", now)
+        if package["return_by"]:
+            package_told(package["id"], f"return:{package['return_by']}", now)
+
+
+def package_nags(now: float, push: Callable[..., Any] | None = None) -> None:
+    """What the clock brings on rather than an email: a parcel still out, rain coming for it, a promised day gone by, a return window closing, the morning's list."""
+    zone = household_zone() or timezone.utc
+    local = datetime.fromtimestamp(now, zone)
+    today = local.date().isoformat()
+    active = package_rows("deleted=0 AND archived=0")
+    package_first_round(active, now, today)
+    for package in active:
+        if package_gone_quiet(package, now, today):
+            package_update(package["id"], archived=PACKAGE_QUIET)
+            package_log(package["id"], now, "gone_quiet", key="quiet")
+            continue
+        if package["stage"] == "delivered" and package["porch"] == "porch":
+            at = float(package["porch_at"] or package["delivered_at"] or now)
+            if package_door_opened(at, now):
+                package_update(package["id"], porch="inside", porch_at=now, porch_by="door")
+                package_log(package["id"], now, "taken_in", key="taken:door")
+            elif now - at > PACKAGE_PORCH_GIVE_UP:
+                package_update(package["id"], porch=None)
+            elif now - at >= PACKAGE_REMIND_AFTER and now - at < 86400 and package_told(package["id"], f"porch:{at:.0f}", now):
+                package_notify(package["id"], "porch", now, push=push)
+        if package_late(package, today) and package_told(package["id"], f"late:{package['expected_to']}", now):
+            package_notify(package["id"], "late", now, push=push)
+        if package["return_by"] and package["return_state"] in (None, "none") and package["stage"] == "delivered":
+            left = (datetime.fromisoformat(package["return_by"]).date() - local.date()).days
+            if left == PACKAGE_RETURN_WARN_DAYS and package_told(package["id"], f"return:{package['return_by']}", now):
+                package_notify(package["id"], "return_closing", now, push=push)
+    out = [p for p in active if p["porch"] == "porch" and p["stage"] == "delivered"]
+    home = state_get(HOME_KEY)
+    if out and home and now - float(_package_status.get("rain_at") or 0) >= PACKAGE_RAIN_SECONDS:
+        _package_status["rain_at"] = now
+        chance = package_forecast_rain(home, now)
+        if chance is not None and chance >= PACKAGE_RAIN_CHANCE:
+            for package in out:
+                if package_told(package["id"], f"rain:{today}", now):
+                    package_notify(package["id"], "rain", now, push=push, extra={"package_rain": str(chance)})
+    if local.hour == PACKAGE_MORNING_HOUR and state_get("package_morning") != today:
+        state_set("package_morning", today)
+        coming = [p for p in active if p["stage"] != "delivered" and (p["stage"] == "out_for_delivery" or (p["expected_from"] and p["expected_from"] <= today <= (p["expected_to"] or "")))]
+        if coming:
+            package_morning(coming, now, push=push)
+
+
+def package_phones_of() -> dict[str, str]:
+    return dict(with_db(lambda c: c.execute("SELECT device_id, person FROM package_phones").fetchall()))
+
+
+def package_may_see(package: dict[str, Any], viewer: str | None) -> bool:
+    """Whether someone may be told what a package is: not a surprise, or it is theirs. One that is nobody's can't be kept from anybody, or it would be lost to everyone."""
+    return not package["surprise"] or not package["owner"] or (viewer is not None and viewer == package["owner"])
+
+
+_PACKAGE_PUSH_ENGLISH = {
+    "shipped": ("Shipped", "{name} is on its way"),
+    "out_for_delivery": ("Out for delivery", "{name} should arrive today"),
+    "delivered": ("Delivered", "{name} has arrived"),
+    "porch": ("Still on the porch", "{name} has been out for a while"),
+    "rain": ("Rain is coming", "{name} is still on the porch"),
+    "missing": ("Did someone take a package in?", "{name} may be gone from the porch"),
+    "camera_only": ("A parcel may have arrived", "The door camera saw something left on the porch"),
+    "problem_attempted": ("Delivery attempted", "{name} wasn't delivered"),
+    "problem_exception": ("Delivery problem", "{name} has run into a problem"),
+    "signature": ("Signature needed", "Someone needs to sign for {name}"),
+    "late": ("Did this one come?", "No word of {name} since it was due"),
+    "return_closing": ("Return window closing", "{name} can be returned for 3 more days"),
+}
+
+
+def package_label(package: dict[str, Any], masked: bool) -> str:
+    if masked:
+        return "A surprise"
+    return package["nickname"] or package["title"] or (f"Your {package['shop']} package" if package["shop"] else "A package")
+
+
+def package_notify(package_id: str, kind: str, now: float, push: Callable[..., Any] | None = None, extra: dict[str, str] | None = None) -> dict[str, int] | None:
+    """Tells the phones something about one package, if the household wants told that. Each phone hears only what it may: a surprise stays one on anyone else's."""
+    package = package_row(package_id)
+    if package is None or package["deleted"]:
+        return None
+    group = "problems" if kind.startswith("problem_") or kind in ("signature", "late") else "returns" if kind == "return_closing" else "delivered" if kind == "camera_only" else kind
+    if not package_settings()["notify"].get(group, True):
+        return None
+    send = push or package_send
+    title, body = _PACKAGE_PUSH_ENGLISH[kind]
+    full = package_label(package, False)
+    masked = package_label(package, True)
+    shared = {"package": package_id, "package_event": kind, "notif_id": f"package-{package_id}", "package_verdict": package["verdict"] or "", "package_carrier": package["carrier"] or "", **(extra or {})}
+    return send(package, (title, body.format(name=full)), (title, body.format(name=masked)), {**shared, "package_name": full}, {**shared, "package_name": "", "package_masked": "1"})
+
+
+def package_send(package: dict[str, Any], plain: tuple[str, str], masked: tuple[str, str], plain_data: dict[str, str], masked_data: dict[str, str]) -> dict[str, int]:
+    """One push to each phone, worded for who holds it, past each one's own quiet hours."""
+    rows = with_db(lambda c: c.execute("SELECT device_id, token, only_away, quiet_start, quiet_end, tz, utc_offset FROM devices WHERE token IS NOT NULL").fetchall())
+    phones = package_phones_of()
+    now = time.time()
+    results = []
+    quiet = 0
+    for device_id, token, only_away, quiet_start, quiet_end, tz, utc_offset in rows:
+        if silenced(bool(only_away), quiet_start, quiet_end, tz, utc_offset, now):
+            quiet += 1
+            continue
+        allowed = package_may_see(package, phones.get(device_id))
+        title, body = plain if allowed else masked
+        results.append(deliver(token, title, body, plain_data if allowed else masked_data))
+    return {"sent": results.count("sent"), "failed": results.count("failed"), "skipped_quiet": quiet}
+
+
+def package_morning(coming: list[dict[str, Any]], now: float, push: Callable[..., Any] | None = None) -> dict[str, int] | None:
+    """The morning's one push: how many come today, and for anyone not home, that nobody will be."""
+    if not package_settings()["notify"].get("morning", True):
+        return None
+    count = len(coming)
+    away = away_since() is not None
+    data = {"package": "", "package_event": "morning", "package_count": str(count), "package_away": "1" if away else "0", "notif_id": "package-morning"}
+    title = "Package coming today" if count == 1 else f"{count} packages coming today"
+    body = "Nobody's home right now" if away else "Open Packages to see them"
+    if push:
+        return push(None, (title, body), (title, body), data, data)
+    return broadcast(title, body, data)
+
+
+def package_tracker_status(status: str | None) -> str | None:
+    """A tracking service's word for where a parcel is, as one of ours."""
+    return {"InTransit": "shipped", "InfoReceived": "shipped", "AvailableForPickup": "out_for_delivery", "OutForDelivery": "out_for_delivery", "Delivered": "delivered",
+            "DeliveryFailure": "attempted", "Exception": "exception"}.get(status or "")
+
+
+def package_tracker_apply(package_id: str, info: dict[str, Any], now: float, push: Callable[..., Any] | None = None) -> None:
+    """One parcel's answer from the tracking service: each scan on its timeline, and how far it has got."""
+    package = package_row(package_id)
+    if package is None:
+        return
+    latest_at = None
+    providers = ((info.get("tracking") or {}).get("providers") or [])
+    for provider in providers:
+        for event in provider.get("events") or []:
+            stamp = event.get("time_iso") or event.get("time_utc")
+            try:
+                at = datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                continue
+            latest_at = max(latest_at or at, at)
+            words = " · ".join(part for part in (event.get("description"), event.get("location")) if part)
+            package_log(package_id, at, "scan", words[:200], key=f"scan:{at:.0f}:{words[:40]}")
+    estimate = ((info.get("time_metrics") or {}).get("estimated_delivery_date") or {})
+    if estimate.get("from") and package["stage"] != "delivered":
+        package_update(package_id, expected_from=str(estimate["from"])[:10], expected_to=str(estimate.get("to") or estimate["from"])[:10])
+    stage = package_tracker_status((info.get("latest_status") or {}).get("status"))
+    at = latest_at or now
+    if stage in PACKAGE_STAGES:
+        package_advance(package_id, stage, at, now, tell=now - at < PACKAGE_FRESH_SECONDS, push=push)
+    elif stage and package["problem_at"] != at:
+        package_update(package_id, problem=stage, problem_at=at)
+        if now - at < PACKAGE_FRESH_SECONDS and package_told(package_id, f"problem:{stage}:{at:.0f}", now):
+            package_notify(package_id, "problem_" + stage, now, push=push)
+
+
+def package_tracker_poll(now: float, post: Callable[..., Any] | None = None, push: Callable[..., Any] | None = None) -> int:
+    """
+    Asks the tracking service about every open parcel with a number, when a key is set: Amazon's
+    own numbers it can't follow, and each number registered costs from a limited allowance, so one
+    is registered only when it first needs it. How many were answered.
+    """
+    if not PACKAGE_17TRACK_KEY:
+        return 0
+    post = post or (lambda path, body: requests.post(f"https://api.17track.net/track/v2.4/{path}", json=body, headers={"17token": PACKAGE_17TRACK_KEY, "Content-Type": "application/json"}, timeout=30))
+    rows = [p for p in package_rows("tracking IS NOT NULL AND stage!='delivered' AND deleted=0 AND created>=?", (now - 45 * 86400,)) if p["carrier"] != "amazon"]
+    answered = 0
+    new = [p for p in rows if not p["tracker_on"]]
+    for start in range(0, len(new), 40):
+        batch = new[start:start + 40]
+        r = post("register", [{"number": p["tracking"]} for p in batch])
+        if r.status_code == 200:
+            for p in batch:
+                package_update(p["id"], tracker_on=1)
+    by_number = {p["tracking"]: p["id"] for p in rows}
+    for start in range(0, len(rows), 40):
+        batch = rows[start:start + 40]
+        r = post("gettrackinfo", [{"number": p["tracking"]} for p in batch])
+        if r.status_code != 200:
+            log.warning("packages: the tracking service answered %s", r.status_code)
+            continue
+        for item in (r.json().get("data") or {}).get("accepted") or []:
+            package_id = by_number.get(item.get("number"))
+            if package_id:
+                package_tracker_apply(package_id, item.get("track_info") or {}, now, push=push)
+                answered += 1
+    return answered
+
+
+def package_tidy(now: float) -> None:
+    """Pictures of deliveries long past go; the record of them stays."""
+    if not os.path.isdir(PACKAGE_FRAME_DIR):
+        return
+    for name in os.listdir(PACKAGE_FRAME_DIR):
+        path = os.path.join(PACKAGE_FRAME_DIR, name)
+        try:
+            if now - os.path.getmtime(path) > PACKAGE_FRAMES_KEPT_DAYS * 86400:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+def package_judge_pending(now: float, push: Callable[..., Any] | None = None) -> None:
+    """
+    The deliveries the camera hasn't spoken for. Nobody at the door can only be said once the time
+    for someone to turn up has passed, after the email's own push has gone, so it is news of its own,
+    replacing that push on the phone while the email is recent.
+    """
+    pending = package_rows("delivered_at IS NOT NULL AND verdict IS NULL AND verdict_by IS NULL AND deleted=0 AND delivered_at >= ?", (now - PACKAGE_CAMERA_REACH,))
+    for package in pending:
+        try:
+            verdict = package_judge(package["id"], now)
+        except Exception:
+            log.exception("packages: couldn't judge %s", package["id"])
+            continue
+        if verdict == "not_seen" and now - float(package["delivered_at"]) < PACKAGE_FRESH_SECONDS and package_told(package["id"], "not_seen", now):
+            package_notify(package["id"], "delivered", now, push=push)
+
+
+def packages_forever() -> None:
+    """The emails every couple of minutes, the door camera's visits and the clock's reminders each round, and the tracking service now and then. Off without a linked mailbox or a camera."""
+    last_mail = last_tracker = last_tidy = 0.0
+    while True:
+        time.sleep(PACKAGE_TICK_SECONDS)
+        now = time.time()
+        try:
+            if amazon_on() and now - last_mail >= PACKAGE_RECENT_SECONDS:
+                last_mail = now
+                package_sync(now)
+            package_judge_pending(now)
+            package_watch_door(now)
+            package_retry_visits(now)
+            package_merge_camera(now)
+            package_nags(now)
+            if now - last_tracker >= PACKAGE_TRACKER_SECONDS:
+                last_tracker = now
+                package_tracker_poll(now)
+            if now - last_tidy >= 86400:
+                last_tidy = now
+                package_tidy(now)
+        except Exception:
+            log.exception("packages: a round failed")
+
+
+def package_frames_of(package_id: str) -> set[str]:
+    return {name for name in ("before", "after", "missing_before", "missing_after") if os.path.exists(os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg"))}
+
+
+def package_json(package: dict[str, Any], viewer: str | None, today: str, timeline: list[tuple] | None = None) -> dict[str, Any]:
+    """A package as the app shows it. A surprise that isn't this viewer's says only that one is coming, and when."""
+    may_see = package_may_see(package, viewer)
+    shown = {
+        "id": package["id"], "owner": package["owner"], "source": package["source"], "stage": package["stage"], "stage_at": package["stage_at"], "expected_from": package["expected_from"], "expected_to": package["expected_to"],
+        "window_start": package["window_start"], "window_end": package["window_end"], "signature": bool(package["signature"]), "problem": package["problem"], "problem_at": package["problem_at"],
+        "created": package["created"], "updated": package["updated"], "delivered_at": package["delivered_at"], "surprise": bool(package["surprise"]), "masked": not may_see, "pinned": bool(package["pinned"]),
+        "archived": bool(package["archived"]), "porch": package["porch"], "porch_at": package["porch_at"], "porch_by": package["porch_by"], "verdict": package["verdict"], "verdict_by": package["verdict_by"],
+        "late": package_late(package, today), "carrier": package["carrier"],
+    }
+    if not may_see:
+        return shown
+    return {
+        **shown,
+        "tracking": package["tracking"], "order_id": package["order_id"], "shop": package["shop"], "title": package["title"], "nickname": package["nickname"], "left_note": package["left_note"], "total": package["total"],
+        "notes": package["notes"], "return_by": package["return_by"], "return_state": package["return_state"] or "none", "refund_at": package["refund_at"], "verdict_what": package["verdict_what"],
+        "verdict_confidence": package["verdict_confidence"], "visit_event": package["visit_event"], "visit_at": package["visit_at"], "url": package_track_url(package["carrier"], package["tracking"], package["order_id"]),
+        "frames": sorted(package_frames_of(package["id"])),
+        "timeline": [{"at": at, "kind": kind, "detail": detail} for at, kind, detail in (timeline or [])],
+    }
+
+
+def packages_snapshot(viewer: str | None, now: float) -> dict[str, Any]:
+    zone = household_zone() or timezone.utc
+    today = datetime.fromtimestamp(now, zone).date().isoformat()
+    rows = package_rows("deleted=0 AND created>=?", (now - PACKAGE_LISTED_DAYS * 86400,))
+    events = with_db(lambda c: c.execute("SELECT package_id, at, kind, detail FROM package_events WHERE kind NOT LIKE 'told:%' ORDER BY at").fetchall())
+    timeline: dict[str, list[tuple]] = {}
+    for package_id, at, kind, detail in events:
+        timeline.setdefault(package_id, []).append((at, kind, detail))
+    rows.sort(key=lambda p: (float(p["updated"] or 0)), reverse=True)
+    return {
+        "viewer": viewer, "people": package_people(), "now": now, "today": today, "mail_on": amazon_on(), "synced": state_get(PACKAGE_SYNCED_KEY), "camera_on": package_camera_on(),
+        "camera": CAMERA_NAMES.get(PACKAGE_CAMERA, PACKAGE_CAMERA), "camera_id": PACKAGE_CAMERA, "door_sensor": bool(package_door_ids()), "model_on": bool(OLLAMA), "tracker_on": bool(PACKAGE_17TRACK_KEY),
+        "away": away_since() is not None, "settings": package_settings(), "packages": [package_json(p, viewer, today, timeline.get(p["id"])) for p in rows],
+    }
+
+
+class PackageAdd(BaseModel):
+    tracking: str
+    nickname: str | None = None
+    owner: str | None = None
+    surprise: bool = False
+
+
+class PackagePatch(BaseModel):
+    nickname: str | None = None
+    notes: str | None = None
+    owner: str | None = None
+    surprise: bool | None = None
+    pinned: bool | None = None
+    archived: bool | None = None
+    return_by: str | None = None
+    return_state: str | None = None
+    # "inside", someone took it in; "porch", it is still out there; "yes"/"no" on what the camera said.
+    porch: str | None = None
+    camera: str | None = None
+    stage: str | None = None
+
+
+class PackagePhone(BaseModel):
+    device_id: str
+    person: str | None = None
+
+
+class PackageSettings(BaseModel):
+    notify: dict[str, bool] | None = None
+    hide_new: dict[str, bool] | None = None
+
+
+def package_viewer(device: str | None) -> str | None:
+    if not device:
+        return None
+    row = with_db(lambda c: c.execute("SELECT person FROM package_phones WHERE device_id=?", (device,)).fetchone())
+    return row[0] if row else None
+
+
+def package_or_404(package_id: str, viewer: str | None) -> dict[str, Any]:
+    """A package the asker may change or look at: someone else's surprise is as good as not there."""
+    package = package_row(package_id)
+    if package is None or package["deleted"] or not package_may_see(package, viewer):
+        raise HTTPException(status_code=404, detail="No such package")
+    return package
+
+
+@app.get("/packages")
+def get_packages(request: Request, device: str | None = None) -> dict[str, Any]:
+    """Everything the Packages app shows (see "packages"), each surprise masked unless this phone (`device`) is its owner's."""
+    require_frigate_session(request)
+    return packages_snapshot(package_viewer(device), time.time())
+
+
+@app.post("/packages/sync")
+def post_packages_sync(request: Request, device: str | None = None) -> dict[str, Any]:
+    """Reads the mailboxes now, for a pull on the app's list, then answers as `GET /packages` does."""
+    require_frigate_session(request)
+    package_sync(time.time(), full=False)
+    return packages_snapshot(package_viewer(device), time.time())
+
+
+@app.post("/packages")
+def post_package(body: PackageAdd, request: Request, device: str | None = None) -> dict[str, Any]:
+    """Adds a parcel by its tracking number, for one no email told of. 400 `not_a_number` for what can't be one."""
+    require_frigate_session(request)
+    classified = package_classify_number(body.tracking)
+    if classified is None:
+        raise HTTPException(status_code=400, detail={"error": "not_a_number", "message": "That doesn't look like a tracking number"})
+    number, carrier = classified
+    now = time.time()
+    viewer = package_viewer(device)
+    owner = body.owner if body.owner in package_people() else viewer or ""
+    package_id = package_id_of(number)
+    # A surprise is kept from everyone but its owner, so it needs one.
+    surprise = int(body.surprise) if owner else 0
+    with_db(lambda c: (c.execute(
+        "INSERT INTO packages (id, owner, source, carrier, tracking, nickname, stage, stage_at, created, updated, surprise) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+        " ON CONFLICT(id) DO UPDATE SET deleted=0, archived=0, nickname=COALESCE(excluded.nickname, nickname)",
+        (package_id, owner, "manual", carrier, number, (body.nickname or "").strip() or None, "shipped", now, now, now, surprise),
+    ), c.commit()))
+    package_log(package_id, now, "added", key="added")
+    return packages_snapshot(viewer, now)
+
+
+@app.patch("/packages/{package_id}")
+def patch_package(package_id: str, body: PackagePatch, request: Request, device: str | None = None) -> dict[str, Any]:
+    """Changes what someone can say about a package: its name, its notes, whose it is, whether it is a surprise, a return, and what is really on the porch."""
+    require_frigate_session(request)
+    viewer = package_viewer(device)
+    package = package_or_404(package_id, viewer)
+    now = time.time()
+    fields: dict[str, Any] = {}
+    if body.nickname is not None:
+        fields["nickname"] = body.nickname.strip() or None
+    if body.notes is not None:
+        fields["notes"] = body.notes.strip() or None
+    if body.owner is not None and body.owner in package_people():
+        fields["owner"] = body.owner
+    if body.surprise is not None and body.surprise != bool(package["surprise"]):
+        # Only its owner can hide a thing, or it would be hidden from whoever just did it. One that is nobody's becomes theirs.
+        if not viewer or (package["owner"] and viewer != package["owner"]):
+            raise HTTPException(status_code=403, detail="Not your package")
+        fields["surprise"] = int(body.surprise)
+        if not package["owner"]:
+            fields["owner"] = viewer
+    if body.pinned is not None:
+        fields["pinned"] = int(body.pinned)
+    if body.archived is not None:
+        fields["archived"] = int(body.archived)
+        # Brought back by hand from having gone quiet: pinned, or it would go straight back.
+        if not body.archived and package["archived"] == PACKAGE_QUIET and package["stage"] != "delivered":
+            fields["pinned"] = 1
+    if body.return_by is not None:
+        if body.return_by:
+            try:
+                datetime.fromisoformat(body.return_by)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Not a date")
+        fields["return_by"] = body.return_by or None
+    if body.return_state in PACKAGE_RETURN_STATES:
+        fields["return_state"] = body.return_state
+        package_log(package_id, now, f"return_{body.return_state}", key=f"return:{body.return_state}:{now:.0f}")
+    if body.porch in ("inside", "porch"):
+        fields.update(porch=body.porch, porch_at=now, porch_by=viewer or "someone")
+        package_log(package_id, now, "taken_in" if body.porch == "inside" else "still_out", viewer, key=f"porch:{body.porch}:{now:.0f}")
+    if body.camera == "yes":
+        fields.update(verdict="confirmed", verdict_by=viewer or "someone")
+    elif body.camera == "no":
+        fields.update(verdict="not_seen", verdict_by=viewer or "someone", porch=None)
+    if body.stage == "delivered" and package["stage"] != "delivered":
+        # Whoever says so has it, or knows where it is: not one for the porch watch.
+        package_update(package_id, stage="delivered", stage_at=now, delivered_at=now, updated=now, problem=None, problem_at=None, porch="inside", porch_at=now, porch_by=viewer or "someone")
+        package_log(package_id, now, "marked_delivered", viewer, key=f"marked:{now:.0f}")
+    if fields:
+        package_update(package_id, **fields)
+    return packages_snapshot(viewer, now)
+
+
+@app.delete("/packages/{package_id}")
+def delete_package(package_id: str, request: Request, device: str | None = None) -> dict[str, Any]:
+    """Forgets a package. Kept as a tombstone, so the next read of the emails doesn't bring it back."""
+    require_frigate_session(request)
+    viewer = package_viewer(device)
+    package_or_404(package_id, viewer)
+    package_update(package_id, deleted=1)
+    for name in package_frames_of(package_id):
+        try:
+            os.remove(os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg"))
+        except OSError:
+            pass
+    return packages_snapshot(viewer, time.time())
+
+
+@app.put("/packages/phone")
+def put_package_phone(body: PackagePhone, request: Request) -> dict[str, Any]:
+    """Says whose phone this is, which is who its surprises are kept from and shown to."""
+    require_frigate_session(request)
+    if body.person and body.person not in package_people():
+        raise HTTPException(status_code=400, detail="No such person")
+    if body.person:
+        with_db(lambda c: (c.execute("INSERT OR REPLACE INTO package_phones VALUES (?,?)", (body.device_id, body.person)), c.commit()))
+    else:
+        with_db(lambda c: (c.execute("DELETE FROM package_phones WHERE device_id=?", (body.device_id,)), c.commit()))
+    return packages_snapshot(body.person, time.time())
+
+
+@app.put("/packages/settings")
+def put_package_settings(body: PackageSettings, request: Request, device: str | None = None) -> dict[str, Any]:
+    """Which pushes the household wants, and who is hiding everything new (a run of gifts in December, say)."""
+    require_frigate_session(request)
+    held = package_settings()
+    for name, value in (body.notify or {}).items():
+        if name in PACKAGE_NOTICES:
+            held["notify"][name] = bool(value)
+    for person, value in (body.hide_new or {}).items():
+        if person in package_people():
+            held["hide_new"][person] = bool(value)
+    state_set(PACKAGE_SETTINGS_KEY, held)
+    return packages_snapshot(package_viewer(device), time.time())
+
+
+@app.get("/packages/porch/now")
+def get_package_porch(request: Request) -> Response:
+    """The landing as the door camera sees it this moment."""
+    require_frigate_session(request)
+    if not package_camera_on():
+        raise HTTPException(status_code=404, detail="No camera")
+    try:
+        r = requests.get(f"{FRIGATE}/api/{PACKAGE_CAMERA}/latest.jpg", params={"h": 1080}, timeout=15)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Frigate unreachable: {e}")
+    if r.status_code != 200:
+        raise HTTPException(status_code=404, detail=f"Frigate answered {r.status_code}")
+    return Response(content=package_crop(r.content, edge=900), media_type="image/jpeg", headers={"Cache-Control": "private, max-age=10"})
+
+
+@app.get("/packages/{package_id}/frames/{name}")
+def get_package_frame(package_id: str, name: str, request: Request, device: str | None = None) -> Response:
+    """One of a delivery's kept pictures. A surprise's are as much of a giveaway as its name: only its owner's phone gets them."""
+    require_frigate_session(request)
+    package_or_404(package_id, package_viewer(device))
+    if name not in ("before", "after", "missing_before", "missing_after"):
+        raise HTTPException(status_code=404, detail="No such picture")
+    path = os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No such picture")
+    with open(path, "rb") as f:
+        return Response(content=f.read(), media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 # ---------------------------------------------------------------- Tesla

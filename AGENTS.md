@@ -126,7 +126,7 @@ list above.
 
 The app draws edge to edge, so Android's `adjustResize` moves nothing by itself: the layout has to
 make room for the keyboard. The shell's pages (`ShellScaffold`'s content) and each drawer app's
-pages (the `AnimatedContent` in `FinanceApp`, `WeatherApp`, `FitnessApp`, `AtlasApp`) carry
+pages (the `AnimatedContent` in `FinanceApp`, `WeatherApp`, `FitnessApp`, `AtlasApp`, `PackagesApp`) carry
 `imePadding()`, so they end at the keyboard and the scrolling page brings the focused field up
 above it. The floating navs sit outside that and stay under the keyboard.
 

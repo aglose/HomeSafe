@@ -118,4 +118,43 @@
     <string name="shortcut_doors">Doors</string>
     <string name="shortcut_radar">Radar</string>
     <string name="shortcut_budget">Budget</string>
+    <string name="notif_channel_packages_name">Packages</string>
+    <string name="notif_channel_packages_description">A parcel on its way, delivered, or left out too long</string>
+    <string name="notif_group_packages">Packages</string>
+    <!-- The packages app's push (docs/packages.md); %1$s is what the parcel is called, as data. -->
+    <string name="notif_package_surprise">A surprise</string>
+    <string name="notif_package_unnamed">A package</string>
+    <string name="notif_package_shipped_title">Shipped</string>
+    <string name="notif_package_shipped_body">%1$s is on its way</string>
+    <string name="notif_package_out_title">Out for delivery</string>
+    <string name="notif_package_out_body">%1$s should arrive today</string>
+    <string name="notif_package_delivered_title">Delivered</string>
+    <string name="notif_package_delivered_body">%1$s has arrived</string>
+    <string name="notif_package_delivered_confirmed">%1$s is at the door. The camera saw it land.</string>
+    <string name="notif_package_delivered_seen">%1$s has arrived. The camera saw someone at the door.</string>
+    <string name="notif_package_delivered_not_seen">%1$s is marked delivered, but the door camera saw nobody.</string>
+    <string name="notif_package_porch_title">Still on the porch</string>
+    <string name="notif_package_porch_body">%1$s has been out there a while</string>
+    <string name="notif_package_rain_title">Rain is coming</string>
+    <string name="notif_package_rain_body">%1$s is still on the porch</string>
+    <string name="notif_package_missing_title">Did someone take a package in?</string>
+    <string name="notif_package_missing_body">%1$s may be gone from the porch. Tap to see the pictures.</string>
+    <string name="notif_package_camera_title">A parcel may have arrived</string>
+    <string name="notif_package_camera_body">The door camera saw something left on the porch</string>
+    <string name="notif_package_attempted_title">Delivery attempted</string>
+    <string name="notif_package_attempted_body">%1$s wasn\'t delivered</string>
+    <string name="notif_package_problem_title">Delivery problem</string>
+    <string name="notif_package_problem_body">%1$s has run into a problem</string>
+    <string name="notif_package_signature_title">Signature needed</string>
+    <string name="notif_package_signature_body">Someone needs to sign for %1$s</string>
+    <string name="notif_package_late_title">Did this one come?</string>
+    <string name="notif_package_late_body">No word of %1$s since it was due</string>
+    <string name="notif_package_return_title">Return window closing</string>
+    <string name="notif_package_return_body">%1$s can go back for 3 more days</string>
+    <string name="notif_package_morning_title">Packages today</string>
+    <plurals name="notif_package_morning_count">
+        <item quantity="one">%1$d package should come today</item>
+        <item quantity="other">%1$d packages should come today</item>
+    </plurals>
+    <string name="notif_package_morning_away">%1$s, and nobody\'s home</string>
 </resources>

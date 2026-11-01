@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.desktop
 
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
+import com.meticulouscreations.homesafe.navigation.PackageDeepLink
+import com.meticulouscreations.homesafe.navigation.PackageDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
@@ -47,6 +49,7 @@ object DesktopNotifications {
     fun open(link: String) {
         WeatherDeepLink.fromUri(link)?.let { return WeatherDeepLinks.open(it) }
         DoorDeepLink.fromUri(link)?.let { return DoorDeepLinks.open(it) }
+        PackageDeepLink.fromUri(link)?.let { return PackageDeepLinks.open(it) }
         ParkingDeepLink.fromUri(link)?.let { return ParkingDeepLinks.open(it) }
         FinanceDeepLink.fromUri(link)?.let { return FinanceDeepLinks.open(it) }
         MomentDeepLink.fromUri(link)?.let(MomentDeepLinks::open)

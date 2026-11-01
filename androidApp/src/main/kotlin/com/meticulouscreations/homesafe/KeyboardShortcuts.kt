@@ -27,6 +27,7 @@ internal object KeyboardShortcuts {
         Shortcut(KeyEvent.KEYCODE_5, R.string.shortcut_atlas, command = ShellCommand.Open(InnerApp.ATLAS)),
         Shortcut(KeyEvent.KEYCODE_6, R.string.shortcut_fitness, command = ShellCommand.Open(InnerApp.FITNESS)),
         Shortcut(KeyEvent.KEYCODE_7, R.string.shortcut_finance, command = ShellCommand.Open(InnerApp.FINANCE)),
+        Shortcut(KeyEvent.KEYCODE_8, R.string.shortcut_packages, command = ShellCommand.Open(InnerApp.PACKAGES)),
         Shortcut(KeyEvent.KEYCODE_K, R.string.shortcut_assistant, command = ShellCommand.Assistant),
         Shortcut(KeyEvent.KEYCODE_S, R.string.shortcut_sidebar, shift = true, command = ShellCommand.ToggleSidebar),
     )
