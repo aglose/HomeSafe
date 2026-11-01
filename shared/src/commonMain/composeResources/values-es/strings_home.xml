@@ -124,6 +124,7 @@
     <string name="camera_stats_connection">Conexión</string>
     <string name="camera_stats_connection_webrtc">WebRTC</string>
     <string name="camera_stats_connection_hls">HLS</string>
+    <string name="camera_stats_connection_fmp4">fMP4</string>
     <string name="camera_stats_video">Video</string>
     <string name="camera_stats_resolution">%1$d×%2$d</string>
     <string name="camera_stats_frame_rate">%1$d fps</string>

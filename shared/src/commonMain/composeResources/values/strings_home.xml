@@ -174,6 +174,7 @@
     <string name="camera_stats_connection">Connection</string>
     <string name="camera_stats_connection_webrtc">WebRTC</string>
     <string name="camera_stats_connection_hls">HLS</string>
+    <string name="camera_stats_connection_fmp4">fMP4</string>
     <string name="camera_stats_video">Video</string>
     <!-- %1$d and %2$d are the picture's width and height in pixels. -->
     <string name="camera_stats_resolution">%1$d×%2$d</string>

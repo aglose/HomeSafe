@@ -43,6 +43,7 @@ import homesafe.shared.generated.resources.camera_stats_bitrate
 import homesafe.shared.generated.resources.camera_stats_buffer
 import homesafe.shared.generated.resources.camera_stats_close
 import homesafe.shared.generated.resources.camera_stats_connection
+import homesafe.shared.generated.resources.camera_stats_connection_fmp4
 import homesafe.shared.generated.resources.camera_stats_connection_hls
 import homesafe.shared.generated.resources.camera_stats_connection_webrtc
 import homesafe.shared.generated.resources.camera_stats_decode
@@ -83,6 +84,7 @@ internal fun streamStatsRows(stats: LiveStreamStats): List<StreamStatsRow> = bui
     val connection = when (stats.transport) {
         LiveTransport.WEBRTC -> Res.string.camera_stats_connection_webrtc
         LiveTransport.HLS -> Res.string.camera_stats_connection_hls
+        LiveTransport.FMP4 -> Res.string.camera_stats_connection_fmp4
     }
     add(StreamStatsRow(Res.string.camera_stats_connection, UiText.of(connection)))
     val video = listOfNotNull(

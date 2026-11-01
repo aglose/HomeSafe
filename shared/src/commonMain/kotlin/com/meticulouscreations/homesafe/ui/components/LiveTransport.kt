@@ -16,6 +16,9 @@ enum class LiveTransport {
 
     /** go2rtc's HLS playlist through the platform's media player: a couple of seconds behind, but works anywhere HTTP does. */
     HLS,
+
+    /** go2rtc's continuous fMP4 stream through FFmpeg, the desktop's way: frames as the camera sends them, over plain HTTP. */
+    FMP4,
 }
 
 /** A peer connection's coarse state, as its platform engine reports it. */

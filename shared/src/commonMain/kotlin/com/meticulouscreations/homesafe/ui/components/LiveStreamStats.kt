@@ -22,6 +22,7 @@ internal const val LIVE_STATS_INTERVAL_MS = 1_000L
  *  - **HLS**: how far the playhead is behind the newest video the server had when the player last
  *    asked it for some (see [LiveEdgeTracker]). [bufferMs] is the part of that already downloaded
  *    and waiting to play; [networkMs] and [decodeMs] are not known.
+ *  - **fMP4**: not known; nothing in the stream or from FFmpeg says when a frame reached the app.
  */
 @Immutable
 data class LiveStreamStats(

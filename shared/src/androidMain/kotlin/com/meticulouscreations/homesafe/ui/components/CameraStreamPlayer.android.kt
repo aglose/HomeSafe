@@ -280,7 +280,7 @@ actual fun CameraStreamPlayer(
     LaunchedEffect(holder, transport, holder.webRtcHasAudio) {
         when (transport) {
             LiveTransport.WEBRTC -> currentOnAudioAvailabilityChanged(holder.webRtcHasAudio)
-            LiveTransport.HLS -> currentOnAudioAvailabilityChanged(player.currentTracks.hasAudio())
+            LiveTransport.HLS, LiveTransport.FMP4 -> currentOnAudioAvailabilityChanged(player.currentTracks.hasAudio())
         }
     }
     LaunchedEffect(holder, transport, holder.webRtcStalled) {
@@ -321,7 +321,7 @@ actual fun CameraStreamPlayer(
             // still not reported a frame after this many polls is trusted to be showing one anyway,
             // so a missed or misattributed report can't leave the poster up over live video.
             val steady = when (holder.transport) {
-                LiveTransport.HLS -> player.playbackState == Player.STATE_READY && player.isPlaying
+                LiveTransport.HLS, LiveTransport.FMP4 -> player.playbackState == Player.STATE_READY && player.isPlaying
                 LiveTransport.WEBRTC -> !holder.webRtcStalled
             }
             steadyPolls = if (steady) steadyPolls + 1 else 0

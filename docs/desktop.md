@@ -119,7 +119,7 @@ acts on while it is up. On Android a hardware keyboard sends the same, with Ctrl
 
 | | On the Mac |
 | --- | --- |
-| Live video and recordings | FFmpeg (JavaCV) plays go2rtc's HLS and Frigate's recordings, decoded on a thread per camera and drawn with Skia (`DesktopVideoEngine.kt`). No WebRTC engine, so live is a second or two behind the phones'. |
+| Live video and recordings | FFmpeg (JavaCV) plays go2rtc's continuous fMP4 stream and Frigate's recordings, decoded on a thread per camera and drawn with Skia (`DesktopVideoEngine.kt`). No WebRTC engine; see [Live video over WebRTC](webrtc-live.md#platforms) for why live isn't HLS here. |
 | Sound | Through Java Sound, Opus or AAC, when a camera's sound is turned on. |
 | Sign-in | Saved in the login Keychain behind Touch ID (or the Mac's password) by the Swift helper; the same helper unlocks Finance and Atlas while the server is away. Weaker than the phones' (see `BiometricCredentialStore.desktop.kt`). |
 | Notifications | The alert poller's and the weather's, while the app runs, in the Mac's Notification Center as HomeSafe's own (`macos/Notifications.swift`, loaded through JNA by `MacNotifications.kt`; macOS asks once to allow them). Each keeps the deep link it opens (`homesafe://…`, as Android's do), so clicking one opens what that one was about, even after HomeSafe has quit and started again. While they aren't allowed (asked again for each one), they come from the menu-bar icon instead, and a click opens the latest. No push reaches a computer. |

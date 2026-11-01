@@ -145,6 +145,25 @@ kotlin {
             implementation(libs.sqlite.bundled)
             implementation(libs.ktor.client.darwin)
         }
+        getByName("desktopTest").dependencies {
+            // The video engine's tests play real clips: FFmpeg's natives and Skia for the machine they run on,
+            // which the library modules leave to the app.
+            val arm = System.getProperty("os.arch").let { it == "aarch64" || it == "arm64" }
+            val os = System.getProperty("os.name").lowercase()
+            val bytedeco = when {
+                "mac" in os -> if (arm) "macosx-arm64" else "macosx-x86_64"
+                "win" in os -> "windows-x86_64"
+                else -> if (arm) "linux-arm64" else "linux-x86_64"
+            }
+            val skiko = when {
+                "mac" in os -> if (arm) "macos-arm64" else "macos-x64"
+                "win" in os -> "windows-x64"
+                else -> if (arm) "linux-arm64" else "linux-x64"
+            }
+            runtimeOnly(libs.ffmpeg.get().toString() + ":" + bytedeco)
+            runtimeOnly(libs.javacpp.get().toString() + ":" + bytedeco)
+            implementation("org.jetbrains.compose.desktop:desktop-jvm-$skiko:" + libs.versions.composeMultiplatform.get())
+        }
         getByName("desktopMain").dependencies {
             api(libs.compose.desktop)
             // Dispatchers.Main is the AWT event thread.
@@ -290,3 +309,5 @@ tasks.matching { it.name == "generateAndroidHostTestLintModel" || it.name == "li
     .configureEach {
         dependsOn("kspAndroidHostTest")
     }
+// No screen is needed: the desktop's tests here draw nothing.
+tasks.matching { it.name == "desktopTest" }.configureEach { (this as Test).systemProperty("java.awt.headless", "true") }

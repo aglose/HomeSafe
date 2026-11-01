@@ -21,6 +21,7 @@ import org.jetbrains.skia.Image
 import org.jetbrains.skia.ImageInfo
 import java.nio.ByteBuffer
 import java.nio.ShortBuffer
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
@@ -28,14 +29,16 @@ import javax.sound.sampled.SourceDataLine
 
 /**
  * One camera's video on the desktop: FFmpeg (through JavaCV's [FFmpegFrameGrabber]) reading
- * go2rtc's live HLS or a Frigate recording, decoding on a thread of its own, and handing each
- * picture to Compose as a Skia [Image] ([picture]). The desktop's counterpart of Android's pooled
- * ExoPlayer and iOS's AVPlayer: there is no WebRTC engine here, so live is always HLS.
+ * go2rtc's continuous live stream ([go2rtcContinuousUrl]) or a Frigate recording, decoding on a
+ * thread of its own, and handing each picture to Compose as a Skia [Image] ([picture]). The
+ * desktop's counterpart of Android's pooled ExoPlayer and iOS's AVPlayer: there is no WebRTC
+ * engine here.
  *
- * Frames are played at the pace their timestamps say, against the wall clock: HLS hands over a
- * segment's worth of video at once, which decoded as fast as it arrives would race and then
- * freeze. Falling more than [MAX_LAG_US] behind (a slow network, a laptop waking up) starts the
- * clock again from the frame in hand rather than playing catch-up.
+ * Frames are played at the pace their timestamps say, against the wall clock ([FramePacer]).
+ *
+ * Moving between a camera's live streams is make-before-break, as on the phones: the stream on
+ * screen keeps decoding and drawing, and there is no poster, until the one replacing it has a
+ * picture of its own; then the old one lets go of its decoder and its connection ([outgoing]).
  *
  * A live source that fails or ends reconnects by itself, backing off as the phones' players do
  * ([LivePlaybackPolicy.retryDelayMs]); a recording that fails or ends says so ([ended], [failed])
@@ -95,9 +98,6 @@ internal class DesktopVideoEngine(val key: String?) {
 
     @Volatile private var seekToMs: Long? = null
 
-    /** Moves whenever the decode loop must drop what it has and open [source] afresh. */
-    @Volatile private var loadGeneration = 0
-
     private var thread: Thread? = null
 
     @Volatile private var running = false
@@ -110,8 +110,11 @@ internal class DesktopVideoEngine(val key: String?) {
      */
     @Volatile private var session = 0
 
-    /** A picture the decode thread made that the UI thread hasn't published yet; replaced, not queued, when it falls behind. */
-    private val pending = AtomicReference<Image?>(null)
+    /** The [session] still drawing until the current one has its first picture, or [NO_SESSION]; see [load]. */
+    private val outgoing = AtomicInteger(NO_SESSION)
+
+    /** A picture a decode thread made that the UI thread hasn't published yet; replaced, not queued, when it falls behind. */
+    private val pending = AtomicReference<PendingPicture?>(null)
 
     /** How many surfaces are bound and on screen ([start]/[stop]), and whether a prefetch is holding the engine meanwhile. */
     var binders = 0
@@ -126,8 +129,14 @@ internal class DesktopVideoEngine(val key: String?) {
         seekToMs = null
         // A live stream that keeps its URL is the same stream (see VideoSource.Live): nothing to redo.
         if (previous is VideoSource.Live && next is VideoSource.Live && previous.url == next.url) return
-        loadGeneration++
-        coldStartGeneration++
+        val moving = picture != null && pictureGeneration == coldStartGeneration
+        if (previous is VideoSource.Live && next is VideoSource.Live && running && moving) {
+            // A join that never drew is simply replaced; whatever is on screen stays until something takes over.
+            outgoing.compareAndSet(NO_SESSION, session)
+        } else {
+            outgoing.set(NO_SESSION)
+            coldStartGeneration++
+        }
         stalled = false
         positionMs = (next as? VideoSource.Recording)?.startPositionMs ?: 0L
         if (playWhenReady || running) restart()
@@ -149,7 +158,7 @@ internal class DesktopVideoEngine(val key: String?) {
 
     /** Drops the connection and joins again now: the Home page's pull to refresh. */
     fun reconnect() {
-        loadGeneration++
+        outgoing.set(NO_SESSION)
         coldStartGeneration++
         restart()
     }
@@ -175,6 +184,7 @@ internal class DesktopVideoEngine(val key: String?) {
     fun halt() {
         running = false
         session++
+        outgoing.set(NO_SESSION)
         thread?.interrupt()
         thread = null
         stalled = false
@@ -183,7 +193,7 @@ internal class DesktopVideoEngine(val key: String?) {
     /** Lets go of everything, the last picture included. */
     fun release() {
         halt()
-        pending.getAndSet(null)?.close()
+        pending.getAndSet(null)?.image?.close()
         picture?.close()
         picture = null
     }
@@ -196,9 +206,10 @@ internal class DesktopVideoEngine(val key: String?) {
     /** A new decode thread for what is to play now, in place of any that was running ([session]). */
     private fun restart() {
         if (source == null) return
+        val replaced = session
         val mine = ++session
         running = true
-        thread?.interrupt()
+        if (outgoing.get() != replaced) thread?.interrupt()
         thread = Thread({ decodeLoop(mine) }, "HomeSafe video ${key ?: "private"}").apply {
             isDaemon = true
             start()
@@ -207,17 +218,30 @@ internal class DesktopVideoEngine(val key: String?) {
 
     private fun isCurrent(mine: Int) = running && session == mine
 
+    private fun mayDraw(mine: Int) = isCurrent(mine) || (running && outgoing.get() == mine)
+
     private fun decodeLoop(mine: Int) {
+        try {
+            playUntilReplaced(mine)
+        } catch (_: InterruptedException) {
+            // Stopped or replaced: nothing to report.
+        } finally {
+            outgoing.compareAndSet(mine, NO_SESSION)
+        }
+    }
+
+    private fun playUntilReplaced(mine: Int) {
         var failures = 0
         while (isCurrent(mine)) {
             val playing = source ?: break
-            val generation = loadGeneration
-            val outcome = runCatching { play(playing, generation, mine) }
-            if (!isCurrent(mine)) break
-            if (loadGeneration != generation) {
-                failures = 0
+            if (isHeldLive(playing)) {
+                Thread.sleep(PAUSED_POLL_MS)
                 continue
             }
+            val attempt = PlayAttempt()
+            val outcome = runCatching { play(playing, mine, attempt) }
+            if (!isCurrent(mine)) break
+            if (isHeldLive(playing)) continue
             if (playing is VideoSource.Recording) {
                 ui.launch {
                     if (session != mine) return@launch
@@ -227,72 +251,71 @@ internal class DesktopVideoEngine(val key: String?) {
                 break
             }
             // Live: whatever happened, join again, backing off while it keeps failing.
-            failures++
+            failures = if (attempt.drewPicture) 1 else failures + 1
             ui.launch {
                 if (session != mine) return@launch
-                coldStartGeneration++
+                // While the stream being replaced still plays, its picture needs no poster over it.
+                if (outgoing.get() == NO_SESSION) coldStartGeneration++
                 stalled = false
             }
             // In short steps, so a thread that has been replaced doesn't sleep out the whole back-off.
             val wakeAt = System.nanoTime() + LivePlaybackPolicy.retryDelayMs(failures) * 1_000_000
-            try {
-                while (isCurrent(mine) && System.nanoTime() < wakeAt) Thread.sleep(BACKOFF_STEP_MS)
-            } catch (_: InterruptedException) {
-                break
-            }
+            while (isCurrent(mine) && System.nanoTime() < wakeAt) Thread.sleep(BACKOFF_STEP_MS)
         }
     }
 
-    /** Plays [playing] until it ends (normal return), fails (throws), or is replaced or stopped. */
-    private fun play(playing: VideoSource, generation: Int, mine: Int) {
+    /** A paused live stream holds nothing open: the server wouldn't wait for it, so it joins again on resuming. */
+    private fun isHeldLive(playing: VideoSource) = playing is VideoSource.Live && !playWhenReady
+
+    /** Plays [playing] until it ends (normal return), fails (throws), or is replaced, stopped or, if live, paused. */
+    private fun play(playing: VideoSource, mine: Int, attempt: PlayAttempt) {
         quietLogs
-        val grabber = FFmpegFrameGrabber(playing.url).apply {
+        val continuousUrl = (playing as? VideoSource.Live)?.let { go2rtcContinuousUrl(it.url) }
+        val grabber = FFmpegFrameGrabber(continuousUrl ?: playing.url).apply {
             pixelFormat = avutil.AV_PIX_FMT_BGRA
             sampleFormat = avutil.AV_SAMPLE_FMT_S16
             sampleRate = AUDIO_SAMPLE_RATE
             audioChannels = AUDIO_CHANNELS
             // Give up on a read that has had nothing for this long, so a dead stream reconnects.
             setOption("rw_timeout", READ_TIMEOUT_US.toString())
-            setOption("reconnect", "1")
+            // Our own retries rejoin a live stream that drops; FFmpeg's would resume at a byte it can't.
+            if (continuousUrl == null) setOption("reconnect", "1")
             if (playing.headers.isNotEmpty()) {
                 setOption("headers", playing.headers.entries.joinToString("") { (name, value) -> "$name: $value\r\n" })
             }
             if (playing is VideoSource.Live) {
                 // Start from the newest segment rather than three back, which is HLS's default.
-                setOption("live_start_index", "-1")
+                if (continuousUrl == null) setOption("live_start_index", "-1")
                 setOption("fflags", "nobuffer")
                 setOption("flags", "low_delay")
             }
-            setVideoOption("threads", "auto")
+            setVideoOption("threads", if (playing is VideoSource.Live) LIVE_DECODE_THREADS else "auto")
         }
         var line: SourceDataLine? = null
         try {
-            grabber.start()
+            // The unsafe start and release: the plain ones hold one lock across every grabber in the app, so a camera
+            // slow to answer would hold up every other camera's start and the end of the stream it replaces. FFmpeg
+            // needs no such lock now. An fMP4's opening says what is in it, so the stream needn't be sampled first.
+            grabber.startUnsafe(continuousUrl == null)
             if (playing is VideoSource.Recording && playing.startPositionMs > 0) grabber.setTimestamp(playing.startPositionMs * 1000, true)
-            val audio = grabber.audioChannels > 0
-            ui.launch {
-                hasAudio = audio
-                stats = LiveStreamStats(
-                    transport = LiveTransport.HLS,
-                    width = grabber.imageWidth.takeIf { it > 0 },
-                    height = grabber.imageHeight.takeIf { it > 0 },
-                    framesPerSecond = grabber.videoFrameRate.takeIf { it > 0 }?.toInt(),
-                    bitrateKbps = grabber.videoBitrate.takeIf { it > 0 }?.let { it / 1000 },
-                    codec = grabber.videoCodecName,
-                )
-            }
-            var clockOriginUs = Long.MIN_VALUE
-            var clockOriginNanos = 0L
+            val audio = grabber.hasAudio()
+            ui.launch { if (session == mine) hasAudio = audio }
+            val transport = if (continuousUrl != null) LiveTransport.FMP4 else LiveTransport.HLS
+            val pacer = FramePacer(live = playing is VideoSource.Live)
+            val frameRate = FrameRateMeter()
+            var pixels = ByteArray(0)
+            var reported: LiveStreamStats? = null
             var lastPositionReport = 0L
-            while (isCurrent(mine) && loadGeneration == generation) {
+            while (mayDraw(mine)) {
                 seekToMs?.let { target ->
                     seekToMs = null
                     grabber.setTimestamp(target * 1000, true)
-                    clockOriginUs = Long.MIN_VALUE
+                    pacer.restart()
                     line?.flush()
                 }
                 if (!playWhenReady) {
-                    clockOriginUs = Long.MIN_VALUE
+                    if (playing is VideoSource.Live) return
+                    pacer.restart()
                     line?.stop()
                     Thread.sleep(PAUSED_POLL_MS)
                     continue
@@ -313,63 +336,71 @@ internal class DesktopVideoEngine(val key: String?) {
                         it.flush()
                     }
                 }
-                // Pace the picture against the wall clock, from the first frame (or the first after a pause, a seek or a lag).
+                val hold = pacer.holdNanos(frame.timestamp, System.nanoTime())
+                if (hold > 0) Thread.sleep(hold / 1_000_000, (hold % 1_000_000).toInt())
+                if (!mayDraw(mine)) break
+                pixels = publish(frame, mine, pixels)
+                attempt.drewPicture = true
                 val now = System.nanoTime()
-                if (clockOriginUs == Long.MIN_VALUE || frame.timestamp < clockOriginUs) {
-                    clockOriginUs = frame.timestamp
-                    clockOriginNanos = now
-                } else {
-                    val dueNanos = clockOriginNanos + (frame.timestamp - clockOriginUs) * 1000
-                    val waitNanos = dueNanos - now
-                    when {
-                        waitNanos > 0 -> Thread.sleep(waitNanos / 1_000_000, (waitNanos % 1_000_000).toInt())
-
-                        -waitNanos > MAX_LAG_US * 1000 -> {
-                            clockOriginUs = frame.timestamp
-                            clockOriginNanos = now
-                        }
-                    }
+                // What the frames say rather than what the opening said: a Nest stream's starts out as a tiny placeholder, and an fMP4's gives no rate.
+                val measured = frameRate.onFrame(now)
+                if (measured != null || frame.imageWidth != reported?.width || frame.imageHeight != reported.height) {
+                    val current = LiveStreamStats(
+                        transport = transport,
+                        width = frame.imageWidth,
+                        height = frame.imageHeight,
+                        framesPerSecond = measured ?: reported?.framesPerSecond,
+                        bitrateKbps = grabber.videoBitrate.takeIf { it > 0 }?.let { it / 1000 },
+                        codec = grabber.videoCodecName,
+                    )
+                    reported = current
+                    ui.launch { if (session == mine) stats = current }
                 }
-                publish(frame, generation)
                 if (playing is VideoSource.Recording && now - lastPositionReport > POSITION_REPORT_NANOS) {
                     lastPositionReport = now
                     val at = frame.timestamp / 1000
-                    ui.launch { if (loadGeneration == generation) positionMs = at }
+                    ui.launch { if (session == mine) positionMs = at }
                 }
             }
-        } catch (_: InterruptedException) {
-            // Stopped or replaced: nothing to report.
         } finally {
             line?.close()
-            runCatching { grabber.stop() }
-            runCatching { grabber.release() }
+            runCatching { grabber.releaseUnsafe() }
         }
     }
 
-    /** Copies [frame]'s pixels into a picture of its own and has the UI thread show it. */
-    private fun publish(frame: Frame, generation: Int) {
+    /**
+     * Has the UI thread show [frame], copied into a picture of its own by way of [scratch], which
+     * is handed back to use for the next frame: at 4K a fresh array for each would be nearly a
+     * gigabyte a second for the garbage collector.
+     */
+    private fun publish(frame: Frame, mine: Int, scratch: ByteArray): ByteArray {
         val width = frame.imageWidth
         val height = frame.imageHeight
-        val buffer = (frame.image[0] as? ByteBuffer) ?: return
+        val buffer = (frame.image[0] as? ByteBuffer) ?: return scratch
         val rowBytes = frame.imageStride.takeIf { it >= width * 4 } ?: (width * 4)
-        val bytes = ByteArray(rowBytes * height)
-        buffer.duplicate().apply { rewind() }.get(bytes, 0, minOf(bytes.size, buffer.limit()))
+        val size = rowBytes * height
+        val bytes = if (scratch.size == size) scratch else ByteArray(size)
+        buffer.duplicate().apply { rewind() }.get(bytes, 0, minOf(size, buffer.limit()))
         val image = Image.makeRaster(ImageInfo(width, height, ColorType.BGRA_8888, ColorAlphaType.OPAQUE), bytes, rowBytes)
-        pending.getAndSet(image)?.close()
+        pending.getAndSet(PendingPicture(image, mine))?.image?.close()
         lastPictureAtNanos = System.nanoTime()
         ui.launch {
             val next = pending.getAndSet(null) ?: return@launch
-            if (loadGeneration != generation && source !is VideoSource.Live) {
-                next.close()
+            val fromCurrent = isCurrent(next.session)
+            if (!fromCurrent && !mayDraw(next.session)) {
+                next.image.close()
                 return@launch
             }
+            // The first picture of the stream replacing another: that one can stop now.
+            if (fromCurrent) outgoing.set(NO_SESSION)
             // Drawn pictures hold their own reference to the Skia image, so the one replaced can go now.
             val previous = picture
-            picture = next
+            picture = next.image
             previous?.close()
-            if (pictureGeneration != coldStartGeneration) pictureGeneration = coldStartGeneration
+            if (fromCurrent && pictureGeneration != coldStartGeneration) pictureGeneration = coldStartGeneration
             if (stalled) stalled = false
         }
+        return bytes
     }
 
     private fun openAudioLine(): SourceDataLine? = runCatching {
@@ -394,15 +425,27 @@ internal class DesktopVideoEngine(val key: String?) {
         line.write(bytes, 0, bytes.size)
     }
 
+    private class PendingPicture(val image: Image, val session: Int)
+
+    private class PlayAttempt {
+        var drewPicture = false
+    }
+
     private companion object {
+        const val NO_SESSION = -1
+
         const val AUDIO_SAMPLE_RATE = 48_000
         const val AUDIO_CHANNELS = 2
 
         /** Ten seconds without a byte and the stream is taken for dead. */
         const val READ_TIMEOUT_US = 10_000_000L
 
-        /** How far behind its own timestamps the picture may fall before the clock starts again from it. */
-        const val MAX_LAG_US = 1_000_000L
+        /**
+         * Enough for 4K at the frame rate with a little to spare, for a frame's wait behind it. FFmpeg's automatic
+         * count on a 12-core Mac holds a dozen frames back, half a second at 25 fps and a second at the 12.5 a camera
+         * drops to in low light, and made the gaps between pictures five times worse at no saving in CPU.
+         */
+        const val LIVE_DECODE_THREADS = "2"
 
         const val PAUSED_POLL_MS = 50L
 
@@ -421,6 +464,28 @@ internal class DesktopVideoEngine(val key: String?) {
          * one camera's failure to play (and it retries), not the UI thread's to crash on.
          */
         val quietLogs by lazy { avutil.av_log_set_level(avutil.AV_LOG_ERROR) }
+    }
+}
+
+/** Frames per second, worked out every couple of seconds; null between. */
+internal class FrameRateMeter {
+    private var windowStartNanos = 0L
+    private var frames = 0
+
+    fun onFrame(nowNanos: Long): Int? {
+        if (windowStartNanos == 0L) windowStartNanos = nowNanos
+        frames++
+        val elapsed = nowNanos - windowStartNanos
+        if (elapsed < WINDOW_NANOS) return null
+        val perSecond = ((frames - 1) * NANOS_PER_SECOND / elapsed).toInt()
+        windowStartNanos = nowNanos
+        frames = 1
+        return perSecond
+    }
+
+    private companion object {
+        const val WINDOW_NANOS = 2_000_000_000L
+        const val NANOS_PER_SECOND = 1_000_000_000L
     }
 }
 
