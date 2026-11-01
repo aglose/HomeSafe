@@ -65,7 +65,7 @@ class WeatherAlertCheckTest {
     /** The relay, as far as the check can tell. Null is a relay out of reach. */
     private class FakeClaims : WeatherSoonClaims {
         val asked = mutableListOf<String>()
-        var answer: WeatherSoonClaims.Claim? = WeatherSoonClaims.Claim(granted = true, atEpochSeconds = null)
+        var answer: WeatherSoonClaims.Claim? = WeatherSoonClaims.Claim(granted = true)
 
         override suspend fun claim(key: String): WeatherSoonClaims.Claim? {
             asked += key
@@ -125,7 +125,8 @@ class WeatherAlertCheckTest {
 
     private val rainKey = "soon:${at(0, 15, 30) / 3_600}"
 
-    private suspend fun Harness.pushed(shown: Boolean = false, text: String = payload) = check.onRelayPush(text, rainKey, "Rain at 3:30 PM", "Around 3:30 PM", shown)
+    private suspend fun Harness.pushed(shown: Boolean = false, text: String = payload, expires: Long? = null) =
+        check.onRelayPush(text, rainKey, "Rain at 3:30 PM", "Around 3:30 PM", shown, expires)
 
     @Test
     fun aPushedShowerIsPostedAsTheAppsOwnWithItsPictureAtHomeAndOpeningOnWhereThePhoneIs() = runTest {
@@ -217,10 +218,11 @@ class WeatherAlertCheckTest {
     fun aForecastThisBuildCantReadGoesOutAsTheRelayWordedItStillSayingHome() = runTest {
         val h = harness(report = null)
         h.clock.seconds = onThisClock(15)
-        assertTrue(h.pushed(text = "a newer relay's"))
+        assertTrue(h.pushed(text = "a newer relay's", expires = h.clock.seconds + 3_600))
         val posted = h.notifier.posted.single()
         assertEquals(listOf(rainKey, "Rain at 3:30 PM", "Around 3:30 PM"), listOf(posted.id, posted.title, posted.body))
         assertEquals(WeatherNoticeIcon.RAIN, posted.art.icon)
+        assertEquals(h.clock.seconds + 3_600, posted.expiresEpochSeconds)
         assertEquals(keyed(UiText.of(Res.string.weather_notice_place_home)), posted.place)
         assertTrue(h.ledger.sent(h.clock.seconds).containsKey(rainKey))
     }
@@ -279,21 +281,30 @@ class WeatherAlertCheckTest {
     }
 
     @Test
-    fun aShowerTheRelayAlreadyToldThisPhoneOfIsntAnnouncedAndHoldsForTheCooldownFromThen() = runTest {
+    fun aShowerTheRelayHasIsntAnnouncedAndIsAskedAboutAgainNextTime() = runTest {
         val h = harness(stormyReport().copy(alerts = emptyList()))
-        h.claims.answer = WeatherSoonClaims.Claim(granted = false, atEpochSeconds = now - 600)
+        h.claims.answer = WeatherSoonClaims.Claim(granted = false)
+        assertEquals(0, h.check.run())
         assertEquals(0, h.check.run())
         assertTrue(h.notifier.posted.isEmpty())
-        assertEquals(now - 600, h.ledger.sent(now)["told:$rainKey"])
-        // Not asked again: the phone knows, now.
+        assertTrue(h.ledger.sent(now).isEmpty())
+        assertEquals(2, h.claims.asked.size)
+    }
+
+    @Test
+    fun whenTheRelaysPushFailsAndItLetsGoTheNextCheckSaysIt() = runTest {
+        val h = harness(stormyReport().copy(alerts = emptyList()))
+        h.claims.answer = WeatherSoonClaims.Claim(granted = false)
         assertEquals(0, h.check.run())
-        assertEquals(1, h.claims.asked.size)
+        h.claims.answer = WeatherSoonClaims.Claim(granted = true)
+        assertEquals(1, h.check.run())
+        assertEquals(rainKey, h.notifier.posted.single().id)
     }
 
     @Test
     fun aPushLandingAfterTheCheckWasToldToStayQuietIsStillPostedAndThenTheCheckStaysQuiet() = runTest {
         val h = harness(stormyReport().copy(alerts = emptyList()))
-        h.claims.answer = WeatherSoonClaims.Claim(granted = false, atEpochSeconds = now)
+        h.claims.answer = WeatherSoonClaims.Claim(granted = false)
         assertEquals(0, h.check.run())
         assertTrue(h.pushed())
         assertEquals(rainKey, h.notifier.posted.single().id)

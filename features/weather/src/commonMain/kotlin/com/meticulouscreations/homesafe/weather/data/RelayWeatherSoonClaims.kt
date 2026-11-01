@@ -23,6 +23,6 @@ class RelayWeatherSoonClaims(
             ?: connectionRepository.mostRecentConnection.first()?.serverUrl
             ?: return null
         return relayApi.claimRainSoon(url, identity.deviceId(), secret, key).getOrNull()
-            ?.let { WeatherSoonClaims.Claim(it.granted, it.at?.toLong()) }
+            ?.let { WeatherSoonClaims.Claim(it.granted) }
     }
 }

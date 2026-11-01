@@ -17912,6 +17912,10 @@ if __name__ == "__main__":
         # The export already read, read again: after a change to how it is read.
         print(json.dumps({"read": timeline_pull(again=True), "named": timeline_name_places()}, indent=2))
         sys.exit(0)
+    if command == "rain-soon-test":
+        # A made-up shower to every phone that wants these (see `rain_soon_test`).
+        print(json.dumps(rain_soon_test()))
+        sys.exit(0)
     if not tesla_on():
         sys.exit("Set TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL first (tesla.env).")
     if command == "tesla-register":
@@ -17934,9 +17938,6 @@ if __name__ == "__main__":
         print(json.dumps(charging_summary(time.time(), True), indent=2, default=str))
     elif command == "tesla-telemetry-status":
         print(json.dumps(tesla_telemetry_status(), indent=2, default=str))
-    elif command == "rain-soon-test":
-        # A made-up shower to every phone that wants these (see `rain_soon_test`).
-        print(json.dumps(rain_soon_test()))
     elif command == "parking-check":
         # The streets PARKING_FILE names as the relay found them, and where each car is by them now
         # (asking Tesla, a call per car). Pushes nothing.

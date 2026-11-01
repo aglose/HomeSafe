@@ -65,6 +65,9 @@ class WeatherSoonPush(
         /** The push's data key that holds the shower's key, the same as the planner's for it. */
         const val KEY_ID = "notif_id"
 
+        /** The push's data key that holds when the shower stops being news, as epoch seconds. */
+        const val KEY_EXPIRES = "homesafe_weather_expires"
+
         private val JSON = Json { ignoreUnknownKeys = true }
 
         /** Null for what this build can't read: a newer relay's. */

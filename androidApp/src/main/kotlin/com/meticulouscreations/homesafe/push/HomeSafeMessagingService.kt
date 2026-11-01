@@ -97,7 +97,8 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
     private fun showWeatherSoon(payload: String, message: RemoteMessage) {
         val check = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).weatherAlertCheck
         val key = message.data[WeatherSoonPush.KEY_ID] ?: message.messageId ?: return
-        runBlocking { check.onRelayPush(payload, key, message.data["title"].orEmpty(), message.data["body"].orEmpty(), shown = false) }
+        val expires = message.data[WeatherSoonPush.KEY_EXPIRES]?.toLongOrNull()
+        runBlocking { check.onRelayPush(payload, key, message.data["title"].orEmpty(), message.data["body"].orEmpty(), shown = false, fallbackExpiresEpochSeconds = expires) }
     }
 
     /**

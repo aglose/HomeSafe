@@ -202,9 +202,9 @@ it holds the other off for the three hours the planner would:
 
 | | What stops the second one |
 |---|---|
-| The relay pushed first | The phone's check asks, is told no, and stays quiet from then on. That is noted apart from what has been posted, so a push still on its way can land. An Android phone that got the push first needn't ask: it went through the ledger |
+| The relay pushed first | The phone's check asks, is told no, and posts nothing, and marks nothing as said: a push still on its way can land, and if that push fails the relay lets go, so the next check asks again and says it. An Android phone that got the push first needn't ask: it went through the ledger |
 | The phone's check said first | The relay finds it taken and doesn't push |
-| The relay was out of reach when the phone asked | The phone goes ahead: better twice than never. An Android phone drops the later push against its ledger. On an iPhone the push is drawn by iOS, so it can be seen a second time, on the same notification |
+| The relay was out of reach when the phone asked | The phone goes ahead: better twice than never. An Android phone drops the later push against its ledger. On an iPhone the push is drawn by iOS, so it can be seen a second time, on the same notification. The same goes for an iPhone told no at one check, whose push iOS never woke the app for, that can't reach the relay at the next |
 
 **What it looks like.** The push is a small forecast (`weather_soon`, read by `WeatherSoonPush`), not
 a finished notification. `WeatherNoticePlanner` plans from it as from any other, so the words, the

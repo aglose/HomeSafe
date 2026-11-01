@@ -76,8 +76,8 @@ interface WeatherSoonClaims {
     /** May this phone announce the shower [key]? Null when the relay can't say, which is no reason to stay quiet. */
     suspend fun claim(key: String): Claim?
 
-    /** Not [granted]: this phone was told of a shower at [atEpochSeconds]. */
-    data class Claim(val granted: Boolean, val atEpochSeconds: Long?)
+    /** Not [granted]: the relay has told this phone of a shower, or is about to. */
+    data class Claim(val granted: Boolean)
 
     /** No relay to ask. */
     object Never : WeatherSoonClaims {
