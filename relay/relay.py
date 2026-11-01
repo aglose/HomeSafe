@@ -532,6 +532,11 @@ def db() -> sqlite3.Connection:
         ("role", "TEXT"),
         ("hardware_id", "TEXT"),
         ("emulator", "INTEGER NOT NULL DEFAULT 0"),
+        # See "rain soon": whether this phone wants it, and the last shower it was told of.
+        ("rain_soon", "INTEGER NOT NULL DEFAULT 0"),
+        ("rain_soon_key", "TEXT"),
+        ("rain_soon_at", "REAL"),
+        ("rain_soon_by", "TEXT"),
     ):
         if column not in columns:
             conn.execute(f"ALTER TABLE devices ADD COLUMN {column} {declaration}")
@@ -601,11 +606,15 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     alerting again, and iOS collapses it onto the same banner (`apns-collapse-id`), passively.
     """
     headers, aps = apns_parts(title, body, data, away)
+    android: dict[str, Any] = {"priority": "high"}
+    # News with a date on it (`push_until`): not worth delivering once that has passed.
+    if data.get("push_until"):
+        android["ttl"] = f"{max(0, int(float(data['push_until']) - time.time()))}s"
     return {
         "message": {
             "token": token,
             "data": {**data, "title": title, "body": body},
-            "android": {"priority": "high"},
+            "android": android,
             "apns": {"headers": headers, "payload": {"aps": aps}},
         }
     }
@@ -623,6 +632,14 @@ def apns_parts(title: str, body: str, data: dict[str, str], away: bool) -> tuple
     collapse_id = data.get("notif_id") or data.get("review_id")
     if collapse_id:
         headers["apns-collapse-id"] = collapse_id[:64]
+    if data.get("push_until"):
+        headers["apns-expiration"] = data["push_until"]
+    if data.get("weather_soon"):
+        # Dressed as the app's own weather notifications are (WeatherNotifier.ios.kt), with its
+        # Radar button, in their stack. `content-available` wakes the app, when iOS allows it, to
+        # draw its picture (see "rain soon").
+        aps.update({"thread-id": "weather", "category": "weather", "relevance-score": 0.8, "content-available": 1})
+        aps["alert"]["subtitle"] = data.get("weather_place", "")
     return headers, aps
 
 
@@ -4712,6 +4729,9 @@ class Device(BaseModel):
     # The phone's clock, for reading quiet hours: its IANA zone, and its UTC offset in minutes as a fallback.
     tz: str | None = None
     utc_offset: int | None = None
+    # Whether it wants to hear of rain on the way from here: the weather app's switches, on (see
+    # "rain soon"). Absent from apps before this, which wouldn't know what to do with the push.
+    rain_soon: bool = False
 
 
 class Presence(BaseModel):
@@ -4806,6 +4826,7 @@ def startup() -> None:
     threading.Thread(target=tesla_stream_forever, name="tesla-stream", daemon=True).start()
     threading.Thread(target=packages_forever, name="packages", daemon=True).start()
     threading.Thread(target=charging_forever, name="charging", daemon=True).start()
+    threading.Thread(target=rain_soon_forever, name="rain-soon", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -4954,16 +4975,17 @@ def register(device: Device, request: Request) -> dict[str, Any]:
             # Deliberately leaves `away`/`away_updated`/pending alone: re-registering (every connect,
             # every LAN/Tailscale flip) must not quietly mark a phone as back home.
             "INSERT INTO devices (device_id, token, platform, name, created, last_seen, quiet_familiar, build, secret,"
-            " quiet_start, quiet_end, only_away, tz, utc_offset, hardware_id, emulator)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            " quiet_start, quiet_end, only_away, tz, utc_offset, hardware_id, emulator, rain_soon)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(device_id) DO UPDATE SET token=excluded.token, platform=excluded.platform, name=excluded.name,"
             " last_seen=excluded.last_seen, quiet_familiar=excluded.quiet_familiar, build=excluded.build, secret=excluded.secret,"
             " quiet_start=excluded.quiet_start, quiet_end=excluded.quiet_end, only_away=excluded.only_away,"
-            " tz=excluded.tz, utc_offset=excluded.utc_offset, hardware_id=excluded.hardware_id, emulator=excluded.emulator",
+            " tz=excluded.tz, utc_offset=excluded.utc_offset, hardware_id=excluded.hardware_id, emulator=excluded.emulator,"
+            " rain_soon=excluded.rain_soon",
             (
                 device_id, device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build, secret,
                 device.quiet_start, device.quiet_end, int(device.only_away), device.tz, device.utc_offset,
-                device.hardware_id, int(device.emulator),
+                device.hardware_id, int(device.emulator), int(device.rain_soon),
             ),
         )
         c.commit()
@@ -5406,6 +5428,317 @@ def test_push(request: Request) -> dict[str, Any]:
     result = broadcast("Front Yard", "Test: Sarah's Tesla in the driveway", {"review_id": f"test-{int(time.time())}", "camera": "hikvision_1", "test": "1"}, test=True)
     log.info("test push by %s: %s", user, result)
     return {"ok": True, **result}
+
+
+# ---------------------------------------------------------------- rain soon
+
+# The weather app's "rain on the way" notification, sent from here. The phones plan it themselves
+# (WeatherNoticePlanner), but only when they get to run: every half hour or so on Android, whenever
+# iOS grants a background refresh on an iPhone. This doesn't wait for them (docs/weather.md, "Rain
+# soon, from the relay").
+#
+# Where: home, which the relay already holds for the geofences, and only for the phones it has at
+# home: the two tracked phones, away=0 and not on their way out. A phone's own position never comes
+# here; away from home its own check is all it has. Home goes to Open-Meteo rounded to a hundredth
+# of a degree, as the phones' positions do.
+#
+# How often: every RAIN_SOON_POLL_SECONDS, one call of nine variables, so one against the free
+# tier's 10,000 a day: at most 64 a day, since nothing is asked in the quiet hours, or while no
+# phone could be told. Open-Meteo's quarter-hours don't change faster than that.
+#
+# Once per shower: each phone's row says what it was last told, when, and by whom. Pushing takes
+# that first; the phone's own check takes it too before it posts (`claim_rain_soon`), so whichever
+# gets there first says it and the other stays quiet for RAIN_SOON_COOLDOWN_SECONDS. An Android
+# phone also checks its own ledger when the push lands.
+#
+# The push is a small forecast rather than a finished notification: an Android phone (and an
+# iPhone, when iOS wakes the app for it) runs the planner over it, so the wording, the picture, the
+# channel and the rules are the app's, in its language. iOS draws `aps.alert` first, in English
+# (as with every push from here), and that is all it shows when it won't wake the app.
+RAIN_SOON_POLL_SECONDS = 15 * 60
+# Told to slow down (HTTP 429): well under the hour a limit lasts would only be told again.
+RAIN_SOON_BACKOFF_SECONDS = 60 * 60
+# From here down, WeatherNoticePlanner's and WeatherStory.nearTerm's own rules: keep them the same.
+RAIN_SOON_LEAD_SECONDS = 75 * 60
+RAIN_SOON_COOLDOWN_SECONDS = 3 * 3600
+RAIN_SOON_LINGER_SECONDS = 2 * 3600
+RAIN_SOON_QUIET_FROM_HOUR = 22
+RAIN_SOON_QUIET_UNTIL_HOUR = 6
+RAIN_SOON_SLICES = 9
+RAIN_SOON_WET_SLICE_MM = 0.1
+RAIN_SOON_HEAVY_MM_PER_HOUR = 7.6
+RAIN_SOON_SLICE_SECONDS = 900
+# WMO codes (WeatherKind.fromCode).
+RAIN_SOON_STORM_CODES = (95, 96, 99)
+RAIN_SOON_WET_CODES = (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99)
+RAIN_SOON_FAMILY_WORDS = {"rain": "Rain", "snow": "Snow", "storm": "Storms"}
+
+
+def rain_soon_coarse(degrees: float) -> str:
+    """A coordinate as the weather services are given it: to the hundredth of a degree, about a kilometre (`coarse` in WeatherApis.kt)."""
+    return f"{float(degrees):.2f}"
+
+
+def rain_soon_fetch(home: dict[str, Any]) -> dict[str, Any]:
+    """The forecast at [home] that the rules read, from Open-Meteo, which needs no key. Raises what `requests` raises."""
+    r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+        "latitude": rain_soon_coarse(home["lat"]), "longitude": rain_soon_coarse(home["lng"]),
+        "current": "precipitation,weather_code,is_day",
+        "minutely_15": "precipitation,snowfall", "past_minutely_15": 1, "forecast_minutely_15": 13,
+        "hourly": "precipitation,snowfall,precipitation_probability,weather_code", "past_hours": 1, "forecast_hours": 9,
+        "timezone": "auto", "timeformat": "unixtime",
+    }, timeout=15)
+    r.raise_for_status()
+    return rain_soon_forecast(r.json())
+
+
+def rain_soon_forecast(raw: dict[str, Any]) -> dict[str, Any]:
+    """
+    Open-Meteo's answer as the rules read it, and as the phone is sent it. What falls is stamped at
+    the end of the interval it fell in, so each quarter-hour and hour takes the amount one step on
+    (`MinutelyDto.toSlices`, `HourlyDto.toHours`).
+    """
+    current, quarters, hours = raw.get("current") or {}, raw.get("minutely_15") or {}, raw.get("hourly") or {}
+
+    def ahead(values: list[Any] | None, i: int) -> float:
+        value = (values or [])[i + 1:i + 2]
+        return float(value[0]) if value and value[0] is not None else 0.0
+
+    times = quarters.get("time") or []
+    hour_times = hours.get("time") or []
+    return {
+        "zone": raw.get("timezone") or "",
+        "offset": int(raw.get("utc_offset_seconds") or 0),
+        "day": int(current.get("is_day", 1) or 0),
+        "code": int(current.get("weather_code") if current.get("weather_code") is not None else 3),
+        "mm": float(current.get("precipitation") or 0.0),
+        "quarters": [(int(at), ahead(quarters.get("precipitation"), i), ahead(quarters.get("snowfall"), i)) for i, at in enumerate(times)],
+        "hours": [
+            (
+                int(at), ahead(hours.get("precipitation"), i), ahead(hours.get("snowfall"), i),
+                next(iter((hours.get("precipitation_probability") or [])[i + 1:i + 2]), None),
+                int(next(iter((hours.get("weather_code") or [])[i:i + 1]), 3) or 0),
+            )
+            for i, at in enumerate(hour_times)
+        ],
+    }
+
+
+def rain_soon_zone(forecast: dict[str, Any]) -> Any:
+    """The clock at the place the forecast is for: by its zone, or its UTC offset when this relay can't resolve that."""
+    try:
+        return ZoneInfo(forecast["zone"])
+    except Exception:
+        return timezone(timedelta(seconds=forecast["offset"]))
+
+
+def rain_soon_quiet(now: float, zone: Any) -> bool:
+    """Nothing but warnings between 10 PM and 6 AM (WeatherNoticePlanner)."""
+    hour = datetime.fromtimestamp(now, zone).hour
+    return hour < RAIN_SOON_QUIET_UNTIL_HOUR or hour >= RAIN_SOON_QUIET_FROM_HOUR
+
+
+def rain_soon_starting(forecast: dict[str, Any], now: float) -> dict[str, Any] | None:
+    """
+    The shower worth announcing at [now], or None: dry now, and within RAIN_SOON_LEAD_SECONDS two
+    wet quarter-hours in a row, or one of 1 mm/h or more. The same reading as `WeatherStory.nearTerm`
+    and the lead in `WeatherNoticePlanner.soon`; `key` is the planner's for the same shower.
+    """
+    quarters = forecast["quarters"]
+    i = max((n for n, q in enumerate(quarters) if q[0] <= now), default=-1)
+    if i < 0:
+        slices = [q for q in quarters if q[0] > now]
+    elif quarters[i][0] + RAIN_SOON_SLICE_SECONDS <= now:
+        slices = []
+    else:
+        slices = quarters[i:]
+    slices = slices[:RAIN_SOON_SLICES]
+    if not slices:
+        return None
+    wet = [q[1] >= RAIN_SOON_WET_SLICE_MM for q in slices]
+    if wet[0] or (forecast["mm"] >= RAIN_SOON_WET_SLICE_MM and forecast["code"] in RAIN_SOON_WET_CODES):
+        return None
+    start = next((n for n in range(1, len(slices)) if wet[n] and (slices[n][1] * 4 >= 1.0 or (n + 1 < len(slices) and wet[n + 1]))), None)
+    if start is None or slices[start][0] - now > RAIN_SOON_LEAD_SECONDS:
+        return None
+    # An end is two dry quarter-hours in a row; a dry one at the very edge of what the forecast shows isn't known to be one.
+    end = next((n for n in range(start + 1, len(slices) - 1) if not wet[n] and not wet[n + 1]), None)
+    hours = forecast["hours"]
+    h = max((n for n, hour in enumerate(hours) if hour[0] <= now), default=-1)
+    next_hours = hours if h < 0 else [] if hours[h][0] + 3600 <= now else hours[h:]
+    snowy = sum(1 for n, q in enumerate(slices) if wet[n] and q[2] > 0 and q[2] * 0.7 >= q[1] * 0.5)
+    if forecast["code"] in RAIN_SOON_STORM_CODES or any(hour[4] in RAIN_SOON_STORM_CODES for hour in next_hours[:2]):
+        family = "storm"
+    elif snowy * 2 > sum(wet):
+        family = "snow"
+    else:
+        family = "rain"
+    at = slices[start][0]
+    return {
+        "key": f"soon:{at // 3600}",
+        "start": at,
+        "end": slices[end][0] if end is not None else None,
+        "family": family,
+        "peak": max(q[1] * 4 for q in slices[start:]),
+    }
+
+
+def rain_soon_text(soon: dict[str, Any], zone: Any) -> tuple[str, str]:
+    """
+    What an iPhone shows until, and unless, iOS wakes the app; an Android phone words its own. In
+    English, as every push from here is. A time rather than "in 40 min", which nothing would count down.
+    """
+    moment = datetime.fromtimestamp(soon["start"], zone)
+    clock = moment.strftime("%I:%M %p").lstrip("0")
+    hour = moment.strftime("%I %p").lstrip("0") if moment.minute == 0 else clock
+    title = f"{RAIN_SOON_FAMILY_WORDS[soon['family']]} at {hour}"
+    body = f"Around {clock}"
+    if soon["end"] is not None:
+        minutes = max(5, 5 * round((soon["end"] - soon["start"]) / 60 / 5))
+        body += f", for about {minutes} min"
+    if soon["peak"] >= RAIN_SOON_HEAVY_MM_PER_HOUR:
+        body += " · Heavy at times"
+    return title, body
+
+
+def rain_soon_data(forecast: dict[str, Any], soon: dict[str, Any]) -> dict[str, str]:
+    """
+    The push's data. `weather_soon` is the forecast, for the app to plan from (`WeatherSoonPush`);
+    `homesafe_weather`, `view` and `place` are `WeatherDeepLink.toMap`, so a tap on an iPhone's banner
+    lands where any weather notification's does, and `place` is the phone's own position (Place.CURRENT_ID)
+    since these phones are at home. It stops being news when the shower starts.
+    """
+    quarters, hours = forecast["quarters"], forecast["hours"]
+    payload = {
+        "zone": forecast["zone"], "offset": forecast["offset"], "day": forecast["day"], "code": forecast["code"], "mm": forecast["mm"],
+        "q0": quarters[0][0] if quarters else 0, "qmm": [q[1] for q in quarters], "qcm": [q[2] for q in quarters],
+        "h0": hours[0][0] if hours else 0, "hmm": [h[1] for h in hours], "hcm": [h[2] for h in hours], "hp": [h[3] for h in hours], "hc": [h[4] for h in hours],
+    }
+    return {
+        "weather_soon": json.dumps(payload, separators=(",", ":")),
+        "weather_place": "Home",
+        "notif_id": soon["key"],
+        "push_until": str(soon["start"]),
+        "homesafe_weather": "1",
+        "view": "today",
+        "place": "current",
+        "homesafe_weather_expires": str(soon["end"] if soon["end"] is not None else soon["start"] + RAIN_SOON_LINGER_SECONDS),
+    }
+
+
+def rain_soon_claim(device_id: str, key: str, now: float, by: str) -> dict[str, Any]:
+    """
+    Takes the telling of a shower for one phone, [by] "relay" or "phone", and answers whether it
+    was granted. A phone told of a shower hears of no other for RAIN_SOON_COOLDOWN_SECONDS. A phone
+    asking again for one it took itself is granted it: the OS refused it, and it is trying again.
+    """
+    def claim(c: sqlite3.Connection) -> dict[str, Any]:
+        row = c.execute("SELECT rain_soon_key, rain_soon_at, rain_soon_by FROM devices WHERE device_id=?", (device_id,)).fetchone()
+        if row is None:
+            return {"granted": True, "key": None, "at": None}
+        told_key, told_at, told_by = row
+        if told_at is not None and now - told_at < RAIN_SOON_COOLDOWN_SECONDS and not (by == "phone" and told_by == "phone" and told_key == key):
+            return {"granted": False, "key": told_key, "at": told_at}
+        c.execute("UPDATE devices SET rain_soon_key=?, rain_soon_at=?, rain_soon_by=? WHERE device_id=?", (key, now, by, device_id))
+        c.commit()
+        return {"granted": True, "key": key, "at": now}
+
+    return with_db(claim)
+
+
+def rain_soon_phones(now: float) -> list[tuple[str, str]]:
+    """The (device_id, token) of each phone to tell now: tracked, at home, wanting it, and not told of a shower lately."""
+    tracked = set(assign_tracked_phones(now).values())
+    rows = with_db(lambda c: c.execute(
+        "SELECT device_id, token, rain_soon_at FROM devices WHERE token IS NOT NULL AND rain_soon=1 AND away=0 AND away_pending_since IS NULL"
+    ).fetchall())
+    return [(device_id, token) for device_id, token, told_at in rows
+            if device_id in tracked and can_push(token) and (told_at is None or now - told_at >= RAIN_SOON_COOLDOWN_SECONDS)]
+
+
+def rain_soon_tick(now: float, fetch: Callable[[dict[str, Any]], dict[str, Any]] | None = None, push: Callable[..., str] | None = None) -> dict[str, int] | None:
+    """One look at the forecast, when there is anyone to tell; answers what was pushed. `fetch` and `push` stand in for Open-Meteo and `deliver` in tests."""
+    home = state_get(HOME_KEY)
+    if not home:
+        return None
+    zone = household_zone()
+    if zone is not None and rain_soon_quiet(now, zone):
+        return None
+    if not rain_soon_phones(now):
+        return None
+    forecast = (fetch or rain_soon_fetch)(home)
+    zone = rain_soon_zone(forecast)
+    soon = rain_soon_starting(forecast, now)
+    if soon is None or rain_soon_quiet(now, zone):
+        return None
+    title, body = rain_soon_text(soon, zone)
+    data = rain_soon_data(forecast, soon)
+    results = []
+    # Asked afresh, since the forecast took a moment: a phone's own check may have got there meanwhile.
+    for device_id, token in rain_soon_phones(now):
+        if not rain_soon_claim(device_id, soon["key"], now, "relay")["granted"]:
+            continue
+        result = (push or deliver)(token, title, body, data)
+        results.append(result)
+        if result == "failed":
+            # Not told, so not held to it: the next look tries again, and its own check may get there first.
+            with_db(lambda c: (c.execute("UPDATE devices SET rain_soon_key=NULL, rain_soon_at=NULL, rain_soon_by=NULL WHERE device_id=? AND rain_soon_by='relay'", (device_id,)), c.commit()))
+    outcome = {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed")}
+    log.info("rain soon: %s starting in %d min -> push: %s", soon["family"], (soon["start"] - now) // 60, outcome)
+    return outcome
+
+
+def rain_soon_forever() -> None:
+    while True:
+        wait = RAIN_SOON_POLL_SECONDS
+        try:
+            rain_soon_tick(time.time())
+        except Exception as e:  # noqa: BLE001 - no forecast this time; the phones' own checks are still there
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 429:
+                wait = RAIN_SOON_BACKOFF_SECONDS
+            # The error's own words would have the coordinates in them, in the URL.
+            log.warning("rain soon: no forecast (%s %s)", type(e).__name__, status or "")
+        time.sleep(wait)
+
+
+def rain_soon_test(now: float | None = None) -> dict[str, int]:
+    """
+    A made-up shower, half an hour off, pushed to every phone that wants these, at home or not and
+    however lately told: there is no summoning rain to try it. `python relay.py rain-soon-test`.
+    A phone still plans from it, so its own cooldown and quiet hours can hold it back.
+    """
+    now = time.time() if now is None else now
+    q0 = int(now // RAIN_SOON_SLICE_SECONDS * RAIN_SOON_SLICE_SECONDS)
+    forecast = {
+        "zone": getattr(household_zone(), "key", "") or "", "offset": 0, "day": 1, "code": 3, "mm": 0.0,
+        "quarters": [(q0 + n * RAIN_SOON_SLICE_SECONDS, 0.6 if 2 <= n <= 5 else 0.0, 0.0) for n in range(14)],
+        "hours": [(int(now // 3600 * 3600) + n * 3600, 0.8 if n == 1 else 0.0, 0.0, 70 if n == 1 else 10, 61 if n == 1 else 3) for n in range(10)],
+    }
+    soon = rain_soon_starting(forecast, now)
+    title, body = rain_soon_text(soon, rain_soon_zone(forecast))
+    data = rain_soon_data(forecast, soon)
+    tokens = with_db(lambda c: [row[0] for row in c.execute("SELECT token FROM devices WHERE token IS NOT NULL AND rain_soon=1").fetchall()])
+    results = [deliver(token, title, body, data) for token in tokens]
+    return {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed")}
+
+
+class RainSoonClaim(BaseModel):
+    key: str
+
+
+@app.post("/devices/{ident}/rain-soon")
+def claim_rain_soon(ident: str, claim: RainSoonClaim, request: Request) -> dict[str, Any]:
+    """
+    A phone's own check, about to announce a shower, asks whether it may: `granted` false says this
+    phone has already been told of one (`key`, `at`), and it stays quiet. Proves itself with its
+    device secret, as presence does: this runs from a background job with no session.
+    """
+    authenticate(request, ident)
+    row = find_device(ident)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    return rain_soon_claim(row[0], claim.key, time.time(), "phone")
 
 
 # ---------------------------------------------------------------- doors
@@ -17596,6 +17929,9 @@ if __name__ == "__main__":
         print(json.dumps(charging_summary(time.time(), True), indent=2, default=str))
     elif command == "tesla-telemetry-status":
         print(json.dumps(tesla_telemetry_status(), indent=2, default=str))
+    elif command == "rain-soon-test":
+        # A made-up shower to every phone that wants these (see `rain_soon_test`).
+        print(json.dumps(rain_soon_test()))
     elif command == "parking-check":
         # The streets PARKING_FILE names as the relay found them, and where each car is by them now
         # (asking Tesla, a call per car). Pushes nothing.
@@ -17611,4 +17947,4 @@ if __name__ == "__main__":
         print(json.dumps(report, indent=2, default=str))
     else:
         sys.exit("usage: python relay.py tesla-register | tesla-link | tesla-telemetry-config | tesla-telemetry-send | tesla-telemetry-status"
-                 " | parking-check | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")
+                 " | parking-check | rain-soon-test | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")
