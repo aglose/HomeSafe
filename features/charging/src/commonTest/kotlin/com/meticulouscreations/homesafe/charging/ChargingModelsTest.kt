@@ -60,6 +60,11 @@ class ChargingModelsTest {
     }
 
     @Test
+    fun energyAtHomeWithNoPriceYetHasNoAverageRatherThanAFreeOne() {
+        assertNull(ChargingMonth("2026-10", cars = listOf(CarMonth("a", "Alex", homeKwh = 50.0))).homePerKwh)
+    }
+
+    @Test
     fun milesOnlyGetACostOnceEveryChargeHasAPrice() {
         val car = CarMonth("a", "Alex", homeCost = 10.0, miles = 100.0, unpriced = 1)
         assertNull(car.costPerMile)

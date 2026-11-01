@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.charging
 import com.meticulouscreations.homesafe.charging.data.ChargingRelayApi
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
+import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import homesafe.shared.generated.resources.Res
@@ -63,6 +64,7 @@ class ChargingViewModelTest {
     private var refuse = false
     private lateinit var connection: FakeConnection
     private var months = "[]"
+    private var plan = "a"
     private var newest = """{"id": 2, "car": "c", "started": 200}"""
     private var detailEnded = false
     private val detailDelayMillis = mutableMapOf<String, Long>()
@@ -73,7 +75,7 @@ class ChargingViewModelTest {
 
     private fun answer(path: String, method: HttpMethod): String = when {
         path == "/charging" || (path == "/charging/plan" && method == HttpMethod.Post) ->
-            """{"plan": "a", "sessions": [$newest], "more_sessions": true, "months": $months,
+            """{"plan": "$plan", "sessions": [$newest], "more_sessions": true, "months": $months,
                 "now": [{"car": "c", "session": ${if (charging) """{"id": 2, "car": "c", "started": 200}""" else "null"}}]}"""
 
         path.startsWith("/charging/sessions/") -> """{"id": ${path.substringAfterLast('/')}, "car": "c", "started": 200, ${if (detailEnded) """"ended": 300, """ else ""}"kwh": 1, "cost": 3.5, "cost_is": "typed", "note": "kept"}"""
@@ -94,8 +96,9 @@ class ChargingViewModelTest {
                 addHandler { request ->
                     val path = request.url.encodedPath
                     calls += "${request.method.value} $path"
+                    val body = answer(path, request.method)
                     detailDelayMillis[path]?.let { delay(it) }
-                    if (refuse) respond("{}", HttpStatusCode.InternalServerError) else respond(answer(path, request.method), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+                    if (refuse) respond("{}", HttpStatusCode.InternalServerError) else respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
                 }
             }
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -262,6 +265,79 @@ class ChargingViewModelTest {
         connection.serverUnreachable.value = false
         model.refresh()
         eventually { model.uiState.value.summary.months.single().electricPaid == 90.0 }
+    }
+
+    @Test
+    fun anAnswerLandingWhileTheServerIsGoneLeavesOutWhatTheBanksSaid() = runTest(dispatcher) {
+        months = """[{"month": "2026-10", "card_fast": 20, "unmatched": 20, "electric_paid": 90}]"""
+        detailDelayMillis["/charging"] = 5_000
+        val model = viewModel()
+        model.refresh()
+        settle()
+        connection.serverUnreachable.value = true
+        settle()
+        advanceTimeBy(6_000)
+        settle()
+        assertTrue(model.uiState.value.loaded)
+        assertNull(model.uiState.value.summary.months.single().electricPaid)
+        connection.serverUnreachable.value = false
+        settle()
+        advanceTimeBy(6_000)
+        settle()
+        assertEquals(90.0, model.uiState.value.summary.months.single().electricPaid)
+    }
+
+    @Test
+    fun anotherServerStartsOverAndDropsTheLastOnesAnswers() = runTest(dispatcher) {
+        months = """[{"month": "2026-10", "electric_paid": 90}]"""
+        val model = viewModel()
+        connection.activeConnection.value = ActiveConnection("http://one", null, ConnectionRoute.TAILSCALE)
+        settle()
+        model.refresh()
+        eventually { model.uiState.value.loaded }
+        detailDelayMillis["/charging"] = 5_000
+        model.refresh()
+        settle()
+        connection.activeConnection.value = ActiveConnection("http://two", null, ConnectionRoute.TAILSCALE)
+        settle()
+        assertEquals(false, model.uiState.value.loaded)
+        assertTrue(model.uiState.value.summary.months.isEmpty())
+        advanceTimeBy(6_000)
+        settle()
+        assertEquals(false, model.uiState.value.loaded)
+    }
+
+    @Test
+    fun theSameServerByAnotherRouteKeepsWhatItHas() = runTest(dispatcher) {
+        val model = viewModel()
+        connection.activeConnection.value = ActiveConnection("http://one", "http://lan", ConnectionRoute.TAILSCALE)
+        settle()
+        model.refresh()
+        eventually { model.uiState.value.loaded }
+        connection.activeConnection.value = ActiveConnection("http://one", "http://lan", ConnectionRoute.LOCAL_NETWORK)
+        settle()
+        assertTrue(model.uiState.value.loaded)
+    }
+
+    @Test
+    fun answersFromBeforeAPlanChangeAreDropped() = runTest(dispatcher) {
+        val model = viewModel()
+        model.refresh()
+        eventually { model.uiState.value.moreSessions }
+        detailDelayMillis["/charging"] = 5_000
+        detailDelayMillis["/charging/sessions"] = 5_000
+        model.refresh()
+        model.loadMore()
+        settle()
+        plan = "b"
+        model.choosePlan("b")
+        eventually { model.uiState.value.summary.planId == "b" }
+        plan = "a"
+        advanceTimeBy(6_000)
+        settle()
+        assertEquals("b", model.uiState.value.summary.planId)
+        assertTrue(model.uiState.value.older.isEmpty())
+        assertEquals(false, model.uiState.value.loadingMore)
     }
 
     @Test

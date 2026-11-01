@@ -203,8 +203,8 @@ data class ChargingMonth(
     /** Dollars to go a mile; null without every car's miles, or while part of what they cost is unknown. */
     val costPerMile: Double? get() = milesOfEveryCar?.takeIf { it > 0 && unpriced == 0 }?.let { cost / it }
 
-    /** What a kWh came to at home. */
-    val homePerKwh: Double? get() = homeKwh.takeIf { it > 0 }?.let { homeCost / it }
+    /** What a kWh came to at home; null with no price for it yet, which isn't free. */
+    val homePerKwh: Double? get() = homeKwh.takeIf { it > 0 && homeCost > 0 }?.let { homeCost / it }
 
     /** The share of home charging in peak hours, 0 to 1. */
     val peakShare: Double? get() = homeKwh.takeIf { it > 0 }?.let { (peakKwh / it).coerceIn(0.0, 1.0) }

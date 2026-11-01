@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -69,15 +72,46 @@ class ChargingViewModel(
     private var follow: Job? = null
     private var detailAsked: Job? = null
     private var openCharge: Long? = null
+
+    /** Moves on when what's been asked no longer holds: another server, another plan. Answers to what was asked before it are dropped. */
+    private var generation = 0
+    private var household: String? = null
     private var askedAt = 0L
 
     init {
         // What the banks said is only for while the server can say who's asking: nothing here can check who's holding the phone.
         viewModelScope.launch {
+            var wasGone = false
             combine(connectionRepository.currentServerUrl, connectionRepository.serverUnreachable) { server, unreachable -> server == null || unreachable }
-                .collect { gone -> if (gone) _uiState.update { it.copy(summary = it.summary.withoutCards()) } }
+                .collect { gone ->
+                    if (gone) {
+                        _uiState.update { it.copy(summary = it.summary.withoutCards()) }
+                    } else if (wasGone && _uiState.value.loaded) {
+                        refresh()
+                    }
+                    wasGone = gone
+                }
+        }
+        // The address the household was signed in at, whichever route it's on now: another one is another household's charges.
+        viewModelScope.launch {
+            connectionRepository.activeConnection.map { it?.serverUrl }.filterNotNull().distinctUntilChanged().collect { server ->
+                if (household != null && household != server) startOver()
+                household = server
+            }
         }
     }
+
+    private fun startOver() {
+        generation++
+        detailAsked?.cancel()
+        openCharge = null
+        askedAt = 0
+        _uiState.value = ChargingUiState(nowEpochSeconds = clock.now().epochSeconds)
+        if (follow?.isActive == true) refresh()
+    }
+
+    /** Nobody can say who's asking: what the banks said stays out of what's shown. */
+    private fun serverGone(): Boolean = connectionRepository.currentServerUrl.value == null || connectionRepository.serverUnreachable.value
 
     /** Asks the relay as long as [active]: every little while with a car charging, otherwise now and then. */
     fun setActive(active: Boolean) {
@@ -106,9 +140,12 @@ class ChargingViewModel(
 
     private suspend fun ask() {
         val server = server() ?: return
+        val asked = generation
         askedAt = clock.now().epochSeconds
         _uiState.update { it.copy(refreshing = true) }
-        api.summary(server).fold(
+        val answer = api.summary(server)
+        if (asked != generation) return
+        answer.fold(
             onSuccess = { summary ->
                 show(summary)
                 // A charge's page was fetched while it ran: it goes on running, and has an end to come.
@@ -121,7 +158,8 @@ class ChargingViewModel(
         )
     }
 
-    private fun show(summary: ChargingSummary) {
+    private fun show(answer: ChargingSummary) {
+        val summary = if (serverGone()) answer.withoutCards() else answer
         _uiState.update {
             // Older charges follow on from where the newest page ended. Where it now ends elsewhere, they may not: the list starts again from the new page.
             val sameEnd = it.summary.sessions.lastOrNull()?.id == summary.sessions.lastOrNull()?.id
@@ -155,9 +193,15 @@ class ChargingViewModel(
         val oldest = state.sessions.lastOrNull()?.pageKey ?: return
         if (state.loadingMore || !state.moreSessions) return
         val server = server() ?: return
+        val asked = generation
         _uiState.update { it.copy(loadingMore = true) }
         viewModelScope.launch {
-            api.olderSessions(server, oldest).fold(
+            val answer = api.olderSessions(server, oldest)
+            if (asked != generation) {
+                _uiState.update { it.copy(loadingMore = false) }
+                return@launch
+            }
+            answer.fold(
                 onSuccess = { (sessions, more) ->
                     _uiState.update { state ->
                         if (state.sessions.lastOrNull()?.pageKey != oldest) {
@@ -203,9 +247,12 @@ class ChargingViewModel(
         val server = server() ?: return
         // An answer from before this is saved mustn't land after it.
         detailAsked?.cancel()
+        val asked = generation
         _uiState.update { it.copy(saving = true) }
         viewModelScope.launch {
-            api.saveSession(server, id, cost, note).fold(
+            val answer = api.saveSession(server, id, cost, note)
+            if (asked != generation) return@launch
+            answer.fold(
                 onSuccess = { detail ->
                     _uiState.update { state ->
                         // Another charge's page may have opened while this was on its way.
@@ -225,10 +272,15 @@ class ChargingViewModel(
     fun choosePlan(id: String) {
         if (_uiState.value.saving) return
         val server = server() ?: return
+        val asked = generation
         _uiState.update { it.copy(saving = true) }
         viewModelScope.launch {
-            api.choosePlan(server, id).fold(
+            val answer = api.choosePlan(server, id)
+            if (asked != generation) return@launch
+            answer.fold(
                 onSuccess = { summary ->
+                    // Whatever was asked before now is priced on the last plan.
+                    generation++
                     show(summary)
                     // An open charge's page and any older charges were priced on the last plan.
                     _uiState.update { it.copy(older = emptyList(), moreSessions = summary.moreSessions, saving = false) }
