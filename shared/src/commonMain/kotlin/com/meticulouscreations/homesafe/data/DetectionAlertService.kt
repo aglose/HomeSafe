@@ -62,7 +62,7 @@ import kotlin.time.Instant
  *
  * Away mode (see docs/away-mode.md): while [PresenceRepository] says everyone is away, any person
  * on any camera is posted — [AlertNotification.urgent], on the loud channel — whatever the zone
- * rules say. Presence is collected for the life of the poll so that flag stays fresh. Quiet hours
+ * rules say; on a camera with a [PROPERTY_ZONE], any person inside it. Presence is collected for the life of the poll so that flag stays fresh. Quiet hours
  * and "only when everyone's away" ([AlertSettings.ordinaryAlertsSilenced]) hold back everything
  * else, but never those.
  *
@@ -216,8 +216,9 @@ class DetectionAlertService(
     }
 
     /**
-     * Whether and how loudly to post: with nobody home every person notifies on the loud channel,
-     * zone rules, quiet hours and the stranger rule notwithstanding; otherwise nothing posts during
+     * Whether and how loudly to post: with nobody home every person notifies on the loud channel
+     * (on a camera with a [PROPERTY_ZONE], every person who set foot in it), zone rules, quiet
+     * hours and the stranger rule notwithstanding; otherwise nothing posts during
      * quiet hours (or ever, with "only when everyone's away"), and outside them the user's rules decide, once
      * [inZones] has worked out where the object went and whether those zones wanted it at all —
      * a car crossing a birds-only street zone is dropped here, not judged as "anywhere else".
@@ -225,11 +226,13 @@ class DetectionAlertService(
      */
     private suspend fun decide(url: String, event: FrigateEvent, zones: Map<String, List<DetectionZone>>, recentVehicles: ArrayDeque<RecentVehicle>) {
         val category = categoryForLabel(event.label)
-        val escalated = everyoneAway && category == MomentCategory.PEOPLE
-        if (!escalated && settings.value.ordinaryAlertsSilenced(localMinuteOfDay())) return
         val moment = event.toDomain()
+        val cameraZones = zones[event.camera].orEmpty()
+        val placed = moment.inZones(cameraZones, clock())
+        val onOurGround = cameraZones.none { it.name == PROPERTY_ZONE } || placed?.zones.orEmpty().contains(PROPERTY_ZONE)
+        val escalated = everyoneAway && category == MomentCategory.PEOPLE && onOurGround
+        if (!escalated && settings.value.ordinaryAlertsSilenced(localMinuteOfDay())) return
         if (category == MomentCategory.VEHICLES && moment.isStill()) return
-        val placed = moment.inZones(zones[event.camera].orEmpty(), clock())
         if (!escalated && placed != null && isRepeatSighting(placed, recentVehicles)) return
         when {
             escalated -> notify(url, placed ?: moment, urgent = true)
@@ -322,6 +325,9 @@ class DetectionAlertService(
     }
 
     private companion object {
+        /** Where the household's own ground ends; the relay's `PROPERTY_ZONE`, same rule. */
+        const val PROPERTY_ZONE = "property"
+
         const val PAGE_SIZE = 50
         const val ZONES_REFRESH_SECONDS = 120.0
         const val MAX_REMEMBERED = 200

@@ -186,7 +186,8 @@ the relay, so the second phone only has to allow location "Always". Each phone a
 Each poll, before the normal alert pass, `poll_forever` asks `away_since()`. While everyone is
 away it fetches `GET /api/review` for **both** `severity=alert` and `severity=detection`, and
 pushes every item whose `data.objects` contains `"person"` and whose `start_time` is at or after
-the moment the last person left (so flipping the switch never replays the afternoon). The push is:
+the moment the last person left (so flipping the switch never replays the afternoon), and, on a
+camera with a `property` zone, whose `data.zones` names it (see "On the property"). The push is:
 
 - title `Person in the driveway` (via `sentence()`, with no "Away" in front: the Away channel and
   the body already say it), body `Front Yard · nobody home`;
@@ -199,6 +200,29 @@ the moment the last person left (so flipping the switch never replays the aftern
 Items go into the same `sent` table as ordinary alerts, so a person alert while away is sent once,
 escalated, and the normal pass then skips it. Non-person alerts while away, and everything while
 somebody is home, behave exactly as before.
+
+### On the property
+
+A camera that looks over public ground has a zone named `property`, wanting people only
+(`objects: [person]`), drawn up to where the household's ground ends. There, "any person" means any
+person inside it; a camera with no such zone still hears about everyone. The relay reads the zone
+off the review's `data.zones`, which only names it once a person has set foot there because no
+other label counts as inside it, and looks again each poll, so someone who steps off the sidewalk
+is told as they do. The in-app poller applies the same rule through `inZones`. Add the zone to the
+camera's `review.alerts.required_zones` too, so someone there is an alert while somebody's home as
+well.
+
+Why: from 2026-10-25 to 11-01 the Front Yard pushed 301 times, 277 of them from this bypass, and
+226 had nobody but passers-by on the sidewalk. The Front Yard's outline is the sidewalk's house-side
+edge, read off the feet of 701 people walking along it; 2 of them put two or more points over it.
+Of the 75 pushes left, a look through them found most plainly people in the yard, and about a dozen
+close to the line at the upper left, behind a parked car, that a still frame couldn't settle. A zone
+is judged at the bottom centre of the box, so someone whose feet are hidden is placed by what shows.
+
+The local vision model doesn't decide this. Shown 40 of those frames, it got all 20 sidewalk walkers
+right but called 8 of 20 people on the property "sidewalk", and asked only whether a real person was
+there it rejected 14 of the 75, some of them plainly people. It would hide the visitor it was meant
+to catch.
 
 ### Quiet hours and "only when everyone's away"
 
