@@ -19,12 +19,12 @@ import homesafe.shared.generated.resources.download_no_space
 import homesafe.shared.generated.resources.download_too_many_redirects
 import homesafe.shared.generated.resources.download_write_failed
 import io.ktor.client.HttpClient
-import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 
 /**
  * Hands the clip off to Android's own [DownloadManager] rather than fetching it in-process:
