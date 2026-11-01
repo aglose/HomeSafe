@@ -179,6 +179,7 @@ internal data class RelayCarMonth(
     val sessions: Int = 0,
     val miles: Double? = null,
     @SerialName("used_kwh") val usedKwh: Double? = null,
+    val unpriced: Int = 0,
 )
 
 @Serializable
@@ -190,6 +191,7 @@ internal data class RelayChargingMonth(
     @SerialName("electric_paid") val electricPaid: Double? = null,
     @SerialName("peak_kwh") val peakKwh: Double = 0.0,
     val plans: Map<String, Double> = emptyMap(),
+    val unpriced: Int = 0,
 )
 
 @Serializable
@@ -274,12 +276,13 @@ internal data class RelayCharging(
         months = months.map { m ->
             ChargingMonth(
                 key = m.month,
-                cars = m.cars.map { CarMonth(it.car, it.name.ifBlank { it.car }, it.homeKwh, it.homeCost, it.fastKwh, it.fastCost, it.otherKwh, it.otherCost, it.sessions, it.miles, it.usedKwh) },
+                cars = m.cars.map { CarMonth(it.car, it.name.ifBlank { it.car }, it.homeKwh, it.homeCost, it.fastKwh, it.fastCost, it.otherKwh, it.otherCost, it.sessions, it.miles, it.usedKwh, it.unpriced) },
                 cardFast = m.cardFast,
                 unmatched = m.unmatched,
                 electricPaid = m.electricPaid,
                 peakKwh = m.peakKwh,
                 planCosts = m.plans,
+                unpriced = m.unpriced,
             )
         },
         byHour = byHour,

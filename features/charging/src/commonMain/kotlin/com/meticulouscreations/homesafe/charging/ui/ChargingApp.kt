@@ -244,7 +244,12 @@ fun ChargingAppContent(
             // The answer to whatever just failed, over what's still there. A charge's page with nothing to show says so itself.
             val error = state.error
             if (state.loaded && error != null && (page !is ChargingPage.Charge || state.sessions.any { it.id == page.id } || state.detail?.session?.id == page.id)) {
-                ChargingErrorBanner(error.resolve(), actions.onRefresh, Modifier.align(Alignment.TopCenter).padding(start = gutter, end = gutter, top = top))
+                val retry = {
+                    // A charge's page has its own answer to ask for again.
+                    if (page is ChargingPage.Charge) actions.onOpenCharge(page.id)
+                    actions.onRefresh()
+                }
+                ChargingErrorBanner(error.resolve(), retry, Modifier.align(Alignment.TopCenter).padding(start = gutter, end = gutter, top = top))
             }
 
             ChargingTopBar(

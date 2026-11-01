@@ -281,6 +281,8 @@ private fun PlanLine(other: RatePlan, otherCost: Double, currentCost: Double) {
 @Composable
 private fun GasCard(month: ChargingMonth, summary: ChargingSummary) {
     val gas = summary.gas ?: return
+    // A charge with no price would count as money saved.
+    if (month.unpriced > 0) return
     val miles = month.milesOfEveryCar?.takeIf { it > 0 } ?: return
     val colors = ChargingTheme.colors
     val gasCost = gas.costOf(miles)

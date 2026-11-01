@@ -10198,6 +10198,23 @@ class ChargingTest(unittest.TestCase):
             relay.charging_card_spend = self._card_spend
         self.assertEqual(25, month["unmatched"])
 
+    def test_a_month_counts_the_charges_it_has_no_price_for(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, ChargerVoltage=240, ChargeAmps=32, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 3600, Soc=30, ChargerVoltage=240, DetailedChargeState="DetailedChargeStateComplete")
+        month = relay.charging_summary(start + 7200, False)["months"][0]
+        self.assertEqual(1, month["unpriced"])
+        self.assertEqual(1, month["cars"][0]["unpriced"])
+        relay.with_db(lambda c: (c.execute("UPDATE charge_sessions SET typed_cost=5"), c.commit()))
+        self.assertEqual(0, relay.charging_summary(start + 7200, False)["months"][0]["unpriced"])
+
+    def test_the_cards_stand_in_for_a_superchargers_price_only_for_who_may_see_them(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, FastChargerPresent=True, FastChargerType="FastChargerSupercharger", DCChargingPower=120, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 900, Soc=40, DCChargingPower=120, DetailedChargeState="DetailedChargeStateComplete")
+        self.assertEqual(0, relay.charging_summary(start + 7200, True)["months"][0]["unpriced"])
+        self.assertEqual(1, relay.charging_summary(start + 7200, False)["months"][0]["unpriced"])
+
     def test_the_rates_file_can_name_its_clock(self):
         rates = {**self.RATES, "time_zone": "America/New_York"}
         self.assertEqual("America/New_York", str(relay.charging_zone(rates)))

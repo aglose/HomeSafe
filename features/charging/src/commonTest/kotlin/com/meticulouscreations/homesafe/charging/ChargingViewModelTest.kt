@@ -61,6 +61,8 @@ class ChargingViewModelTest {
     private val calls = mutableListOf<String>()
     private var charging = false
     private var refuse = false
+    private lateinit var connection: FakeConnection
+    private var months = "[]"
     private var newest = """{"id": 2, "car": "c", "started": 200}"""
     private var detailEnded = false
     private val detailDelayMillis = mutableMapOf<String, Long>()
@@ -71,7 +73,7 @@ class ChargingViewModelTest {
 
     private fun answer(path: String, method: HttpMethod): String = when {
         path == "/charging" || (path == "/charging/plan" && method == HttpMethod.Post) ->
-            """{"plan": "a", "sessions": [$newest], "more_sessions": true,
+            """{"plan": "a", "sessions": [$newest], "more_sessions": true, "months": $months,
                 "now": [{"car": "c", "session": ${if (charging) """{"id": 2, "car": "c", "started": 200}""" else "null"}}]}"""
 
         path.startsWith("/charging/sessions/") -> """{"id": ${path.substringAfterLast('/')}, "car": "c", "started": 200, ${if (detailEnded) """"ended": 300, """ else ""}"kwh": 1, "cost": 3.5, "cost_is": "typed", "note": "kept"}"""
@@ -98,7 +100,8 @@ class ChargingViewModelTest {
             }
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         }
-        return ChargingViewModel(ChargingRelayApi(client), FakeConnection(if (signedIn) "http://box" else null), clock)
+        connection = FakeConnection(if (signedIn) "http://box" else null)
+        return ChargingViewModel(ChargingRelayApi(client), connection, clock)
     }
 
     @BeforeTest
@@ -205,6 +208,57 @@ class ChargingViewModelTest {
         advanceTimeBy(6_000)
         settle()
         assertEquals(2L, model.uiState.value.detail?.session?.id)
+    }
+
+    @Test
+    fun aRefreshDoesntEndASaveStillOnItsWay() = runTest(dispatcher) {
+        detailDelayMillis["/charging/plan"] = 5_000
+        val model = viewModel()
+        model.refresh()
+        eventually { model.uiState.value.loaded }
+        model.choosePlan("b")
+        settle()
+        assertTrue(model.uiState.value.saving)
+        model.refresh()
+        settle()
+        assertTrue(model.uiState.value.saving)
+        model.choosePlan("c")
+        settle()
+        assertEquals(1, calls.count { it.endsWith("/charging/plan") })
+        advanceTimeBy(6_000)
+        settle()
+        assertEquals(false, model.uiState.value.saving)
+    }
+
+    @Test
+    fun whatTheBanksSaidGoesWhenTheServerCantSayWhosAsking() = runTest(dispatcher) {
+        months = """[{"month": "2026-10", "card_fast": 20, "unmatched": 20, "electric_paid": 90}]"""
+        val model = viewModel()
+        model.refresh()
+        eventually { model.uiState.value.loaded }
+        assertEquals(20.0, model.uiState.value.summary.months.single().cost)
+        connection.serverUnreachable.value = true
+        settle()
+        val month = model.uiState.value.summary.months.single()
+        assertEquals(0.0, month.cost)
+        assertNull(month.electricPaid)
+        assertNull(month.cardFast)
+        connection.serverUnreachable.value = false
+        model.refresh()
+        eventually { model.uiState.value.summary.months.single().electricPaid == 90.0 }
+    }
+
+    @Test
+    fun aFailedAskTakesAwayWhatTheBanksSaid() = runTest(dispatcher) {
+        months = """[{"month": "2026-10", "card_fast": 20, "unmatched": 20, "electric_paid": 90}]"""
+        val model = viewModel()
+        model.refresh()
+        eventually { model.uiState.value.loaded }
+        refuse = true
+        model.refresh()
+        eventually { model.uiState.value.error != null }
+        assertNull(model.uiState.value.summary.months.single().electricPaid)
+        assertEquals(1, model.uiState.value.summary.months.size)
     }
 
     @Test

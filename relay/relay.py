@@ -12855,12 +12855,12 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
     months: dict[str, dict[str, Any]] = {}
 
     def month_of(key: str) -> dict[str, Any]:
-        return months.setdefault(key, {"month": key, "cars": {}, "card_fast": 0.0, "receipts": 0.0, "electric_paid": 0.0, "peak_kwh": 0.0, "plans": {}})
+        return months.setdefault(key, {"month": key, "cars": {}, "card_fast": 0.0, "receipts": 0.0, "electric_paid": 0.0, "peak_kwh": 0.0, "plans": {}, "unpriced": 0})
 
     def car_of(key: str, name: str) -> dict[str, Any]:
         return month_of(key)["cars"].setdefault(name, {
             "car": name, "name": display_name(name), "home_kwh": 0.0, "home_cost": 0.0, "fast_kwh": 0.0, "fast_cost": 0.0,
-            "other_kwh": 0.0, "other_cost": 0.0, "sessions": 0, "miles": None, "used_kwh": None,
+            "other_kwh": 0.0, "other_cost": 0.0, "sessions": 0, "miles": None, "used_kwh": None, "unpriced": 0,
         })
 
     plan_ids = list((rates.get("plans") or {}).keys())
@@ -12873,6 +12873,11 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         prefix = "home" if place == "home" else "fast" if place in ("supercharger", "fast") else "other"
         car[f"{prefix}_kwh"] += session["kwh"]
         car[f"{prefix}_cost"] += session["cost"] or 0.0
+        if session["cost"] is None and session["kwh"] > 0:
+            car["unpriced"] += 1
+            # What the cards paid stands in for a Supercharger's receipt, for whoever may see them.
+            if not (money and place == "supercharger"):
+                months[key]["unpriced"] += 1
         if session["cost_is"] == "receipt" or (session["cost_is"] == "typed" and place == "supercharger"):
             months[key]["receipts"] += session["cost"]
         if place == "home":
@@ -12915,7 +12920,7 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         answer.append({
             "month": key, "cars": cars, "card_fast": round(month["card_fast"], 2) if money else None, "unmatched": round(unmatched[key], 2),
             "electric_paid": round(month["electric_paid"], 2) if money else None, "peak_kwh": round(month["peak_kwh"], 2),
-            "plans": {plan: round(cost, 2) for plan, cost in month["plans"].items()},
+            "plans": {plan: round(cost, 2) for plan, cost in month["plans"].items()}, "unpriced": month["unpriced"],
         })
     return answer
 

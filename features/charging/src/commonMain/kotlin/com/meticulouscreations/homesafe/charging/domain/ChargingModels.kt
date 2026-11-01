@@ -149,12 +149,14 @@ data class CarMonth(
     val miles: Double? = null,
     /** What it used, by the car's lifetime counter. */
     val usedKwh: Double? = null,
+    /** Charges with energy and no known price, which [cost] leaves out. */
+    val unpriced: Int = 0,
 ) {
     val cost: Double get() = homeCost + fastCost + otherCost
     val kwh: Double get() = homeKwh + fastKwh + otherKwh
 
-    /** Dollars to go a mile; null without miles. */
-    val costPerMile: Double? get() = miles?.takeIf { it > 0 }?.let { cost / it }
+    /** Dollars to go a mile; null without miles, or while part of what they cost is unknown. */
+    val costPerMile: Double? get() = miles?.takeIf { it > 0 && unpriced == 0 }?.let { cost / it }
 
     /** Miles out of each kWh it used; null until both are known. */
     val milesPerKwh: Double? get() = usedKwh?.takeIf { it > 0 }?.let { used -> miles?.let { it / used } }
@@ -176,6 +178,8 @@ data class ChargingMonth(
     val peakKwh: Double = 0.0,
     /** What the month's charging at home comes to on each plan, by plan id. */
     val planCosts: Map<String, Double> = emptyMap(),
+    /** Charges whose price [cost] doesn't hold, by any receipt, card or plan. */
+    val unpriced: Int = 0,
 ) {
     val year: Int get() = key.substringBefore('-').toIntOrNull() ?: 0
     val month: Int get() = key.substringAfter('-').toIntOrNull() ?: 1
@@ -196,8 +200,8 @@ data class ChargingMonth(
     /** The miles the whole month's [cost] went on: null until every car has said its own, or a total would set one car's miles against both cars' charging. */
     val milesOfEveryCar: Double? get() = if (cars.isNotEmpty() && cars.all { it.miles != null }) miles else null
 
-    /** Dollars to go a mile; null without every car's miles. */
-    val costPerMile: Double? get() = milesOfEveryCar?.takeIf { it > 0 }?.let { cost / it }
+    /** Dollars to go a mile; null without every car's miles, or while part of what they cost is unknown. */
+    val costPerMile: Double? get() = milesOfEveryCar?.takeIf { it > 0 && unpriced == 0 }?.let { cost / it }
 
     /** What a kWh came to at home. */
     val homePerKwh: Double? get() = homeKwh.takeIf { it > 0 }?.let { homeCost / it }
@@ -287,6 +291,9 @@ data class ChargingSummary(
     val setup: ChargingSetup = ChargingSetup(),
 ) {
     val plan: RatePlan? get() = plans.firstOrNull { it.id == planId }
+
+    /** The same without what the cards and banks said. A Supercharger known only from the cards then has no price. */
+    fun withoutCards(): ChargingSummary = copy(months = months.map { it.copy(cardFast = null, unmatched = 0.0, electricPaid = null, unpriced = it.cars.sumOf { car -> car.unpriced }) })
 
     /** A car charging now. */
     val charging: List<CarNow> get() = now.filter { it.session != null }

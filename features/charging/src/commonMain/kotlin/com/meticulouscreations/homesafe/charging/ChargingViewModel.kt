@@ -22,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -69,6 +70,14 @@ class ChargingViewModel(
     private var detailAsked: Job? = null
     private var askedAt = 0L
 
+    init {
+        // What the banks said is only for while the server can say who's asking: nothing here can check who's holding the phone.
+        viewModelScope.launch {
+            combine(connectionRepository.currentServerUrl, connectionRepository.serverUnreachable) { server, unreachable -> server == null || unreachable }
+                .collect { gone -> if (gone) _uiState.update { it.copy(summary = it.summary.withoutCards()) } }
+        }
+    }
+
     /** Asks the relay as long as [active]: every little while with a car charging, otherwise now and then. */
     fun setActive(active: Boolean) {
         if (!active) {
@@ -104,7 +113,10 @@ class ChargingViewModel(
                 // A charge's page was fetched while it ran: it goes on running, and has an end to come.
                 _uiState.value.detail?.session?.takeIf { it.isOpen }?.let { fetchDetail(server, it.id, quietly = true) }
             },
-            onFailure = { failure -> fail(failure) },
+            onFailure = { failure ->
+                _uiState.update { it.copy(refreshing = false, summary = it.summary.withoutCards()) }
+                fail(failure)
+            },
         )
     }
 
@@ -118,7 +130,6 @@ class ChargingViewModel(
                 summary = summary,
                 refreshing = false,
                 error = null,
-                saving = false,
                 older = older,
                 moreSessions = if (older.isEmpty()) summary.moreSessions else it.moreSessions,
                 nowEpochSeconds = clock.now().epochSeconds,
@@ -126,8 +137,9 @@ class ChargingViewModel(
         }
     }
 
+    /** Says what went wrong. What was under way when it did is for the caller to end: another ask failing says nothing about a save still on its way. */
     private fun fail(failure: Throwable) {
-        _uiState.update { it.copy(refreshing = false, saving = false, loadingMore = false, error = failure.userMessage(Res.string.charging_error_unreachable), nowEpochSeconds = clock.now().epochSeconds) }
+        _uiState.update { it.copy(error = failure.userMessage(Res.string.charging_error_unreachable), nowEpochSeconds = clock.now().epochSeconds) }
     }
 
     /** The server to ask, or none and says so. */
@@ -157,7 +169,10 @@ class ChargingViewModel(
                         }
                     }
                 },
-                onFailure = { fail(it) },
+                onFailure = {
+                    _uiState.update { state -> state.copy(loadingMore = false) }
+                    fail(it)
+                },
             )
         }
     }
@@ -182,6 +197,7 @@ class ChargingViewModel(
 
     /** What was paid for a charge, and a note on it; null takes either away. */
     fun saveSession(id: Long, cost: Double?, note: String?) {
+        if (_uiState.value.saving) return
         val server = server() ?: return
         // An answer from before this is saved mustn't land after it.
         detailAsked?.cancel()
@@ -194,13 +210,17 @@ class ChargingViewModel(
                     }
                     ask()
                 },
-                onFailure = { fail(it) },
+                onFailure = {
+                    _uiState.update { state -> state.copy(saving = false) }
+                    fail(it)
+                },
             )
         }
     }
 
     /** The plan the household is on: everything charged at home is priced by it, past charges too. */
     fun choosePlan(id: String) {
+        if (_uiState.value.saving) return
         val server = server() ?: return
         _uiState.update { it.copy(saving = true) }
         viewModelScope.launch {
@@ -208,9 +228,12 @@ class ChargingViewModel(
                 onSuccess = { summary ->
                     show(summary)
                     // An open charge's page and any older charges were priced on the last plan.
-                    _uiState.update { it.copy(older = emptyList(), moreSessions = summary.moreSessions) }
+                    _uiState.update { it.copy(older = emptyList(), moreSessions = summary.moreSessions, saving = false) }
                 },
-                onFailure = { fail(it) },
+                onFailure = {
+                    _uiState.update { state -> state.copy(saving = false) }
+                    fail(it)
+                },
             )
         }
     }

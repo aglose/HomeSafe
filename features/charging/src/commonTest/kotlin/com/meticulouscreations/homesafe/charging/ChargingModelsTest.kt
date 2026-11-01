@@ -60,6 +60,14 @@ class ChargingModelsTest {
     }
 
     @Test
+    fun milesOnlyGetACostOnceEveryChargeHasAPrice() {
+        val car = CarMonth("a", "Alex", homeCost = 10.0, miles = 100.0, unpriced = 1)
+        assertNull(car.costPerMile)
+        assertNull(ChargingMonth("2026-10", cars = listOf(car), unpriced = 1).costPerMile)
+        assertEquals(0.1, ChargingMonth("2026-10", cars = listOf(car.copy(unpriced = 0))).costPerMile)
+    }
+
+    @Test
     fun aPriceCanBeTypedEitherWayItsDecimalsAreWritten() {
         for ((text, price) in listOf(
             "3.50" to 3.5, "3,50" to 3.5, "$12" to 12.0, " 7 " to 7.0, ".5" to 0.5, "3." to 3.0, "1,234.50" to 1234.5, "1.234,50" to 1234.5, "1,234" to 1234.0, "1.234" to 1234.0, "1,234,567" to 1234567.0,
