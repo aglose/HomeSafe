@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.ViewSidebar
 import androidx.compose.material.icons.filled.WbCloudy
@@ -60,6 +61,7 @@ import com.meticulouscreations.homesafe.ui.shortcutLabel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.atlas_drawer_title
 import homesafe.shared.generated.resources.fitness_drawer_title
+import homesafe.shared.generated.resources.packages_drawer_title
 import homesafe.shared.generated.resources.shell_app_title
 import homesafe.shared.generated.resources.shell_drawer_finance
 import homesafe.shared.generated.resources.shell_drawer_section_apps
@@ -72,13 +74,14 @@ import org.jetbrains.compose.resources.stringResource
 /** How wide the sidebar stands beside the content ([showsSidebar][com.meticulouscreations.homesafe.ui.showsSidebar]). */
 internal val SIDEBAR_WIDTH = 248.dp
 
-/** The apps in the sidebar, in the order the iPad's lists them and ⌘4 to ⌘7 reach them. */
-internal val SIDEBAR_APPS = listOf(InnerApp.WEATHER, InnerApp.ATLAS, InnerApp.FITNESS, InnerApp.FINANCE)
+/** The apps in the sidebar, in the order the iPad's lists them and ⌘4 to ⌘8 reach them. */
+internal val SIDEBAR_APPS = listOf(InnerApp.WEATHER, InnerApp.ATLAS, InnerApp.FITNESS, InnerApp.FINANCE, InnerApp.PACKAGES)
 
 internal val InnerApp.title: StringResource
     get() = when (this) {
         InnerApp.WEATHER -> Res.string.weather_drawer_title
         InnerApp.ATLAS -> Res.string.atlas_drawer_title
+        InnerApp.PACKAGES -> Res.string.packages_drawer_title
         InnerApp.FITNESS -> Res.string.fitness_drawer_title
         InnerApp.FINANCE -> Res.string.shell_drawer_finance
     }
@@ -88,6 +91,7 @@ internal val InnerApp.icon: ImageVector
     get() = when (this) {
         InnerApp.WEATHER -> Icons.Filled.WbCloudy
         InnerApp.ATLAS -> Icons.Filled.Map
+        InnerApp.PACKAGES -> Icons.Filled.Inventory2
         InnerApp.FITNESS -> Icons.Filled.FitnessCenter
         InnerApp.FINANCE -> Icons.AutoMirrored.Filled.TrendingUp
     }

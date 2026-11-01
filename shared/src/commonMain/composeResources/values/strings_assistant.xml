@@ -49,4 +49,5 @@
     <string name="assistant_tool_weather">Checking the forecast</string>
     <string name="assistant_tool_fitness">Looking at your training log</string>
     <string name="assistant_tool_atlas">Looking through your places</string>
+    <string name="assistant_tool_packages">Looking through your packages</string>
 </resources>

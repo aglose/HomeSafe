@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
 import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.integration.testPlatformContext
+import com.meticulouscreations.homesafe.packages.PackagesViewModel
 import com.meticulouscreations.homesafe.ui.screens.CarUnitsViewModel
 import com.meticulouscreations.homesafe.ui.screens.MapTilesViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
@@ -53,6 +54,7 @@ class AppGraphViewModelWiringTest {
                 HomeViewModel::class,
                 NestCameraViewModel::class,
                 AtlasViewModel::class,
+                PackagesViewModel::class,
                 MomentsViewModel::class,
                 SettingsViewModel::class,
                 SecureConnectionViewModel::class,

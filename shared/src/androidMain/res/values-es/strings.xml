@@ -84,4 +84,43 @@
     <string name="biometric_finance_title">Desbloquear Finanzas</string>
     <string name="biometric_finance_subtitle">No se puede conectar con el servidor. Confirma que eres tú para ver lo que guardó este teléfono.</string>
     <string name="biometric_cancel">Cancelar</string>
+    <string name="notif_channel_packages_name">Paquetes</string>
+    <string name="notif_channel_packages_description">Un paquete en camino, entregado o demasiado tiempo afuera</string>
+    <string name="notif_group_packages">Paquetes</string>
+    <!-- El aviso de la app de paquetes; %1$s es el nombre del paquete. -->
+    <string name="notif_package_surprise">Una sorpresa</string>
+    <string name="notif_package_unnamed">Un paquete</string>
+    <string name="notif_package_shipped_title">Enviado</string>
+    <string name="notif_package_shipped_body">%1$s va en camino</string>
+    <string name="notif_package_out_title">En reparto</string>
+    <string name="notif_package_out_body">%1$s debería llegar hoy</string>
+    <string name="notif_package_delivered_title">Entregado</string>
+    <string name="notif_package_delivered_body">%1$s ya llegó</string>
+    <string name="notif_package_delivered_confirmed">%1$s está en la puerta. La cámara lo vio llegar.</string>
+    <string name="notif_package_delivered_seen">%1$s ya llegó. La cámara vio a alguien en la puerta.</string>
+    <string name="notif_package_delivered_not_seen">%1$s figura como entregado, pero la cámara no vio a nadie.</string>
+    <string name="notif_package_porch_title">Sigue en el porche</string>
+    <string name="notif_package_porch_body">%1$s lleva un rato afuera</string>
+    <string name="notif_package_rain_title">Viene lluvia</string>
+    <string name="notif_package_rain_body">%1$s sigue en el porche</string>
+    <string name="notif_package_missing_title">¿Alguien entró un paquete?</string>
+    <string name="notif_package_missing_body">%1$s podría ya no estar en el porche. Toca para ver las fotos.</string>
+    <string name="notif_package_camera_title">Puede que haya llegado un paquete</string>
+    <string name="notif_package_camera_body">La cámara de la puerta vio algo en el porche</string>
+    <string name="notif_package_attempted_title">Intento de entrega</string>
+    <string name="notif_package_attempted_body">%1$s no se entregó</string>
+    <string name="notif_package_problem_title">Problema de entrega</string>
+    <string name="notif_package_problem_body">%1$s tuvo un problema</string>
+    <string name="notif_package_signature_title">Hace falta una firma</string>
+    <string name="notif_package_signature_body">Alguien debe firmar %1$s</string>
+    <string name="notif_package_late_title">¿Llegó este?</string>
+    <string name="notif_package_late_body">Sin noticias de %1$s desde su fecha</string>
+    <string name="notif_package_return_title">Se acaba el plazo de devolución</string>
+    <string name="notif_package_return_body">%1$s se puede devolver 3 días más</string>
+    <string name="notif_package_morning_title">Paquetes de hoy</string>
+    <plurals name="notif_package_morning_count">
+        <item quantity="one">%1$d paquete debería llegar hoy</item>
+        <item quantity="other">%1$d paquetes deberían llegar hoy</item>
+    </plurals>
+    <string name="notif_package_morning_away">%1$s, y no hay nadie en casa</string>
 </resources>

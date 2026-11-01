@@ -50,4 +50,5 @@
     <string name="assistant_tool_weather">Consultando el pronóstico</string>
     <string name="assistant_tool_fitness">Mirando tu registro de entrenamiento</string>
     <string name="assistant_tool_atlas">Repasando tus lugares</string>
+    <string name="assistant_tool_packages">Revisando tus paquetes</string>
 </resources>

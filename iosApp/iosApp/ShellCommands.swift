@@ -22,6 +22,7 @@ struct ShellCommands: Commands {
             destination("Atlas", .atlas, key: "5")
             destination("Fitness", .fitness, key: "6")
             destination("Finance", .finance, key: "7")
+            destination("Packages", .packages, key: "8")
         }
     }
 

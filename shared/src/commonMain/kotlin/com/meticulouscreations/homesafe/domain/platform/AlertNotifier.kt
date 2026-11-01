@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.domain.platform
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.navigation.PackageDeepLink
 import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
 
 /** Where the OS stands on letting this app post notifications. */
@@ -80,6 +81,11 @@ data class AlertNotification(
      * of a detection ([target] stays null). Null for everything from a camera.
      */
     val door: DoorDeepLink? = null,
+    /**
+     * Something happened to a parcel (docs/packages.md) rather than a camera seeing something: a
+     * tap opens the packages app on it ([target] stays null). Null for everything from a camera.
+     */
+    val parcel: PackageDeepLink? = null,
     /**
      * A household car parked on the street must move (the relay's `parking=1` push,
      * docs/parking.md) rather than a camera seeing something: Android wears the car and posts it
