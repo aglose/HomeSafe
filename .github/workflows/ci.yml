@@ -124,7 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Unit tests
-        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py scripts/ci/test_watch_ios_job.py scripts/ci/test_already_tested.py scripts/ci/test_copilot_review.py
+        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py scripts/ci/test_watch_ios_job.py scripts/ci/test_already_tested.py scripts/ci/test_copilot_review.py scripts/ci/test_protected_files.py
       - name: Build the relay image
         run: docker build --tag homesafe-relay relay
       - name: Import the relay against its installed packages
