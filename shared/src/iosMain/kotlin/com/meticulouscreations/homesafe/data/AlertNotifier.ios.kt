@@ -114,8 +114,10 @@ private class NotificationCenterDelegate :
         val info = didReceiveNotificationResponse.notification.request.content.userInfo
         if (didReceiveNotificationResponse.actionIdentifier == IosWeatherActions.REMIND) {
             // Nothing to open: the app stays where it is, and says it again later.
-            IosWeatherActions.remind(didReceiveNotificationResponse.notification.request)
-        } else if (info[WeatherDeepLink.KEY] != null) {
+            IosWeatherActions.remind(didReceiveNotificationResponse.notification.request, withCompletionHandler)
+            return
+        }
+        if (info[WeatherDeepLink.KEY] != null) {
             // A tap opens what the notification was about; its "Radar" button, the radar over the same place.
             val link = WeatherDeepLink.from { key -> info[key] as? String }
             WeatherDeepLinks.open(if (didReceiveNotificationResponse.actionIdentifier == IosWeatherActions.RADAR) link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null) else link)

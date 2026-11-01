@@ -70,6 +70,23 @@ interface WeatherNotifier {
      * warning that has lapsed. A no-op where the platform does that by itself.
      */
     suspend fun sweep(nowEpochSeconds: Long) = Unit
+
+    /**
+     * Calls off any "Remind me" already handed to the OS, for when the switches have since turned
+     * rain off. A no-op where a reminder asks [`WeatherAlertCheck` when its time comes.
+     */
+    suspend fun cancelReminders() = Unit
+}
+
+/** How a "Remind me" went when its time came. */
+enum class ReminderResult {
+    POSTED,
+
+    /** The rain has started or gone, or the switches now say no: nothing more to do. */
+    NOTHING_TO_SAY,
+
+    /** The forecast couldn't be had or the OS refused: worth another go while there's time. */
+    TRY_AGAIN,
 }
 
 /**

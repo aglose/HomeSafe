@@ -235,7 +235,20 @@ class WeatherNoticePlannerTest {
     fun aShowerWithAPlainPeakSaysWhenItIsHeaviest() {
         val building = soonReport(0.5, 1.0, 2.0, 1.0, 0.0, 0.0, 0.0)
         val notice = plan(soonNow, building).single()
-        assertTrue(WeatherNoticeFact(null, UiText.of(Res.string.weather_notice_heaviest_around, pm("4"))) in notice.facts, notice.facts.toString())
+        val heaviest = UiText.of(Res.string.weather_notice_heaviest_around, pm("4"))
+        assertTrue(WeatherNoticeFact(null, heaviest) in notice.facts, notice.facts.toString())
+        assertEquals(joined(lasting(60, 4.5), heaviest), notice.body, "said in words too: the picture isn't always seen")
+    }
+
+    @Test
+    fun hoursThatHaveItOverWhileTheQuarterHoursStillHaveItFallingAreSetAside() {
+        val hours = WeatherData.calmHours { h ->
+            if (h.epochSeconds == at(0, 15)) h.copy(precipitationMm = 2.0, precipitationProbability = 80, weatherCode = 61) else h
+        }
+        val r = report(soonNow, hourly = hours, minutely = slices(soonNow, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        val notice = plan(soonNow, r).single()
+        assertEquals(UiText.of(Res.string.weather_notice_soon_amount, WeatherFormat.precipitation(3.5, metric)), notice.body)
+        assertEquals(at(0, 15, 30) + 2 * HOUR, notice.expiresEpochSeconds, "as long as a shower with no end in sight")
     }
 
     @Test

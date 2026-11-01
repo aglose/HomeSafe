@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.weather.WeatherData
 import com.meticulouscreations.homesafe.weather.WeatherData.at
 import com.meticulouscreations.homesafe.weather.domain.AlertSeverity
 import com.meticulouscreations.homesafe.weather.domain.Place
+import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
@@ -234,7 +235,7 @@ class WeatherAlertCheckTest {
         h.check.run()
         val sent = h.ledger.sent(now)
         h.notifier.posted.clear()
-        assertTrue(h.check.remind())
+        assertEquals(ReminderResult.POSTED, h.check.remind())
         assertEquals("soon:${at(0, 15, 30) / 3_600}", h.notifier.posted.single().id)
         assertEquals(sent, h.ledger.sent(now))
     }
@@ -243,11 +244,40 @@ class WeatherAlertCheckTest {
     fun aReminderHeldBackByTheSwitchesOrAMutePostsNothing() = runTest {
         val h = harness()
         h.muted.value = true
-        assertFalse(h.check.remind())
+        assertEquals(ReminderResult.NOTHING_TO_SAY, h.check.remind())
+        assertFalse(h.check.mayRemind())
         h.muted.value = false
+        assertTrue(h.check.mayRemind())
         h.preferences.update { it.copy(notices = it.notices.copy(precipitationSoon = false)) }
-        assertFalse(h.check.remind())
+        assertEquals(ReminderResult.NOTHING_TO_SAY, h.check.remind())
+        assertFalse(h.check.mayRemind())
         assertTrue(h.notifier.posted.isEmpty())
+    }
+
+    @Test
+    fun aReminderIsWorthAnotherGoWhenTheForecastCantBeHadOrTheOsRefuses() = runTest {
+        val h = harness()
+        h.repository.onReport = { Result.failure(RuntimeException("offline")) }
+        assertEquals(ReminderResult.TRY_AGAIN, h.check.remind())
+        h.repository.onReport = { Result.success(stormyReport()) }
+        h.notifier.accepts = false
+        assertEquals(ReminderResult.TRY_AGAIN, h.check.remind())
+    }
+
+    @Test
+    fun turningRainOffOrMutingCallsOffRemindersAlreadySet() = runTest {
+        val h = harness()
+        h.check.start()
+        settle()
+        assertEquals(0, h.notifier.remindersCancelled)
+        h.muted.value = true
+        settle()
+        assertEquals(1, h.notifier.remindersCancelled)
+        h.muted.value = false
+        settle()
+        h.preferences.update { it.copy(notices = it.notices.copy(precipitationSoon = false)) }
+        settle()
+        assertEquals(2, h.notifier.remindersCancelled)
     }
 
     @Test

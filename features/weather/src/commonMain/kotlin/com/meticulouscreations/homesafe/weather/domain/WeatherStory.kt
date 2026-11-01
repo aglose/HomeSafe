@@ -358,8 +358,13 @@ object WeatherStory {
         val end = day.epochSeconds + WeatherReport.DAY_SECONDS
         val hours = if (nowEpochSeconds == null) report.hoursOf(day) else report.hoursFrom(nowEpochSeconds).filter { it.epochSeconds < end }
         val from = hours.firstOrNull()?.epochSeconds ?: day.epochSeconds
-        val near = nowEpochSeconds?.let { nearTerm(report, it) } ?: NearTerm.Dry
-        val spans = wetSpans(hours).filter { it.totalMm >= WeatherNoticePlanner.NOTABLE_MM || it.snowCm >= WeatherNoticePlanner.NOTABLE_SNOW_CM }
+        // The quarter-hours can run past midnight, and rain that starts then is tomorrow's.
+        val near = nowEpochSeconds?.let { now -> nearTerm(report, now).takeUnless { it is NearTerm.Starting && it.startEpochSeconds >= end } } ?: NearTerm.Dry
+        val notable = wetSpans(hours).filter { it.totalMm >= WeatherNoticePlanner.NOTABLE_MM || it.snowCm >= WeatherNoticePlanner.NOTABLE_SNOW_CM }
+        // An hour counts as wet from its start, however late in it the rain comes: the quarter-hours know when.
+        val spans = notable.mapIndexed { i, span ->
+            if (i == 0 && near is NearTerm.Starting && near.startEpochSeconds < span.endEpochSeconds) span.copy(startEpochSeconds = near.startEpochSeconds) else span
+        }
         val range = UiText.of(Res.string.weather_notice_art_range, WeatherFormat.degrees(day.highC, units), WeatherFormat.degrees(day.lowC, units))
         if (spans.isNotEmpty() || near != NearTerm.Dry) {
             val family = if (spans.isNotEmpty()) dominantFamily(spans) else familyOf(near)
@@ -372,9 +377,13 @@ object WeatherStory {
                     else -> OutlookKind.RAIN
                 },
                 timing = when {
-                    near is NearTerm.Stopping -> UiText.of(Res.string.weather_outlook_until, WeatherFormat.hourOrClock(near.endEpochSeconds, report.offsetAt(near.endEpochSeconds)))
+                    // Unless more follows after it stops: the tile's amount counts that too.
+                    near is NearTerm.Stopping && spans.none { it.startEpochSeconds >= near.endEpochSeconds } -> UiText.of(Res.string.weather_outlook_until, WeatherFormat.hourOrClock(near.endEpochSeconds, report.offsetAt(near.endEpochSeconds)))
+
                     spans.isNotEmpty() -> spanTiming(spans, from, end, nowEpochSeconds != null, report::offsetAt)
+
                     near is NearTerm.Starting -> UiText.of(Res.string.weather_outlook_around, WeatherFormat.hourOrClock(near.startEpochSeconds, report.offsetAt(near.startEpochSeconds)))
+
                     else -> UiText.of(Res.string.weather_outlook_now)
                 },
                 note = if (nowEpochSeconds != null && starts != null && starts > nowEpochSeconds) startsIn(starts - nowEpochSeconds) else null,
@@ -416,11 +425,11 @@ object WeatherStory {
                 UiText.of(Res.string.weather_outlook_until, WeatherFormat.hour(first.endEpochSeconds, offsetAt(first.endEpochSeconds)))
 
             spans.size == 1 && first.hours <= 1 ->
-                UiText.of(Res.string.weather_outlook_around, WeatherFormat.hour(first.startEpochSeconds, offsetAt(first.startEpochSeconds)))
+                UiText.of(Res.string.weather_outlook_around, WeatherFormat.hourOrClock(first.startEpochSeconds, offsetAt(first.startEpochSeconds)))
 
             else -> UiText.of(
                 Res.string.weather_outlook_from_to,
-                max(first.startEpochSeconds, from).let { WeatherFormat.hour(it, offsetAt(it)) },
+                max(first.startEpochSeconds, from).let { WeatherFormat.hourOrClock(it, offsetAt(it)) },
                 WeatherFormat.hour(last.endEpochSeconds, offsetAt(last.endEpochSeconds)),
             )
         }

@@ -349,14 +349,18 @@ object WeatherNoticePlanner {
         val lead = start - now
         if (lead > SOON_LEAD_SECONDS) return null
         val slices = report.slicesFrom(now).take(SOON_CHART_SLICES)
-        // The quarter-hours see two hours. Where the shower runs past them, the hours say how it goes on.
+        val falling = slices.filter { it.epochSeconds >= start && (near.endEpochSeconds == null || it.epochSeconds < near.endEpochSeconds) }
+        val lastWet = falling.lastOrNull { it.isWet }?.let { it.epochSeconds + WeatherReport.SLICE_SECONDS }
+        // The quarter-hours see two hours. Where the shower runs past them the hours say how it goes
+        // on, unless they have it over while the quarter-hours still have it falling.
         val span = if (near.endEpochSeconds != null) {
             null
         } else {
-            WeatherStory.wetSpans(report.hoursFrom(now)).firstOrNull { it.endEpochSeconds > start && it.startEpochSeconds <= start + WeatherReport.HOUR_SECONDS }
+            WeatherStory.wetSpans(report.hoursFrom(now))
+                .firstOrNull { it.endEpochSeconds > start && it.startEpochSeconds <= start + WeatherReport.HOUR_SECONDS }
+                ?.takeIf { lastWet == null || it.endEpochSeconds >= lastWet }
         }
         val end = near.endEpochSeconds ?: span?.endEpochSeconds
-        val falling = slices.filter { it.epochSeconds >= start && (near.endEpochSeconds == null || it.epochSeconds < near.endEpochSeconds) }
         val amount = if (near.family == Precipitation.SNOW) {
             WeatherFormat.snow(span?.snowCm ?: falling.sumOf { it.snowfallCm }, units)
         } else {
@@ -372,7 +376,12 @@ object WeatherNoticePlanner {
             key = "$SOON_PREFIX${start / WeatherReport.HOUR_SECONDS}",
             kind = WeatherNoticeKind.PRECIPITATION_SOON,
             title = UiText.of(soonTitle(near.family), WeatherFormat.hourOrClock(start, report.offsetAt(start))),
-            body = if (heavy) dotted(listOf(said, UiText.of(Res.string.weather_notice_heavy_at_times))) else said,
+            // The picture isn't always seen: the peak goes in the words too.
+            body = when {
+                heaviest != null -> dotted(listOf(said, heaviest))
+                heavy -> dotted(listOf(said, UiText.of(Res.string.weather_notice_heavy_at_times)))
+                else -> said
+            },
             icon = icon,
             isDay = report.current.isDay,
             eventEpochSeconds = start,

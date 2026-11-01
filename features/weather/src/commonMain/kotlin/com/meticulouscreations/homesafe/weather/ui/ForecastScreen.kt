@@ -59,6 +59,7 @@ import com.meticulouscreations.homesafe.weather.PlaceWeather
 import com.meticulouscreations.homesafe.weather.domain.DayForecast
 import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
 import com.meticulouscreations.homesafe.weather.domain.WeatherStory
 import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
@@ -259,12 +260,18 @@ private fun DayRow(
     // Today, only what is still to come: rain that fell this morning is nothing to plan around.
     val hours = remember(report, day) { report.hoursOf(day) }
     val ahead = remember(hours, index, nowEpochSeconds) { if (index == 0) hours.filter { it.epochSeconds + WeatherReport.HOUR_SECONDS > nowEpochSeconds } else hours }
-    val phrase = remember(ahead, day) {
-        ahead.firstOrNull()?.let { WeatherStory.spanPhrase(WeatherStory.wetSpans(ahead), it.epochSeconds, day.epochSeconds + WeatherReport.DAY_SECONDS, report::offsetAt) }
+    val spans = remember(ahead) { WeatherStory.wetSpans(ahead) }
+    val phrase = remember(ahead, spans, day) {
+        ahead.firstOrNull()?.let { WeatherStory.spanPhrase(spans, it.epochSeconds, day.epochSeconds + WeatherReport.DAY_SECONDS, report::offsetAt) }
     }
     val amount = when {
+        // Today's is what the row's hours add up to, not what has already fallen as well.
+        index == 0 -> spans.takeIf { it.isNotEmpty() }?.let { WeatherNoticePlanner.amount(it, units).second.resolve() }
+
         day.isSnowy -> WeatherFormat.snow(day.snowfallCm, units).resolve()
+
         phrase != null -> WeatherFormat.precipitation(day.precipitationMm, units).resolve()
+
         else -> null
     }
     val odds = chance?.let { WeatherFormat.percent(it) }

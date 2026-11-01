@@ -135,6 +135,8 @@ private class IosWeatherNotifier : WeatherNotifier {
         if (over.isNotEmpty()) center.removeDeliveredNotificationsWithIdentifiers(over)
     }
 
+    override suspend fun cancelReminders() = IosWeatherActions.cancelReminders()
+
     private companion object {
         /** One stack for the weather's notifications in Notification Centre, apart from each camera's. */
         const val THREAD = "weather"
@@ -162,6 +164,8 @@ object IosWeatherRefresh {
     private var registered = false
 
     fun register(alertCheck: () -> WeatherAlertCheck) {
+        // Whether or not this host can refresh in the background, the buttons need to read the switches.
+        IosWeatherActions.mayRemind = { alertCheck().mayRemind() }
         if (registered) return
         // Registering an identifier the bundle doesn't list is an exception, not an error to handle:
         // look before asking, so a host without the Info.plist entry simply has no background check.

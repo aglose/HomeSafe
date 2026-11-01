@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.weather.data
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_notice_remind_before
 import homesafe.shared.generated.resources.weather_tab_radar
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import platform.Foundation.NSDate
 import platform.Foundation.timeIntervalSince1970
@@ -57,20 +59,49 @@ object IosWeatherActions {
     )
 
     /**
+     * Whether the switches still let a reminder go out. Set by the weather module, which knows
+     * them, when the app starts; until then a button pressed is taken at its word.
+     */
+    var mayRemind: (suspend () -> Boolean)? = null
+
+    /**
      * "Remind me": the same notification, without its picture (iOS has moved that file into its
      * store), at the time it carries. iOS can't ask the forecast again at that moment without the
-     * app running, so it says what it said; the title names the time, so it still reads true.
+     * app running, so it says what it said; the title names the time, so it still reads true. The
+     * notification on show comes down only once the reminder is safely with the centre, and [done]
+     * is called only then, so iOS doesn't suspend the app before it gets there.
      */
-    fun remind(request: UNNotificationRequest) {
-        val content = request.content.mutableCopy() as? UNMutableNotificationContent ?: return
-        val at = (content.userInfo[KEY_REMIND_AT] as? String)?.toLongOrNull() ?: return
-        val delay = at - NSDate().timeIntervalSince1970
-        if (delay <= 0) return
-        content.setAttachments(emptyList<Any>())
-        content.setCategoryIdentifier(CATEGORY)
-        val center = UNUserNotificationCenter.currentNotificationCenter()
-        center.removeDeliveredNotificationsWithIdentifiers(listOf(request.identifier))
-        val trigger = UNTimeIntervalNotificationTrigger.triggerWithTimeInterval(delay, repeats = false)
-        center.addNotificationRequest(UNNotificationRequest.requestWithIdentifier(request.identifier, content, trigger)) { _ -> }
+    fun remind(request: UNNotificationRequest, done: () -> Unit) {
+        MainScope().launch {
+            val allowed = runCatching { mayRemind?.invoke() ?: true }.getOrDefault(true)
+            val content = request.content.mutableCopy() as? UNMutableNotificationContent
+            val at = (content?.userInfo?.get(KEY_REMIND_AT) as? String)?.toLongOrNull()
+            val delay = at?.let { it - NSDate().timeIntervalSince1970 }
+            if (!allowed || content == null || delay == null || delay <= 0) {
+                done()
+                return@launch
+            }
+            content.setAttachments(emptyList<Any>())
+            content.setCategoryIdentifier(CATEGORY)
+            val center = UNUserNotificationCenter.currentNotificationCenter()
+            val trigger = UNTimeIntervalNotificationTrigger.triggerWithTimeInterval(delay, repeats = false)
+            // Its own identifier, so what is on show and what is to come aren't one request to the centre.
+            val reminder = UNNotificationRequest.requestWithIdentifier(REMINDER_PREFIX + request.identifier, content, trigger)
+            center.addNotificationRequest(reminder) { error ->
+                if (error == null) center.removeDeliveredNotificationsWithIdentifiers(listOf(request.identifier))
+                done()
+            }
+        }
     }
+
+    /** Calls off every reminder still waiting: the switches have turned rain off since. */
+    fun cancelReminders() {
+        val center = UNUserNotificationCenter.currentNotificationCenter()
+        center.getPendingNotificationRequestsWithCompletionHandler { pending ->
+            val ids = pending.orEmpty().filterIsInstance<UNNotificationRequest>().map { it.identifier }.filter { it.startsWith(REMINDER_PREFIX) }
+            if (ids.isNotEmpty()) center.removePendingNotificationRequestsWithIdentifiers(ids)
+        }
+    }
+
+    private const val REMINDER_PREFIX = "weather.reminder:"
 }

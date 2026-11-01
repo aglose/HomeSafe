@@ -13,7 +13,9 @@ import homesafe.shared.generated.resources.weather_kind_clear_night
 import homesafe.shared.generated.resources.weather_outlook_all_day
 import homesafe.shared.generated.resources.weather_outlook_from_to
 import homesafe.shared.generated.resources.weather_outlook_in_hours_minutes
+import homesafe.shared.generated.resources.weather_outlook_in_minutes
 import homesafe.shared.generated.resources.weather_outlook_rest_of_today
+import homesafe.shared.generated.resources.weather_outlook_until
 import homesafe.shared.generated.resources.weather_span_mix_around
 import homesafe.shared.generated.resources.weather_span_rain_all_day
 import homesafe.shared.generated.resources.weather_span_rain_around
@@ -836,6 +838,40 @@ class WeatherStoryTest {
             if (h.epochSeconds >= at(1, 5) && h.epochSeconds < at(1, 9)) h.copy(precipitationMm = 1.0, snowfallCm = 2.0, precipitationProbability = 80, weatherCode = 73) else h
         }
         assertEquals(OutlookKind.SNOW, WeatherStory.outlooks(report(now, hourly = snow), us, now)!!.tomorrow?.kind)
+    }
+
+    @Test
+    fun rainDueAfterMidnightIsNotTodays() {
+        val now = at(0, 23, 30)
+        val r = report(now, hourly = rainFrom(0, 3, day = 1), minutely = slices(now, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        val outlooks = WeatherStory.outlooks(r, us, now)!!
+        assertEquals(OutlookKind.DRY, outlooks.today.kind)
+        assertEquals(OutlookKind.RAIN, outlooks.tomorrow?.kind)
+    }
+
+    @Test
+    fun rainPartWayThroughThisHourStartsWhenTheQuarterHoursSay() {
+        val now = at(0, 15)
+        val r = report(now, hourly = rainFrom(15, 18), minutely = slices(now, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        val today = WeatherStory.outlooks(r, us, now)!!.today
+        assertEquals(UiText.of(Res.string.weather_outlook_from_to, UiText.of(Res.string.weather_time_pm, "3:30"), UiText.of(Res.string.weather_time_pm, "6")), today.timing)
+        assertEquals(UiText.of(Res.string.weather_outlook_in_minutes, 30), today.note)
+    }
+
+    @Test
+    fun rainStoppingSoonSaysUntilThenUnlessMoreFollows() {
+        val now = at(0, 15)
+        val stopping = slices(now, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        val until = UiText.of(Res.string.weather_outlook_until, UiText.of(Res.string.weather_time_pm, "3:30"))
+        assertEquals(until, WeatherStory.outlooks(report(now, hourly = rainFrom(15, 16), minutely = stopping), us, now)!!.today.timing)
+        val more = WeatherData.calmHours { h ->
+            val wet = h.epochSeconds == at(0, 15) || (h.epochSeconds >= at(0, 19) && h.epochSeconds < at(0, 21))
+            if (wet) h.copy(precipitationMm = 1.0, precipitationProbability = 80, weatherCode = 61) else h
+        }
+        assertEquals(
+            UiText.of(Res.string.weather_outlook_from_to, UiText.of(Res.string.weather_time_pm, "3"), UiText.of(Res.string.weather_time_pm, "9")),
+            WeatherStory.outlooks(report(now, hourly = more, minutely = stopping), us, now)!!.today.timing,
+        )
     }
 
     @Test

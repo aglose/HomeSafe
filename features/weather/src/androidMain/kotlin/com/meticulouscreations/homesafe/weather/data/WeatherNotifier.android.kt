@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -33,6 +34,7 @@ import com.meticulouscreations.homesafe.data.retireChannels
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import com.meticulouscreations.homesafe.ui.notification.drawableRes
+import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotification
@@ -228,19 +230,25 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Coroutine
     }
 }
 
-/** One shower's reminder, as WorkManager work: from the "Remind me" button until its time comes. */
+/**
+ * One shower's reminder, as WorkManager work: from the "Remind me" button until its time comes. A
+ * forecast that can't be had is tried again a few times; the rain starting meanwhile ends it.
+ */
 class WeatherReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val posted = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).weatherAlertCheck.remind()
-        Log.i(TAG, "reminder: ${if (posted) "posted" else "nothing to say"}")
-        return Result.success()
+        val result = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).weatherAlertCheck.remind()
+        Log.i(TAG, "reminder: $result (attempt ${runAttemptCount + 1})")
+        return if (result == ReminderResult.TRY_AGAIN && runAttemptCount < REMINDER_RETRIES) Result.retry() else Result.success()
     }
 }
 
+/** How many times a reminder is tried again, a minute further apart each time: past that the rain has started. */
+private const val REMINDER_RETRIES = 4
+
 /**
- * A shower's "Remind me" button: takes the notification down and asks for it again at the time
- * the button said. The reminder looks at the forecast afresh, so it needs a network, and asking
- * twice replaces the first.
+ * A shower's "Remind me" button: asks for the notification again at the time the button said, and
+ * once WorkManager has that safely stored, takes this one down. The reminder looks at the forecast
+ * afresh, so it needs a network, and asking twice replaces the first.
  */
 class WeatherReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -250,11 +258,27 @@ class WeatherReminderReceiver : BroadcastReceiver() {
         val request = OneTimeWorkRequestBuilder<WeatherReminderWorker>()
             .setInitialDelay(delay, TimeUnit.MILLISECONDS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
             .build()
-        runCatching { WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request) }
-            .onFailure { Log.w(TAG, "couldn't schedule the reminder: ${it.message}") }
-        context.getSystemService(NotificationManager::class.java).cancel(tag, NOTIFICATION_ID)
-        group.tidy(context, tag, NOTIFICATION_ID)
+        // Storing the request happens on another thread: the process is kept until it's done.
+        val pending = goAsync()
+        runCatching {
+            val enqueued = WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request).result
+            enqueued.addListener(
+                {
+                    runCatching {
+                        enqueued.get()
+                        context.getSystemService(NotificationManager::class.java).cancel(tag, NOTIFICATION_ID)
+                        group.tidy(context, tag, NOTIFICATION_ID)
+                    }.onFailure { Log.w(TAG, "couldn't schedule the reminder: ${it.message}") }
+                    pending.finish()
+                },
+                ContextCompat.getMainExecutor(context),
+            )
+        }.onFailure {
+            Log.w(TAG, "couldn't schedule the reminder: ${it.message}")
+            pending.finish()
+        }
     }
 
     companion object {

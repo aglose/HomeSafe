@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.domain.platform.NotificationMute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.weather.domain.Place
+import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotice
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
@@ -20,6 +21,8 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -55,9 +58,14 @@ class WeatherAlertCheck(
 ) {
     private val running = Mutex()
 
-    /** Called once at launch: makes the background job match the notification switch. */
+    /** Called once at launch: makes the background job match the notification switch, and calls off reminders the switches turn off. */
     fun start() {
         appScope.launch { runCatching { syncSchedule() } }
+        appScope.launch {
+            combine(preferences.observe(), mute.muted) { prefs, muted -> prefs.notices.enabled && prefs.notices.precipitationSoon && !muted }
+                .distinctUntilChanged()
+                .collect { allowed -> if (!allowed) runCatching { notifier.cancelReminders() } }
+        }
     }
 
     /** Starts or stops the background check to match the notification switch. Call at launch and when the switch changes. */
@@ -91,18 +99,21 @@ class WeatherAlertCheck(
 
     /**
      * What a shower's "Remind me" button asked for: its notification again, from a fresh forecast,
-     * if the rain is still coming and nothing has been switched off since. Says whether one went up.
+     * if the rain is still coming and nothing has been switched off since.
      */
-    suspend fun remind(): Boolean = running.withLock {
+    suspend fun remind(): ReminderResult = running.withLock {
         runCatching {
+            if (!notifier.isSupported || !mayRemind() || !notifier.isAllowed()) return@runCatching ReminderResult.NOTHING_TO_SAY
             val prefs = preferences.observe().first()
-            if (!notifier.isSupported || !prefs.notices.enabled || !prefs.notices.precipitationSoon || mute.muted.value || !notifier.isAllowed()) return@runCatching false
-            val place = place() ?: return@runCatching false
-            val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return@runCatching false
-            val notice = WeatherNoticePlanner.reminder(report, place.name.takeIf { it.isNotBlank() }, prefs.units, clock.now().epochSeconds) ?: return@runCatching false
-            notifier.notify(notice.toNotification(place))
-        }.getOrDefault(false)
+            val place = place() ?: return@runCatching ReminderResult.NOTHING_TO_SAY
+            val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return@runCatching ReminderResult.TRY_AGAIN
+            val notice = WeatherNoticePlanner.reminder(report, place.name.takeIf { it.isNotBlank() }, prefs.units, clock.now().epochSeconds) ?: return@runCatching ReminderResult.NOTHING_TO_SAY
+            if (notifier.notify(notice.toNotification(place))) ReminderResult.POSTED else ReminderResult.TRY_AGAIN
+        }.getOrDefault(ReminderResult.TRY_AGAIN)
     }
+
+    /** Whether the switches still let a shower's reminder go out. */
+    suspend fun mayRemind(): Boolean = preferences.observe().first().notices.let { it.enabled && it.precipitationSoon } && !mute.muted.value
 
     /**
      * Takes down what is over at [epochSeconds], from here rather than from the next check. A
