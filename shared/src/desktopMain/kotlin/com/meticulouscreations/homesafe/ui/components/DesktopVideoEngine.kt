@@ -305,7 +305,6 @@ internal class DesktopVideoEngine(val key: String?) {
             grabber.startUnsafe(continuousUrl == null)
             if (playing is VideoSource.Recording && playing.startPositionMs > 0) grabber.setTimestamp(playing.startPositionMs * 1000, true)
             val audio = grabber.hasAudio()
-            ui.launch { if (session == mine) hasAudio = audio }
             val transport = if (continuousUrl != null) LiveTransport.FMP4 else LiveTransport.HLS
             val pacer = FramePacer(live = playing is VideoSource.Live)
             val frameRate = FrameRateMeter()
@@ -333,8 +332,11 @@ internal class DesktopVideoEngine(val key: String?) {
                 val frame: Frame = grabber.grabFrame(wantAudio, true, true, false, false) ?: return
                 if (frame.samples != null) {
                     if (wantAudio) {
-                        line = line ?: openAudioLine()
-                        line?.let { writeAudio(it, frame) }
+                        // The read may have outlasted this stream's turn to be heard.
+                        if (isHeard(mine)) {
+                            line = line ?: openAudioLine()
+                            line?.let { writeAudio(it, frame) }
+                        }
                     }
                     continue
                 }
@@ -348,7 +350,7 @@ internal class DesktopVideoEngine(val key: String?) {
                 val hold = pacer.holdNanos(frame.timestamp, System.nanoTime())
                 if (hold > 0) Thread.sleep(hold / 1_000_000, (hold % 1_000_000).toInt())
                 if (!mayDraw(mine)) break
-                pixels = publish(frame, mine, pixels)
+                pixels = publish(frame, mine, audio, pixels)
                 attempt.drewPicture = true
                 val now = System.nanoTime()
                 // What the frames say rather than what the opening said: a Nest stream's starts out as a tiny placeholder, and an fMP4's gives no rate.
@@ -372,6 +374,8 @@ internal class DesktopVideoEngine(val key: String?) {
                 }
             }
         } finally {
+            // What it has buffered goes too, so that a stream handing over isn't heard over the next.
+            line?.flush()
             line?.close()
             runCatching { grabber.releaseUnsafe() }
         }
@@ -382,7 +386,7 @@ internal class DesktopVideoEngine(val key: String?) {
      * is handed back to use for the next frame: at 4K a fresh array for each would be nearly a
      * gigabyte a second for the garbage collector.
      */
-    private fun publish(frame: Frame, mine: Int, scratch: ByteArray): ByteArray {
+    private fun publish(frame: Frame, mine: Int, audio: Boolean, scratch: ByteArray): ByteArray {
         val width = frame.imageWidth
         val height = frame.imageHeight
         val buffer = (frame.image[0] as? ByteBuffer) ?: return scratch
@@ -392,16 +396,20 @@ internal class DesktopVideoEngine(val key: String?) {
         buffer.duplicate().apply { rewind() }.get(bytes, 0, minOf(size, buffer.limit()))
         val image = Image.makeRaster(ImageInfo(width, height, ColorType.BGRA_8888, ColorAlphaType.OPAQUE), bytes, rowBytes)
         lastPictureAtNanos = System.nanoTime()
-        if (!offerPicture(PendingPicture(image, mine))) return bytes
+        if (!offerPicture(PendingPicture(image, mine, audio))) return bytes
         ui.launch {
             val next = pending.getAndSet(null) ?: return@launch
-            val fromCurrent = isCurrent(next.session)
-            if (!fromCurrent && !mayDraw(next.session)) {
+            // By the session alone, not whether anything still runs: a recording's last picture can arrive after it has ended.
+            val fromCurrent = session == next.session
+            if (!fromCurrent && outgoing.get() != next.session) {
                 next.image.close()
                 return@launch
             }
-            // The first picture of the stream replacing another: that one can stop now.
-            if (fromCurrent) outgoing.set(NO_SESSION)
+            if (fromCurrent) {
+                // The first picture of the stream replacing another: that one can stop now, and the sound button is this one's.
+                outgoing.set(NO_SESSION)
+                hasAudio = next.hasAudio
+            }
             // Drawn pictures hold their own reference to the Skia image, so the one replaced can go now.
             val previous = picture
             picture = next.image
@@ -420,7 +428,7 @@ internal class DesktopVideoEngine(val key: String?) {
     private fun offerPicture(offered: PendingPicture): Boolean {
         while (true) {
             val waiting = pending.get()
-            if (waiting != null && isCurrent(waiting.session) && !isCurrent(offered.session)) {
+            if (waiting != null && session == waiting.session && session != offered.session) {
                 offered.image.close()
                 return false
             }
@@ -453,7 +461,7 @@ internal class DesktopVideoEngine(val key: String?) {
         line.write(bytes, 0, bytes.size)
     }
 
-    private class PendingPicture(val image: Image, val session: Int)
+    private class PendingPicture(val image: Image, val session: Int, val hasAudio: Boolean)
 
     private class PlayAttempt {
         var drewPicture = false

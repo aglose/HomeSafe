@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.ui.components
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DesktopLiveStreamTest {
     @Test
@@ -50,11 +51,47 @@ class DesktopLiveStreamTest {
     }
 
     @Test
-    fun `falling a long way behind starts the clock again from the frame in hand`() {
+    fun `a stall leaves live video caught up, not as far behind as it stalled`() {
+        for (stall in listOf(500L, 1_200L, 5_000L)) {
+            val stallEnds = 10_000 * MS + stall * MS
+            val shown = playLive(seconds = 30) { capturedAt -> if (capturedAt in 10_000 * MS until stallEnds) stallEnds else capturedAt }
+            val after = shown.filter { it.capturedAt > stallEnds + 3_000 * MS }
+            assertTrue(after.all { it.delay <= FramePacer.MAX_ROOM_NANOS + FRAME }, "after a $stall ms stall, up to ${after.maxOf { it.delay } / MS} ms behind")
+        }
+    }
+
+    @Test
+    fun `the room for late frames doesn't add up past its limit`() {
+        // Half a second late, every three seconds, for ten minutes, once under way on time.
+        val shown = playLive(seconds = 600) { capturedAt ->
+            val intoCycle = capturedAt % (3_000 * MS)
+            if (capturedAt > 3_000 * MS && intoCycle < 500 * MS) capturedAt - intoCycle + 500 * MS else capturedAt
+        }
+        val onTime = shown.filter { it.capturedAt % (3_000 * MS) > 1_000 * MS }
+        assertTrue(onTime.all { it.delay <= FramePacer.MAX_ROOM_NANOS + FRAME }, "up to ${onTime.maxOf { it.delay } / MS} ms behind")
+    }
+
+    @Test
+    fun `a steady stream plays at its own pace, with nothing added`() {
+        val shown = playLive(seconds = 30) { it }
+        assertTrue(shown.all { it.delay == 0L })
+        assertTrue(shown.zipWithNext().all { (a, b) -> b.at - a.at == FRAME })
+    }
+
+    @Test
+    fun `live timestamps out of step with the clock for a whole window start it again`() {
         val pacer = FramePacer(live = true)
         pacer.holdNanos(timestampUs = 0, nowNanos = 0)
-        assertEquals(0, pacer.holdNanos(timestampUs = 40_000, nowNanos = 5_000 * MS))
-        assertEquals(40 * MS, pacer.holdNanos(timestampUs = 80_000, nowNanos = 5_000 * MS))
+        var now = 5_000 * MS
+        var timestampUs = 40_000L
+        // Seconds late and arriving at their own pace, so this is no backlog draining.
+        while (now < 8_000 * MS) {
+            assertEquals(0, pacer.holdNanos(timestampUs, now))
+            now += FRAME
+            timestampUs += 40_000
+        }
+        // The next frame is now due a frame's time after the last, by a clock that has started again.
+        assertEquals(FRAME, pacer.holdNanos(timestampUs, now - FRAME))
     }
 
     @Test
@@ -158,7 +195,28 @@ class DesktopLiveStreamTest {
         assertEquals(25, last)
     }
 
+    private class ShownFrame(val capturedAt: Long, val at: Long) {
+        val delay get() = at - capturedAt
+    }
+
+    /**
+     * Runs a pacer as the decode loop does: a frame is in hand once it has arrived and the last
+     * one has been shown, and time moves on by the hold it is given. A hold made up for frames
+     * that were already waiting doesn't vanish here, as it wouldn't there.
+     */
+    private fun playLive(seconds: Int, arrivalOf: (capturedAt: Long) -> Long): List<ShownFrame> {
+        val pacer = FramePacer(live = true)
+        var now = 0L
+        return List(seconds * 1000 / 40) { index ->
+            val capturedAt = index * FRAME
+            now = maxOf(now, arrivalOf(capturedAt))
+            now += pacer.holdNanos(capturedAt / 1000, now)
+            ShownFrame(capturedAt, now)
+        }
+    }
+
     private companion object {
         const val MS = 1_000_000L
+        const val FRAME = 40 * MS
     }
 }

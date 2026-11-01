@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.ui.components
 
+import kotlin.math.max
 import kotlin.math.min
 
 private const val HLS_PATH = "/api/stream.m3u8?"
@@ -21,23 +22,30 @@ internal fun go2rtcContinuousUrl(url: String): String? {
 
 /**
  * Says how long to hold each decoded frame so that pictures appear at the pace their timestamps
- * say, against the wall clock. The clock starts from the first frame, and starts again from the
- * frame in hand when it has fallen more than [MAX_DRIFT_NANOS] behind: a slow network or a laptop
- * waking up, not worth playing out.
+ * say, against the wall clock. The clock starts from the first frame.
  *
- * For [live] video a jump forward in the timestamps does the same, as there is nothing to wait for:
- * a recording's gap is part of what was recorded, and is played out. The live clock also moves to
- * suit how the frames have been arriving, looked at every
- * [ADJUST_WINDOW_NANOS]. Any that came late give it that much room, up to [MAX_ROOM_NANOS], so that
- * jitter of that size next time passes without a gap. All of them early by more than that means it
- * is running behind what has already arrived, which only makes the picture older, and it catches
- * up. A recording's frames are always early, being downloaded ahead, so its clock just runs.
+ * A recording's clock starts again from the frame in hand when it has fallen more than
+ * [MAX_DRIFT_NANOS] behind (a slow network, a laptop waking up), not worth playing out. A gap in
+ * its timestamps is part of what was recorded, and is played out.
+ *
+ * Live video keeps its clock through a stall: what built up meanwhile is late, so it goes straight
+ * through with no hold until the picture has caught up, rather than the clock starting from the
+ * oldest of it and staying that far behind for good. The clock starts again only on a jump forward
+ * in the timestamps, as there is nothing to wait for, or when every frame for a whole
+ * [ADJUST_WINDOW_NANOS] has been over [MAX_DRIFT_NANOS] late, which no backlog would last.
+ *
+ * The live clock also moves to suit how frames have been arriving, looked at over the same window.
+ * Any that came late give it that much room, up to [MAX_ROOM_NANOS] in all, so that jitter of that
+ * size next time passes without a gap. All of them early by more than that means it is running
+ * behind what has already arrived, which only makes the picture older, and it catches up.
  */
 internal class FramePacer(private val live: Boolean) {
     private var originUs = UNSET
     private var originNanos = 0L
-    private var windowEndsAtNanos = 0L
+    private var roomNanos = 0L
+    private var windowEndsAtNanos = NO_WINDOW
     private var shortestHoldNanos = Long.MAX_VALUE
+    private var longestHoldNanos = Long.MIN_VALUE
 
     /** After a pause or a seek: the next frame is shown at once, and the clock runs from it. */
     fun restart() {
@@ -48,30 +56,40 @@ internal class FramePacer(private val live: Boolean) {
     fun holdNanos(timestampUs: Long, nowNanos: Long): Long {
         if (originUs == UNSET || timestampUs < originUs) return startFrom(timestampUs, nowNanos)
         val hold = originNanos + (timestampUs - originUs) * NANOS_PER_US - nowNanos
-        if (hold < -MAX_DRIFT_NANOS || (live && hold > MAX_DRIFT_NANOS)) return startFrom(timestampUs, nowNanos)
-        if (!live) return hold.coerceAtLeast(0)
+        if (!live) return if (hold < -MAX_DRIFT_NANOS) startFrom(timestampUs, nowNanos) else hold.coerceAtLeast(0)
+        if (hold > MAX_DRIFT_NANOS) return startFrom(timestampUs, nowNanos)
+        // A window opens on a frame rather than on the wall clock, so one stall can't close a window on the frame after it alone.
+        if (windowEndsAtNanos == NO_WINDOW) windowEndsAtNanos = nowNanos + ADJUST_WINDOW_NANOS
         shortestHoldNanos = min(shortestHoldNanos, hold)
+        longestHoldNanos = max(longestHoldNanos, hold)
         if (nowNanos < windowEndsAtNanos) return hold.coerceAtLeast(0)
+        if (longestHoldNanos < -MAX_DRIFT_NANOS) return startFrom(timestampUs, nowNanos)
         val move = when {
             shortestHoldNanos > MAX_ROOM_NANOS -> -shortestHoldNanos
-            shortestHoldNanos < 0 -> min(-shortestHoldNanos, MAX_ROOM_NANOS)
+            shortestHoldNanos < 0 -> min(-shortestHoldNanos, MAX_ROOM_NANOS - roomNanos)
             else -> 0L
         }
         originNanos += move
-        startWindow(nowNanos)
+        roomNanos = (roomNanos + move).coerceAtLeast(0)
+        closeWindow()
         return (hold + move).coerceAtLeast(0)
     }
 
     private fun startFrom(timestampUs: Long, nowNanos: Long): Long {
         originUs = timestampUs
         originNanos = nowNanos
-        startWindow(nowNanos)
+        roomNanos = 0
+        closeWindow()
+        // This frame is exactly on the clock it started, and opens the first window.
+        windowEndsAtNanos = nowNanos + ADJUST_WINDOW_NANOS
+        longestHoldNanos = 0
         return 0
     }
 
-    private fun startWindow(nowNanos: Long) {
-        windowEndsAtNanos = nowNanos + ADJUST_WINDOW_NANOS
+    private fun closeWindow() {
+        windowEndsAtNanos = NO_WINDOW
         shortestHoldNanos = Long.MAX_VALUE
+        longestHoldNanos = Long.MIN_VALUE
     }
 
     companion object {
@@ -80,5 +98,6 @@ internal class FramePacer(private val live: Boolean) {
         const val MAX_ROOM_NANOS = 150_000_000L
         private const val NANOS_PER_US = 1000L
         private const val UNSET = Long.MIN_VALUE
+        private const val NO_WINDOW = Long.MAX_VALUE
     }
 }
