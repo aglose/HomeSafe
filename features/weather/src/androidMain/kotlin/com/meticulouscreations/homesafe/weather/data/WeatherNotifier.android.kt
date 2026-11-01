@@ -25,6 +25,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.appicon.appLaunchIntent
 import com.meticulouscreations.homesafe.data.BackgroundGraph
@@ -37,6 +38,7 @@ import com.meticulouscreations.homesafe.ui.notification.drawableRes
 import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotification
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import com.meticulouscreations.homesafe.weather.ui.notice.WeatherNoticePainter
@@ -232,15 +234,23 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Coroutine
 
 /**
  * One shower's reminder, as WorkManager work: from the "Remind me" button until its time comes. A
- * forecast that can't be had is tried again a few times; the rain starting meanwhile ends it.
+ * forecast that can't be had is tried again a few times. The work waits for a network, so it can
+ * run late: from when that shower was due it has nothing to say, or it would tell of a later one.
  */
 class WeatherReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
+        if (System.currentTimeMillis() / 1000 >= inputData.getLong(KEY_SHOWER_AT, Long.MAX_VALUE)) {
+            Log.i(TAG, "reminder: too late for the shower it was about")
+            return Result.success()
+        }
         val result = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).weatherAlertCheck.remind()
         Log.i(TAG, "reminder: $result (attempt ${runAttemptCount + 1})")
         return if (result == ReminderResult.TRY_AGAIN && runAttemptCount < REMINDER_RETRIES) Result.retry() else Result.success()
     }
 }
+
+/** Input to [WeatherReminderWorker]: when the shower it was asked for was due (epoch seconds). */
+private const val KEY_SHOWER_AT = "shower_at"
 
 /** How many times a reminder is tried again, a minute further apart each time: past that the rain has started. */
 private const val REMINDER_RETRIES = 4
@@ -259,6 +269,7 @@ class WeatherReminderReceiver : BroadcastReceiver() {
             .setInitialDelay(delay, TimeUnit.MILLISECONDS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
+            .setInputData(workDataOf(KEY_SHOWER_AT to at + WeatherNoticePlanner.REMIND_BEFORE_SECONDS))
             .build()
         // Storing the request happens on another thread: the process is kept until it's done.
         val pending = goAsync()
