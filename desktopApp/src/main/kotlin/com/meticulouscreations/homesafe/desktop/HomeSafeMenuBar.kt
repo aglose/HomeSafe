@@ -17,6 +17,7 @@ import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.screens.InnerApp
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.atlas_drawer_title
+import homesafe.shared.generated.resources.charging_drawer_title
 import homesafe.shared.generated.resources.desktop_actual_size
 import homesafe.shared.generated.resources.desktop_back
 import homesafe.shared.generated.resources.desktop_close_window
@@ -49,7 +50,7 @@ import org.jetbrains.compose.resources.stringResource
  * system draws (About, Settings… ⌘, and Quit ⌘Q, wired up in Main.kt).
  *
  * Every destination has a shortcut, in the order the sidebar lists them, as the iPad's Go menu
- * does: ⌘1 to ⌘3 for the tabs, ⌘4 to ⌘7 for the apps, ⌘K the assistant; ⌘[ is Back, as in Safari and Finder; View
+ * does: ⌘1 to ⌘3 for the tabs, ⌘4 to ⌘8 for the apps, ⌘K the assistant; ⌘[ is Back, as in Safari and Finder; View
  * has the sidebar (⌃⌘S), full screen (⌃⌘F) and zoom (⌘+, ⌘−, ⌘0). Elsewhere Ctrl stands in for ⌘.
  * Nothing here takes a key a text field uses (no Edit menu: the fields do cut, copy and paste
  * themselves), and the Go items are greyed out until there is a shell to go anywhere in.
@@ -104,6 +105,7 @@ fun FrameWindowScope.HomeSafeMenuBar(
             destination(Res.string.atlas_drawer_title, Key.Five, shellUp) { open(InnerApp.ATLAS) }
             destination(Res.string.fitness_drawer_title, Key.Six, shellUp) { open(InnerApp.FITNESS) }
             destination(Res.string.shell_drawer_finance, Key.Seven, shellUp) { open(InnerApp.FINANCE) }
+            destination(Res.string.charging_drawer_title, Key.Eight, shellUp) { open(InnerApp.CHARGING) }
             Separator()
             destination(Res.string.shell_sidebar_assistant, Key.K, shellUp) { ShellCommands.send(ShellCommand.Assistant) }
         }

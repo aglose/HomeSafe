@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.ViewSidebar
@@ -59,6 +60,7 @@ import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.ui.shortcutLabel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.atlas_drawer_title
+import homesafe.shared.generated.resources.charging_drawer_title
 import homesafe.shared.generated.resources.fitness_drawer_title
 import homesafe.shared.generated.resources.shell_app_title
 import homesafe.shared.generated.resources.shell_drawer_finance
@@ -72,8 +74,8 @@ import org.jetbrains.compose.resources.stringResource
 /** How wide the sidebar stands beside the content ([showsSidebar][com.meticulouscreations.homesafe.ui.showsSidebar]). */
 internal val SIDEBAR_WIDTH = 248.dp
 
-/** The apps in the sidebar, in the order the iPad's lists them and ⌘4 to ⌘7 reach them. */
-internal val SIDEBAR_APPS = listOf(InnerApp.WEATHER, InnerApp.ATLAS, InnerApp.FITNESS, InnerApp.FINANCE)
+/** The apps in the sidebar, in the order the iPad's lists them and ⌘4 to ⌘8 reach them. */
+internal val SIDEBAR_APPS = listOf(InnerApp.WEATHER, InnerApp.ATLAS, InnerApp.FITNESS, InnerApp.FINANCE, InnerApp.CHARGING)
 
 internal val InnerApp.title: StringResource
     get() = when (this) {
@@ -81,15 +83,17 @@ internal val InnerApp.title: StringResource
         InnerApp.ATLAS -> Res.string.atlas_drawer_title
         InnerApp.FITNESS -> Res.string.fitness_drawer_title
         InnerApp.FINANCE -> Res.string.shell_drawer_finance
+        InnerApp.CHARGING -> Res.string.charging_drawer_title
     }
 
-/** The same pictures as the iPad's sidebar, near enough: a cloud, a map, a weight, a rising line. */
+/** The same pictures as the iPad's sidebar, near enough: a cloud, a map, a weight, a rising line, a bolt. */
 internal val InnerApp.icon: ImageVector
     get() = when (this) {
         InnerApp.WEATHER -> Icons.Filled.WbCloudy
         InnerApp.ATLAS -> Icons.Filled.Map
         InnerApp.FITNESS -> Icons.Filled.FitnessCenter
         InnerApp.FINANCE -> Icons.AutoMirrored.Filled.TrendingUp
+        InnerApp.CHARGING -> Icons.Filled.Bolt
     }
 
 /** The sidebar, for tests: there when the shell is laid out for a wide window. */
@@ -105,7 +109,7 @@ fun sidebarSectionTestTag(app: InnerApp, index: Int): String = sidebarAppTestTag
  * Every destination down the start edge of a wide window: the shell's three tabs, then the apps
  * the drawer holds on a phone, each a destination of its own shown in the content area beside
  * ([ShellNavigation.sidebarApp]), as the iPad's sidebar has them. A row is selected while what it
- * opens is up; with a keyboard each says its shortcut (⌘1 to ⌘7, as the menu bar and the iPad's Go
+ * opens is up; with a keyboard each says its shortcut (⌘1 to ⌘8, as the menu bar and the iPad's Go
  * menu have them). The assistant, which a hold on the floating nav opens elsewhere, has a row of
  * its own at the foot, there being no nav to hold.
  *

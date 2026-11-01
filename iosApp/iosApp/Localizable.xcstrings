@@ -21,6 +21,16 @@
         }
       }
     },
+    "Charging" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carga"
+          }
+        }
+      }
+    },
     "Finance" : {
       "localizations" : {
         "es" : {

@@ -42,7 +42,7 @@ include(":testing")
 // The drawer's apps, each a module of its own under features/ so an edit to one recompiles it
 // and :app, not everything. Flat names (":finance", not ":features:finance"), so Gradle doesn't
 // make an empty ":features" project to hold them.
-listOf("finance", "weather", "fitness", "atlas").forEach { feature ->
+listOf("finance", "weather", "fitness", "atlas", "charging").forEach { feature ->
     include(":$feature")
     project(":$feature").projectDir = file("features/$feature")
 }

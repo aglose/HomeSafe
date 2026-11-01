@@ -6,6 +6,7 @@
     <string name="shortcut_settings">Configuración</string>
     <string name="shortcut_weather">Tiempo</string>
     <string name="shortcut_atlas">Atlas</string>
+    <string name="shortcut_charging">Carga</string>
     <string name="shortcut_fitness">Fitness</string>
     <string name="shortcut_finance">Finanzas</string>
     <string name="shortcut_assistant">Preguntar a Claude sobre esta pantalla</string>

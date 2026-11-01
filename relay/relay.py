@@ -290,6 +290,16 @@ def db() -> sqlite3.Connection:
     # the next), and which account each VIN is reached through (see "Tesla").
     conn.execute("CREATE TABLE IF NOT EXISTS tesla_accounts (account TEXT PRIMARY KEY, refresh TEXT, access TEXT, expires REAL, updated REAL)")
     conn.execute("CREATE TABLE IF NOT EXISTS tesla_vehicles (vin TEXT PRIMARY KEY, account TEXT, name TEXT, updated REAL)")
+    # Every charge of the household's Teslas and its energy hour by hour, and each car's odometer and
+    # lifetime energy at each day's end (see "charging").
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS charge_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, car TEXT NOT NULL, place TEXT, source TEXT NOT NULL,"
+        " started REAL NOT NULL, ended REAL, soc_start REAL, soc_end REAL, energy_start REAL, energy_end REAL, power_kwh REAL, counter_kwh REAL,"
+        " kwh_battery REAL, kwh_wall REAL, how TEXT, peak_kw REAL, lat REAL, lng REAL, site TEXT, paid REAL, tesla_id TEXT UNIQUE, typed_cost REAL, note TEXT, updated REAL)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS charge_sessions_started ON charge_sessions (started)")
+    conn.execute("CREATE TABLE IF NOT EXISTS charge_hours (session_id INTEGER NOT NULL, hour REAL NOT NULL, kwh REAL NOT NULL, PRIMARY KEY (session_id, hour))")
+    conn.execute("CREATE TABLE IF NOT EXISTS car_days (car TEXT NOT NULL, day TEXT NOT NULL, odometer REAL, energy_used REAL, PRIMARY KEY (car, day))")
     # The institutions linked through Plaid (see "bank sync"): each one's read-only access token,
     # what Plaid can tell about it (`products`, a JSON list) and how its last sync went (`error`
     # is Plaid's error code). Then each of its accounts as last read, and what each investment
@@ -4772,6 +4782,7 @@ def startup() -> None:
     threading.Thread(target=doors_forever, name="doors", daemon=True).start()
     threading.Thread(target=parking_forever, name="parking", daemon=True).start()
     threading.Thread(target=tesla_stream_forever, name="tesla-stream", daemon=True).start()
+    threading.Thread(target=charging_forever, name="charging", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -11468,7 +11479,8 @@ TESLA_PUBLIC_URL = os.environ.get("TESLA_PUBLIC_URL", os.environ.get("GOOGLE_PUB
 TESLA_API = os.environ.get("TESLA_API", "https://fleet-api.prd.na.vn.cloud.tesla.com").rstrip("/")
 TESLA_AUTHORIZE = "https://auth.tesla.com/oauth2/v3/authorize"
 TESLA_TOKEN = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
-TESLA_SCOPES = "openid offline_access vehicle_device_data vehicle_location"
+# vehicle_charging_cmds is what Tesla asks for its Supercharger history (see "charging"); the relay sends no commands.
+TESLA_SCOPES = "openid offline_access vehicle_device_data vehicle_location vehicle_charging_cmds"
 # The public half of the application's key pair; the private half stays off the box (the relay only reads).
 TESLA_PUBLIC_KEY_FILE = os.environ.get("TESLA_PUBLIC_KEY_FILE", "/data/tesla-public-key.pem")
 # Each household car's VIN, by its classifier name: {"andrews_tesla": "5YJ...", "sarahs_car": "7SA..."}.
@@ -11763,7 +11775,7 @@ def tesla_partner_token() -> str:
     """A partner token: the application's own, for what concerns no one account."""
     return tesla_token_request({
         "grant_type": "client_credentials", "client_id": TESLA_CLIENT_ID, "client_secret": TESLA_CLIENT_SECRET,
-        "scope": TESLA_SCOPES.replace("offline_access ", ""), "audience": TESLA_API,
+        "scope": "openid vehicle_device_data vehicle_location", "audience": TESLA_API,
     })["access_token"]
 
 
@@ -11817,6 +11829,9 @@ TESLA_TELEMETRY_FIELDS = {
     "Soc": 300, "EstBatteryRange": 300, "DetailedChargeState": 60, "TimeToFullCharge": 300, "ChargeLimitSoc": 300,
     "Locked": 60, "SentryMode": 60, "Odometer": 600, "DestinationName": 60, "MinutesToArrival": 60,
     "InsideTemp": 300, "OutsideTemp": 300,
+    # What a charge takes from the wall, for its price (see "charging"), and what the car has used.
+    "ACChargingPower": 60, "DCChargingPower": 30, "ACChargingEnergyIn": 60, "DCChargingEnergyIn": 60, "ChargeAmps": 60, "ChargerVoltage": 60,
+    "FastChargerPresent": 60, "FastChargerType": 60, "EnergyRemaining": 300, "LifetimeEnergyUsed": 3600,
 }
 TESLA_STREAM_FRESH_SECONDS = 300.0
 # How long since a car last streamed it still counts as streaming, for how often it is asked
@@ -11938,6 +11953,8 @@ def tesla_stream_lost() -> None:
             live["connected"] = None
             live["located"] = 0.0
             tesla_stream_reset(live)
+    with _charging_lock:
+        _charging_heard.clear()
 
 
 def tesla_stream_answer(name: str, now: float) -> dict[str, Any] | None:
@@ -12017,10 +12034,15 @@ def tesla_stream_forever() -> None:
         log.info("tesla: listening for the cars' streams on %s", TESLA_TELEMETRY_TOPIC)
 
     def on_message(client, userdata, message):
+        now = time.time()
         try:
-            tesla_stream_receive(message.topic, message.payload, time.time())
+            tesla_stream_receive(message.topic, message.payload, now)
         except Exception:
             log.exception("tesla: couldn't take a message on %s", message.topic)
+        try:
+            charging_receive(message.topic, message.payload, now)
+        except Exception:
+            log.exception("charging: couldn't take a message on %s", message.topic)
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="homesafe-relay-tesla")
     client.on_connect, client.on_message = on_connect, on_message
@@ -12108,6 +12130,952 @@ def tesla_telemetry_status() -> dict[str, Any]:
     except Exception as e:
         report["partner_errors"] = f"failed: {e}"
     return report
+
+
+# ---------------------------------------------------------------- charging
+
+# What the Teslas cost to charge, kept for good. The cars stream their charging (see "Tesla
+# telemetry"), and nothing but the stream sees a night's charge in the driveway: Tesla keeps no
+# home history anyone can ask for. So every charge is written down as it happens:
+#
+# - `charge_sessions`: one row per charge, from the car's own "Charging" to whatever ends it. Two
+#   with less than CHARGING_MERGE_SECONDS between them at the same place are one (a charge paused).
+# - `charge_hours`: the energy of each session by the hour it went in, which is what a rate by the
+#   hour needs. Measured from the charger's volts and amps as they stream; where they aren't (a
+#   car not told to send them yet), the battery's rise spread over the charge.
+# - `car_days`: each car's odometer and lifetime energy at the end of each day, for miles and
+#   efficiency.
+#
+# Costs aren't kept, only worked out from those rows when asked for, like the budget's months: a
+# plan changed in the app, or a rate corrected in CHARGING_RATES_FILE, re-prices all of it.
+#
+# A charge at home is priced at the electricity plan's rate for each of its hours, with the tax and
+# surcharge the bill adds. A tiered plan's car is priced at the top tier: the house uses up the
+# baseline with or without the car, so each kWh the car adds is one more at that rate. The monthly
+# customer charge is the house's, and is left out.
+#
+# A Supercharger's price is what Tesla billed (`charging_history_sync`, which needs the
+# vehicle_charging_cmds scope; docs/tesla.md), and goes back as far as Tesla's history does. What
+# the cards were charged for Superchargers stands in for any of it Tesla's receipts don't cover.
+# Anywhere else the price isn't known: someone can type it in, session by session.
+#
+# The plans' rates are in CHARGING_RATES_FILE on the box, not in the repository, which is public: a
+# utility gives away the town. `relay/charging-rates.example.json` shows the shape.
+CHARGING_RATES_FILE = os.environ.get("CHARGING_RATES_FILE", "/data/charging-rates.json")
+CHARGING_PLAN_KEY = "charging_plan"
+CHARGING_SOC_KEY = "charging_soc"
+CHARGING_HISTORY_KEY = "charging_history"
+CHARGING_SIGNALS_KEY = "charging_signals"
+CHARGING_MERGE_SECONDS = 900.0
+# A charge the car stops talking about: no word for this long ends it where it was last heard.
+CHARGING_STALE_SECONDS = 3600.0
+# How long the last power reading is taken to hold. Cars send a value only when it changes.
+CHARGING_HOLD_SECONDS = 900.0
+# Less than this, and over this quickly, is plugging in and out rather than a charge.
+CHARGING_MIN_KWH = 0.05
+CHARGING_MIN_SECONDS = 120.0
+# A battery this much fuller than it last said, with no charge heard, was charged out of earshot.
+CHARGING_MISSED_PERCENT = 3.0
+# Used only when a car hasn't sent how much energy it holds: a Model Y's usable pack, what reaches
+# the battery of what the wall gives at home, and the power a missed charge is taken to have run at.
+CHARGING_PACK_KWH = float(os.environ.get("CHARGING_PACK_KWH", "75"))
+CHARGING_AC_EFFICIENCY = 0.90
+CHARGING_AC_KW = 7.0
+# Measured energy shorter than this share of what the battery gained missed too much to believe.
+CHARGING_MEASURED_SHARE = 0.7
+CHARGING_HISTORY_SECONDS = 6 * 3600.0
+CHARGING_CHECK_SECONDS = 300.0
+CHARGING_HISTORY_PAGES = 40
+CHARGING_PAGE = 50
+CHARGING_MONTHS_IN_ANSWER = 120
+CHARGING_HOURS_DAYS = 90
+# How far apart a Tesla receipt and a charge the stream saw may start and still be the same one.
+CHARGING_RECEIPT_SLACK_SECONDS = 1800.0
+# How long after a Supercharger a charge written down from the battery's rise may be that one.
+CHARGING_RECEIPT_GUESS_SECONDS = 86400.0
+# What's streamed for this section, of TESLA_TELEMETRY_FIELDS.
+CHARGING_FIELDS = (
+    "Soc", "DetailedChargeState", "Location", "Odometer", "ACChargingPower", "DCChargingPower", "ACChargingEnergyIn",
+    "DCChargingEnergyIn", "ChargeAmps", "ChargerVoltage", "FastChargerPresent", "FastChargerType", "EnergyRemaining", "LifetimeEnergyUsed",
+)
+# The fields that say the car has been told to send what `charging_kw` measures.
+CHARGING_POWER_FIELDS = ("ACChargingPower", "DCChargingPower", "ChargeAmps", "ChargerVoltage")
+_charging_lock = threading.RLock()
+# What each car said over its connection as it is now: a charge state left from before the car last
+# went quiet says nothing about it now.
+_charging_heard: dict[str, dict[str, Any]] = {}
+# Each car's charge in progress, as its row plus how it is being measured (`tick`, `kw`, `counter`).
+_charging_open: dict[str, dict[str, Any]] = {}
+_charging_file: dict[str, Any] = {"mtime": None, "config": {}}
+
+
+def charging_rates() -> dict[str, Any]:
+    """CHARGING_RATES_FILE as last read, read again when it changes; {} without one. A file that doesn't parse keeps the last that did."""
+    try:
+        mtime = os.path.getmtime(CHARGING_RATES_FILE)
+    except OSError:
+        return {}
+    if mtime != _charging_file["mtime"]:
+        _charging_file["mtime"] = mtime
+        try:
+            with open(CHARGING_RATES_FILE, encoding="utf-8") as f:
+                config = json.load(f)
+            if not isinstance(config, dict) or not isinstance(config.get("plans"), dict):
+                raise ValueError("no plans")
+            if not all(isinstance(v.get("from"), str) for plan in config["plans"].values() for v in plan.get("versions") or []):
+                raise ValueError("a plan's version has no date")
+            _charging_file["config"] = config
+        except (AttributeError, OSError, ValueError) as e:
+            log.warning("charging: %s doesn't read, keeping the last that did: %s", CHARGING_RATES_FILE, e)
+    return _charging_file["config"]
+
+
+def charging_zone(rates: dict[str, Any]) -> ZoneInfo | None:
+    """The clock the utility's hours and the months go by: the rates file's `time_zone`, not wherever the phones happen to be, or else theirs."""
+    try:
+        return ZoneInfo(rates["time_zone"]) if rates.get("time_zone") else household_zone()
+    except Exception:
+        return household_zone()
+
+
+def charging_plan_id(rates: dict[str, Any]) -> str | None:
+    """The plan the household is on: the one chosen in the app, or the file's default, or the first."""
+    plans = rates.get("plans") or {}
+    chosen = state_get(CHARGING_PLAN_KEY)
+    if chosen in plans:
+        return chosen
+    if rates.get("default_plan") in plans:
+        return rates["default_plan"]
+    return next(iter(plans), None)
+
+
+def charging_version(plan: dict[str, Any], day: str) -> dict[str, Any]:
+    """A plan's rates as they stood on `day` (YYYY-MM-DD): the latest version from then or before, or for earlier days its first."""
+    versions = sorted(plan.get("versions") or [], key=lambda v: v["from"])
+    if not versions:
+        return {}
+    return next((v for v in reversed(versions) if v["from"] <= day), versions[0])
+
+
+def charging_period(version: dict[str, Any], local: datetime) -> str:
+    """Which of a plan's rates applies at a moment on the household's clock: "peak" or "off_peak" by the hour, "tier2" on a tiered plan."""
+    if "peak" not in version:
+        return "tier2"
+    workday = local.weekday() < 5 and local.date().isoformat() not in (version.get("holidays") or [])
+    return "peak" if workday and int(version.get("peak_start", 0)) <= local.hour < int(version.get("peak_end", 0)) else "off_peak"
+
+
+def charging_billed(rates: dict[str, Any], rate: float) -> float:
+    """A rate as the bill charges it: the tax on it, and the surcharge the tax leaves alone."""
+    return float(rate) * (1 + float(rates.get("tax_percent") or 0) / 100) + float(rates.get("surcharge_per_kwh") or 0)
+
+
+def charging_price(rates: dict[str, Any], plan_id: str, at: float, zone: ZoneInfo | None) -> tuple[float, str]:
+    """What a kWh costs on a plan at an epoch, as billed, and which rate that is."""
+    local = datetime.fromtimestamp(at, zone or timezone.utc)
+    version = charging_version(rates["plans"][plan_id], local.date().isoformat())
+    period = charging_period(version, local)
+    return charging_billed(rates, float(version.get(period) or 0)), period
+
+
+def charging_cost(rates: dict[str, Any], plan_id: str | None, hours: list[tuple[float, float]], zone: ZoneInfo | None) -> float | None:
+    """What (hour, kWh) rows cost on a plan; None without one."""
+    if not plan_id or plan_id not in (rates.get("plans") or {}):
+        return None
+    return sum(kwh * charging_price(rates, plan_id, hour, zone)[0] for hour, kwh in hours)
+
+
+def charging_flag(value: Any) -> bool:
+    return value is True or str(value).lower() == "true"
+
+
+def charging_kw(heard: dict[str, Any]) -> float:
+    """
+    The power going in now. From the wall, volts times amps, which is what the meter bills: what the
+    car reports as AC power is rounded to a whole kW. A DC charger's is as it reports it. Volts
+    times amps of one phase corrected by the reported power on a three-phase supply.
+    """
+    dc = tesla_number(heard.get("DCChargingPower"))
+    if dc and dc > 0.2:
+        return dc
+    ac, volts, amps = (tesla_number(heard.get(k)) for k in ("ACChargingPower", "ChargerVoltage", "ChargeAmps"))
+    if volts and amps and volts > 50:
+        kw = volts * amps / 1000
+        return kw * round(ac / kw) if ac and ac > 1.5 * kw else kw
+    return ac or 0.0
+
+
+def charging_fast(heard: dict[str, Any]) -> bool:
+    dc = tesla_number(heard.get("DCChargingPower"))
+    return charging_flag(heard.get("FastChargerPresent")) or bool(dc and dc > 0.5)
+
+
+def charging_where(name: str, heard: dict[str, Any]) -> tuple[float, float] | None:
+    """Where a car is by what it just said, or the relay's last answer about it."""
+    location = heard.get("Location")
+    if isinstance(location, dict):
+        lat, lng = tesla_number(location.get("latitude")), tesla_number(location.get("longitude"))
+        if lat is not None and lng is not None and (lat or lng):
+            return lat, lng
+    where = (_tesla_answers.get(name) or (0, None))[1]
+    return (float(where["lat"]), float(where["lng"])) if where and not where.get("asleep") and where.get("lat") is not None else None
+
+
+def charging_place(name: str, heard: dict[str, Any], where: tuple[float, float] | None) -> str | None:
+    """
+    "home", "supercharger", "fast" (another company's fast charger) or "other"; None while there's
+    nothing to tell by. Somewhere unknown but on an AC charger stays None until it's known.
+    """
+    if charging_fast(heard):
+        kind = str(heard.get("FastChargerType") or "")
+        return "fast" if kind and "Supercharger" not in kind and "Tesla" not in kind and "Unknown" not in kind and "SNA" not in kind else "supercharger"
+    home = state_get(HOME_KEY)
+    if not where or not home:
+        return None
+    d = haversine_metres(where, (float(home["lat"]), float(home["lng"])))
+    return "home" if d <= float(home.get("radius_m") or 150) + TESLA_HOME_MARGIN_METRES else "other"
+
+
+def charging_add_energy(session_id: int, start: float, end: float, kw: float) -> float:
+    """Files `kw` from `start` to `end` under the hours it fell in; answers the kWh."""
+    total = 0.0
+    while start < end and kw > 0:
+        hour = start - start % 3600
+        upto = min(end, hour + 3600)
+        kwh = kw * (upto - start) / 3600
+        total += kwh
+        with_db(lambda c: c.execute(
+            "INSERT INTO charge_hours VALUES (?,?,?) ON CONFLICT(session_id, hour) DO UPDATE SET kwh = kwh + excluded.kwh", (session_id, hour, kwh)))
+        start = upto
+    with_db(lambda c: c.commit())
+    return total
+
+
+CHARGE_COLUMNS = (
+    "id", "car", "place", "source", "started", "ended", "soc_start", "soc_end", "energy_start", "energy_end", "power_kwh",
+    "counter_kwh", "kwh_battery", "kwh_wall", "how", "peak_kw", "lat", "lng", "site", "paid", "tesla_id", "typed_cost", "note", "updated",
+)
+
+
+def charging_row(row: tuple) -> dict[str, Any]:
+    return dict(zip(CHARGE_COLUMNS, row))
+
+
+def charging_save(session: dict[str, Any]) -> None:
+    columns = [c for c in CHARGE_COLUMNS if c != "id"]
+    values = [session.get(c) for c in columns] + [session["id"]]
+    with_db(lambda c: (c.execute(f"UPDATE charge_sessions SET {', '.join(f'{k}=?' for k in columns)} WHERE id=?", values), c.commit()))
+
+
+def charging_insert(session: dict[str, Any]) -> dict[str, Any]:
+    columns = [c for c in CHARGE_COLUMNS if c != "id"]
+    values = [session.get(c) for c in columns]
+
+    def write(c: sqlite3.Connection) -> int:
+        cursor = c.execute(f"INSERT INTO charge_sessions ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})", values)
+        c.commit()
+        return int(cursor.lastrowid)
+
+    return {**session, "id": with_db(write)}
+
+
+def charging_begin(name: str, heard: dict[str, Any], now: float) -> dict[str, Any]:
+    """A charge starting: a new row, or the car's last one if that ended moments ago at the same place (paused, not over)."""
+    where = charging_where(name, heard)
+    place = charging_place(name, heard, where)
+    soc, energy = tesla_number(heard.get("Soc")), tesla_number(heard.get("EnergyRemaining"))
+    row = with_db(lambda c: c.execute(
+        f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE car=? AND source='stream' AND ended IS NOT NULL ORDER BY started DESC LIMIT 1", (name,)).fetchone())
+    last = charging_row(row) if row else None
+    if last and not last["tesla_id"] and now - float(last["ended"]) <= CHARGING_MERGE_SECONDS and (place is None or last["place"] in (None, place)):
+        if last["how"] != "power":
+            # Its hours were spread over what the battery gained, which the end of this charge does again for all of it.
+            with_db(lambda c: (c.execute("DELETE FROM charge_hours WHERE session_id=?", (last["id"],)), c.commit()))
+            last["power_kwh"] = 0.0
+        last.update(ended=None, kwh_wall=None, kwh_battery=None, how=None, place=place or last["place"], updated=now)
+        charging_save(last)
+        log.info("charging: %s goes on charging, session %s", name, last["id"])
+        return last
+    session = charging_insert({
+        "car": name, "place": place, "source": "stream", "started": now, "soc_start": soc, "soc_end": soc, "energy_start": energy, "energy_end": energy,
+        "power_kwh": 0.0, "counter_kwh": 0.0, "peak_kw": 0.0, "lat": where and where[0], "lng": where and where[1], "updated": now,
+    })
+    log.info("charging: %s started charging (%s), session %s", name, place or "somewhere unknown", session["id"])
+    return session
+
+
+def charging_energy_added(session: dict[str, Any]) -> float | None:
+    """What reached the battery, best measure first: the energy it holds, its percent, and for less than a percent the car's own counter."""
+    start, end = tesla_number(session.get("energy_start")), tesla_number(session.get("energy_end"))
+    if start is not None and end is not None and end > start:
+        return end - start
+    start, end = tesla_number(session.get("soc_start")), tesla_number(session.get("soc_end"))
+    if start is not None and end is not None and end > start:
+        return (end - start) / 100 * CHARGING_PACK_KWH
+    return float(session.get("counter_kwh") or 0) or None
+
+
+def charging_spread(session_id: int, start: float, end: float, kwh: float) -> None:
+    """Files `kwh` evenly over a stretch of time, for a charge whose power wasn't measured."""
+    charging_add_energy(session_id, start, max(end, start + 1), kwh * 3600 / max(end - start, 1))
+
+
+def charging_finish(session: dict[str, Any], now: float) -> None:
+    """
+    A charge over: how much went in, from the wall, and the hours' rows made to add up to it. What
+    was measured at the wall is believed if it isn't well short of what the battery says it gained;
+    otherwise (a car not sending it, a stream that dropped) that gain, plus what charging loses.
+    """
+    battery = charging_energy_added(session)
+    measured = float(session.get("power_kwh") or 0)
+    fast = session.get("place") in ("supercharger", "fast")
+    expected = (battery or 0) / (1.0 if fast else CHARGING_AC_EFFICIENCY)
+    if measured > 0 and measured >= CHARGING_MEASURED_SHARE * expected:
+        wall, how = measured, "power"
+    elif expected > 0:
+        wall, how = expected, "battery"
+    else:
+        wall, how = 0.0, None
+    session.update(ended=now, kwh_battery=battery, kwh_wall=wall, how=how, updated=now)
+    if session.get("place") is None:
+        session["place"] = "other"
+    started = float(session["started"])
+    if wall < CHARGING_MIN_KWH and now - started < CHARGING_MIN_SECONDS and not session.get("paid"):
+        with_db(lambda c: (c.execute("DELETE FROM charge_hours WHERE session_id=?", (session["id"],)), c.execute("DELETE FROM charge_sessions WHERE id=?", (session["id"],)), c.commit()))
+        return
+    if how != "power":
+        with_db(lambda c: (c.execute("DELETE FROM charge_hours WHERE session_id=?", (session["id"],)), c.commit()))
+        if wall > 0:
+            charging_spread(session["id"], started, now, wall)
+    charging_save(session)
+    log.info("charging: %s finished charging (%s): %.1f kWh by %s", session["car"], session["place"], wall, how)
+
+
+def charging_session_open(name: str) -> dict[str, Any] | None:
+    """The car's charge in progress, the row left open before the relay last restarted included. Under _charging_lock."""
+    session = _charging_open.get(name)
+    if session is not None:
+        return session
+    row = with_db(lambda c: c.execute(
+        f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE car=? AND ended IS NULL ORDER BY started DESC LIMIT 1", (name,)).fetchone())
+    if not row:
+        return None
+    session = charging_row(row)
+    session.update(tick=float(session.get("updated") or session["started"]), kw=0.0)
+    _charging_open[name] = session
+    return session
+
+
+def charging_tick(name: str, heard: dict[str, Any], now: float) -> None:
+    """Takes in what a car just said about its charging. Under _charging_lock."""
+    kw = charging_kw(heard)
+    state = str(heard.get("DetailedChargeState") or "").removeprefix("DetailedChargeState")
+    # A car in gear isn't charging, whatever was last heard of its charger: a Complete can be lost with the broker's link.
+    driving = tesla_shift(((_tesla_live.get(name) or {}).get("fields") or {}).get("Gear")) in ("D", "R")
+    if driving:
+        state, kw = "Driving", 0.0
+    # Said to be charging; or, with the state not heard since the relay or the car reconnected, power going in.
+    on = state in ("Charging", "Starting") or (state in ("", "Unknown") and kw > 0.2)
+    session = charging_session_open(name)
+    if session is None:
+        if not on:
+            return
+        session = {**charging_begin(name, heard, now), "tick": now, "kw": 0.0}
+        _charging_open[name] = session
+        # What the last charge counted to, until this one's counts come in.
+        heard.pop("ACChargingEnergyIn", None)
+        heard.pop("DCChargingEnergyIn", None)
+    elif not driving:
+        start = max(float(session["tick"]), now - CHARGING_HOLD_SECONDS)
+        session["power_kwh"] = float(session.get("power_kwh") or 0) + charging_add_energy(session["id"], start, now, float(session["kw"]))
+    session.update(tick=now, kw=kw, peak_kw=max(float(session.get("peak_kw") or 0), kw))
+    soc, energy = tesla_number(heard.get("Soc")), tesla_number(heard.get("EnergyRemaining"))
+    # Other things a car says aren't word of its charge: with its state lost, only a filling battery keeps the charge going.
+    if on or (soc is not None and soc > float(session.get("soc_end") or soc)):
+        session["updated"] = now
+    if soc is not None:
+        session["soc_end"] = soc
+        if session.get("soc_start") is None:
+            session["soc_start"] = soc
+    if energy is not None:
+        session["energy_end"] = energy
+        if session.get("energy_start") is None:
+            session["energy_start"] = energy
+    # The car's own counter of this charge's energy: it restarts with each charge.
+    counter = tesla_number(heard.get("DCChargingEnergyIn")) if charging_fast(heard) else tesla_number(heard.get("ACChargingEnergyIn"))
+    if counter is not None and counter > float(session.get("counter_kwh") or 0):
+        session["counter_kwh"] = counter
+    if session.get("place") is None or (charging_fast(heard) and session["place"] not in ("supercharger", "fast")):
+        where = charging_where(name, heard)
+        session["place"] = charging_place(name, heard, where) or session.get("place")
+        if where and session.get("lat") is None:
+            session["lat"], session["lng"] = where
+    if on or not state or state == "Unknown":
+        charging_save({k: v for k, v in session.items() if k in CHARGE_COLUMNS})
+        return
+    _charging_open.pop(name, None)
+    charging_finish({k: v for k, v in session.items() if k in CHARGE_COLUMNS}, now)
+
+
+def charging_missed(name: str, soc: float, now: float, heard: dict[str, Any]) -> None:
+    """
+    A battery fuller than it last said with no charge heard: charged while the relay, the box or the
+    stream was down. Written down from the rise alone, ending now and running at CHARGING_AC_KW, and
+    marked so (`source` "soc"). Under _charging_lock.
+    """
+    seen = (state_get(CHARGING_SOC_KEY) or {}).get(name) or {}
+    before, at = tesla_number(seen.get("soc")), tesla_number(seen.get("at"))
+    if before is None or at is None or soc - before < CHARGING_MISSED_PERCENT or charging_session_open(name) is not None:
+        return
+    # Coasting down a mountain charges a battery too.
+    if tesla_shift(((_tesla_live.get(name) or {}).get("fields") or {}).get("Gear")) in ("D", "R", "N"):
+        return
+    row = with_db(lambda c: c.execute(
+        f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE car=? AND ended >= ? ORDER BY ended DESC LIMIT 1", (name, at)).fetchone())
+    last = charging_row(row) if row else None
+    if last and (last["tesla_id"] or last["source"] == "tesla"):
+        return  # Tesla's receipt for it came first.
+    if last and last["source"] == "stream" and now - float(last["ended"]) <= CHARGING_MERGE_SECONDS:
+        # A charge's last reading, sent after it ended: each value comes on its own clock.
+        last["soc_end"] = soc
+        charging_finish(last, float(last["ended"]))
+        return
+    battery = (soc - before) / 100 * CHARGING_PACK_KWH
+    where = charging_where(name, heard)
+    place = charging_place(name, heard, where) or "other"
+    fast = place in ("supercharger", "fast")
+    wall = battery if fast else battery / CHARGING_AC_EFFICIENCY
+    started = max(at, float(last["ended"]) if last else at, now - wall / CHARGING_AC_KW * 3600)
+    session = charging_insert({
+        "car": name, "place": place, "source": "soc", "started": started, "ended": now, "soc_start": before, "soc_end": soc,
+        "kwh_battery": battery, "kwh_wall": wall, "how": "battery", "lat": where and where[0], "lng": where and where[1], "updated": now,
+    })
+    charging_spread(session["id"], started, now, wall)
+    log.info("charging: %s went from %.0f%% to %.0f%% unheard: %.1f kWh written down (%s)", name, before, soc, wall, place)
+
+
+def charging_note_soc(name: str, soc: float, now: float) -> None:
+    seen = state_get(CHARGING_SOC_KEY) or {}
+    seen[name] = {"soc": soc, "at": now}
+    state_set(CHARGING_SOC_KEY, seen)
+
+
+def charging_note_day(name: str, field: str, value: float, now: float) -> None:
+    """The car's odometer or lifetime energy as of today: the last of each day stands for it."""
+    column = "odometer" if field == "Odometer" else "energy_used"
+    day = household_day(now)
+    with_db(lambda c: (c.execute(
+        f"INSERT INTO car_days (car, day, {column}) VALUES (?,?,?) ON CONFLICT(car, day) DO UPDATE SET {column} = excluded.{column}",
+        (name, day, value)), c.commit()))
+
+
+def charging_receive(topic: str, payload: bytes, now: float) -> None:
+    """Takes one message from the telemetry server for the charging ledger (see "charging")."""
+    parts = topic.split("/")
+    if len(parts) < 3 or parts[0] != TESLA_TELEMETRY_TOPIC:
+        return
+    name = next((n for n, vin in TESLA_CARS.items() if vin == parts[1]), None)
+    if name is None:
+        return
+    try:
+        value = json.loads(payload) if payload else None
+    except ValueError:
+        value = payload.decode("utf-8", "replace")
+    with _charging_lock:
+        heard = _charging_heard.setdefault(name, {})
+        if parts[2] == "connectivity":
+            heard.clear()
+            return
+        if parts[2] != "v" or len(parts) < 4 or parts[3] not in CHARGING_FIELDS:
+            return
+        field = parts[3]
+        heard[field] = value
+        number = tesla_number(value)
+        if field in CHARGING_POWER_FIELDS and not state_get(CHARGING_SIGNALS_KEY):
+            state_set(CHARGING_SIGNALS_KEY, {"at": now})
+        if field in ("Odometer", "LifetimeEnergyUsed") and number is not None:
+            charging_note_day(name, field, number, now)
+        if field == "Soc" and number is not None:
+            charging_missed(name, number, now, heard)
+            charging_note_soc(name, number, now)
+        charging_tick(name, heard, now)
+
+
+def charging_close_stale(now: float) -> None:
+    """Ends each charge its car has said nothing about for CHARGING_STALE_SECONDS, where it was last heard."""
+    rows = with_db(lambda c: c.execute("SELECT car FROM charge_sessions WHERE ended IS NULL").fetchall())
+    with _charging_lock:
+        for (name,) in rows:
+            session = charging_session_open(name)
+            if session and now - float(session.get("updated") or session["started"]) >= CHARGING_STALE_SECONDS:
+                _charging_open.pop(name, None)
+                # What it last said of its charger is as old, and says nothing about what comes next.
+                _charging_heard.pop(name, None)
+                charging_finish({k: v for k, v in session.items() if k in CHARGE_COLUMNS}, float(session["updated"]))
+
+
+def charging_receipt(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """One of Tesla's charging history entries, as what the ledger keeps; None for one that can't be read."""
+    try:
+        started = datetime.fromisoformat(str(entry["chargeStartDateTime"]).replace("Z", "+00:00")).timestamp()
+        stop = entry.get("chargeStopDateTime") or entry.get("unlatchDateTime")
+        ended = datetime.fromisoformat(str(stop).replace("Z", "+00:00")).timestamp() if stop else started
+    except (KeyError, ValueError):
+        return None
+    paid, kwh = 0.0, 0.0
+    for fee in entry.get("fees") or []:
+        paid += float(tesla_number(fee.get("totalDue")) or 0)
+        if str(fee.get("feeType")).upper() == "CHARGING" and str(fee.get("uom")).lower() == "kwh":
+            kwh += sum(float(tesla_number(fee.get(k)) or 0) for k in ("usageBase", "usageTier1", "usageTier2", "usageTier3", "usageTier4"))
+    return {
+        "tesla_id": str(entry.get("sessionId")), "vin": entry.get("vin"), "started": started, "ended": ended,
+        "site": entry.get("siteLocationName") or None, "paid": round(paid, 2), "kwh": kwh,
+    }
+
+
+def charging_keep_receipt(name: str, receipt: dict[str, Any], now: float) -> None:
+    """A receipt onto the charge the stream saw of it, or as a row of its own for one it didn't. The receipt's kWh and price win."""
+    tesla_id = receipt["tesla_id"]
+    known = with_db(lambda c: c.execute("SELECT id FROM charge_sessions WHERE tesla_id=?", (tesla_id,)).fetchone())
+    # The stream's charge may be this one and still open; the next read of the history finds it over.
+    if not known and with_db(lambda c: c.execute(
+            "SELECT 1 FROM charge_sessions WHERE car=? AND ended IS NULL AND COALESCE(place, '') != 'home' AND started <= ?",
+            (name, receipt["ended"] + CHARGING_RECEIPT_SLACK_SECONDS)).fetchone()):
+        return
+    row = None if known else with_db(lambda c: c.execute(
+        f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE car=? AND tesla_id IS NULL AND ended IS NOT NULL AND place != 'home'"
+        " AND started <= ? AND ended >= ? ORDER BY ABS(started - ?) LIMIT 1",
+        (name, receipt["ended"] + CHARGING_RECEIPT_SLACK_SECONDS, receipt["started"] - CHARGING_RECEIPT_SLACK_SECONDS, receipt["started"])).fetchone())
+    # Or it was written down from the battery's rise, where the car next spoke, likely home.
+    guess = None if known or row or receipt["kwh"] <= 0 else with_db(lambda c: c.execute(
+        f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE car=? AND source='soc' AND ended >= ? AND ended <= ? ORDER BY ended LIMIT 1",
+        (name, receipt["ended"] - CHARGING_RECEIPT_SLACK_SECONDS, receipt["ended"] + CHARGING_RECEIPT_GUESS_SECONDS)).fetchone())
+    fields = {"tesla_id": tesla_id, "site": receipt["site"], "paid": receipt["paid"], "updated": now, "place": "supercharger"}
+    if receipt["kwh"] > 0:
+        fields.update(kwh_wall=receipt["kwh"], how="receipt")
+    if known:
+        with_db(lambda c: (c.execute("UPDATE charge_sessions SET site=?, paid=?, updated=? WHERE id=?", (receipt["site"], receipt["paid"], now, known[0])), c.commit()))
+    elif row:
+        session = charging_row(row)
+        session.update(fields)
+        charging_save(session)
+    elif guess:
+        session = charging_row(guess)
+        session.update(fields, source="tesla", started=receipt["started"], ended=receipt["ended"])
+        with_db(lambda c: (c.execute("DELETE FROM charge_hours WHERE session_id=?", (session["id"],)), c.commit()))
+        charging_save(session)
+        charging_spread(session["id"], receipt["started"], receipt["ended"], receipt["kwh"])
+    else:
+        session = charging_insert({"car": name, "source": "tesla", "started": receipt["started"], "ended": receipt["ended"], **fields})
+        if receipt["kwh"] > 0:
+            charging_spread(session["id"], receipt["started"], receipt["ended"], receipt["kwh"])
+
+
+def charging_history_sync(now: float) -> dict[str, Any]:
+    """
+    Reads Tesla's history of each linked account's Supercharger charges into the ledger, and what
+    came of it (kept in CHARGING_HISTORY_KEY): `scope_missing` for an account linked before the
+    relay asked for the vehicle_charging_cmds scope, which needs linking again.
+    """
+    global _tesla_why
+    names = {vin: name for name, vin in TESLA_CARS.items()}
+    accounts = with_db(lambda c: sorted({r[0] for r in c.execute("SELECT account FROM tesla_vehicles") if r[0]}))
+    report: dict[str, Any] = {"at": now, "kept": 0, "accounts": len(accounts), "scope_missing": False, "error": None}
+    for account in accounts:
+        try:
+            access = tesla_access(account)
+        except Exception as e:
+            report["error"] = type(e).__name__
+            continue
+        if not access:
+            continue
+        for page in range(1, CHARGING_HISTORY_PAGES + 1):
+            with _tesla_lock:
+                _tesla_why = "charging"
+                if not tesla_spend():
+                    report["error"] = "out of calls"
+                    break
+            try:
+                r = requests.get(f"{TESLA_API}/api/1/dx/charging/history", params={"pageNo": page, "pageSize": CHARGING_PAGE},
+                                 headers={"Authorization": f"Bearer {access}"}, timeout=30)
+            except Exception as e:
+                report["error"] = type(e).__name__
+                break
+            if r.status_code == 403 and "scope" in r.text:
+                report["scope_missing"] = True
+                break
+            if not r.ok:
+                report["error"] = f"HTTP {r.status_code}"
+                break
+            body = r.json()
+            entries = body.get("data") or []
+            for entry in entries:
+                receipt = charging_receipt(entry)
+                name = names.get((receipt or {}).get("vin"))
+                if receipt and name:
+                    charging_keep_receipt(name, receipt, now)
+                    report["kept"] += 1
+            if not entries or not body.get("hasMoreData"):
+                break
+    state_set(CHARGING_HISTORY_KEY, report)
+    log.info("charging: read Tesla's charging history: %s receipts%s%s", report["kept"], ", needs the scope" if report["scope_missing"] else "", f", {report['error']}" if report["error"] else "")
+    return report
+
+
+def charging_forever() -> None:
+    """Ends charges their cars went quiet in, and reads Tesla's receipts every CHARGING_HISTORY_SECONDS."""
+    if not (tesla_on() and TESLA_CARS):
+        return
+    while True:
+        time.sleep(CHARGING_CHECK_SECONDS)
+        now = time.time()
+        try:
+            charging_close_stale(now)
+            if now - float((state_get(CHARGING_HISTORY_KEY) or {}).get("at") or 0) >= CHARGING_HISTORY_SECONDS:
+                charging_history_sync(now)
+        except Exception:
+            log.exception("charging: the check failed")
+
+
+def charging_card_spend() -> list[tuple[str, float]]:
+    """Every card's Supercharger charges, refunds taken off, as (day, amount)."""
+    rows = with_db(lambda c: c.execute(
+        "SELECT date, amount FROM plaid_transactions WHERE removed_at IS NULL AND kind IN ('spend', 'refund')"
+        " AND UPPER(name || ' ' || COALESCE(original, '')) LIKE '%SUPERCHARG%'").fetchall())
+    return [(day, float(amount)) for day, amount in rows]
+
+
+def charging_bills(match: str | None) -> dict[str, float]:
+    """What was paid to the electricity provider by month, by the name its charges go under."""
+    if not match:
+        return {}
+    months: dict[str, float] = {}
+    rows = with_db(lambda c: c.execute(
+        "SELECT date, amount FROM plaid_transactions WHERE removed_at IS NULL AND kind = 'spend' AND amount > 0 AND LOWER(name) LIKE ?", (f"%{match.lower()}%",)).fetchall())
+    for day, amount in rows:
+        months[day[:7]] = months.get(day[:7], 0.0) + float(amount)
+    return months
+
+
+def charging_hours_by_session() -> dict[int, list[tuple[float, float]]]:
+    by_session: dict[int, list[tuple[float, float]]] = {}
+    for session_id, hour, kwh in with_db(lambda c: c.execute("SELECT session_id, hour, kwh FROM charge_hours ORDER BY hour").fetchall()):
+        by_session.setdefault(session_id, []).append((float(hour), float(kwh)))
+    return by_session
+
+
+def charging_session_view(session: dict[str, Any], hours: list[tuple[float, float]], rates: dict[str, Any], plan_id: str | None, zone: ZoneInfo | None) -> dict[str, Any]:
+    """
+    A session as the phones see it. `cost` is, in order: what someone typed, Tesla's receipt, or at
+    home the plan's price of its hours. `cost_is` says which, null with no price known. An open
+    charge counts what's been measured so far.
+    """
+    place = session.get("place")
+    kwh = session.get("kwh_wall")
+    how = session.get("how")
+    if kwh is None:
+        kwh = session.get("power_kwh") or 0.0
+        how = how or ("power" if kwh else None)
+    if not kwh and session.get("ended") is None:
+        # In progress on a car not sending its power: what the battery has gained so far, as of its start.
+        gained = charging_energy_added(session)
+        kwh = gained / (1.0 if place in ("supercharger", "fast") else CHARGING_AC_EFFICIENCY) if gained else 0.0
+        hours = [(float(session["started"]), kwh)]
+        how = "battery"
+    cost, cost_is = None, None
+    if session.get("typed_cost") is not None:
+        cost, cost_is = float(session["typed_cost"]), "typed"
+    elif session.get("paid") is not None:
+        cost, cost_is = float(session["paid"]), "receipt"
+    elif place == "home":
+        cost = charging_cost(rates, plan_id, hours, zone)
+        cost_is = "plan" if cost is not None else None
+    return {
+        "id": session["id"], "car": session["car"], "name": display_name(session["car"]), "place": place or "other",
+        "source": session.get("source"), "started": session["started"], "ended": session.get("ended"),
+        "soc_start": session.get("soc_start"), "soc_end": session.get("soc_end"), "kwh": round(float(kwh or 0), 2),
+        "kwh_battery": session.get("kwh_battery"), "peak_kw": session.get("peak_kw"), "how": how, "site": session.get("site"),
+        "cost": round(cost, 2) if cost is not None else None, "cost_is": cost_is, "note": session.get("note"),
+    }
+
+
+def charging_sessions(before: float | None = None, car: str | None = None, place: str | None = None, limit: int = CHARGING_PAGE) -> list[dict[str, Any]]:
+    """The newest charges first, as the phones see them, by page: pass the last one's `started` as `before`."""
+    rates = charging_rates()
+    zone = charging_zone(rates)
+    plan_id = charging_plan_id(rates)
+    where, args = ["1=1"], []
+    if before is not None:
+        where.append("started < ?")
+        args.append(before)
+    if car:
+        where.append("car = ?")
+        args.append(car)
+    if place:
+        where.append("place = ?")
+        args.append(place)
+    query = f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE {' AND '.join(where)} ORDER BY started DESC LIMIT ?"
+    rows = with_db(lambda c: c.execute(query, (*args, limit)).fetchall())
+    views = []
+    for row in rows:
+        session = charging_row(row)
+        hours = with_db(lambda c: [(float(h), float(k)) for h, k in c.execute("SELECT hour, kwh FROM charge_hours WHERE session_id=?", (session["id"],))])
+        views.append(charging_session_view(session, hours, rates, plan_id, zone))
+    return views
+
+
+def charging_session_detail(session_id: int) -> dict[str, Any] | None:
+    """One charge, with each of its hours priced on the plan, and what the charge would be on each plan."""
+    row = with_db(lambda c: c.execute(f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE id=?", (session_id,)).fetchone())
+    if not row:
+        return None
+    rates = charging_rates()
+    zone = charging_zone(rates)
+    plan_id = charging_plan_id(rates)
+    session = charging_row(row)
+    hours = with_db(lambda c: [(float(h), float(k)) for h, k in c.execute("SELECT hour, kwh FROM charge_hours WHERE session_id=? ORDER BY hour", (session_id,))])
+    view = charging_session_view(session, hours, rates, plan_id, zone)
+    priced = []
+    for hour, kwh in hours:
+        # Only the house pays the plan: a Supercharger's hours have no price of the utility's.
+        price, period = charging_price(rates, plan_id, hour, zone) if plan_id and session.get("place") == "home" else (None, None)
+        priced.append({"hour": hour, "kwh": round(kwh, 3), "price": round(price, 5) if price is not None else None, "period": period})
+    view["hours"] = priced
+    view["plans"] = {p: round(charging_cost(rates, p, hours, zone) or 0, 2) for p in (rates.get("plans") or {})} if session.get("place") == "home" else {}
+    return view
+
+
+def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[tuple[float, float]]], rates: dict[str, Any], plan_id: str | None, zone: ZoneInfo | None, money: bool) -> list[dict[str, Any]]:
+    """
+    Each month, newest first: each car's charging at home and away, its miles and the energy it used
+    (from `car_days`), and for someone allowed the finances what the cards paid for Superchargers
+    and what was paid to the electricity provider. `unmatched` is what the cards paid for
+    Superchargers beyond Tesla's receipts: real money no one car can be said to have spent.
+    """
+    months: dict[str, dict[str, Any]] = {}
+
+    def month_of(key: str) -> dict[str, Any]:
+        return months.setdefault(key, {"month": key, "cars": {}, "card_fast": 0.0, "receipts": 0.0, "electric_paid": 0.0, "peak_kwh": 0.0, "plans": {}})
+
+    def car_of(key: str, name: str) -> dict[str, Any]:
+        return month_of(key)["cars"].setdefault(name, {
+            "car": name, "name": display_name(name), "home_kwh": 0.0, "home_cost": 0.0, "fast_kwh": 0.0, "fast_cost": 0.0,
+            "other_kwh": 0.0, "other_cost": 0.0, "sessions": 0, "miles": None, "used_kwh": None,
+        })
+
+    plan_ids = list((rates.get("plans") or {}).keys())
+    tou_id = next((p for p in plan_ids if (rates["plans"][p].get("kind") == "tou")), None)
+    for session in sessions:
+        key = datetime.fromtimestamp(float(session["started"]), zone or timezone.utc).strftime("%Y-%m")
+        car = car_of(key, session["car"])
+        car["sessions"] += 1
+        place = session["place"]
+        prefix = "home" if place == "home" else "fast" if place in ("supercharger", "fast") else "other"
+        car[f"{prefix}_kwh"] += session["kwh"]
+        car[f"{prefix}_cost"] += session["cost"] or 0.0
+        if session["cost_is"] == "receipt" or (session["cost_is"] == "typed" and place == "supercharger"):
+            months[key]["receipts"] += session["cost"]
+        if place == "home":
+            hours = by_session.get(session["id"], [])
+            month = months[key]
+            for plan in plan_ids:
+                month["plans"][plan] = month["plans"].get(plan, 0.0) + (charging_cost(rates, plan, hours, zone) or 0.0)
+            if tou_id:
+                month["peak_kwh"] += sum(kwh for hour, kwh in hours if charging_price(rates, tou_id, hour, zone)[1] == "peak")
+    if money:
+        for day, amount in charging_card_spend():
+            month_of(day[:7])["card_fast"] += amount
+        for key, paid in charging_bills(rates.get("bill_match")).items():
+            month_of(key)["electric_paid"] += paid
+    days = with_db(lambda c: c.execute("SELECT car, day, odometer, energy_used FROM car_days ORDER BY car, day").fetchall())
+    last: dict[tuple[str, str], float] = {}
+    for name, day, odometer, used in days:
+        for column, value in (("miles", odometer), ("used_kwh", used)):
+            if value is None:
+                continue
+            before = last.get((name, column))
+            last[(name, column)] = float(value)
+            if before is not None and value >= before:
+                car = car_of(day[:7], name)
+                car[column] = (car[column] or 0.0) + float(value) - before
+    # A charge at the end of a month reaches the card in the next.
+    unmatched: dict[str, float] = {}
+    carried = 0.0
+    for key in sorted(months):
+        unmatched[key] = max(0.0, months[key]["card_fast"] - months[key]["receipts"] - carried)
+        carried = max(0.0, months[key]["receipts"] - months[key]["card_fast"])
+    answer = []
+    for key in sorted(months, reverse=True)[:CHARGING_MONTHS_IN_ANSWER]:
+        month = months[key]
+        cars = sorted(month["cars"].values(), key=lambda c: c["car"])
+        for car in cars:
+            for field in ("home_kwh", "home_cost", "fast_kwh", "fast_cost", "other_kwh", "other_cost", "miles", "used_kwh"):
+                if car[field] is not None:
+                    car[field] = round(car[field], 2)
+        answer.append({
+            "month": key, "cars": cars, "card_fast": round(month["card_fast"], 2) if money else None, "unmatched": round(unmatched[key], 2),
+            "electric_paid": round(month["electric_paid"], 2) if money else None, "peak_kwh": round(month["peak_kwh"], 2),
+            "plans": {plan: round(cost, 2) for plan, cost in month["plans"].items()},
+        })
+    return answer
+
+
+def charging_plans_view(rates: dict[str, Any], plan_id: str | None, zone: ZoneInfo | None, now: float) -> list[dict[str, Any]]:
+    """Each plan as it stands today: its rates, raw and as billed, and what each hour of a weekday and of a weekend costs."""
+    plans = []
+    today = datetime.fromtimestamp(now, zone or timezone.utc).date().isoformat()
+    for key, plan in (rates.get("plans") or {}).items():
+        version = charging_version(plan, today)
+        periods = [
+            {"period": period, "rate": version[period], "billed": round(charging_billed(rates, version[period]), 5)}
+            for period in ("tier1", "tier2", "peak", "off_peak") if period in version
+        ]
+
+        def by_hour(weekend: bool) -> list[float]:
+            # Any weekend day and any weekday without a holiday, each hour of it.
+            sample = datetime(2001, 1, 6 if weekend else 8)
+            return [round(charging_billed(rates, float(version.get(charging_period({**version, "holidays": []}, sample.replace(hour=h))) or 0)), 5) for h in range(24)]
+
+        plans.append({
+            "id": key, "name": plan.get("name") or key, "kind": plan.get("kind") or ("tou" if "peak" in version else "tiered"), "url": plan.get("url"),
+            "current": key == plan_id, "effective": version.get("from"), "periods": periods, "peak_start": version.get("peak_start"), "peak_end": version.get("peak_end"),
+            "baseline_summer": version.get("baseline_summer"), "baseline_winter": version.get("baseline_winter"),
+            "weekday": by_hour(False), "weekend": by_hour(True),
+        })
+    return plans
+
+
+def charging_now(now: float, rates: dict[str, Any], plan_id: str | None, zone: ZoneInfo | None) -> list[dict[str, Any]]:
+    """Each car's charging at this moment: its battery and limit, and a charge in progress's power, energy and cost so far."""
+    cars = []
+    for name in TESLA_CARS:
+        live = tesla_live_status(name, now) or {}
+        with _charging_lock:
+            session = charging_session_open(name)
+            heard = dict(_charging_heard.get(name) or {})
+        car: dict[str, Any] = {
+            "car": name, "name": display_name(name), "battery": live.get("battery"), "limit": live.get("charge_limit"),
+            "range_mi": live.get("range_mi"), "plugged": live.get("charging"), "minutes_to_full": None, "session": None, "kw": None,
+        }
+        hours_to_full = live.get("hours_to_full")
+        if hours_to_full is not None:
+            car["minutes_to_full"] = round(float(hours_to_full) * 60)
+        if session:
+            row = {k: v for k, v in session.items() if k in CHARGE_COLUMNS}
+            hours = with_db(lambda c: [(float(h), float(k)) for h, k in c.execute("SELECT hour, kwh FROM charge_hours WHERE session_id=?", (session["id"],))])
+            car["session"] = charging_session_view(row, hours, rates, plan_id, zone)
+            car["kw"] = round(charging_kw(heard), 2) if heard else None
+        cars.append(car)
+    return cars
+
+
+def charging_summary(now: float, money: bool) -> dict[str, Any]:
+    """Everything the charging app opens on (see "charging"), worked out from the rows."""
+    rates = charging_rates()
+    zone = charging_zone(rates)
+    plan_id = charging_plan_id(rates)
+    rows = with_db(lambda c: c.execute(f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions ORDER BY started DESC").fetchall())
+    by_session = charging_hours_by_session()
+    sessions = [charging_session_view(charging_row(r), by_session.get(r[0], []), rates, plan_id, zone) for r in rows]
+    # What hour of the day the home charging goes in, lately.
+    by_hour = [0.0] * 24
+    recent = now - CHARGING_HOURS_DAYS * 86400
+    # And how much of it would be at the peak's price: by the day, since a weekend's evening isn't peak.
+    tou_id = next((p for p, plan in (rates.get("plans") or {}).items() if plan.get("kind") == "tou"), None)
+    peak_kwh = 0.0
+    home_ids = {s["id"] for s in sessions if s["place"] == "home"}
+    for session_id, hours in by_session.items():
+        if session_id in home_ids:
+            for hour, kwh in hours:
+                if hour >= recent:
+                    by_hour[datetime.fromtimestamp(hour, zone or timezone.utc).hour] += kwh
+                    if tou_id and charging_price(rates, tou_id, hour, zone)[1] == "peak":
+                        peak_kwh += kwh
+    history = state_get(CHARGING_HISTORY_KEY) or {}
+    return {
+        "provider": {"name": rates.get("provider"), "url": rates.get("url")} if rates else None,
+        "plan": plan_id, "plans": charging_plans_view(rates, plan_id, zone, now),
+        "tax_percent": rates.get("tax_percent"), "surcharge_per_kwh": rates.get("surcharge_per_kwh"), "customer_charge": rates.get("customer_charge"),
+        "gas": rates.get("gas"), "now": charging_now(now, rates, plan_id, zone),
+        "months": charging_months(sessions, by_session, rates, plan_id, zone, money),
+        "by_hour": [round(kwh, 2) for kwh in by_hour], "recent_peak_share": round(peak_kwh / sum(by_hour), 3) if tou_id and sum(by_hour) > 0 else None, "sessions": sessions[:CHARGING_PAGE], "more_sessions": len(sessions) > CHARGING_PAGE,
+        "first_session": min((s["started"] for s in sessions), default=None),
+        "setup": {
+            "rates": bool(rates), "power_stream": bool(state_get(CHARGING_SIGNALS_KEY)), "receipts": not history.get("scope_missing") and bool(history.get("kept") or (history.get("accounts") and not history.get("error"))),
+            "receipts_at": history.get("at"),
+        },
+    }
+
+
+class ChargingPlanChoice(BaseModel):
+    plan: str
+
+
+class ChargingSessionPatch(BaseModel):
+    # A price typed in, or null to take it away; a note likewise.
+    cost: float | None = None
+    note: str | None = None
+
+
+def charging_caller(request: Request) -> bool:
+    """A signed-in user or a 401; whether they're allowed what the cards and bills say."""
+    profile = frigate_profile(request)
+    if profile is None:
+        raise HTTPException(status_code=401, detail="Frigate session cookie required")
+    return finance_may_read(profile)
+
+
+@app.get("/charging")
+def get_charging(request: Request) -> dict[str, Any]:
+    """The months, the rates, what's charging now and the latest charges (see "charging")."""
+    return charging_summary(time.time(), charging_caller(request))
+
+
+@app.get("/charging/sessions")
+def get_charging_sessions(request: Request, before: float | None = None, car: str | None = None, place: str | None = None) -> dict[str, Any]:
+    """Older charges, a page at a time."""
+    charging_caller(request)
+    sessions = charging_sessions(before, car, place)
+    return {"sessions": sessions, "more_sessions": len(sessions) == CHARGING_PAGE}
+
+
+@app.get("/charging/sessions/{session_id}")
+def get_charging_session(session_id: int, request: Request) -> dict[str, Any]:
+    """One charge hour by hour."""
+    charging_caller(request)
+    detail = charging_session_detail(session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="no such charge")
+    return detail
+
+
+@app.post("/charging/sessions/{session_id}")
+def set_charging_session(session_id: int, body: ChargingSessionPatch, request: Request) -> dict[str, Any]:
+    """What someone paid for a charge the relay can't price, and a note on it."""
+    charging_caller(request)
+    if body.cost is not None and body.cost < 0:
+        raise HTTPException(status_code=400, detail="a cost can't be negative")
+    note = (body.note or "").strip()[:500] or None
+    with _charging_lock:
+        with_db(lambda c: (c.execute("UPDATE charge_sessions SET typed_cost=?, note=?, updated=? WHERE id=?", (body.cost, note, time.time(), session_id)), c.commit()))
+        # A charge in progress is written back whole from what's held of it.
+        for session in _charging_open.values():
+            if session["id"] == session_id:
+                session.update(typed_cost=body.cost, note=note)
+    detail = charging_session_detail(session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="no such charge")
+    return detail
+
+
+@app.post("/charging/plan")
+def set_charging_plan(body: ChargingPlanChoice, request: Request) -> dict[str, Any]:
+    """The electricity plan the household is on. Every charge at home is priced by it, past ones included."""
+    money = charging_caller(request)
+    if body.plan not in (charging_rates().get("plans") or {}):
+        raise HTTPException(status_code=400, detail="no such plan")
+    state_set(CHARGING_PLAN_KEY, body.plan)
+    return charging_summary(time.time(), money)
 
 
 # ---------------------------------------------------------------- parking
@@ -14935,6 +15903,11 @@ if __name__ == "__main__":
         if token.count(".") != 2:
             sys.exit("Pipe in the JWS scripts/tesla-sign printed.")
         print(json.dumps(tesla_telemetry_send(token), indent=2))
+    elif command == "charging-history":
+        # Reads Tesla's receipts now, rather than at the next check.
+        print(json.dumps(charging_history_sync(time.time()), indent=2))
+    elif command == "charging-summary":
+        print(json.dumps(charging_summary(time.time(), True), indent=2, default=str))
     elif command == "tesla-telemetry-status":
         print(json.dumps(tesla_telemetry_status(), indent=2, default=str))
     elif command == "parking-check":

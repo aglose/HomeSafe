@@ -1,0 +1,137 @@
+<resources>
+    <string name="charging_drawer_title">Carga</string>
+    <string name="charging_drawer_subtitle">Lo que cuesta cargar los coches</string>
+    <string name="charging_drawer_open">Abrir Carga</string>
+    <string name="charging_drawer_empty">Guarda cada carga desde la primera</string>
+    <string name="charging_drawer_this_month">%1$s este mes</string>
+    <string name="charging_drawer_detail">%1$s en %2$s cargas</string>
+    <string name="charging_drawer_charging">%1$s está cargando, al %2$s%</string>
+
+    <string name="charging_title">Carga</string>
+    <string name="charging_title_charge">Carga</string>
+    <string name="charging_close">Cerrar Carga</string>
+    <string name="charging_refresh">Actualizar</string>
+    <string name="charging_loading">Preguntando al servidor…</string>
+    <string name="charging_tab_overview">Resumen</string>
+    <string name="charging_tab_charges">Cargas</string>
+    <string name="charging_tab_rates">Tarifas</string>
+
+    <string name="charging_error_unreachable">No se pudo contactar con el servidor. El historial de carga está allí: comprueba la conexión e inténtalo de nuevo.</string>
+    <string name="charging_error_signed_out">Inicia sesión en el servidor para ver lo que cuesta cargar los coches.</string>
+    <string name="charging_error_outdated">El relay del servidor es más antiguo que esta app y aún no guarda el historial de carga.</string>
+    <string name="charging_error_relay_answered">El relay respondió con un error (%1$s).</string>
+
+    <string name="charging_money">%1$s $</string>
+    <string name="charging_kwh">%1$s kWh</string>
+    <string name="charging_miles">%1$s mi</string>
+    <string name="charging_rate_per_kwh">%1$s $/kWh</string>
+    <string name="charging_duration_minutes">%1$s min</string>
+    <string name="charging_duration_hours">%1$s h</string>
+    <string name="charging_duration_hours_minutes">%1$s h %2$s min</string>
+
+    <string name="charging_place_home">Casa</string>
+    <string name="charging_place_supercharger">Supercargador</string>
+    <string name="charging_place_fast">Cargador rápido</string>
+    <string name="charging_place_fast_short">Carga rápida</string>
+    <string name="charging_place_other">En otro sitio</string>
+    <string name="charging_period_peak">Hora punta</string>
+    <string name="charging_period_off_peak">Hora valle</string>
+    <string name="charging_period_tier1">Tramo I, hasta el mínimo vital</string>
+    <string name="charging_period_tier2">Tramo II, por encima del mínimo vital</string>
+
+    <string name="charging_live_title">%1$s, cargando en %2$s</string>
+    <string name="charging_live_kw">%1$s kW</string>
+    <string name="charging_live_battery">%1$s% de %2$s%</string>
+    <string name="charging_live_so_far">%1$s hasta ahora, %2$s</string>
+    <string name="charging_live_left">quedan %1$s</string>
+
+    <string name="charging_empty_title">Aún no hay cargas</string>
+    <string name="charging_empty_body">Desde ahora se apunta cada carga, en casa y fuera, y se le pone precio al momento.</string>
+
+    <string name="charging_month_older">Mes anterior</string>
+    <string name="charging_month_newer">Mes siguiente</string>
+    <plurals name="charging_month_charges">
+        <item quantity="one">%1$s en %2$d carga</item>
+        <item quantity="other">%1$s en %2$d cargas</item>
+    </plurals>
+    <string name="charging_month_up">%1$s más que en %2$s</string>
+    <string name="charging_month_down">%1$s menos que en %2$s</string>
+    <string name="charging_unmatched_note">Incluye %1$s en las tarjetas por Supercargadores que los recibos de Tesla no cubren, así que no consta en ningún coche.</string>
+    <string name="charging_cars_title">Por coche</string>
+    <string name="charging_car_home">Casa %1$s, %2$s</string>
+    <string name="charging_car_fast">Rápida %1$s, %2$s</string>
+    <string name="charging_car_other">Otros sitios %1$s</string>
+    <string name="charging_car_per_mile">%1$s ¢ por milla</string>
+    <string name="charging_car_efficiency">%1$s mi/kWh</string>
+    <string name="charging_months_title">Mes a mes</string>
+    <string name="charging_home_title">Carga en casa</string>
+    <string name="charging_home_per_kwh">%1$s de media</string>
+    <string name="charging_peak_share">El %1$s% en horas punta de la tarifa horaria</string>
+    <string name="charging_plan_compare_less">Con %1$s serían %2$s, %3$s menos.</string>
+    <string name="charging_plan_compare_more">Con %1$s serían %2$s, %3$s más.</string>
+    <string name="charging_plan_compare_same">Con %1$s costaría lo mismo.</string>
+    <string name="charging_gas_title">Frente a la gasolina</string>
+    <string name="charging_gas_cheaper">%1$s ahorrados frente a %2$s de gasolina</string>
+    <string name="charging_gas_detail">%1$s a %2$s mpg y %3$s el galón</string>
+    <string name="charging_paid_title">La factura eléctrica</string>
+    <string name="charging_paid_provider">%2$s pagados a %1$s</string>
+    <string name="charging_paid_provider_detail">Todo lo que gastó la casa, según salió del banco este mes. Una factura puede cubrir otros meses.</string>
+    <string name="charging_history_title">Todos los meses</string>
+
+    <string name="charging_setup_title">Falta configurar</string>
+    <string name="charging_setup_body">La página funciona sin esto, y dice más con ello:</string>
+    <string name="charging_setup_rates">Las tarifas de los planes eléctricos, para poner precio a la carga en casa</string>
+    <string name="charging_setup_power">Que los coches envíen voltios y amperios, para medir las cargas en el enchufe. Hasta entonces se estiman por la batería.</string>
+    <string name="charging_setup_receipts">Volver a vincular Tesla para sus recibos, con el nombre y el precio de cada Supercargador. Hasta entonces valen las tarjetas.</string>
+
+    <string name="charging_charges_all">Todas</string>
+    <string name="charging_charges_all_cars">Todos los coches</string>
+    <string name="charging_charges_empty">Aún no hay cargas aquí.</string>
+    <string name="charging_charges_load_more">Ver cargas anteriores</string>
+    <string name="charging_battery_range">%1$s → %2$s%</string>
+    <string name="charging_month_bar">%1$s: %2$s</string>
+    <string name="charging_charge_when">%1$s, %2$s a las %3$s</string>
+    <string name="charging_charge_no_price">Sin precio</string>
+    <string name="charging_charge_estimated">Estimada</string>
+    <string name="charging_charge_now">Cargando ahora</string>
+
+    <string name="charging_charge_loading">Obteniendo esta carga…</string>
+    <string name="charging_charge_cost_plan">A la tarifa del plan en cada hora, con impuestos</string>
+    <string name="charging_charge_cost_receipt">Recibo de Tesla</string>
+    <string name="charging_charge_cost_typed">Lo que escribiste</string>
+    <string name="charging_charge_energy">Energía</string>
+    <string name="charging_charge_duration">Tiempo</string>
+    <string name="charging_charge_battery">Batería</string>
+    <string name="charging_charge_price">Por kWh</string>
+    <string name="charging_charge_avg_kw">kW de media</string>
+    <string name="charging_charge_peak_kw">kW máximos</string>
+    <string name="charging_charge_measure_power">Medida con los voltios y amperios del cargador.</string>
+    <string name="charging_charge_measure_receipt">La energía del recibo de Tesla.</string>
+    <string name="charging_charge_measure_battery">Estimada por lo que ganó la batería, más lo que se pierde al cargar.</string>
+    <string name="charging_charge_measure_missed">Se cargó mientras el servidor no escuchaba, así que se estima por lo que ganó la batería. Las horas también son aproximadas.</string>
+    <string name="charging_charge_hours_title">Hora a hora</string>
+    <string name="charging_charge_chart">El ámbar es hora punta.</string>
+    <string name="charging_charge_plans_title">En cada plan</string>
+    <string name="charging_charge_saved_title">Lo que se pagó</string>
+    <string name="charging_charge_paid">Importe pagado</string>
+    <string name="charging_charge_paid_note">Déjalo vacío para usar el precio calculado, si lo hay.</string>
+    <string name="charging_charge_note">Nota</string>
+    <string name="charging_charge_save">Guardar</string>
+
+    <string name="charging_rates_none">Las tarifas de los planes eléctricos aún no están en el servidor, así que la carga en casa no tiene precio. La energía se guarda y tendrá precio en cuanto estén.</string>
+    <string name="charging_rates_plan_title">Tu plan</string>
+    <string name="charging_rates_plan_note">Elige el que aparece en tu factura. Cambia cómo la app calcula las cargas, también las pasadas, no lo que te facturan.</string>
+    <string name="charging_rates_open_source">Ver las tarifas de la compañía</string>
+    <string name="charging_rates_day_chart">Lo que cuesta un kWh en cada hora de un día laborable, de %1$s a %2$s.</string>
+    <string name="charging_rates_peak_hours">Hora punta de %1$s a %2$s los días laborables. Fines de semana y festivos son hora valle todo el día.</string>
+    <string name="charging_rates_stated">%1$s $ antes de impuestos</string>
+    <string name="charging_rates_billed_note">Las cifras grandes son las facturadas: %1$s% de impuesto municipal y %2$s ¢ por kWh de recargo estatal.</string>
+    <string name="charging_rates_marginal">El coche se calcula al Tramo II. La casa agota el mínimo vital con o sin él, así que cada kWh del coche es uno más por encima.</string>
+    <string name="charging_rates_tou_only_note">Con este plan, cada kWh de la casa se factura a estas tarifas, no solo los del coche.</string>
+    <string name="charging_baseline">Mínimo vital: %1$s kWh al mes en verano, %2$s en invierno.</string>
+    <string name="charging_rates_customer_charge">Los %1$s de cargo mensual de la casa no se cuentan: se pagan con o sin coches.</string>
+    <string name="charging_rates_effective">Tarifas desde %1$s.</string>
+    <string name="charging_rates_when_title">Cuándo cargas en casa</string>
+    <string name="charging_rates_when_chart">Cuánto se carga en casa en cada hora del día, en los últimos 90 días.</string>
+    <string name="charging_rates_when_peak">El %1$s% cae en horas punta de la tarifa horaria, en los últimos 90 días.</string>
+</resources>

@@ -25,6 +25,9 @@ import androidx.lifecycle.compose.currentStateAsState
 import com.meticulouscreations.homesafe.atlas.AtlasViewModel
 import com.meticulouscreations.homesafe.atlas.ui.AtlasApp
 import com.meticulouscreations.homesafe.atlas.ui.AtlasDrawerCard
+import com.meticulouscreations.homesafe.charging.ChargingViewModel
+import com.meticulouscreations.homesafe.charging.ui.ChargingApp
+import com.meticulouscreations.homesafe.charging.ui.ChargingDrawerCard
 import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.ui.FinanceApp
@@ -41,7 +44,7 @@ import com.meticulouscreations.homesafe.weather.ui.WeatherDrawerCard
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 
 /**
- * The drawer, the app opened from it (finance, weather or fitness) over everything else, and
+ * The drawer, the app opened from it (finance, weather, fitness, atlas or charging) over everything else, and
  * over that the map a parking notification opens ([ParkingMapOverlay]).
  * Their state is only fetched while this composition is on screen — under the iOS 26 host each
  * tab has its own, and only the visible one may run it.
@@ -91,6 +94,12 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
     LaunchedEffect(visible, drawerShowing, atlasUp) {
         atlas.setActive(visible && (drawerShowing || atlasUp), full = atlasUp)
     }
+    val charging: ChargingViewModel = metroViewModel()
+    val chargingState by charging.uiState.collectAsStateWithLifecycle()
+    val chargingUp = nav.isOpen(InnerApp.CHARGING)
+    LaunchedEffect(visible, drawerShowing, chargingUp) {
+        charging.setActive(visible && (drawerShowing || chargingUp))
+    }
     // Only the tab in front listens, so that under the iOS 26 host one composition takes a share, not three.
     // In a sidebar the fitness app is a tab with a view model of its own, so the notes wait on [nav] for it.
     if (nav.selectedTab == tab) {
@@ -109,6 +118,8 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
         FitnessDrawerCard(fitnessState, healthState.body.readiness, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) })
         Spacer(Modifier.height(12.dp))
         FinanceDrawerCard(financeState, financeLockState.locked, onOpen = { origin -> nav.openApp(InnerApp.FINANCE, origin, tab) })
+        Spacer(Modifier.height(12.dp))
+        ChargingDrawerCard(chargingState, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.CHARGING, origin, tab) })
     }
     if (nav.appHost == tab) {
         InnerAppOverlay(
@@ -130,6 +141,8 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
                 InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
 
                 InnerApp.ATLAS -> AtlasApp(onClose = nav::closeApp, active = nav.appOpen)
+
+                InnerApp.CHARGING -> ChargingApp(onClose = nav::closeApp, active = nav.appOpen)
             }
         }
     }
@@ -215,6 +228,12 @@ private fun AppTabContent(nav: ShellNavigation, app: InnerApp, visible: Boolean)
             val atlas: AtlasViewModel = metroViewModel()
             ActiveWhile(visible) { atlas.setActive(it, full = true) }
             AtlasApp(onClose = goHome, active = visible)
+        }
+
+        InnerApp.CHARGING -> {
+            val charging: ChargingViewModel = metroViewModel()
+            ActiveWhile(visible) { charging.setActive(it) }
+            ChargingApp(onClose = goHome, active = visible)
         }
     }
 }

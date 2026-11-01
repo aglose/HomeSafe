@@ -9,6 +9,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.ui.AtlasDrawerCard
+import com.meticulouscreations.homesafe.charging.ChargingUiState
+import com.meticulouscreations.homesafe.charging.ui.ChargingDrawerCard
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.ui.FinanceDrawerCard
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
@@ -40,6 +42,8 @@ private fun ShellDrawerPreview() {
             FitnessDrawerCard(FitnessUiState(), readiness = null, animated = animated, onOpen = {})
             Spacer(Modifier.height(12.dp))
             FinanceDrawerCard(FinanceUiState(), locked = false, onOpen = {})
+            Spacer(Modifier.height(12.dp))
+            ChargingDrawerCard(ChargingUiState(), animated = animated, onOpen = {})
         }
     }
 }

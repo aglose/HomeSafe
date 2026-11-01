@@ -8,7 +8,7 @@ This is a Kotlin Multiplatform project targeting Android, iOS and the desktop (a
   everything:
   - [/shared](./shared/src) is the core: the cameras, moments and settings, the data layer (one Room database),
     networking, the shell, and every string and picture (one `Res`, one place to translate).
-  - [/features](./features) has the drawer's apps, a module each: `finance`, `weather`, `fitness` and `atlas`.
+  - [/features](./features) has the drawer's apps, a module each: `finance`, `weather`, `fitness`, `atlas` and `charging`.
     Each builds on `:shared`; `fitness` also uses `finance`'s charts, and `atlas` `weather`'s maps and
     `finance`'s lock.
   - [/app](./app/src) is the composition root: the Metro app graph, `App()`, the drawer's apps (`ShellApps`) and
