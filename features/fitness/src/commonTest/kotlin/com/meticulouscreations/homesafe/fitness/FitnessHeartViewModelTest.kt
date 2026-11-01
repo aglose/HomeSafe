@@ -4,7 +4,6 @@ import com.meticulouscreations.homesafe.data.InMemoryFitnessDao
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
 import com.meticulouscreations.homesafe.fitness.data.FitnessPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
-import com.meticulouscreations.homesafe.fitness.domain.NoFitnessLogSync
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
@@ -12,6 +11,7 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
 import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
+import com.meticulouscreations.homesafe.fitness.domain.NoFitnessLogSync
 import com.meticulouscreations.homesafe.fitness.domain.SetDraft
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.domain.ZoneTracker

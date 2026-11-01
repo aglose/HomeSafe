@@ -204,8 +204,11 @@ internal fun LiftsScreen(
         }
         val syncNote = when (state.syncStatus) {
             FitnessSyncStatus.SAVED -> Res.string.fitness_sync_saved
+
             FitnessSyncStatus.WAITING -> Res.string.fitness_sync_waiting
+
             FitnessSyncStatus.SIGNED_OUT -> Res.string.fitness_sync_signed_out
+
             // Said at the top instead.
             FitnessSyncStatus.HELD_BACK -> null
         }

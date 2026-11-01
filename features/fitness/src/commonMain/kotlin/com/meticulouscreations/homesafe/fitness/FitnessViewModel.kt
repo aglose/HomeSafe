@@ -9,8 +9,8 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
-import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
 import com.meticulouscreations.homesafe.fitness.domain.FitnessLogSync
+import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
 import com.meticulouscreations.homesafe.fitness.domain.FitnessSyncStatus
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
