@@ -5765,17 +5765,15 @@ class BudgetLinesTest(_Budget):
         self.assertEqual(("Groceries", "auto"), self.found(body)["tv"])
 
     def test_remembering_a_shop_puts_its_other_purchases_in_the_line_and_forgetting_it_does_not_undo_the_tag(self):
-        # This month's, since forgetting a shop answers with the month under way.
-        today = time.strftime("%Y-%m-01", time.gmtime())
-        self.store(_txn("t1", 30.0, date=today, name="BIG BOX #1", merchant="Big Box"), _txn("t2", 12.0, date=today, name="BIG BOX #2", merchant="Big Box"))
+        self.store(_txn("t1", 30.0, name="BIG BOX #1", merchant="Big Box"), _txn("t2", 12.0, name="BIG BOX #2", merchant="Big Box"))
         body = relay.put_budget_transaction_line("t1", types.SimpleNamespace(line="Groceries", remember=True), object(), self.response)
         self.assertEqual({"t1": ("Groceries", "manual"), "t2": ("Groceries", "rule")}, self.found(body))
         self.assertTrue(all(t["line_remembered"] for t in body["transactions"]))
         self.assertEqual([{"merchant": "big box", "line": "Groceries"}], body["config"]["line_rules"])
         # Whose a purchase is and which line it is in are two things: the one doesn't touch the other.
         self.assertEqual([None, None], [t["bucket"] for t in body["transactions"]])
-        body = relay.delete_budget_line_rule("big box", object(), self.response)
-        self.assertEqual({"t1": ("Groceries", "manual"), "t2": (None, "none")}, self.found(body))
+        relay.delete_budget_line_rule("big box", object(), self.response)
+        self.assertEqual({"t1": ("Groceries", "manual"), "t2": (None, "none")}, self.found(relay.budget_month("2026-10")))
 
     def test_a_shop_can_be_said_to_never_be_in_a_line(self):
         self.store(_txn("t1", 300.0), _txn("t2", 200.0, name="COSTCO WHSE #0456"))
@@ -6025,15 +6023,13 @@ class BudgetRoutesTest(_Budget):
         self.assertEqual((503, "not_configured"), (off.exception.status_code, off.exception.detail["error"]))
 
     def test_remembering_a_shop_sorts_its_other_purchases_and_forgetting_it_leaves_the_tagged_one(self):
-        # This month's, since forgetting a shop answers with the month under way.
-        today = time.strftime("%Y-%m-01", time.gmtime())
-        self.store(_txn("t1", 54.2, date=today), _txn("t2", 20.0, date=today, name="COSTCO WHSE #0456"), _txn("t3", 9.0, date=today, name="SHELL OIL", merchant="Shell"))
+        self.store(_txn("t1", 54.2), _txn("t2", 20.0, name="COSTCO WHSE #0456"), _txn("t3", 9.0, name="SHELL OIL", merchant="Shell"))
         body = relay.put_budget_transaction("t1", types.SimpleNamespace(bucket="person:Sarah", remember=True), object(), self.response)
         self.assertEqual({"t1": ("person:Sarah", "manual", True), "t2": ("person:Sarah", "rule", True), "t3": (None, "none", False)},
                          {t["id"]: (t["bucket"], t["source"], t["remembered"]) for t in body["transactions"]})
         self.assertEqual([{"merchant": "costco", "bucket": "person:Sarah"}], body["config"]["rules"])
-        body = relay.delete_budget_rule("costco", object(), self.response)
-        self.assertEqual({"t1": "person:Sarah", "t2": None, "t3": None}, {t["id"]: t["bucket"] for t in body["transactions"]})
+        relay.delete_budget_rule("costco", object(), self.response)
+        self.assertEqual({"t1": "person:Sarah", "t2": None, "t3": None}, {t["id"]: t["bucket"] for t in relay.budget_month("2026-10")["transactions"]})
 
     def test_a_tag_can_be_taken_off_and_the_answer_is_the_purchase_s_own_month(self):
         self.store(_txn("old", 54.2, date="2026-09-12"))
@@ -8512,6 +8508,799 @@ class DoorsTest(_ScratchDb):
             relay.set_door("0xnobody", types.SimpleNamespace(notify="always"), request)
         self.assertEqual(404, missing.exception.status_code)
         self.assertEqual("always", relay.set_door(FRONT, types.SimpleNamespace(notify="always"), request)["doors"][0]["notify"])
+
+
+class PackageEmailTest(unittest.TestCase):
+    """What shipping emails say. Written from the shapes real ones took (2026-10-31), with made-up names and numbers."""
+
+    AT = 1793316000.0  # 2026-10-29
+    AMAZON_DELIVERED = "Drew, your package was delivered!\nDelivered today\nYour package was left near the front door or porch.\n2 items: 1 Hardware, 1 Vitamins\nSam - TOWN, CA\nOrder # ‫113-0000000-0000001\nTrack package"
+    AMAZON_SHIPPED = "Your package was shipped!\nOrdered\nShipped\nOut for delivery\nDelivered\nArriving tomorrow\n2 items: 1 Hardware, 1 Vitamins\nOrder # 113-0000000-0000001\nTrack package\nTotal\n$46.87"
+    USPS = "USPS expects to deliver your package on Tuesday, October 20, 2026 arriving by 9:00pm.\nTracking Number: 9400100000000000000006\nExpected Delivery On"
+
+    def parse(self, sender, subject, text=""):
+        return relay.parse_package_email(sender, subject, text, self.AT)
+
+    def test_a_check_digit_vouches_for_a_ups_number(self):
+        self.assertTrue(relay.package_ups_valid("1Z999AA10123456784"))
+        self.assertFalse(relay.package_ups_valid("1Z999AA10123456785"))
+
+    def test_a_check_digit_vouches_for_a_usps_number(self):
+        self.assertTrue(relay.package_usps_valid("9400100000000000000006"))
+        self.assertFalse(relay.package_usps_valid("9400100000000000000007"))
+        self.assertTrue(relay.package_s10_valid("RB123456785US"))
+        self.assertFalse(relay.package_s10_valid("RB123456786US"))
+
+    def test_a_number_typed_in_is_tidied_and_given_its_carrier(self):
+        self.assertEqual(("1Z999AA10123456784", "ups"), relay.package_classify_number("1z 999 aa1 0123 4567 84"))
+        self.assertEqual(("9400100000000000000006", "usps"), relay.package_classify_number("9400 1000 0000 0000 0000 06"))
+        self.assertEqual(("TBA123456789012", "amazon"), relay.package_classify_number("TBA123456789012"))
+        self.assertEqual(("123456789012", "fedex"), relay.package_classify_number("1234 5678 9012"))
+        self.assertEqual(("ABC12345678", "other"), relay.package_classify_number("ABC12345678"))
+
+    def test_what_can_t_be_a_number_isn_t_taken(self):
+        for typed in ("", "hello", "1Z999AA10123456785", "NOTANUMBERATALL", "12 34"):
+            self.assertIsNone(relay.package_classify_number(typed), typed)
+
+    def test_amazon_s_shipment_gives_its_order_categories_day_and_total(self):
+        parsed = self.parse("Amazon <shipment-tracking@amazon.com>", "Shipped 2 items: Hardware, Vitamins", self.AMAZON_SHIPPED)
+        self.assertEqual(("shipped", "amazon", "113-0000000-0000001", "Amazon", "Hardware, Vitamins", 46.87),
+                         (parsed["stage"], parsed["carrier"], parsed["order"], parsed["shop"], parsed["title"], parsed["total"]))
+        self.assertEqual({"from": "2026-10-30", "to": "2026-10-30"}, parsed["expected"])
+
+    def test_amazon_s_delivery_says_where_it_was_left(self):
+        parsed = self.parse("Amazon <order-update@amazon.com>", "Delivered 2 items: Hardware, Vitamins", self.AMAZON_DELIVERED)
+        self.assertEqual(("delivered", "Your package was left near the front door or porch."), (parsed["stage"], parsed["left"]))
+
+    def test_usps_gives_a_number_and_a_time_to_be_in_by(self):
+        parsed = self.parse("USPS <auto-reply@tracking.usps.com>", "USPS® Expected Delivery on Tuesday, October 20, 2026 arriving by 9:00pm 9400100000000000000006", self.USPS)
+        self.assertEqual(("expected", "usps", "9400100000000000000006"), (parsed["stage"], parsed["carrier"], parsed["tracking"]))
+        self.assertEqual({"from": "2026-10-20", "to": "2026-10-20", "end": "21:00"}, parsed["expected"])
+
+    def test_a_window_narrowed_to_two_hours_keeps_both_ends(self):
+        parsed = self.parse("USPS <auto-reply@tracking.usps.com>", "USPS Expected Delivery on Friday, October 16, 2026 Between 1:15pm and 3:15pm", "Tracking Number: 9400100000000000000006")
+        self.assertEqual({"from": "2026-10-16", "to": "2026-10-16", "start": "13:15", "end": "15:15"}, parsed["expected"])
+
+    def test_a_shop_s_own_courier_and_number_are_read_from_its_line(self):
+        parsed = self.parse("TikTok Shop <noreply@shop-us.tiktok.com>", "Package delivered! \U0001f4e6", "Delivered Tuesday Oct 27\nVeho Standard shipping: 829b16945f6ae18db\nOrder number\n577000000000000000\nLeft in mailbox")
+        self.assertEqual(("delivered", "veho", "829b16945f6ae18db", "TikTok Shop", "Left in mailbox"), (parsed["stage"], parsed["carrier"], parsed["tracking"], parsed["shop"], parsed["left"]))
+
+    def test_every_order_an_email_names_is_kept(self):
+        parsed = self.parse("Amazon <x@amazon.com>", "Delivered 2 items: Crafts, Toys", "Order # 113-0000000-0000001\nOrder # 111-0000000-0000002")
+        self.assertEqual(["113-0000000-0000001", "111-0000000-0000002"], parsed["orders"])
+
+    def test_order_delivered_in_capitals_isn_t_an_order_number(self):
+        parsed = self.parse("eBay <ebay@ebay.com>", "\U0001f4e6ORDER DELIVERED: Pokemon Booster Bun...", "Your order was delivered.")
+        self.assertEqual(("delivered", None, "eBay", "Pokemon Booster Bun"), (parsed["stage"], parsed["order"], parsed["shop"], parsed["title"]))
+
+    def test_a_tracking_page_s_name_for_a_shop_comes_from_the_subject(self):
+        parsed = self.parse("project44 <no-reply@notifications.project44.com>", "Your SimpliSafe shipment has been delivered", "delivered by USPS.\nTracking #9400100000000000000006")
+        self.assertEqual(("delivered", "usps", "SimpliSafe"), (parsed["stage"], parsed["carrier"], parsed["shop"]))
+
+    def test_adverts_that_say_delivered_are_no_packages(self):
+        for sender, subject in (("Eaze <hi@eaze.com>", "20% off, delivered by first pitch"), ("Grubhub <x@a.grubhub.com>", "Your FREE $10 restaurant delivery credit just reloaded"),
+                                ("Target <x@em.target.com>", "Target Circle Deal Days is on the way!"), ("Pharmacy <x@engage.covetruspharmacy.com>", "Itch and allergy essentials, delivered!"),
+                                ("FedEx <x@message.fedex.com>", "Scary good prints for Halloween"), ("Uber <x@uber.com>", "Crowd favorites, delivered"), ("USPS <x@email.informeddelivery.usps.com>", "Your Daily Digest for Fri, 10/9 is ready to view"),
+                                ("Amazon <x@amazon.com>", "Review your upcoming delivery")):
+            self.assertIsNone(self.parse(sender, subject), subject)
+
+    def test_a_signature_is_noticed(self):
+        self.assertTrue(self.parse("FedEx <x@fedex.com>", "Your package is scheduled for delivery", "Tracking number: 123456789012\nA signature is required")["signature"])
+
+    def test_a_dropoff_is_a_return_on_its_way(self):
+        self.assertEqual("return_sent", self.parse("Amazon <x@amazon.com>", "Dropoff confirmed for Lexi Mid Rise...", "Order # 113-0000000-0000001")["stage"])
+        self.assertEqual("return", self.parse("Amazon <x@amazon.com>", "Return request confirmed for Lexi Mid Rise...", "Order # 113-0000000-0000001")["stage"])
+        self.assertEqual("refund", self.parse("Amazon <x@amazon.com>", "Advance refund issued for Lexi Mid Rise...", "Order # 113-0000000-0000001")["stage"])
+
+    def test_refunds_need_something_to_attach_to(self):
+        self.assertEqual("refund", self.parse("Amazon <x@amazon.com>", "Your refund for Vitamins", "Order # 113-0000000-0000001\nRefund total $12.00")["stage"])
+        self.assertIsNone(self.parse("Amazon <x@amazon.com>", "How refunds work"))
+
+    def test_a_weekday_means_the_next_one(self):
+        sent = relay.datetime(2026, 10, 29, 12, tzinfo=relay.timezone.utc)  # A Thursday.
+        self.assertEqual({"from": "2026-11-03", "to": "2026-11-03"}, relay.package_expected(["Arriving Tuesday"], "", sent))
+        self.assertEqual({"from": "2026-10-29", "to": "2026-10-29"}, relay.package_expected(["Arriving today"], "", sent))
+        self.assertEqual({"from": "2026-11-03", "to": "2026-11-08"}, relay.package_expected(["Now arriving Nov 3 - Nov 8"], "", sent))
+
+    def test_a_date_early_next_year_isn_t_taken_for_last_january(self):
+        sent = relay.datetime(2026, 12, 29, 12, tzinfo=relay.timezone.utc)
+        self.assertEqual("2027-01-03", relay.package_expected(["Arriving Jan 3"], "", sent)["from"])
+
+
+class PackagesTest(_ScratchDb):
+    """A package's life, against a scratch database, with the camera and the phones stood in for."""
+
+    NOW = 1793316000.0
+    STOOD_IN = ("require_frigate_session", "amazon_on", "package_camera_on", "package_frame", "package_crop", "package_ask_model", "package_person_events", "package_door_ids", "package_send", "PACKAGE_FRAME_DIR", "AMAZON_GMAIL_TOKENS", "household_zone", "PACKAGE_17TRACK_KEY", "phantom_spots")
+    PARCEL = {"appeared": True, "gone": False, "what": "box", "confidence": 0.95}
+    NOTHING = {"appeared": False, "gone": False, "what": "none", "confidence": 0.98}
+
+    def setUp(self):
+        super().setUp()
+        self._held = {name: getattr(relay, name) for name in self.STOOD_IN}
+        relay.PACKAGE_FRAME_DIR = os.path.join(self._dir.name, "frames")
+        relay.AMAZON_GMAIL_TOKENS = {"sam": "x", "alex": "y"}
+        relay.household_zone = lambda: relay.timezone.utc
+        relay.package_camera_on = lambda: False
+        relay.package_frame = lambda at: b"jpeg"
+        relay.package_crop = lambda jpeg, edge=1024: jpeg
+        relay.package_door_ids = lambda: []
+        self.answers = []
+        relay.package_ask_model = lambda prompt, schema, pictures: self.answers.pop(0) if self.answers else None
+        self.door_events = []
+        relay.package_person_events = lambda after, before=None: [e for e in self.door_events if float(e["start_time"]) >= after and (before is None or float(e["start_time"]) <= before)]
+        relay.state_set(relay.PACKAGE_NAGS_KEY, True)
+        self.told = []
+        relay.package_send = lambda package, plain, masked, plain_data, masked_data: (self.told.append((plain_data["package_event"], plain_data["package_name"], masked_data["package_name"], masked[1])), {"sent": 1})[1]
+        self._n = 0
+
+    def tearDown(self):
+        for name, value in self._held.items():
+            setattr(relay, name, value)
+        super().tearDown()
+
+    def mail(self, stage, at=None, owner="sam", message=None, now=None, **fields):
+        at = self.NOW if at is None else at
+        parsed = {"stage": stage, "tracking": None, "carrier": None, "order": None, "shop": None, "title": None, "expected": None, "signature": False, "left": None, "total": None, **fields}
+        self._n += 1
+        return relay.package_store(owner, message or f"m{self._n}", parsed, at, self.NOW if now is None else now)
+
+    def event(self, start, end, event_id=None):
+        return {"id": event_id or f"e{start}", "start_time": start, "end_time": end, "sub_label": None, "data": {}}
+
+    def door_opened(self, at):
+        relay.package_door_ids = lambda: ["front"]
+        relay.with_db(lambda c: (c.execute("INSERT INTO door_events (door, open, at) VALUES ('front', 1, ?)", (at,)), c.commit()))
+
+    def camera(self, *events, answers=()):
+        relay.package_camera_on = lambda: True
+        self.door_events = list(events)
+        self.answers = list(answers)
+
+    def test_an_order_s_emails_are_one_package_moving_along(self):
+        first = self.mail("ordered", self.NOW - 3 * 86400, order="113-1", title="Hardware", shop="Amazon", carrier="amazon")
+        second = self.mail("shipped", self.NOW - 86400, order="113-1", title="Hardware", shop="Amazon", carrier="amazon")
+        third = self.mail("out_for_delivery", self.NOW - 600, order="113-1", title="Hardware", shop="Amazon", carrier="amazon")
+        self.assertEqual(first, second)
+        self.assertEqual(first, third)
+        self.assertEqual("out_for_delivery", relay.package_row(first)["stage"])
+        self.assertEqual(1, len(relay.package_rows()))
+
+    def test_one_order_s_two_shipments_stay_two_packages(self):
+        first = self.mail("shipped", self.NOW - 86400, order="113-1", title="Baby Toys", shop="Amazon")
+        second = self.mail("shipped", self.NOW - 3600, order="113-1", title="Oral Care", shop="Amazon")
+        self.assertNotEqual(first, second)
+        self.assertEqual(first, self.mail("delivered", self.NOW, order="113-1", title="Baby Toys", shop="Amazon"))
+        self.assertEqual("shipped", relay.package_row(second)["stage"])
+
+    def test_an_order_split_into_shipments_becomes_a_package_for_each(self):
+        order = self.mail("ordered", self.NOW - 3 * 86400, order="113-1", title="Health Care, Electrical, and more", shop="Amazon", total=30.0)
+        health = self.mail("shipped", self.NOW - 2 * 86400, order="113-1", title="Health Care", shop="Amazon", total=10.0)
+        electrical = self.mail("shipped", self.NOW - 2 * 86400 + 60, order="113-1", title="Electrical", shop="Amazon", total=20.0)
+        self.assertEqual(order, health)
+        self.assertNotEqual(health, electrical)
+        self.assertEqual(("Health Care", 10.0), (relay.package_row(health)["title"], relay.package_row(health)["total"]))
+        self.assertEqual(health, self.mail("delivered", self.NOW, order="113-1", title="Health Care", shop="Amazon"))
+        self.assertEqual(electrical, self.mail("delivered", self.NOW, order="113-1", title="Electrical", shop="Amazon"))
+        self.assertEqual(2, len(relay.package_rows()))
+
+    def test_orders_put_in_one_box_become_one_package(self):
+        hardware = self.mail("ordered", self.NOW - 2 * 86400, order="113-1", title="Hardware", shop="Amazon", carrier="amazon", total=24.0)
+        vitamins = self.mail("ordered", self.NOW - 2 * 86400 + 60, order="111-2", title="Vitamins", shop="Amazon", carrier="amazon", total=22.0)
+        shipped = self.mail("shipped", self.NOW - 86400, order="113-1", orders=["113-1"], title="Hardware, Vitamins", shop="Amazon", carrier="amazon", total=46.0)
+        self.assertEqual(hardware, shipped)
+        delivered = self.mail("delivered", self.NOW, order="111-2", orders=["111-2"], title="Hardware, Vitamins", shop="Amazon", carrier="amazon")
+        rows = relay.package_rows("deleted=0")
+        self.assertEqual(1, len(rows), rows)
+        self.assertEqual(("delivered", "Hardware, Vitamins"), (rows[0]["stage"], rows[0]["title"]))
+        self.assertEqual(hardware, delivered)
+        self.assertEqual(46.0, rows[0]["total"])
+
+    def test_a_box_delivered_under_an_order_its_shipped_email_didn_t_give_is_found_by_what_it_held(self):
+        shipped = self.mail("shipped", self.NOW - 86400, order="113-1", title="Crafts, Toys", shop="Amazon", carrier="amazon")
+        self.assertEqual(shipped, self.mail("delivered", self.NOW, order="111-9", title="Crafts, Toys", shop="Amazon", carrier="amazon"))
+
+    def test_two_orders_of_the_same_thing_in_different_boxes_stay_two(self):
+        first = self.mail("shipped", self.NOW - 86400, order="113-1", title="Vitamins", shop="Amazon", carrier="amazon")
+        second = self.mail("shipped", self.NOW - 3600, order="113-2", title="Vitamins", shop="Amazon", carrier="amazon")
+        self.mail("delivered", self.NOW, order="113-2", title="Vitamins", shop="Amazon", carrier="amazon")
+        self.assertEqual(("shipped", "delivered"), (relay.package_row(first)["stage"], relay.package_row(second)["stage"]))
+
+    def test_an_email_naming_several_orders_finds_any_of_them(self):
+        self.assertTrue(self._find_by_orders())
+
+    def _find_by_orders(self):
+        held = self.mail("shipped", self.NOW - 3600, order="113-1", title="Socks", shop="Amazon", carrier="amazon")
+        return held == self.mail("delivered", self.NOW, order="111-9", orders=["111-9", "113-1"], title="Socks", shop="Amazon", carrier="amazon")
+
+    def test_a_new_date_for_an_order_goes_to_what_is_still_coming_of_it(self):
+        first = self.mail("shipped", self.NOW - 86400, order="113-1", title="Baby Toys", shop="Amazon")
+        second = self.mail("shipped", self.NOW - 3600, order="113-1", title="Oral Care", shop="Amazon")
+        self.mail("delivered", self.NOW - 1800, order="113-1", title="Baby Toys", shop="Amazon")
+        self.assertEqual(second, self.mail("expected", self.NOW, order="113-1", shop="Amazon", expected={"from": "2026-11-01", "to": "2026-11-01"}))
+        self.assertEqual(2, len(relay.package_rows()))
+        self.assertEqual("2026-11-01", relay.package_row(second)["expected_to"])
+        self.assertIsNone(relay.package_row(first)["expected_to"])
+
+    def test_the_same_tracking_number_from_two_senders_is_one_package(self):
+        usps = self.mail("expected", self.NOW - 86400, tracking="94001", carrier="usps", expected={"from": "2026-10-29", "to": "2026-10-29"})
+        shop = self.mail("delivered", self.NOW, tracking="94001", carrier="usps", shop="TikTok Shop", order="5771")
+        self.assertEqual(usps, shop)
+        package = relay.package_row(usps)
+        self.assertEqual(("delivered", "TikTok Shop", "5771"), (package["stage"], package["shop"], package["order_id"]))
+
+    def test_a_late_shipped_email_doesn_t_undo_a_delivery(self):
+        package = self.mail("delivered", self.NOW, order="1", shop="Shop")
+        self.mail("shipped", self.NOW + 60, order="1", shop="Shop", now=self.NOW + 60)
+        self.assertEqual("delivered", relay.package_row(package)["stage"])
+
+    def test_an_old_email_read_for_the_first_time_tells_nobody(self):
+        self.mail("delivered", self.NOW - 5 * 86400, order="1", shop="Shop")
+        self.assertEqual([], self.told)
+
+    def test_a_fresh_delivery_tells_once(self):
+        self.mail("delivered", self.NOW - 60, order="1", shop="Shop", title="Socks")
+        self.mail("delivered", self.NOW - 50, order="1", shop="Shop", title="Socks", message="again")
+        self.assertEqual(["delivered"], [t[0] for t in self.told])
+
+    def test_a_package_forgotten_stays_forgotten_when_its_email_is_read_again(self):
+        package = self.mail("shipped", order="1", shop="Shop")
+        relay.package_update(package, deleted=1)
+        self.mail("delivered", order="1", shop="Shop")
+        self.assertEqual("shipped", relay.package_row(package)["stage"])
+
+    def test_a_refund_finds_its_order(self):
+        package = self.mail("delivered", self.NOW - 86400, order="113-1", title="Dresses", shop="Amazon")
+        self.mail("refund", order="113-1", shop="Amazon")
+        self.assertEqual("refunded", relay.package_row(package)["return_state"])
+
+    def test_something_going_back_must_have_arrived(self):
+        # Amazon doesn't always email "Delivered": a return is news of that too.
+        package = self.mail("shipped", self.NOW - 30 * 86400, order="113-1", title="Jeans", shop="Amazon", carrier="amazon")
+        self.mail("return", self.NOW - 2 * 86400, order="113-1", shop="Amazon", carrier="amazon")
+        row = relay.package_row(package)
+        self.assertEqual(("delivered", "started"), (row["stage"], row["return_state"]))
+        self.mail("return_sent", self.NOW - 86400, order="113-1", shop="Amazon", carrier="amazon")
+        self.assertEqual("sent", relay.package_row(package)["return_state"])
+        self.mail("refund", self.NOW, order="113-1", shop="Amazon", carrier="amazon")
+        self.assertEqual("refunded", relay.package_row(package)["return_state"])
+        self.assertEqual([], [t for t in self.told if t[0] == "delivered"])
+
+    def test_a_return_s_emails_read_out_of_order_don_t_take_it_backwards(self):
+        package = self.mail("delivered", self.NOW - 30 * 86400, order="113-1", title="Jeans", shop="Amazon", carrier="amazon")
+        self.mail("refund", self.NOW, order="113-1", shop="Amazon", carrier="amazon")
+        self.mail("return", self.NOW - 86400, order="113-1", shop="Amazon", carrier="amazon")
+        self.assertEqual("refunded", relay.package_row(package)["return_state"])
+
+    def test_a_refund_for_something_never_seen_makes_no_package(self):
+        self.assertIsNone(self.mail("refund", order="113-9", shop="Amazon"))
+        self.assertEqual([], relay.package_rows())
+
+    def test_a_shop_with_a_return_policy_starts_the_clock_at_delivery(self):
+        package = self.mail("delivered", self.NOW, order="1", shop="Amazon")
+        self.assertEqual("2026-11-28", relay.package_row(package)["return_by"])
+
+    # The door camera
+
+    def test_a_visit_at_the_right_time_where_the_model_saw_a_parcel_is_confirmed(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75, "visit"), answers=[self.PARCEL, {"on_landing": "a box", "parcel": True}])
+        package = relay.package_row(self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon"))
+        self.assertEqual(("confirmed", "box", "porch", "visit"), (package["verdict"], package["verdict_what"], package["porch"], package["visit_event"]))
+        self.assertEqual({"before", "after"}, relay.package_frames_of(package["id"]))
+
+    def test_the_push_carries_what_the_camera_said(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75, "visit"), answers=[self.PARCEL, {"on_landing": "a box", "parcel": True}])
+        seen = []
+        relay.package_send = lambda package, plain, masked, plain_data, masked_data: (seen.append(plain_data["package_verdict"]), {"sent": 1})[1]
+        self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon")
+        self.assertEqual(["confirmed"], seen)
+
+    def test_a_visit_the_model_saw_nothing_in_is_still_someone_at_the_door(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.NOTHING])
+        package = relay.package_row(self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon"))
+        self.assertEqual(("seen", None, "porch"), (package["verdict"], package["verdict_what"], package["porch"]))
+
+    def test_an_unsure_model_doesn_t_confirm(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[{**self.PARCEL, "confidence": 0.3}])
+        self.assertEqual("seen", relay.package_row(self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon"))["verdict"])
+
+    def test_no_model_at_all_still_says_someone_came(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75))
+        self.assertEqual("seen", relay.package_row(self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon"))["verdict"])
+
+    def test_nobody_at_the_door_is_worth_saying_once_the_time_has_passed(self):
+        self.camera()
+        package = relay.package_row(self.mail("delivered", self.NOW - 600, order="1", shop="Amazon", carrier="amazon"))
+        self.assertEqual(("not_seen", None), (package["verdict"], package["porch"]))
+
+    def test_it_waits_while_someone_is_still_at_the_door(self):
+        self.camera(self.event(self.NOW - 20, None))
+        package = self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon")
+        self.assertIsNone(relay.package_row(package)["verdict"])
+
+    def test_a_visit_that_opened_the_door_wasn_t_the_delivery(self):
+        self.door_opened(self.NOW - 482)
+        self.camera(self.event(self.NOW - 490, self.NOW - 475), answers=[self.NOTHING])
+        package = self.mail("delivered", self.NOW - 400, order="1", shop="Amazon", carrier="amazon")
+        self.assertEqual("not_seen", relay.package_row(package)["verdict"])
+
+    def test_left_in_the_mailbox_raises_no_alarm_about_the_door(self):
+        self.camera()
+        package = self.mail("delivered", self.NOW - 600, order="1", shop="TikTok Shop", left="Left in mailbox")
+        self.assertIsNone(relay.package_row(package)["verdict"])
+
+    def test_a_delivery_older_than_the_recordings_isn_t_looked_for(self):
+        self.camera()
+        package = self.mail("delivered", self.NOW - 8 * 86400, order="1", shop="Amazon", carrier="amazon")
+        self.assertIsNone(relay.package_row(package)["verdict"])
+
+    def test_someone_saying_what_was_there_outranks_a_later_look(self):
+        self.camera()
+        package = self.mail("delivered", self.NOW - 600, order="1", shop="Amazon", carrier="amazon")
+        relay.package_update(package, verdict="confirmed", verdict_by="sam")
+        relay.package_judge(package, self.NOW)
+        self.assertEqual("confirmed", relay.package_row(package)["verdict"])
+
+    def test_events_close_together_are_one_visit_and_a_current_one_waits(self):
+        visits = relay.package_group_visits([self.event(100, 110), self.event(130, 140), self.event(300, 310), self.event(380, None)], 400)
+        self.assertEqual([(100, 140), (300, 310)], [(v["start"], v["end"]) for v in visits])
+
+    def test_a_visit_just_over_isn_t_judged_until_its_pictures_are_on_disk(self):
+        self.assertEqual([], relay.package_group_visits([self.event(100, 110)], 120))
+        self.assertEqual(1, len(relay.package_group_visits([self.event(100, 110)], 110 + relay.PACKAGE_VISIT_SETTLE)))
+
+    def visit(self, **fields):
+        row = {"event": "v1", "start": self.NOW, "end": self.NOW + 20, "appeared": False, "gone": False, "look": None, "what": "none", "confidence": 0.9, "door": False, "name": None, **fields}
+        relay.package_visit_meaning(row, self.NOW + 60)
+        return row
+
+    def on_porch(self):
+        package = self.mail("delivered", self.NOW - 3600, order="1", shop="Amazon", title="Socks", now=self.NOW - 3600)
+        relay.package_update(package, porch="porch", porch_at=self.NOW - 3600)
+        self.told.clear()
+        return package
+
+    def test_someone_opening_the_door_takes_it_in(self):
+        package = self.on_porch()
+        self.visit(door=True, name="sam")
+        row = relay.package_row(package)
+        self.assertEqual(("inside", "door"), (row["porch"], row["porch_by"]))
+        self.assertEqual([], self.told)
+
+    def test_gone_with_nobody_of_ours_and_no_door_is_asked_about_with_pictures(self):
+        package = self.on_porch()
+        self.visit(gone=True, look=False)
+        self.assertEqual("missing", relay.package_row(package)["porch"])
+        self.assertEqual("missing", self.told[0][0])
+        self.assertIn("missing_after", relay.package_frames_of(package))
+
+    def test_the_model_saying_gone_when_a_second_look_still_sees_it_is_no_alarm(self):
+        package = self.on_porch()
+        self.visit(gone=True, look=True)
+        self.assertEqual("porch", relay.package_row(package)["porch"])
+        self.assertEqual([], self.told)
+
+    def test_gone_with_a_named_face_is_somebody_of_ours(self):
+        package = self.on_porch()
+        self.visit(gone=True, look=False, name="alex")
+        self.assertEqual("porch", relay.package_row(package)["porch"])
+
+    def test_a_parcel_with_no_email_needs_both_the_model_s_questions_to_agree(self):
+        self.visit(appeared=True, look=False, confidence=0.95)
+        self.visit(appeared=True, look=True, confidence=0.3, event="v2")
+        self.visit(appeared=True, look=True, confidence=0.95, door=True, event="v3")
+        self.assertEqual([], relay.package_rows())
+        self.visit(appeared=True, look=True, confidence=0.95, what="box", event="v4")
+        self.assertEqual([("camera", "camera_only", "porch")], [(p["source"], p["verdict"], p["porch"]) for p in relay.package_rows()])
+        self.assertEqual("camera_only", self.told[0][0])
+
+    def test_a_parcel_with_no_email_goes_to_the_one_thing_due_today(self):
+        due = self.mail("out_for_delivery", self.NOW - 3600, order="1", shop="Shop", now=self.NOW + 86400)
+        self.visit(appeared=True, look=True, confidence=0.95, what="box", event="v4")
+        self.assertEqual([(due, "delivered", "camera_only")], [(p["id"], p["stage"], p["verdict"]) for p in relay.package_rows()])
+
+    def test_the_email_that_follows_a_camera_only_parcel_takes_it_over(self):
+        self.visit(appeared=True, look=True, confidence=0.95, what="box", event="v4")
+        camera = relay.package_rows()[0]["id"]
+        package = self.mail("delivered", self.NOW + 300, order="1", shop="Amazon", now=self.NOW + 300)
+        relay.package_merge_camera(self.NOW + 300)
+        self.assertEqual(1, relay.package_row(camera)["deleted"])
+        self.assertEqual(("confirmed", "v4"), (relay.package_row(package)["verdict"], relay.package_row(package)["visit_event"]))
+
+    # Surprises
+
+    def test_a_surprise_is_masked_for_everyone_but_its_owner(self):
+        package = self.mail("shipped", order="1", shop="Jeweller", title="Ring", tracking="1Z", owner="sam")
+        relay.package_update(package, surprise=1)
+        row = relay.package_row(package)
+        kept = relay.package_json(row, "alex", "2026-10-29")
+        for leak in ("title", "shop", "tracking", "order_id", "nickname", "notes", "total", "url", "frames", "timeline"):
+            self.assertNotIn(leak, kept)
+        self.assertTrue(kept["masked"])
+        self.assertEqual("Ring", relay.package_json(row, "sam", "2026-10-29")["title"])
+
+    def test_a_phone_nobody_has_claimed_sees_every_surprise_masked(self):
+        package = self.mail("shipped", order="1", shop="Jeweller", owner="sam")
+        relay.package_update(package, surprise=1)
+        self.assertTrue(relay.package_json(relay.package_row(package), None, "2026-10-29")["masked"])
+
+    def test_someone_else_s_surprise_can_t_be_changed_or_looked_at(self):
+        package = self.mail("shipped", order="1", shop="Jeweller", owner="sam")
+        relay.package_update(package, surprise=1)
+        with self.assertRaises(relay.HTTPException):
+            relay.package_or_404(package, "alex")
+        self.assertEqual(package, relay.package_or_404(package, "sam")["id"])
+
+    def test_a_push_about_a_surprise_says_nothing_to_anyone_else(self):
+        package = self.mail("ordered", self.NOW - 86400, order="1", shop="Jeweller", title="Ring", owner="sam")
+        relay.package_update(package, surprise=1)
+        self.mail("out_for_delivery", self.NOW, order="1", shop="Jeweller", title="Ring", owner="sam")
+        event, full, masked_name, masked_body = self.told[-1]
+        self.assertEqual(("out_for_delivery", "Ring", ""), (event, full, masked_name))
+        self.assertNotIn("Ring", masked_body)
+        self.assertNotIn("Jeweller", masked_body)
+
+    def test_gift_season_hides_what_someone_orders_from_the_start(self):
+        relay.state_set(relay.PACKAGE_SETTINGS_KEY, {"hide_new": {"sam": True}})
+        self.assertEqual(1, relay.package_row(self.mail("ordered", order="1", shop="Shop", owner="sam"))["surprise"])
+        self.assertEqual(0, relay.package_row(self.mail("ordered", order="2", shop="Shop", owner="alex"))["surprise"])
+
+    def test_each_phone_is_told_only_what_it_may_know(self):
+        package = self.mail("shipped", order="1", title="Ring", owner="sam")
+        relay.package_update(package, surprise=1)
+        row = relay.package_row(package)
+
+        def write(c):
+            for device, person in (("sams", "sam"), ("alexs", "alex"), ("nobodys", None)):
+                c.execute("INSERT INTO devices (device_id, token) VALUES (?,?)", (device, device + "-token"))
+                if person:
+                    c.execute("INSERT INTO package_phones VALUES (?,?)", (device, person))
+            c.commit()
+
+        relay.with_db(write)
+        sent = {}
+        held = relay.deliver
+        relay.deliver = lambda token, title, body, data: (sent.update({token: body}), "sent")[1]
+        try:
+            self._held["package_send"](row, ("t", "Ring is here"), ("t", "A surprise is here"), {"package_name": "Ring"}, {"package_name": "", "package_masked": "1"})
+        finally:
+            relay.deliver = held
+        self.assertEqual({"sams-token": "Ring is here", "alexs-token": "A surprise is here", "nobodys-token": "A surprise is here"}, sent)
+
+    # What the clock brings
+
+    def test_still_on_the_porch_after_a_while_is_said_once_a_day(self):
+        package = self.on_porch()
+        relay.package_nags(self.NOW)
+        self.assertEqual([], self.told)
+        relay.package_nags(self.NOW + 3 * 3600)
+        relay.package_nags(self.NOW + 3 * 3600 + 60)
+        self.assertEqual(["porch"], [t[0] for t in self.told])
+        self.assertEqual("porch", relay.package_row(package)["porch"])
+
+    def test_the_door_opening_after_it_came_stops_the_reminder(self):
+        package = self.on_porch()
+        self.door_opened(self.NOW - 60)
+        relay.package_nags(self.NOW + 3 * 3600)
+        self.assertEqual("inside", relay.package_row(package)["porch"])
+        self.assertEqual([], self.told)
+
+    def test_rain_coming_for_a_parcel_outside_is_said_once(self):
+        self.on_porch()
+        relay.state_set(relay.HOME_KEY, {"lat": 1.0, "lng": 2.0})
+        held = relay.package_forecast_rain
+        relay.package_forecast_rain = lambda home, now: 80
+        relay._package_status.clear()
+        try:
+            relay.package_nags(self.NOW)
+            relay._package_status.clear()
+            relay.package_nags(self.NOW + 60)
+        finally:
+            relay.package_forecast_rain = held
+            relay._package_status.clear()
+        self.assertEqual(["rain"], [t[0] for t in self.told])
+
+    def test_a_promised_day_gone_by_is_said_once(self):
+        self.mail("shipped", self.NOW - 3 * 86400, order="1", shop="Amazon", carrier="amazon", expected={"from": "2026-10-27", "to": "2026-10-27"})
+        self.told.clear()
+        relay.package_nags(self.NOW)
+        relay.package_nags(self.NOW + 60)
+        self.assertEqual(["late"], [t[0] for t in self.told])
+
+    def test_the_day_after_it_was_due_is_no_news_yet(self):
+        package = self.mail("shipped", self.NOW - 86400, order="1", shop="Amazon", carrier="amazon", expected={"from": "2026-10-28", "to": "2026-10-28"})
+        self.assertFalse(relay.package_late(relay.package_row(package), "2026-10-29"))
+        self.assertTrue(relay.package_late(relay.package_row(package), "2026-10-30"))
+
+    def test_a_week_past_its_day_it_comes_off_the_list(self):
+        package = self.mail("shipped", self.NOW - 86400, order="1", shop="Amazon", carrier="amazon", expected={"from": "2026-10-20", "to": "2026-10-20"})
+        relay.package_nags(self.NOW)
+        self.assertEqual(relay.PACKAGE_QUIET, relay.package_row(package)["archived"])
+
+    def test_a_shop_that_stopped_writing_isn_t_called_late(self):
+        package = self.mail("out_for_delivery", self.NOW - 2 * 86400, order="1", shop="lululemon", expected={"from": "2026-10-27", "to": "2026-10-27"})
+        relay.package_nags(self.NOW)
+        self.assertEqual([], [t for t in self.told if t[0] == "late"])
+        relay.package_nags(self.NOW + 5 * 86400)
+        self.assertEqual(relay.PACKAGE_QUIET, relay.package_row(package)["archived"])
+
+    def test_the_first_round_tells_of_nothing_already_so(self):
+        relay.state_set(relay.PACKAGE_NAGS_KEY, None)
+        package = self.mail("shipped", self.NOW - 9 * 86400, order="9", shop="Amazon", carrier="amazon", expected={"from": "2026-10-22", "to": "2026-10-22"}, now=self.NOW)
+        out = self.on_porch()
+        relay.package_update(out, porch_at=self.NOW - 3 * 3600)
+        self.told.clear()
+        relay.package_nags(self.NOW)
+        self.assertEqual([], self.told)
+        self.assertTrue(relay.package_late(relay.package_row(package), "2026-10-29"))
+        relay.package_update(package, expected_to="2026-10-27")
+        relay.package_nags(self.NOW + 60)
+        self.assertEqual(["late"], [t[0] for t in self.told])
+
+    def test_usps_saying_when_to_expect_it_is_no_promise_broken(self):
+        package = self.mail("expected", self.NOW - 2 * 86400, tracking="94001", carrier="usps", expected={"from": "2026-10-27", "to": "2026-10-27"})
+        relay.package_nags(self.NOW)
+        self.assertEqual([], [t for t in self.told if t[0] == "late"])
+        self.assertFalse(relay.package_late(relay.package_row(package), "2026-10-29"))
+        relay.package_nags(self.NOW + 5 * 86400)
+        self.assertEqual(relay.PACKAGE_QUIET, relay.package_row(package)["archived"])
+
+    def test_a_shop_that_never_writes_again_doesn_t_stay_on_its_way_for_ever(self):
+        package = self.mail("shipped", self.NOW - 30 * 86400, order="1", shop="Everlane")
+        relay.package_nags(self.NOW)
+        self.assertEqual(relay.PACKAGE_QUIET, relay.package_row(package)["archived"])
+
+    def test_a_surprise_that_goes_into_another_s_box_keeps_the_box_a_surprise(self):
+        gift = self.mail("ordered", self.NOW - 3 * 86400, order="1", title="Toys, Games", shop="Amazon", carrier="amazon", total=40.0)
+        relay.package_update(gift, surprise=1, nickname="For the birthday", notes="Hide it")
+        plain = self.mail("ordered", self.NOW - 2 * 86400, order="2", title="Coffee", shop="Amazon", carrier="amazon", total=9.0)
+        self.mail("shipped", self.NOW - 86400, order="2", title="Toys, Games, Coffee", shop="Amazon", carrier="amazon")
+        kept = relay.package_row(plain)
+        self.assertEqual(plain, relay.package_row(gift)["merged_into"])
+        self.assertEqual(1, kept["surprise"])
+        self.assertEqual("For the birthday", kept["nickname"])
+        self.assertTrue(relay.package_json(kept, "alex", "2026-10-29")["masked"])
+
+    def test_reading_an_email_again_leaves_what_someone_said(self):
+        package = self.mail("delivered", self.NOW - 2 * 86400, order="1", shop="Amazon", carrier="amazon", message="d1")
+        self.mail("return", self.NOW - 86400, order="1", shop="Amazon", carrier="amazon", message="r1")
+        self.assertEqual("started", relay.package_row(package)["return_state"])
+        relay.package_update(package, return_state="none", return_by=None)
+        self.mail("return", self.NOW - 86400, order="1", shop="Amazon", carrier="amazon", message="r1")
+        self.mail("delivered", self.NOW - 2 * 86400, order="1", shop="Amazon", carrier="amazon", message="d1")
+        row = relay.package_row(package)
+        self.assertEqual("none", row["return_state"])
+        self.assertIsNone(row["return_by"])
+
+    def test_a_forgotten_package_stays_forgotten_when_its_title_is_read_differently(self):
+        package = self.mail("delivered", self.NOW - 86400, order="1", title="Old title", shop="Amazon", carrier="amazon", message="d1")
+        relay.package_update(package, deleted=1)
+        self.assertEqual(package, self.mail("delivered", self.NOW - 86400, order="1", title="New title", shop="Amazon", carrier="amazon", message="d1"))
+        self.assertEqual(0, len(relay.package_rows("deleted=0")))
+
+    def test_a_forgotten_shop_parcel_doesn_t_swallow_the_shop_s_next_one(self):
+        first = self.mail("shipped", self.NOW - 86400, shop="Everlane")
+        relay.package_update(first, deleted=1)
+        second = self.mail("shipped", self.NOW - 3600, shop="Everlane")
+        self.assertNotEqual(first, second)
+        self.assertEqual(0, relay.package_row(second)["deleted"])
+
+    def test_a_someone_s_no_outranks_a_camera_parcel_found_later(self):
+        package = self.mail("delivered", self.NOW - 3600, order="1", shop="Shop")
+        relay.package_update(package, verdict="not_seen", verdict_by="sam", porch=None)
+        relay.with_db(lambda c: (c.execute("INSERT INTO packages (id, owner, source, stage, stage_at, created, updated, delivered_at, verdict, porch, porch_at, visit_event) VALUES ('cam','','camera','delivered',?,?,?,?,'camera_only','porch',?,'e1')", (self.NOW - 3700,) * 5), c.commit()))
+        relay.package_merge_camera(self.NOW)
+        row = relay.package_row(package)
+        self.assertEqual("not_seen", row["verdict"])
+        self.assertIsNone(row["porch"])
+        self.assertEqual(1, relay.package_row("cam")["deleted"])
+
+    def test_an_old_failed_attempt_read_after_the_delivery_is_no_problem(self):
+        package = self.mail("delivered", self.NOW - 3600, tracking="1Z1", carrier="ups")
+        self.mail("attempted", self.NOW - 86400, tracking="1Z1", carrier="ups")
+        self.assertIsNone(relay.package_row(package)["problem"])
+        self.mail("attempted", self.NOW - 60, tracking="1Z1", carrier="ups")
+        self.assertEqual("attempted", relay.package_row(package)["problem"])
+
+    def test_a_return_with_no_delivery_email_isn_t_on_the_porch_or_asked_of_the_camera(self):
+        relay.package_camera_on = lambda: True
+        package = self.mail("shipped", self.NOW - 3 * 86400, order="1", shop="Amazon", carrier="amazon")
+        self.mail("return", self.NOW - 3600, order="1", shop="Amazon", carrier="amazon")
+        row = relay.package_row(package)
+        self.assertEqual("delivered", row["stage"])
+        self.assertIsNone(row["porch"])
+        self.assertIsNone(row["verdict"])
+        self.assertEqual([], relay.package_rows("delivered_at IS NOT NULL AND verdict IS NULL AND verdict_by IS NULL AND deleted=0"))
+
+    def test_money_back_for_what_never_left_is_a_cancelled_order(self):
+        package = self.mail("ordered", self.NOW - 3 * 86400, order="1", shop="Amazon", carrier="amazon")
+        self.mail("refund", self.NOW - 3600, order="1", shop="Amazon", carrier="amazon")
+        row = relay.package_row(package)
+        self.assertEqual("ordered", row["stage"])
+        self.assertTrue(row["archived"])
+        self.assertEqual("refunded", row["return_state"])
+
+    def test_one_parcel_left_out_is_reminded_of_once_across_midnight(self):
+        package = self.on_porch()
+        relay.package_update(package, porch_at=self.NOW - 3 * 3600)
+        self.told.clear()
+        relay.package_nags(self.NOW)
+        relay.package_nags(self.NOW + 3 * 3600)
+        relay.package_nags(self.NOW + 12 * 3600)
+        self.assertEqual(["porch"], [t[0] for t in self.told if t[0] == "porch"])
+
+    def test_news_brings_back_what_went_quiet_but_not_what_someone_archived(self):
+        quiet = self.mail("shipped", self.NOW - 30 * 86400, order="1", shop="Everlane", tracking="1Z1")
+        relay.package_nags(self.NOW)
+        self.assertEqual(relay.PACKAGE_QUIET, relay.package_row(quiet)["archived"])
+        self.mail("delivered", self.NOW - 60, order="1", shop="Everlane", tracking="1Z1")
+        self.assertEqual(0, relay.package_row(quiet)["archived"])
+        mine = self.mail("shipped", self.NOW - 86400, tracking="1Z2")
+        relay.package_update(mine, archived=1)
+        self.mail("delivered", self.NOW - 60, tracking="1Z2")
+        self.assertEqual(1, relay.package_row(mine)["archived"])
+
+    def test_a_shop_s_promised_day_is_counted_from_the_day_not_from_the_last_email(self):
+        package = self.mail("shipped", self.NOW - 10 * 86400, order="1", shop="Everlane", expected={"from": "2026-10-28", "to": "2026-10-28"})
+        self.assertFalse(relay.package_gone_quiet(relay.package_row(package), self.NOW, "2026-10-29"))
+        self.assertTrue(relay.package_gone_quiet(relay.package_row(package), self.NOW, "2026-11-01"))
+
+    def test_nobody_at_the_door_is_news_once_it_can_be_said(self):
+        relay.package_camera_on = lambda: True
+        self.camera()
+        package = self.mail("delivered", self.NOW - 60, order="1", shop="Amazon", carrier="amazon", now=self.NOW)
+        self.assertIsNone(relay.package_row(package)["verdict"])
+        self.told.clear()
+        later = self.NOW + relay.PACKAGE_AFTER_EMAIL + 60
+        relay.package_judge_pending(later)
+        relay.package_judge_pending(later + 60)
+        self.assertEqual("not_seen", relay.package_row(package)["verdict"])
+        self.assertEqual(["delivered"], [t[0] for t in self.told])
+
+    def test_a_person_s_mark_clears_the_problem_and_skips_the_porch_watch(self):
+        relay.require_frigate_session = lambda request: "admin"
+        package = self.mail("shipped", self.NOW - 86400, tracking="1Z1", carrier="ups")
+        self.mail("attempted", self.NOW - 3600, tracking="1Z1", carrier="ups")
+        relay.patch_package(package, types.SimpleNamespace(nickname=None, notes=None, owner=None, surprise=None, pinned=None, archived=None, return_by=None, return_state=None, porch=None, camera=None, stage="delivered"), object(), None)
+        row = relay.package_row(package)
+        self.assertIsNone(row["problem"])
+        self.assertEqual("inside", row["porch"])
+
+    def test_only_a_parcel_s_owner_can_hide_it(self):
+        relay.require_frigate_session = lambda request: "admin"
+        relay.with_db(lambda c: (c.execute("INSERT INTO package_phones VALUES ('alex-phone','alex')"), c.commit()))
+        package = self.mail("shipped", self.NOW - 86400, tracking="1Z1", owner="sam")
+        change = types.SimpleNamespace(nickname=None, notes=None, owner=None, surprise=True, pinned=None, archived=None, return_by=None, return_state=None, porch=None, camera=None, stage=None)
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.patch_package(package, change, object(), "alex-phone")
+        self.assertEqual(403, refused.exception.status_code)
+
+    def test_a_surprise_nobody_owns_isn_t_lost_to_everyone(self):
+        package = self.mail("shipped", self.NOW - 86400, tracking="1Z1", owner="")
+        relay.package_update(package, surprise=1)
+        self.assertTrue(relay.package_may_see(relay.package_row(package), None))
+
+    def test_a_return_window_must_be_a_date(self):
+        relay.require_frigate_session = lambda request: "admin"
+        package = self.mail("delivered", self.NOW - 86400, tracking="1Z1")
+        change = types.SimpleNamespace(nickname=None, notes=None, owner=None, surprise=None, pinned=None, archived=None, return_by="soon", return_state=None, porch=None, camera=None, stage=None)
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.patch_package(package, change, object(), None)
+        self.assertEqual(400, refused.exception.status_code)
+
+    def test_the_first_round_holds_until_every_mailbox_has_been_read(self):
+        relay.amazon_on = lambda: True
+        relay.state_set(relay.PACKAGE_NAGS_KEY, None)
+        relay.state_set(relay.PACKAGE_SYNCED_KEY, {"at": self.NOW, "emails": 0, "failed": ["sam"]})
+        relay.package_first_round([], self.NOW, "2026-10-29")
+        self.assertFalse(relay.state_get(relay.PACKAGE_NAGS_KEY))
+        relay.state_set(relay.PACKAGE_SYNCED_KEY, {"at": self.NOW, "emails": 9, "failed": []})
+        relay.package_first_round([], self.NOW, "2026-10-29")
+        self.assertTrue(relay.state_get(relay.PACKAGE_NAGS_KEY))
+
+    def test_a_visit_the_model_couldn_t_answer_for_is_asked_again(self):
+        self.camera(self.event(self.NOW - 400, self.NOW - 300, "e1"), answers=[])
+        relay.package_watch_door(self.NOW)
+        self.assertIsNone(relay.package_visit_row("e1")["appeared"])
+        self.answers = [dict(self.NOTHING)]
+        self.assertEqual(1, relay.package_retry_visits(self.NOW + 400))
+        self.assertEqual(0, relay.package_visit_row("e1")["appeared"])
+
+    def test_a_visit_a_delivery_asked_about_first_still_means_what_it_means(self):
+        out = self.on_porch()
+        at = float(relay.package_row(out)["delivered_at"])
+        self.door_opened(at + 900)
+        self.camera(self.event(at + 800, at + 950, "e1"), answers=[dict(self.NOTHING)])
+        relay.package_check_visit({"id": "e1", "start": at + 800, "end": at + 950, "name": None})
+        relay.state_set(relay.PACKAGE_VISITS_KEY, at + 700)
+        relay.package_watch_door(at + 2000)
+        self.assertEqual("inside", relay.package_row(out)["porch"])
+
+    def test_a_late_december_email_s_date_with_no_year_is_next_january(self):
+        parsed = relay.parse_package_email("UPS <mcinfo@ups.com>", "Your package is on the way", "Tracking number 1Z999AA10123456784\nExpected delivery 1/2", 1798502400.0, relay.timezone.utc)
+        self.assertEqual("2027-01-02", parsed["expected"]["from"])
+
+    def test_a_return_window_closing_is_said_three_days_before(self):
+        package = self.mail("delivered", self.NOW - 86400, order="1", shop="Shop")
+        relay.package_update(package, return_by="2026-11-01")
+        self.told.clear()
+        relay.package_nags(self.NOW)
+        relay.package_nags(self.NOW + 60)
+        self.assertEqual(["return_closing"], [t[0] for t in self.told])
+
+    def test_a_push_the_household_turned_off_doesn_t_go(self):
+        relay.state_set(relay.PACKAGE_SETTINGS_KEY, {"notify": {"delivered": False}})
+        self.mail("delivered", self.NOW - 60, order="1", shop="Shop")
+        self.assertEqual([], self.told)
+
+    def test_the_morning_says_what_is_due_and_that_nobody_is_home(self):
+        self.mail("out_for_delivery", self.NOW, order="1", shop="Shop")
+        sent = []
+        held = relay.away_since
+        relay.away_since = lambda: 1.0
+        try:
+            relay.package_morning(relay.package_rows(), self.NOW, push=lambda package, plain, masked, plain_data, masked_data: sent.append((plain, plain_data)))
+        finally:
+            relay.away_since = held
+        self.assertEqual(("1", "1", "Nobody's home right now"), (sent[0][1]["package_count"], sent[0][1]["package_away"], sent[0][0][1]))
+
+    # A tracking service
+
+    class Answer:
+        def __init__(self, body, status=200):
+            self._body, self.status_code = body, status
+
+        def json(self):
+            return self._body
+
+    def test_nothing_is_asked_of_a_tracking_service_without_a_key(self):
+        relay.PACKAGE_17TRACK_KEY = ""
+        self.assertEqual(0, relay.package_tracker_poll(self.NOW, post=lambda path, body: self.fail("asked")))
+
+    def test_a_tracking_service_adds_its_scans_and_moves_the_parcel_along(self):
+        relay.PACKAGE_17TRACK_KEY = "key"
+        package = self.mail("shipped", self.NOW - 86400, tracking="1Z999AA10123456784", carrier="ups", shop="Shop")
+        amazon = self.mail("shipped", self.NOW - 86400, tracking="TBA123456789012", carrier="amazon", shop="Amazon")
+        asked = []
+
+        def post(path, body):
+            asked.append((path, [b["number"] for b in body]))
+            if path == "register":
+                return self.Answer({"code": 0})
+            return self.Answer({"data": {"accepted": [{"number": "1Z999AA10123456784", "track_info": {
+                "latest_status": {"status": "OutForDelivery"},
+                "time_metrics": {"estimated_delivery_date": {"from": "2026-10-29T08:00:00", "to": "2026-10-29T20:00:00"}},
+                "tracking": {"providers": [{"events": [{"time_iso": "2026-10-29T08:12:00Z", "description": "Out for delivery", "location": "Oakland CA"}]}]},
+            }}]}})
+
+        self.assertEqual(1, relay.package_tracker_poll(self.NOW, post=post))
+        self.assertEqual([("register", ["1Z999AA10123456784"]), ("gettrackinfo", ["1Z999AA10123456784"])], asked)
+        row = relay.package_row(package)
+        self.assertEqual(("out_for_delivery", "2026-10-29", 1), (row["stage"], row["expected_to"], row["tracker_on"]))
+        self.assertEqual("shipped", relay.package_row(amazon)["stage"])
+        scans = relay.with_db(lambda c: c.execute("SELECT detail FROM package_events WHERE kind='scan'").fetchall())
+        self.assertEqual([("Out for delivery · Oakland CA",)], scans)
+        relay.package_tracker_poll(self.NOW + 1800, post=post)
+        self.assertEqual(1, sum(1 for path, _ in asked if path == "register"))
+
+    def test_a_tracking_service_s_refusal_leaves_things_as_they_were(self):
+        relay.PACKAGE_17TRACK_KEY = "key"
+        package = self.mail("shipped", self.NOW - 86400, tracking="1Z999AA10123456784", carrier="ups", shop="Shop")
+        self.assertEqual(0, relay.package_tracker_poll(self.NOW, post=lambda path, body: self.Answer({}, status=429)))
+        self.assertEqual("shipped", relay.package_row(package)["stage"])
+
+    def test_the_snapshot_carries_each_package_with_its_timeline(self):
+        package = self.mail("delivered", self.NOW - 60, order="113-0000000-0000001", shop="Amazon", carrier="amazon", title="Socks")
+        held = relay.away_since
+        relay.away_since = lambda: None
+        try:
+            snapshot = relay.packages_snapshot("sam", self.NOW)
+        finally:
+            relay.away_since = held
+        shown = snapshot["packages"][0]
+        self.assertEqual((package, "delivered", "https://www.amazon.com/gp/your-account/order-details?orderID=113-0000000-0000001"), (shown["id"], shown["stage"], shown["url"]))
+        self.assertEqual(["delivered"], [e["kind"] for e in shown["timeline"]])
+        self.assertEqual(["alex", "sam"], snapshot["people"])
 
 
 if __name__ == "__main__":

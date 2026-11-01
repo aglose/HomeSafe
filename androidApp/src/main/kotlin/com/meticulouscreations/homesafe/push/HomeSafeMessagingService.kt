@@ -8,12 +8,14 @@ import com.meticulouscreations.homesafe.data.AlertNotificationPoster
 import com.meticulouscreations.homesafe.data.BudgetNotificationPoster
 import com.meticulouscreations.homesafe.data.NotificationMuteStore
 import com.meticulouscreations.homesafe.domain.model.DoorAlert
+import com.meticulouscreations.homesafe.domain.model.PackageAlert
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.NestOutageAlert
 import com.meticulouscreations.homesafe.domain.model.ParkingAlert
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlert
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
+import com.meticulouscreations.homesafe.navigation.PackageDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
 import com.meticulouscreations.homesafe.shared.R
@@ -45,6 +47,7 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         if (NotificationMuteStore.isMuted(applicationContext)) return
         if (BudgetAlert.isBudget { message.data[it] }) return showBudgetAlert(message)
         if (DoorAlert.isDoor { message.data[it] }) return showDoorAlert(message)
+        if (PackageAlert.isPackage { message.data[it] }) return showPackageAlert(message)
         if (NestOutageAlert.isNestOutage { message.data[it] }) return showNestOutageAlert(message)
         if (ParkingAlert.isParking { message.data[it] }) return showParkingAlert(message)
         val title = message.data["title"] ?: message.notification?.title ?: return
@@ -117,6 +120,73 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         )
         AlertNotificationPoster.ensureChannels(this)
         runBlocking { AlertNotificationPoster.show(applicationContext, notification) }
+    }
+
+    /**
+     * Something happened to a parcel (see docs/packages.md). Worded here from the push's data, so
+     * in the phone's own language; the relay's English only for an event this build doesn't know.
+     * A surprise this phone mustn't know about comes with no name, and is worded as a surprise. A
+     * tap opens the parcel (`homesafe://packages`).
+     */
+    private fun showPackageAlert(message: RemoteMessage) {
+        val alert = PackageAlert.from { message.data[it] }
+        val title = alert?.let { getString(packageTitle(it)) } ?: message.data["title"] ?: return
+        val body = alert?.let { packageBody(it) } ?: message.data["body"].orEmpty()
+        val notification = AlertNotification(
+            id = message.data["notif_id"] ?: message.messageId ?: title,
+            title = title,
+            body = body,
+            parcel = PackageDeepLink(alert?.packageId?.takeIf { it.isNotBlank() } ?: message.data[PackageAlert.KEY_PACKAGE]?.takeIf { it.isNotBlank() }),
+        )
+        AlertNotificationPoster.ensureChannels(this)
+        runBlocking { AlertNotificationPoster.show(applicationContext, notification) }
+    }
+
+    private fun packageTitle(alert: PackageAlert): Int = when (alert.event) {
+        PackageAlert.Event.SHIPPED -> R.string.notif_package_shipped_title
+        PackageAlert.Event.OUT_FOR_DELIVERY -> R.string.notif_package_out_title
+        PackageAlert.Event.DELIVERED -> R.string.notif_package_delivered_title
+        PackageAlert.Event.PORCH -> R.string.notif_package_porch_title
+        PackageAlert.Event.RAIN -> R.string.notif_package_rain_title
+        PackageAlert.Event.MISSING -> R.string.notif_package_missing_title
+        PackageAlert.Event.CAMERA_ONLY -> R.string.notif_package_camera_title
+        PackageAlert.Event.ATTEMPTED -> R.string.notif_package_attempted_title
+        PackageAlert.Event.PROBLEM -> R.string.notif_package_problem_title
+        PackageAlert.Event.SIGNATURE -> R.string.notif_package_signature_title
+        PackageAlert.Event.LATE -> R.string.notif_package_late_title
+        PackageAlert.Event.RETURN_CLOSING -> R.string.notif_package_return_title
+        PackageAlert.Event.MORNING -> R.string.notif_package_morning_title
+    }
+
+    private fun packageBody(alert: PackageAlert): String {
+        if (alert.event == PackageAlert.Event.MORNING) {
+            val count = resources.getQuantityString(R.plurals.notif_package_morning_count, alert.count, alert.count)
+            return if (alert.away) getString(R.string.notif_package_morning_away, count) else count
+        }
+        val name = alert.name ?: getString(if (alert.masked) R.string.notif_package_surprise else R.string.notif_package_unnamed)
+        return when (alert.event) {
+            PackageAlert.Event.SHIPPED -> getString(R.string.notif_package_shipped_body, name)
+            PackageAlert.Event.OUT_FOR_DELIVERY -> getString(R.string.notif_package_out_body, name)
+            PackageAlert.Event.DELIVERED -> getString(
+                when (alert.verdict) {
+                    "confirmed" -> R.string.notif_package_delivered_confirmed
+                    "seen" -> R.string.notif_package_delivered_seen
+                    "not_seen" -> R.string.notif_package_delivered_not_seen
+                    else -> R.string.notif_package_delivered_body
+                },
+                name,
+            )
+            PackageAlert.Event.PORCH -> getString(R.string.notif_package_porch_body, name)
+            PackageAlert.Event.RAIN -> getString(R.string.notif_package_rain_body, name)
+            PackageAlert.Event.MISSING -> getString(R.string.notif_package_missing_body, name)
+            PackageAlert.Event.CAMERA_ONLY -> getString(R.string.notif_package_camera_body)
+            PackageAlert.Event.ATTEMPTED -> getString(R.string.notif_package_attempted_body, name)
+            PackageAlert.Event.PROBLEM -> getString(R.string.notif_package_problem_body, name)
+            PackageAlert.Event.SIGNATURE -> getString(R.string.notif_package_signature_body, name)
+            PackageAlert.Event.LATE -> getString(R.string.notif_package_late_body, name)
+            PackageAlert.Event.RETURN_CLOSING -> getString(R.string.notif_package_return_body, name)
+            PackageAlert.Event.MORNING -> ""
+        }
     }
 
     /**

@@ -103,6 +103,8 @@ import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
+import com.meticulouscreations.homesafe.navigation.PackageDeepLink
+import com.meticulouscreations.homesafe.navigation.PackageDeepLinks
 import com.meticulouscreations.homesafe.navigation.ShellCommand
 import com.meticulouscreations.homesafe.navigation.ShellCommands
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
@@ -159,7 +161,7 @@ import org.jetbrains.compose.resources.stringResource
  * about a tab switch Compose asked for; the Compose-drawn nav needs nothing more than the state.
  */
 /** The apps that live inside PercySafe beside the cameras, each opened from the drawer over the whole shell. */
-enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS, CHARGING }
+enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS, PACKAGES, CHARGING }
 
 @Stable
 class ShellNavigation(
@@ -210,17 +212,18 @@ class ShellNavigation(
         if (sidebar == appsInSidebar) return
         val requestedFinanceTab = financeTab
         val requestedWeatherLink = weatherLink
+        val requestedPackage = packageLink
         if (sidebar) {
             drawerOpen = false
             val open = app.takeIf { appOpen }
             closeApp()
             appsInSidebar = true
-            if (open != null) openApp(open, Offset.Zero, selectedTab, requestedFinanceTab, requestedWeatherLink)
+            if (open != null) openApp(open, Offset.Zero, selectedTab, requestedFinanceTab, requestedWeatherLink, requestedPackage)
         } else {
             val open = sidebarApp
             sidebarApp = null
             appsInSidebar = false
-            if (open != null) openApp(open, Offset.Zero, selectedTab, requestedFinanceTab, requestedWeatherLink)
+            if (open != null) openApp(open, Offset.Zero, selectedTab, requestedFinanceTab, requestedWeatherLink, requestedPackage)
         }
     }
 
@@ -276,10 +279,15 @@ class ShellNavigation(
     var weatherLink by mutableStateOf<WeatherDeepLink?>(null)
         private set
 
-    fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null, weatherLink: WeatherDeepLink? = null) {
+    /** The parcel a notification asked the packages app to open (see [openPackagesFromNotifications]), until the app has turned to it. */
+    var packageLink by mutableStateOf<PackageDeepLink?>(null)
+        private set
+
+    fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null, weatherLink: WeatherDeepLink? = null, packageLink: PackageDeepLink? = null) {
         app = which
         this.financeTab = financeTab.takeIf { which == InnerApp.FINANCE }
         this.weatherLink = weatherLink.takeIf { which == InnerApp.WEATHER }
+        this.packageLink = packageLink.takeIf { which == InnerApp.PACKAGES }
         drawerOpen = false
         // The app is a destination of its own in the sidebar: it reads what it was asked to show
         // ([financeTab], [weatherLink]) from here when it comes up.
@@ -303,10 +311,16 @@ class ShellNavigation(
         weatherLink = null
     }
 
+    /** The packages app has turned to the parcel it was asked for. */
+    fun onPackageLinkShown() {
+        packageLink = null
+    }
+
     fun closeApp() {
         appOpen = false
         financeTab = null
         weatherLink = null
+        packageLink = null
         // The shell comes back as the app starts closing — and if a tab switch takes the
         // overlay away before it can say so itself (a notification tap), it still comes back.
         appCovering = false
@@ -518,6 +532,19 @@ class ShellNavigation(
     }
 
     /**
+     * Opens the packages app whenever a package notification's tap asks for it, for as long as the
+     * caller runs, on the parcel it was about; as [openWeatherFromNotifications] does.
+     */
+    suspend fun openPackagesFromNotifications() {
+        PackageDeepLinks.pending.filterNotNull().collect { link ->
+            val host = selectedTab
+            openApp(InnerApp.PACKAGES, Offset.Zero, host, packageLink = link)
+            if (!appsInSidebar) onTabSelected(host)
+            PackageDeepLinks.consume(link)
+        }
+    }
+
+    /**
      * Opens the fitness app on notes shared into PercySafe from another app, for as long as the
      * caller runs, handing the text to [onNotes] (the import page reads it from there). Consumed
      * only here, once the shell exists, for the reason [openMomentsFromNotifications] does.
@@ -569,6 +596,7 @@ fun FrigateAppShell() {
     LaunchedEffect(nav) { nav.openDoorsFromNotifications() }
     LaunchedEffect(nav) { nav.openWeatherFromNotifications() }
     LaunchedEffect(nav) { nav.openFinanceFromNotifications() }
+    LaunchedEffect(nav) { nav.openPackagesFromNotifications() }
     AssistantScreenContext { nav.assistantContext() }
 
     // Laid out from the window's answer straight away; the navigation catches up after the frame.

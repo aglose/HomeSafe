@@ -66,6 +66,9 @@ object AlertNotificationPoster {
      */
     const val DOORS_CHANNEL_ID = "doors"
 
+    /** A parcel moving, arriving, or left out too long, so the deliveries can be turned down without the cameras. */
+    const val PACKAGES_CHANNEL_ID = "packages"
+
     /**
      * A household car parked on the street that must move before the signs say it can't stay
      * (docs/parking.md), so these can be turned up or down apart from the cameras. Heads-up, and
@@ -90,6 +93,7 @@ object AlertNotificationPoster {
      */
     private val alertGroup = NotificationGroupSummary("detections", CHANNEL_ID, R.string.notif_group_cameras)
     private val doorsGroup = NotificationGroupSummary("doors", DOORS_CHANNEL_ID, R.string.notif_group_doors)
+    private val packagesGroup = NotificationGroupSummary("packages", PACKAGES_CHANNEL_ID, R.string.notif_group_packages)
     private val parkingGroup = NotificationGroupSummary("parking", PARKING_CHANNEL_ID, R.string.notif_group_parking)
     private val summaryGroup = NotificationGroupSummary("summaries", SUMMARY_CHANNEL_ID, R.string.notif_group_summaries)
 
@@ -149,6 +153,12 @@ object AlertNotificationPoster {
             NotificationManager.IMPORTANCE_HIGH,
         )
         manager.createSilentChannel(
+            PACKAGES_CHANNEL_ID,
+            context.getString(R.string.notif_channel_packages_name),
+            context.getString(R.string.notif_channel_packages_description),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        manager.createSilentChannel(
             PARKING_CHANNEL_ID,
             context.getString(R.string.notif_channel_parking_name),
             context.getString(R.string.notif_channel_parking_description),
@@ -194,8 +204,8 @@ object AlertNotificationPoster {
         }
         if (dropped) return@withContext
         val postedAt = if (!isUpdate) {
-            // A visit keeps the time it began; each summary replaces the last under the one id, but is news of its own time.
-            if (notification.summary) now else remembered ?: now
+            // A visit keeps the time it began; each summary or parcel's news replaces the last under the one id, but is news of its own time.
+            if (notification.summary || notification.parcel != null) now else remembered ?: now
         } else {
             val showing = active(context, notification.id)
             when {
@@ -245,6 +255,8 @@ object AlertNotificationPoster {
 
         notification.door != null -> NotificationGlyph.DOOR
 
+        notification.parcel != null -> NotificationGlyph.PARCEL
+
         notification.parking -> NotificationGlyph.CAR
 
         else -> when (notification.subject) {
@@ -259,6 +271,7 @@ object AlertNotificationPoster {
     private fun channelFor(notification: AlertNotification): String = when {
         notification.urgent -> AWAY_CHANNEL_ID
         notification.door != null -> DOORS_CHANNEL_ID
+        notification.parcel != null -> PACKAGES_CHANNEL_ID
         notification.parking -> PARKING_CHANNEL_ID
         else -> CHANNEL_ID
     }
@@ -266,6 +279,7 @@ object AlertNotificationPoster {
     /** The doors' own group for a door that opened while someone was home, the parking's for a car to move; every other alert under the cameras'. */
     private fun groupFor(notification: AlertNotification): NotificationGroupSummary = when {
         !notification.urgent && notification.door != null -> doorsGroup
+        notification.parcel != null -> packagesGroup
         notification.parking -> parkingGroup
         else -> alertGroup
     }
@@ -332,7 +346,7 @@ object AlertNotificationPoster {
      */
     private fun openIntent(context: Context, notification: AlertNotification): PendingIntent? {
         val launch = context.appLaunchIntent() ?: return null
-        val uri = notification.target?.toUri() ?: notification.door?.toUri() ?: notification.parkingMap?.toUri()
+        val uri = notification.target?.toUri() ?: notification.door?.toUri() ?: notification.parcel?.toUri() ?: notification.parkingMap?.toUri()
         val intent = uri?.let { Intent(Intent.ACTION_VIEW, it.toUri()).setComponent(launch.component) } ?: launch
         return PendingIntent.getActivity(context, notification.id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
@@ -453,6 +467,7 @@ object AlertNotificationPoster {
             notification.summary -> summaryGroup.post(context, NotificationGlyph.SUMMARY, ACCENT_COLOR)
             groupFor(notification) === doorsGroup -> doorsGroup.post(context, NotificationGlyph.DOOR, ACCENT_COLOR, channel = channelFor(notification))
             groupFor(notification) === parkingGroup -> parkingGroup.post(context, NotificationGlyph.CAR, ACCENT_COLOR, channel = channelFor(notification))
+            groupFor(notification) === packagesGroup -> packagesGroup.post(context, NotificationGlyph.PARCEL, ACCENT_COLOR, channel = channelFor(notification))
             else -> alertGroup.post(context, NotificationGlyph.CAMERA, ACCENT_COLOR, channel = channelFor(notification))
         }
     }

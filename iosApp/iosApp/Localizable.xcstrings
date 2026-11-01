@@ -81,6 +81,16 @@
         }
       }
     },
+    "Packages" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paquetes"
+          }
+        }
+      }
+    },
     "Settings" : {
       "localizations" : {
         "es" : {

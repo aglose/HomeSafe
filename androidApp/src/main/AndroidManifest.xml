@@ -83,6 +83,15 @@
 
                 <data android:scheme="homesafe" android:host="weather" />
             </intent-filter>
+            <!-- homesafe://packages?package=…: the packages app, on the parcel a notification was about (PackageDeepLink.kt). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="homesafe" android:host="packages" />
+            </intent-filter>
             <!-- Plain text shared from another app (a note, from a notes app's Share menu): workout
                  notes, which open on the fitness app's import page to be looked over before
                  anything is saved (FitnessShare.kt). The label is what the share sheet shows. -->

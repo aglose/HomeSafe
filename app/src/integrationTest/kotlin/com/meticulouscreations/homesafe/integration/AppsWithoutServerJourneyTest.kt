@@ -48,6 +48,8 @@ class AppsWithoutServerJourneyTest {
         openDrawerFromTheForm()
         awaitText("Locked while offline")
 
+        // The last of the drawer's cards: on a small screen it starts below the fold.
+        scrollIntoView(hasTestTag("drawer_finance"), "the Finance card")
         tap(hasTestTag("drawer_finance"), "the Finance card")
         awaitTag(FINANCE_LOCK_TEST_TAG)
         assertFalse(exists(hasTestTag("finance_app")), "none of the app is drawn behind its lock")

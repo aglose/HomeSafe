@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written from NotificationGlyph.PARCEL (ui/notification/NotificationGlyphs.kt) by NotificationGlyphsTest: change the glyph there, not this file. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,2.5l8.5,4.4v10.2L12,21.5l-8.5,-4.4V6.900zM12,5l-5.300,2.700L12,10.400l5.300,-2.700z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.0"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,10.400v11.100" />
+</vector>

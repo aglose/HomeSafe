@@ -78,7 +78,7 @@ struct LiquidGlassShell: View {
 /// Outside the iOS 26 shell because the menu bar's commands (`ShellCommands`) name it too.
 enum ShellSelection: Hashable {
     case home, moments, settings
-    case weather, atlas, fitness, finance, charging
+    case weather, atlas, packages, fitness, finance, charging
 
     init(_ tab: IosTab) {
         if tab == IosTab.moments {
@@ -95,6 +95,8 @@ enum ShellSelection: Hashable {
             self = .weather
         } else if app == IosAppTab.atlas {
             self = .atlas
+        } else if app == IosAppTab.packages {
+            self = .packages
         } else if app == IosAppTab.fitness {
             self = .fitness
         } else if app == IosAppTab.charging {
@@ -108,7 +110,7 @@ enum ShellSelection: Hashable {
     var isApp: Bool {
         switch self {
         case .home, .moments, .settings: false
-        case .weather, .atlas, .fitness, .finance, .charging: true
+        case .weather, .atlas, .packages, .fitness, .finance, .charging: true
         }
     }
 }
@@ -149,6 +151,7 @@ final class ShellCoordinator {
         case .settings: shell.toggleAssistant(tab: IosTab.settings, x: x, y: y, width: width, height: height)
         case .weather: shell.toggleAppAssistant(app: IosAppTab.weather, x: x, y: y, width: width, height: height)
         case .atlas: shell.toggleAppAssistant(app: IosAppTab.atlas, x: x, y: y, width: width, height: height)
+        case .packages: shell.toggleAppAssistant(app: IosAppTab.packages, x: x, y: y, width: width, height: height)
         case .fitness: shell.toggleAppAssistant(app: IosAppTab.fitness, x: x, y: y, width: width, height: height)
         case .finance: shell.toggleAppAssistant(app: IosAppTab.finance, x: x, y: y, width: width, height: height)
         case .charging: shell.toggleAppAssistant(app: IosAppTab.charging, x: x, y: y, width: width, height: height)
@@ -234,6 +237,7 @@ struct ShellTabView: View {
                 appTab("Atlas", systemImage: "map.fill", value: .atlas, app: IosAppTab.atlas)
                 appTab("Fitness", systemImage: "figure.strengthtraining.traditional", value: .fitness, app: IosAppTab.fitness)
                 appTab("Finance", systemImage: "chart.line.uptrend.xyaxis", value: .finance, app: IosAppTab.finance)
+                appTab("Packages", systemImage: "shippingbox.fill", value: .packages, app: IosAppTab.packages)
                 appTab("Charging", systemImage: "bolt.car.fill", value: .charging, app: IosAppTab.charging)
             }
             .hidden(!appsInSidebar)

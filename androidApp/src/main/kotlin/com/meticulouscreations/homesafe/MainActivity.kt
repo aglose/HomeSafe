@@ -23,6 +23,8 @@ import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
+import com.meticulouscreations.homesafe.navigation.PackageDeepLink
+import com.meticulouscreations.homesafe.navigation.PackageDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
@@ -129,6 +131,8 @@ class MainActivity : FragmentActivity() {
         WeatherDeepLink.fromUri(intent.dataString)?.let { return WeatherDeepLinks.open(it) }
         // A door notification's tap: the Doors page (`homesafe://doors`).
         DoorDeepLink.fromUri(intent.dataString)?.let { return DoorDeepLinks.open(it) }
+        // A package notification's tap: the parcel, in the packages app (`homesafe://packages`).
+        PackageDeepLink.fromUri(intent.dataString)?.let { return PackageDeepLinks.open(it) }
         // A parking notification's tap: the map of where the car is (`homesafe://parking`).
         ParkingDeepLink.fromUri(intent.dataString)?.let { return ParkingDeepLinks.open(it) }
         // A budget notification's tap asks for the finance app instead (`homesafe://finance`).

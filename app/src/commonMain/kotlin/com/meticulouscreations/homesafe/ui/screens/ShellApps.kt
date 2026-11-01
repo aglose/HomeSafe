@@ -38,13 +38,16 @@ import com.meticulouscreations.homesafe.fitness.ui.FitnessApp
 import com.meticulouscreations.homesafe.fitness.ui.FitnessDrawerCard
 import com.meticulouscreations.homesafe.navigation.ParkingDeepLinks
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.packages.PackagesViewModel
+import com.meticulouscreations.homesafe.packages.ui.PackagesApp
+import com.meticulouscreations.homesafe.packages.ui.PackagesDrawerCard
 import com.meticulouscreations.homesafe.weather.WeatherViewModel
 import com.meticulouscreations.homesafe.weather.ui.WeatherApp
 import com.meticulouscreations.homesafe.weather.ui.WeatherDrawerCard
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 
 /**
- * The drawer, the app opened from it (finance, weather, fitness, atlas or charging) over everything else, and
+ * The drawer, the app opened from it (finance, weather, fitness, atlas, packages or charging) over everything else, and
  * over that the map a parking notification opens ([ParkingMapOverlay]).
  * Their state is only fetched while this composition is on screen — under the iOS 26 host each
  * tab has its own, and only the visible one may run it.
@@ -94,6 +97,12 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
     LaunchedEffect(visible, drawerShowing, atlasUp) {
         atlas.setActive(visible && (drawerShowing || atlasUp), full = atlasUp)
     }
+    val packages: PackagesViewModel = metroViewModel()
+    val packagesState by packages.uiState.collectAsStateWithLifecycle()
+    val packagesUp = nav.isOpen(InnerApp.PACKAGES)
+    LaunchedEffect(visible, drawerShowing, packagesUp) {
+        packages.setActive(visible && (drawerShowing || packagesUp), full = packagesUp)
+    }
     val charging: ChargingViewModel = metroViewModel()
     val chargingState by charging.uiState.collectAsStateWithLifecycle()
     val chargingUp = nav.isOpen(InnerApp.CHARGING)
@@ -114,6 +123,8 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
         Spacer(Modifier.height(12.dp))
         // The same lock: where someone has been is kept shut exactly when their money is.
         AtlasDrawerCard(atlasState, financeLockState.locked, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.ATLAS, origin, tab) })
+        Spacer(Modifier.height(12.dp))
+        PackagesDrawerCard(packagesState, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.PACKAGES, origin, tab) })
         Spacer(Modifier.height(12.dp))
         FitnessDrawerCard(fitnessState, healthState.body.readiness, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) })
         Spacer(Modifier.height(12.dp))
@@ -141,6 +152,8 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
                 InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
 
                 InnerApp.ATLAS -> AtlasApp(onClose = nav::closeApp, active = nav.appOpen)
+
+                InnerApp.PACKAGES -> PackagesApp(onClose = nav::closeApp, active = nav.appOpen, link = nav.packageLink?.packageId, onShowLink = nav::onPackageLinkShown)
 
                 InnerApp.CHARGING -> ChargingApp(onClose = nav::closeApp, active = nav.appOpen)
             }
@@ -228,6 +241,12 @@ private fun AppTabContent(nav: ShellNavigation, app: InnerApp, visible: Boolean)
             val atlas: AtlasViewModel = metroViewModel()
             ActiveWhile(visible) { atlas.setActive(it, full = true) }
             AtlasApp(onClose = goHome, active = visible)
+        }
+
+        InnerApp.PACKAGES -> {
+            val packages: PackagesViewModel = metroViewModel()
+            ActiveWhile(visible) { packages.setActive(it, full = true) }
+            PackagesApp(onClose = goHome, active = visible, link = nav.packageLink?.packageId, onShowLink = nav::onPackageLinkShown)
         }
 
         InnerApp.CHARGING -> {

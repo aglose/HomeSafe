@@ -108,6 +108,7 @@ class IosShell {
         MainScope().launch { nav.openMomentsFromNotifications() }
         MainScope().launch { nav.openWeatherFromNotifications() }
         MainScope().launch { nav.openDoorsFromNotifications() }
+        MainScope().launch { nav.openPackagesFromNotifications() }
         MainScope().launch {
             snapshotFlow { nav.showsBottomNav(TopLevelRoute.Home) }
                 .distinctUntilChanged()
@@ -170,6 +171,7 @@ class IosShell {
 enum class IosAppTab(internal val app: InnerApp) {
     WEATHER(InnerApp.WEATHER),
     ATLAS(InnerApp.ATLAS),
+    PACKAGES(InnerApp.PACKAGES),
     FITNESS(InnerApp.FITNESS),
     FINANCE(InnerApp.FINANCE),
     CHARGING(InnerApp.CHARGING),
