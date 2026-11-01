@@ -633,11 +633,19 @@ jobs:
               # Workflows, the agent's own settings and the Gradle wrapper are not the repair job's
               # to change: CI is about to be started on this branch, and would run them. Checked on
               # what was staged rather than on the patch's summary, which abbreviates a rename;
-              # --no-renames lists a renamed file under both its old path and its new one.
-              if git diff --cached --name-only --no-renames -z "$SHA" \
-                | grep -z -E '^(\.github/|\.claude/|gradle/wrapper/|gradlew$|gradlew\.bat$)' | tr '\0' '\n'; then
+              # --no-renames lists a renamed file under both its old path and its new one. This
+              # step's shell has no pipefail, so a pipeline's status says nothing about git or grep:
+              # each writes to a file instead, where its failure stops the step, and what counts is
+              # whether grep found any. (test_protected_files.py runs these lines.)
+              changed="$RUNNER_TEMP/changed-files"
+              git diff --cached --name-only --no-renames -z "$SHA" > "$changed"
+              # grep's 1 means it found none; anything else stops the step.
+              grep -z -E '^(\.github/|\.claude/|gradle/wrapper/|gradlew$|gradlew\.bat$)' "$changed" > "$changed.protected" || [ $? -eq 1 ]
+              protected=$(tr '\0' '\n' < "$changed.protected")
+              if [ -n "$protected" ]; then
                 git reset --quiet --hard "$SHA"
-                needs_a_human "CI failed, and the repair job's fix touches the files above, which it may not change."
+                fence='```'
+                needs_a_human "$(printf "CI failed, and the repair job's fix touches files it may not change:\n\n%s\n%s\n%s" "$fence" "$protected" "$fence")"
               fi
               if git diff --cached --quiet "$BASE"; then
                 git reset --quiet --hard "$SHA"
