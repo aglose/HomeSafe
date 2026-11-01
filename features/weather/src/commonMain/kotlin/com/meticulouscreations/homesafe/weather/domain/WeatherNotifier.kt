@@ -48,6 +48,8 @@ data class WeatherNotification(
     val headsUp: Boolean = urgent,
     val reminderEpochSeconds: Long? = null,
     val reminderLabel: String? = null,
+    /** The same thing is already showing as a push the platform drew itself: take its place without alerting again. */
+    val replacesPush: Boolean = false,
 )
 
 /**

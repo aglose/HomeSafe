@@ -222,7 +222,15 @@ push from Settings → Notifications reaches the iPhone.
 ## Weather
 
 The weather app's notifications (rain on the way, the day ahead, government warnings) are a
-separate thing from everything above: they don't come from the cameras or the relay. The phone
-checks the forecast itself and posts them on channels of their own, **Weather** and **Severe
-weather**, each with its kind's icon and colour and a picture of the forecast behind it. See
+separate thing from everything above: they don't come from the cameras. The phone checks the
+forecast itself and posts them on channels of their own, **Weather** and **Severe weather**, each
+with its kind's icon and colour and a picture of the forecast behind it. See
 [weather.md](weather.md#notifications).
+
+One of them also comes from the relay: rain on the way, at home, to a phone that is there
+([weather.md](weather.md#rain-soon-from-the-relay)). The weather's own switches and quiet hours
+govern it; quiet hours, "only when everyone's away" and "only strangers" here don't. It travels on
+the push token like every other, so with the cameras' switch off, or everything muted, the relay
+has nowhere to send it, and the phone's own check is all there is. The push is `weather_soon=<a
+small forecast>`, `notif_id=soon:<hour>`; Android posts it through the weather's notifier, and
+iOS draws its text and then, if it wakes the app, the weather's card.

@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.weather.data
 
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.data.KEY_UPDATE
 import com.meticulouscreations.homesafe.data.writeFile
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
@@ -85,7 +86,16 @@ private class IosWeatherNotifier : WeatherNotifier {
             setThreadIdentifier(THREAD)
             // iOS declares a notification's buttons ahead of time: one that can be put off wears the set with "Remind me".
             setCategoryIdentifier(if (notification.reminderEpochSeconds != null) IosWeatherActions.CATEGORY_SOON else IosWeatherActions.CATEGORY)
-            setInterruptionLevel(if (notification.urgent) UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive else UNNotificationInterruptionLevel.UNNotificationInterruptionLevelActive)
+            setInterruptionLevel(
+                when {
+                    notification.urgent -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive
+
+                    // The relay's banner is already up: this only gives it its picture.
+                    notification.replacesPush -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelPassive
+
+                    else -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelActive
+                },
+            )
             // Which of the app's notifications the summary leads with: a warning, then rain about to start, then the day's outlook.
             setRelevanceScore(
                 when {
@@ -95,10 +105,13 @@ private class IosWeatherNotifier : WeatherNotifier {
                 },
             )
             setUserInfo(
-                notification.link.toMap() + listOfNotNull(
-                    notification.expiresEpochSeconds?.let { KEY_EXPIRES to it.toString() },
-                    notification.reminderEpochSeconds?.let { IosWeatherActions.KEY_REMIND_AT to it.toString() },
-                ),
+                notification.link.toMap() +
+                    listOfNotNull(
+                        notification.expiresEpochSeconds?.let { KEY_EXPIRES to it.toString() },
+                        notification.reminderEpochSeconds?.let { IosWeatherActions.KEY_REMIND_AT to it.toString() },
+                        // In front of the open app, it refreshes the list rather than showing a second banner.
+                        (KEY_UPDATE to "1").takeIf { notification.replacesPush },
+                    ),
             )
             picture?.let { setAttachments(listOf(it)) }
         }
