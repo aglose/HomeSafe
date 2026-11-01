@@ -19,6 +19,7 @@
     <string name="charging_error_unreachable">No se pudo contactar con el servidor. El historial de carga está allí: comprueba la conexión e inténtalo de nuevo.</string>
     <string name="charging_error_signed_out">Inicia sesión en el servidor para ver lo que cuesta cargar los coches.</string>
     <string name="charging_error_outdated">El relay del servidor es más antiguo que esta app y aún no guarda el historial de carga.</string>
+    <string name="charging_error_no_such_charge">Esa carga ya no está en el servidor. Actualiza la lista y vuelve a intentarlo.</string>
     <string name="charging_error_relay_answered">El relay respondió con un error (%1$s).</string>
 
     <string name="charging_money">%1$s $</string>

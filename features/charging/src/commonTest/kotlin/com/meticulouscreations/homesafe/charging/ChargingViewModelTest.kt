@@ -211,6 +211,22 @@ class ChargingViewModelTest {
     }
 
     @Test
+    fun aSlowSaveForTheLastChargeDoesntReplaceTheOneOpenNow() = runTest(dispatcher) {
+        val model = viewModel()
+        model.openSession(1)
+        eventually { model.uiState.value.detail?.session?.id == 1L }
+        detailDelayMillis["/charging/sessions/1"] = 5_000
+        model.saveSession(1, 3.5, null)
+        settle()
+        model.openSession(2)
+        eventually { model.uiState.value.detail?.session?.id == 2L }
+        advanceTimeBy(6_000)
+        settle()
+        assertEquals(2L, model.uiState.value.detail?.session?.id)
+        assertEquals(false, model.uiState.value.saving)
+    }
+
+    @Test
     fun aRefreshDoesntEndASaveStillOnItsWay() = runTest(dispatcher) {
         detailDelayMillis["/charging/plan"] = 5_000
         val model = viewModel()
@@ -320,6 +336,8 @@ class ChargingViewModelTest {
     @Test
     fun savingAChargeShowsWhatTheRelayKept() = runTest(dispatcher) {
         val model = viewModel()
+        model.openSession(2)
+        settle()
         model.saveSession(2, 3.5, "kept")
         eventually { model.uiState.value.detail != null }
         assertEquals("kept", model.uiState.value.detail?.session?.note)

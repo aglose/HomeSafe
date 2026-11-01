@@ -20,6 +20,7 @@ import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.charging_error_no_such_charge
 import homesafe.shared.generated.resources.charging_error_outdated
 import homesafe.shared.generated.resources.charging_error_relay_answered
 import homesafe.shared.generated.resources.charging_error_signed_out
@@ -30,6 +31,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -89,8 +91,11 @@ class ChargingRelayApi(private val httpClient: HttpClient) {
     private suspend inline fun <reified T> HttpResponse.answer(): T = when {
         status.isSuccess() -> body<T>()
 
-        // FastAPI's own 404 for a route it doesn't have: a relay from before this app.
-        status == HttpStatusCode.NotFound -> throw LocalizedException(UiText.of(Res.string.charging_error_outdated), technical = "HTTP 404")
+        // The route's own 404 for a charge gone from the ledger; or FastAPI's for a route it doesn't have, a relay from before this app.
+        status == HttpStatusCode.NotFound -> throw LocalizedException(
+            UiText.of(if ("no such charge" in bodyAsText()) Res.string.charging_error_no_such_charge else Res.string.charging_error_outdated),
+            technical = "HTTP 404",
+        )
 
         status == HttpStatusCode.Unauthorized -> throw LocalizedException(UiText.of(Res.string.charging_error_signed_out), technical = "HTTP 401")
 

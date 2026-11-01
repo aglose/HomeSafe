@@ -19,6 +19,7 @@
     <string name="charging_error_unreachable">Couldn't reach the server. Charging history lives there, so check the connection and try again.</string>
     <string name="charging_error_signed_out">Sign in to the server to see what the cars cost to charge.</string>
     <string name="charging_error_outdated">The relay on the server is older than this app and keeps no charging history yet.</string>
+    <string name="charging_error_no_such_charge">That charge is no longer on the server. Refresh the list and try again.</string>
     <string name="charging_error_relay_answered">The relay answered with an error (%1$s).</string>
 
     <string name="charging_money">$%1$s</string>

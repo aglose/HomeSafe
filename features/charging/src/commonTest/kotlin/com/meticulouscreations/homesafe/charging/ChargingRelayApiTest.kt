@@ -5,6 +5,11 @@ import com.meticulouscreations.homesafe.charging.domain.ChargeCostSource
 import com.meticulouscreations.homesafe.charging.domain.ChargeMeasure
 import com.meticulouscreations.homesafe.charging.domain.ChargePlace
 import com.meticulouscreations.homesafe.charging.domain.RatePeriod
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.charging_error_no_such_charge
+import homesafe.shared.generated.resources.charging_error_outdated
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -102,6 +107,14 @@ class ChargingRelayApiTest {
         assertEquals(9, detail.session.id)
         assertEquals(RatePeriod.TIER2, detail.hours.single().period)
         assertEquals(0.56, detail.plans["tiered"])
+    }
+
+    @Test
+    fun aChargeGoneFromTheLedgerIsntTakenForAnOldRelay() = runTest {
+        val gone = api(HttpStatusCode.NotFound, """{"detail": "no such charge"}""").session("http://box", 1).exceptionOrNull() as LocalizedException
+        assertEquals(UiText.of(Res.string.charging_error_no_such_charge), gone.text)
+        val old = api(HttpStatusCode.NotFound, """{"detail": "Not Found"}""").session("http://box", 1).exceptionOrNull() as LocalizedException
+        assertEquals(UiText.of(Res.string.charging_error_outdated), old.text)
     }
 
     @Test

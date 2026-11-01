@@ -68,6 +68,7 @@ class ChargingViewModel(
 
     private var follow: Job? = null
     private var detailAsked: Job? = null
+    private var openCharge: Long? = null
     private var askedAt = 0L
 
     init {
@@ -180,6 +181,7 @@ class ChargingViewModel(
     /** Fetches a charge hour by hour for its page. */
     fun openSession(id: Long) {
         val server = server() ?: return
+        openCharge = id
         _uiState.update { state -> state.copy(detail = state.detail?.takeIf { it.session.id == id }) }
         fetchDetail(server, id, quietly = false)
     }
@@ -206,7 +208,8 @@ class ChargingViewModel(
             api.saveSession(server, id, cost, note).fold(
                 onSuccess = { detail ->
                     _uiState.update { state ->
-                        state.copy(detail = detail, older = state.older.map { if (it.id == id) detail.session else it }, saving = false)
+                        // Another charge's page may have opened while this was on its way.
+                        state.copy(detail = if (openCharge == id) detail else state.detail, older = state.older.map { if (it.id == id) detail.session else it }, saving = false)
                     }
                     ask()
                 },
