@@ -348,8 +348,10 @@ browser. In the app, pull to refresh on Home: the switch appears above the camer
   `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -trimpath`. Frigate runs an
   executable `/config/go2rtc` in place of its own and logs a warning saying so. To undo it, delete
   the file and restart Frigate. **Delete it when upgrading Frigate too**, or it goes on overriding
-  the bundled go2rtc. `pkg/nest` logs nothing, so the sign of health is a Nest connection's `id` in
-  `/api/streams` staying the same past 10 minutes; read it with a script that prints no URLs (see
+  the bundled go2rtc. `pkg/nest` logs nothing, so the sign that extensions work is a Nest connection's `id` in
+  `/api/streams` staying the same past 10 minutes. That alone doesn't mean the camera is fine, since
+  a session Google stopped feeding can stay connected for hours, so its video receiver bytes must be
+  rising too (what the primer's watchdog reads). Read both with a script that prints no URLs (see
   "Security"). Don't add a battery camera to this build as it stands: Google says it ignores
   extensions on battery power, and if that comes back as a success with the old expiry, the PR's
   loop asks again at once until Google rate-limits the project.
