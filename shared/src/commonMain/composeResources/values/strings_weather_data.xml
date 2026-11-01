@@ -131,6 +131,11 @@
     <string name="weather_notice_title_snow_tomorrow">Snow tomorrow</string>
     <string name="weather_notice_title_mix_tomorrow">Wintry mix tomorrow</string>
     <string name="weather_notice_title_storm_tomorrow">Storms tomorrow</string>
+    <!-- %1$s when it starts ("3 PM") -->
+    <string name="weather_notice_title_soon_rain">Rain at %1$s</string>
+    <string name="weather_notice_title_soon_snow">Snow at %1$s</string>
+    <string name="weather_notice_title_soon_mix">Wintry mix at %1$s</string>
+    <string name="weather_notice_title_soon_storm">Storms at %1$s</string>
     <string name="weather_notice_title_wind">Windy today</string>
     <string name="weather_notice_title_heat">Very hot today</string>
     <string name="weather_notice_title_cold">Bitterly cold today</string>
@@ -141,13 +146,20 @@
     <string name="weather_notice_title_warmer_tomorrow">Much warmer tomorrow</string>
 
     <!-- Notifications: the pieces of a body, joined with dots -->
-    <!-- %1$s the time ("3:15 PM"), %2$s the place's name -->
-    <string name="weather_notice_soon_body">Around %1$s in %2$s</string>
-    <!-- %3$d minutes -->
-    <string name="weather_notice_soon_body_lasting">Around %1$s in %2$s, for about %3$d min</string>
-    <!-- The same two, for a place with no name: %1$s the time, %2$d minutes -->
-    <string name="weather_notice_soon_here">Around %1$s</string>
-    <string name="weather_notice_soon_here_lasting">Around %1$s, for about %2$d min</string>
+    <!-- %1$s how long it lasts ("3 hours", "30 min"), %2$s how much falls ("0.22 in") -->
+    <string name="weather_notice_soon_lasting">For about %1$s, around %2$s</string>
+    <!-- The same where the forecast can't see it end: %1$s how much falls -->
+    <string name="weather_notice_soon_amount">Around %1$s</string>
+    <!-- %1$s a time ("4 PM") -->
+    <string name="weather_notice_heaviest_around">Heaviest around %1$s</string>
+    <!-- A button: %1$s the time it will remind you ("2:45 PM") -->
+    <string name="weather_notice_remind_at">Remind me at %1$s</string>
+    <!-- The same button where the time can't be named: iOS declares its buttons ahead of time -->
+    <string name="weather_notice_remind_before">Remind me 15 min before</string>
+    <plurals name="weather_duration_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
     <string name="weather_notice_heavy_at_times">Heavy at times</string>
     <!-- %1$s an amount with its unit ("0.4 in") -->
     <string name="weather_notice_amount">About %1$s</string>
@@ -184,4 +196,36 @@
     <string name="weather_error_forecast">Couldn't reach the weather service. Check your connection.</string>
     <string name="weather_error_search">Couldn't search just now. Check your connection.</string>
     <string name="weather_error_radar">The radar isn't answering</string>
+
+    <!-- The Today tab's two tiles: what a day holds, in a word or two -->
+    <string name="weather_outlook_tomorrow">Tomorrow</string>
+    <string name="weather_outlook_dry">Dry</string>
+    <string name="weather_outlook_rain">Rain</string>
+    <string name="weather_outlook_snow">Snow</string>
+    <string name="weather_outlook_mix">Wintry mix</string>
+    <string name="weather_outlook_storm">Storms</string>
+    <string name="weather_outlook_wind">Windy</string>
+    <string name="weather_outlook_heat">Very hot</string>
+    <string name="weather_outlook_cold">Bitterly cold</string>
+    <!-- When it falls. %1$s and %2$s are times ("3 PM") -->
+    <string name="weather_outlook_from_to">%1$s to %2$s</string>
+    <string name="weather_outlook_around">Around %1$s</string>
+    <string name="weather_outlook_until">Until %1$s</string>
+    <string name="weather_outlook_all_day">All day</string>
+    <string name="weather_outlook_rest_of_today">Rest of today</string>
+    <string name="weather_outlook_on_off">On and off</string>
+    <string name="weather_outlook_now">Right now</string>
+    <!-- How soon it starts -->
+    <string name="weather_outlook_in_minutes">In about %1$d min</string>
+    <string name="weather_outlook_in_hours">In about %1$d hr</string>
+    <string name="weather_outlook_in_hours_minutes">In about %1$d hr %2$d min</string>
+    <!-- %1$s a speed with its unit ("45 mph") -->
+    <string name="weather_outlook_gusts">Gusts to %1$s</string>
+    <!-- %1$s a temperature ("104°") -->
+    <string name="weather_outlook_feels">Feels like %1$s</string>
+    <!-- A row under the tiles. %1$s a day of the week ("Tue") -->
+    <string name="weather_outlook_next_rain">Next rain %1$s</string>
+    <string name="weather_outlook_next_snow">Next snow %1$s</string>
+    <string name="weather_outlook_next_mix">Next wintry mix %1$s</string>
+    <string name="weather_outlook_next_storm">Next storms %1$s</string>
 </resources>

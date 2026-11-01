@@ -9,6 +9,8 @@ import com.meticulouscreations.homesafe.weather.WeatherData.report
 import com.meticulouscreations.homesafe.weather.WeatherData.slices
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.weather_duration_hours
+import homesafe.shared.generated.resources.weather_minutes_short
 import homesafe.shared.generated.resources.weather_notice_air
 import homesafe.shared.generated.resources.weather_notice_amount
 import homesafe.shared.generated.resources.weather_notice_cold
@@ -16,13 +18,13 @@ import homesafe.shared.generated.resources.weather_notice_colder_tomorrow
 import homesafe.shared.generated.resources.weather_notice_freeze
 import homesafe.shared.generated.resources.weather_notice_gusts
 import homesafe.shared.generated.resources.weather_notice_heat
+import homesafe.shared.generated.resources.weather_notice_heaviest_around
 import homesafe.shared.generated.resources.weather_notice_heavy_at_times
 import homesafe.shared.generated.resources.weather_notice_high_tomorrow
+import homesafe.shared.generated.resources.weather_notice_remind_at
 import homesafe.shared.generated.resources.weather_notice_snow_amount
-import homesafe.shared.generated.resources.weather_notice_soon_body
-import homesafe.shared.generated.resources.weather_notice_soon_body_lasting
-import homesafe.shared.generated.resources.weather_notice_soon_here
-import homesafe.shared.generated.resources.weather_notice_soon_here_lasting
+import homesafe.shared.generated.resources.weather_notice_soon_amount
+import homesafe.shared.generated.resources.weather_notice_soon_lasting
 import homesafe.shared.generated.resources.weather_notice_title_air
 import homesafe.shared.generated.resources.weather_notice_title_cold
 import homesafe.shared.generated.resources.weather_notice_title_colder_tomorrow
@@ -31,6 +33,8 @@ import homesafe.shared.generated.resources.weather_notice_title_heat
 import homesafe.shared.generated.resources.weather_notice_title_rain_today
 import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_snow_today
+import homesafe.shared.generated.resources.weather_notice_title_soon_rain
+import homesafe.shared.generated.resources.weather_notice_title_soon_snow
 import homesafe.shared.generated.resources.weather_notice_title_uv
 import homesafe.shared.generated.resources.weather_notice_title_warmer_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_wind
@@ -38,7 +42,6 @@ import homesafe.shared.generated.resources.weather_notice_uv
 import homesafe.shared.generated.resources.weather_notice_warmer_tomorrow
 import homesafe.shared.generated.resources.weather_span_rain_from_to
 import homesafe.shared.generated.resources.weather_span_snow_from_to
-import homesafe.shared.generated.resources.weather_story_rain_starting
 import homesafe.shared.generated.resources.weather_time_am
 import homesafe.shared.generated.resources.weather_time_pm
 import homesafe.shared.generated.resources.weather_unit_cm
@@ -182,34 +185,112 @@ class WeatherNoticePlannerTest {
 
     private fun soonKey() = "soon:${at(0, 15, 30) / HOUR}"
 
+    private fun lasting(minutes: Int, mm: Double) = UiText.of(Res.string.weather_notice_soon_lasting, UiText.of(Res.string.weather_minutes_short, minutes), WeatherFormat.precipitation(mm, metric))
+
     @Test
-    fun rainStartingInHalfAnHourIsANoticeNamingThePlace() {
+    fun rainStartingInHalfAnHourSaysWhenForHowLongAndHowMuch() {
         val notice = plan(soonNow, soonReport(*rainForHalfAnHour), placeName = "Portland").single()
         assertEquals(WeatherNoticeKind.PRECIPITATION_SOON, notice.kind)
         assertEquals(soonKey(), notice.key)
-        assertEquals(UiText.of(Res.string.weather_story_rain_starting, 30), notice.title)
-        assertEquals(UiText.of(Res.string.weather_notice_soon_body_lasting, pm("3:30"), "Portland", 30), notice.body)
+        assertEquals(UiText.of(Res.string.weather_notice_title_soon_rain, pm("3:30")), notice.title)
+        assertEquals(lasting(30, 1.0), notice.body)
+        assertEquals("Portland", notice.place)
         assertEquals(false, notice.urgent)
+        assertTrue(notice.headsUp, "seen in time or not worth sending")
     }
 
     @Test
-    fun withoutAPlaceNameTheBodySaysHere() {
-        val notice = plan(soonNow, soonReport(*rainForHalfAnHour)).single()
-        assertEquals(UiText.of(Res.string.weather_notice_soon_here_lasting, pm("3:30"), 30), notice.body)
+    fun snowSaysSnowInItsOwnUnits() {
+        val snowing = report(soonNow, minutely = slices(soonNow, 0.0, 0.0) + (2..8).map { i -> PrecipSlice(soonNow + i * 900L, 0.5, 1.0) })
+        val notice = plan(soonNow, snowing).single()
+        assertEquals(UiText.of(Res.string.weather_notice_title_soon_snow, pm("3:30")), notice.title)
+        assertEquals(UiText.of(Res.string.weather_notice_soon_amount, WeatherFormat.snow(7.0, metric)), notice.body)
     }
 
     @Test
-    fun rainWithNoEndInSightLeavesOutHowLongItLasts() {
+    fun rainWithNoEndInSightSaysHowMuchItSeesAndNotHowLong() {
         val noEnd = soonReport(0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5)
-        assertEquals(UiText.of(Res.string.weather_notice_soon_body, pm("3:30"), "Portland"), plan(soonNow, noEnd, placeName = "Portland").single().body)
-        assertEquals(UiText.of(Res.string.weather_notice_soon_here, pm("3:30")), plan(soonNow, noEnd).single().body)
+        assertEquals(UiText.of(Res.string.weather_notice_soon_amount, WeatherFormat.precipitation(3.5, metric)), plan(soonNow, noEnd).single().body)
+    }
+
+    @Test
+    fun whereTheQuarterHoursRunOutTheHoursSayHowItGoesOn() {
+        val hours = WeatherData.calmHours { h ->
+            if (h.epochSeconds in at(0, 15)..at(0, 18) - 1) h.copy(precipitationMm = 2.0, precipitationProbability = 80, weatherCode = 61) else h
+        }
+        val long = report(soonNow, hourly = hours, minutely = slices(soonNow, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        val notice = plan(soonNow, long).single()
+        assertEquals(UiText.of(Res.string.weather_notice_soon_lasting, UiText.plural(Res.plurals.weather_duration_hours, 3), WeatherFormat.precipitation(6.0, metric)), notice.body)
+        assertEquals(at(0, 18), notice.expiresEpochSeconds)
     }
 
     @Test
     fun heavyRainAddsHeavyAtTimes() {
         val heavy = soonReport(2.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         val notice = plan(soonNow, heavy).single()
-        assertEquals(joined(UiText.of(Res.string.weather_notice_soon_here_lasting, pm("3:30"), 30), UiText.of(Res.string.weather_notice_heavy_at_times)), notice.body)
+        assertEquals(joined(lasting(30, 4.0), UiText.of(Res.string.weather_notice_heavy_at_times)), notice.body)
+    }
+
+    @Test
+    fun aShowerWithAPlainPeakSaysWhenItIsHeaviest() {
+        val building = soonReport(0.5, 1.0, 2.0, 1.0, 0.0, 0.0, 0.0)
+        val notice = plan(soonNow, building).single()
+        val heaviest = UiText.of(Res.string.weather_notice_heaviest_around, pm("4"))
+        assertTrue(WeatherNoticeFact(null, heaviest) in notice.facts, notice.facts.toString())
+        assertEquals(joined(lasting(60, 4.5), heaviest), notice.body, "said in words too: the picture isn't always seen")
+    }
+
+    @Test
+    fun hoursThatHaveItOverWhileTheQuarterHoursStillHaveItFallingAreSetAside() {
+        val hours = WeatherData.calmHours { h ->
+            if (h.epochSeconds == at(0, 15)) h.copy(precipitationMm = 2.0, precipitationProbability = 80, weatherCode = 61) else h
+        }
+        val r = report(soonNow, hourly = hours, minutely = slices(soonNow, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        val notice = plan(soonNow, r).single()
+        assertEquals(UiText.of(Res.string.weather_notice_soon_amount, WeatherFormat.precipitation(3.5, metric)), notice.body)
+        assertEquals(at(0, 15, 30) + 2 * HOUR, notice.expiresEpochSeconds, "as long as a shower with no end in sight")
+    }
+
+    @Test
+    fun rainStillBuildingAtTheEdgeOfTheForecastHasNoPeakToName() {
+        val building = soonReport(0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4)
+        val heaviest = UiText.of(Res.string.weather_notice_heaviest_around, pm("5"))
+        assertTrue(plan(soonNow, building).single().facts.none { it.text == heaviest })
+    }
+
+    // ---- Remind me ----------------------------------------------------------------------------
+
+    @Test
+    fun withTimeToSpareItOffersAReminderFifteenMinutesBefore() {
+        // Starts 3:30 with the clock at 2:45.
+        val now = at(0, 14, 45)
+        val notice = plan(now, report(now, minutely = slices(now, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0))).single()
+        assertEquals(at(0, 15, 15), notice.reminderEpochSeconds)
+        assertEquals(UiText.of(Res.string.weather_notice_remind_at, pm("3:15")), notice.reminderLabel)
+    }
+
+    @Test
+    fun withLittleWarningThereIsNoReminderToOffer() {
+        // Starts 3:30 with the clock at 3:15: the reminder would be now.
+        val now = at(0, 15, 15)
+        val notice = plan(now, report(now, minutely = slices(now, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))).single()
+        assertEquals(null, notice.reminderEpochSeconds)
+        assertEquals(null, notice.reminderLabel)
+    }
+
+    @Test
+    fun aReminderIsSentThoughTheShowerWasAnnouncedAndItIsLate() {
+        val now = at(0, 22, 30)
+        val r = report(now, minutely = slices(now, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        assertTrue(plan(now, r).isEmpty(), "quiet hours hold the check back")
+        assertEquals(WeatherNoticeKind.PRECIPITATION_SOON, WeatherNoticePlanner.reminder(r, "Portland", metric, now)?.kind)
+    }
+
+    @Test
+    fun aReminderHasNothingToSayOnceItIsRainingOrTheRainHasGone() {
+        val raining = report(soonNow, minutely = slices(soonNow, 0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0))
+        assertEquals(null, WeatherNoticePlanner.reminder(raining, null, metric, soonNow))
+        assertEquals(null, WeatherNoticePlanner.reminder(soonReport(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0), null, metric, soonNow))
     }
 
     @Test

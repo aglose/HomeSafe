@@ -59,6 +59,7 @@ import com.meticulouscreations.homesafe.weather.PlaceWeather
 import com.meticulouscreations.homesafe.weather.domain.DayForecast
 import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
 import com.meticulouscreations.homesafe.weather.domain.WeatherStory
 import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
@@ -68,6 +69,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_day_collapsed
 import homesafe.shared.generated.resources.weather_day_date
 import homesafe.shared.generated.resources.weather_day_description
+import homesafe.shared.generated.resources.weather_day_description_wet
 import homesafe.shared.generated.resources.weather_day_expanded
 import homesafe.shared.generated.resources.weather_forecast_days_title
 import homesafe.shared.generated.resources.weather_forecast_less_certain
@@ -165,6 +167,7 @@ internal fun ForecastScreen(
                         weekLowC = weekLow,
                         weekHighC = weekHigh,
                         currentC = if (i == 0) report.current.temperatureC else null,
+                        nowEpochSeconds = nowEpochSeconds,
                         expanded = opened == day.epochSeconds,
                         onToggle = { toggle(i, true) },
                         modifier = Modifier.onPlaced { places.rows[i] = it },
@@ -240,6 +243,7 @@ private fun DayRow(
     weekLowC: Double,
     weekHighC: Double,
     currentC: Double?,
+    nowEpochSeconds: Long,
     expanded: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -253,13 +257,37 @@ private fun DayRow(
     val high = WeatherFormat.degrees(day.highC, units)
     val low = WeatherFormat.degrees(day.lowC, units)
     val chance = day.precipitationProbability?.takeIf { it >= 25 && (day.kind.isPrecipitation || it >= 45) }
-    val description = stringResource(Res.string.weather_day_description, name, kind, high, low)
+    // Today, only what is still to come: rain that fell this morning is nothing to plan around.
+    val hours = remember(report, day) { report.hoursOf(day) }
+    val ahead = remember(hours, index, nowEpochSeconds) { if (index == 0) hours.filter { it.epochSeconds + WeatherReport.HOUR_SECONDS > nowEpochSeconds } else hours }
+    val spans = remember(ahead) { WeatherStory.wetSpans(ahead) }
+    val phrase = remember(ahead, spans, day) {
+        ahead.firstOrNull()?.let { WeatherStory.spanPhrase(spans, it.epochSeconds, day.epochSeconds + WeatherReport.DAY_SECONDS, report::offsetAt) }
+    }
+    val amount = when {
+        // Today's is what the row's hours add up to, not what has already fallen as well.
+        index == 0 -> spans.takeIf { it.isNotEmpty() }?.let { WeatherNoticePlanner.amount(it, units).second.resolve() }
+
+        day.isSnowy -> WeatherFormat.snow(day.snowfallCm, units).resolve()
+
+        phrase != null -> WeatherFormat.precipitation(day.precipitationMm, units).resolve()
+
+        else -> null
+    }
+    val odds = chance?.let { WeatherFormat.percent(it) }
+    val numbers = if (amount != null && odds != null) stringResource(Res.string.weather_stat_amount_chance, amount, odds) else amount ?: odds
+    val said = phrase?.resolve()
+    val description = if (said != null) {
+        stringResource(Res.string.weather_day_description_wet, name, kind, high, low, said, numbers.orEmpty())
+    } else {
+        stringResource(Res.string.weather_day_description, name, kind, high, low)
+    }
     val state = stringResource(if (expanded) Res.string.weather_day_expanded else Res.string.weather_day_collapsed)
     val turn by animateFloatAsState(if (expanded) 180f else 0f, label = "dayChevron")
     // A day a week off is drawn fainter: the model's reach, not a promise.
     val certainty = if (index >= LESS_CERTAIN_FROM) 0.62f else 1f
     Column(modifier.fillMaxWidth()) {
-        Row(
+        Column(
             Modifier
                 .fillMaxWidth()
                 .clickable(role = Role.Button, onClick = onToggle)
@@ -269,21 +297,26 @@ private fun DayRow(
                 }
                 .testTag("weather_day_$index")
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(name, style = type.bodyStrong, color = colors.onSky, modifier = Modifier.width(54.dp), maxLines = 1)
-            WeatherGlyph(day.kind, isDay = true, Modifier.size(26.dp))
-            Text(
-                chance?.let { WeatherFormat.percent(it) } ?: "",
-                style = type.label,
-                color = colors.rain,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.width(44.dp),
-            )
-            Text(low, style = type.bodyStrong, color = colors.onSkyMuted, textAlign = TextAlign.End, modifier = Modifier.width(38.dp))
-            TemperatureRangeBar(day.lowC, day.highC, weekLowC, weekHighC, Modifier.weight(1f).padding(horizontal = 10.dp).graphicsLayer { alpha = certainty }, currentC)
-            Text(high, style = type.bodyStrong, color = colors.onSky, textAlign = TextAlign.End, modifier = Modifier.width(38.dp))
-            Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = colors.onSkyFaint, modifier = Modifier.padding(start = 6.dp).size(18.dp).graphicsLayer { rotationZ = turn })
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, style = type.bodyStrong, color = colors.onSky, modifier = Modifier.width(54.dp), maxLines = 1)
+                WeatherGlyph(day.kind, isDay = true, Modifier.size(26.dp))
+                Text(low, style = type.bodyStrong, color = colors.onSkyMuted, textAlign = TextAlign.End, modifier = Modifier.width(46.dp))
+                TemperatureRangeBar(day.lowC, day.highC, weekLowC, weekHighC, Modifier.weight(1f).padding(horizontal = 10.dp).graphicsLayer { alpha = certainty }, currentC)
+                Text(high, style = type.bodyStrong, color = colors.onSky, textAlign = TextAlign.End, modifier = Modifier.width(38.dp))
+                Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = colors.onSkyFaint, modifier = Modifier.padding(start = 6.dp).size(18.dp).graphicsLayer { rotationZ = turn })
+            }
+            if (said != null || numbers != null) {
+                Spacer(Modifier.height(8.dp))
+                if (said != null) {
+                    HourLane(hours, nowEpochSeconds, Modifier.fillMaxWidth().graphicsLayer { alpha = certainty })
+                    Spacer(Modifier.height(5.dp))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(said ?: kind, style = type.label, color = colors.onSky, modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+                    if (numbers != null) Text(numbers, style = type.label, color = colors.onSky, modifier = Modifier.padding(start = 8.dp), maxLines = 1)
+                }
+            }
         }
         AnimatedVisibility(expanded, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             DayDetail(report, place, day, index, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp))

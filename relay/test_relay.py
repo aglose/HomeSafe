@@ -500,6 +500,49 @@ def review(rid, start, objects, sub_labels=(), end=None, camera="hikvision_1", z
     }
 
 
+class AwayOnThePropertyTest(unittest.TestCase):
+    """With everyone away, a camera that has a property zone only tells of people who set foot in it."""
+
+    def setUp(self):
+        self.recent_review, self.zoned = relay.recent_review, relay.property_cameras
+        self.items = {"alert": [], "detection": []}
+        relay.recent_review = lambda severity: self.items[severity]
+        relay.property_cameras = lambda: {"hikvision_1"}
+
+    def tearDown(self):
+        relay.recent_review, relay.property_cameras = self.recent_review, self.zoned
+
+    def ids(self, since=100.0):
+        return [item["id"] for item in relay.away_items(since)]
+
+    def test_a_person_on_the_sidewalk_is_not_news_and_one_on_the_property_is(self):
+        self.items["detection"] = [
+            review("walker", 200.0, ["person", "car"], zones=()),
+            review("visitor", 201.0, ["person"], zones=("property",)),
+        ]
+        self.assertEqual(["visitor"], self.ids())
+
+    def test_another_zone_is_not_the_property(self):
+        """A car in the driveway while someone walks past: the review names the driveway, and the person isn't on our ground."""
+        self.items["alert"] = [review("walker", 200.0, ["person", "car"], zones=("driveway",))]
+        self.assertEqual([], self.ids())
+
+    def test_someone_who_steps_off_the_sidewalk_is_found_on_a_later_poll(self):
+        walking = review("r", 200.0, ["person"], zones=())
+        self.items["detection"] = [walking]
+        self.assertEqual([], self.ids())
+        walking["data"]["zones"] = ["property"]
+        self.assertEqual(["r"], self.ids())
+
+    def test_a_camera_without_the_zone_still_tells_of_everyone(self):
+        self.items["detection"] = [review("door", 200.0, ["person"], camera="amcrest_1", zones=())]
+        self.assertEqual(["door"], self.ids())
+
+    def test_what_began_before_everyone_left_stays_history(self):
+        self.items["detection"] = [review("old", 50.0, ["person"], zones=("property",))]
+        self.assertEqual([], self.ids())
+
+
 class SubjectTest(unittest.TestCase):
     def setUp(self):
         self.cars, relay.HOUSEHOLD_CARS = relay.HOUSEHOLD_CARS, {"andrews_tesla": {}, "sarahs_car": {}}

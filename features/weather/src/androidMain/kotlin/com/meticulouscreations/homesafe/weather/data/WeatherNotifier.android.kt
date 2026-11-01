@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -14,13 +15,17 @@ import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.appicon.appLaunchIntent
 import com.meticulouscreations.homesafe.data.BackgroundGraph
@@ -30,8 +35,10 @@ import com.meticulouscreations.homesafe.data.retireChannels
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import com.meticulouscreations.homesafe.ui.notification.drawableRes
+import com.meticulouscreations.homesafe.weather.domain.ReminderResult
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotification
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import com.meticulouscreations.homesafe.weather.ui.notice.WeatherNoticePainter
@@ -46,6 +53,9 @@ private const val TAG = "HomeSafeWeather"
 
 /** The everyday channel: rain on the way, the morning's and evening's outlook. "_v2" because the first "weather" channel sounded (see `createSilentChannel`). */
 internal const val CHANNEL_ID = "weather_v2"
+
+/** Rain about to start, on a channel of its own that comes up over whatever is on the screen: the whole point of it is being seen in time. */
+internal const val SOON_CHANNEL_ID = "weather_soon"
 
 /** Government warnings, on a channel of their own so they can be let through when the rest are silenced. */
 internal const val SEVERE_CHANNEL_ID = "weather_severe_v2"
@@ -88,7 +98,8 @@ private const val MIN_TIMEOUT_MS = 1_000L
  * or, for a government warning, the agency's words (an excerpt where it ran long). Its time is when what it tells of
  * happens, so a shower reads "in 25 min" and counts down by itself, and it takes itself down
  * once that is over (a warning at the moment it lapses; the rest no sooner than ten minutes after
- * they went up). A tap opens the weather app on what it was about; "Radar" opens the radar.
+ * they went up). A tap opens the weather app on what it was about; "Radar" opens the radar. A
+ * shower about to start also comes up over the screen, and has a button to be reminded nearer the time.
  */
 private class AndroidWeatherNotifier(private val context: Context) : WeatherNotifier {
     private val manager = context.getSystemService(NotificationManager::class.java)
@@ -122,6 +133,12 @@ private class AndroidWeatherNotifier(private val context: Context) : WeatherNoti
             NotificationManager.IMPORTANCE_DEFAULT,
         )
         manager.createSilentChannel(
+            SOON_CHANNEL_ID,
+            context.getString(R.string.notif_channel_weather_soon_name),
+            context.getString(R.string.notif_channel_weather_soon_description),
+            NotificationManager.IMPORTANCE_HIGH,
+        )
+        manager.createSilentChannel(
             SEVERE_CHANNEL_ID,
             context.getString(R.string.notif_channel_weather_severe_name),
             context.getString(R.string.notif_channel_weather_severe_description),
@@ -136,7 +153,12 @@ internal fun buildWeatherNotification(context: Context, notification: WeatherNot
     // A picture that can't be painted must not cost the notification: it goes out as text.
     val badge = runCatching { badge(context, notification.art) }.onFailure { Log.w(TAG, "no badge for ${notification.id}: ${it.message}") }.getOrNull()
     val card = runCatching { card(context, notification.art) }.onFailure { Log.w(TAG, "no picture for ${notification.id}: ${it.message}") }.getOrNull()
-    return NotificationCompat.Builder(context, if (notification.urgent) SEVERE_CHANNEL_ID else CHANNEL_ID)
+    val channel = when {
+        notification.urgent -> SEVERE_CHANNEL_ID
+        notification.headsUp -> SOON_CHANNEL_ID
+        else -> CHANNEL_ID
+    }
+    return NotificationCompat.Builder(context, channel)
         .setSmallIcon(look.glyph.drawableRes)
         .setColor(look.tintArgb)
         .setContentTitle(notification.title)
@@ -154,7 +176,7 @@ internal fun buildWeatherNotification(context: Context, notification: WeatherNot
         )
         // No category: a warning is loud on its own channel, but it is not an alarm, and
         // doesn't claim the pass through Do Not Disturb that one gets.
-        .setPriority(if (notification.urgent) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+        .setPriority(if (notification.headsUp) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
         // The weather is nobody's secret: shown in full on the lock screen.
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setGroup(group.group)
@@ -166,6 +188,11 @@ internal fun buildWeatherNotification(context: Context, notification: WeatherNot
         .setOnlyAlertOnce(true)
         .setContentIntent(openIntent(context, notification.link))
         .addAction(look.glyph.drawableRes, context.getString(R.string.notif_action_weather_radar), openIntent(context, notification.link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null)))
+        .apply {
+            val at = notification.reminderEpochSeconds
+            val label = notification.reminderLabel
+            if (at != null && label != null) addAction(look.glyph.drawableRes, label, WeatherReminderReceiver.intent(context, notification.id, at))
+        }
         // A warning is over when the agency says it is, to the second; the rest stay long enough to be read.
         .apply { notification.expiresEpochSeconds?.let { setTimeoutAfter((it * 1000 - nowMillis).coerceAtLeast(if (notification.urgent) MIN_TIMEOUT_MS else MIN_SHOWN_MS)) } }
         .build()
@@ -202,6 +229,78 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Coroutine
         val posted = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).weatherAlertCheck.run()
         Log.i(TAG, "background check: $posted posted")
         return Result.success()
+    }
+}
+
+/**
+ * One shower's reminder, as WorkManager work: from the "Remind me" button until its time comes. A
+ * forecast that can't be had is tried again a few times. The work waits for a network, so it can
+ * run late: from when that shower was due it has nothing to say, or it would tell of a later one.
+ */
+class WeatherReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        if (System.currentTimeMillis() / 1000 >= inputData.getLong(KEY_SHOWER_AT, Long.MAX_VALUE)) {
+            Log.i(TAG, "reminder: too late for the shower it was about")
+            return Result.success()
+        }
+        val result = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).weatherAlertCheck.remind()
+        Log.i(TAG, "reminder: $result (attempt ${runAttemptCount + 1})")
+        return if (result == ReminderResult.TRY_AGAIN && runAttemptCount < REMINDER_RETRIES) Result.retry() else Result.success()
+    }
+}
+
+/** Input to [WeatherReminderWorker]: when the shower it was asked for was due (epoch seconds). */
+private const val KEY_SHOWER_AT = "shower_at"
+
+/** How many times a reminder is tried again, a minute further apart each time: past that the rain has started. */
+private const val REMINDER_RETRIES = 4
+
+/**
+ * A shower's "Remind me" button: asks for the notification again at the time the button said, and
+ * once WorkManager has that safely stored, takes this one down. The reminder looks at the forecast
+ * afresh, so it needs a network, and asking twice replaces the first.
+ */
+class WeatherReminderReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val at = intent.getLongExtra(EXTRA_AT, 0L)
+        val tag = intent.getStringExtra(EXTRA_TAG)
+        val delay = (at * 1000 - System.currentTimeMillis()).coerceAtLeast(0L)
+        val request = OneTimeWorkRequestBuilder<WeatherReminderWorker>()
+            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
+            .setInputData(workDataOf(KEY_SHOWER_AT to at + WeatherNoticePlanner.REMIND_BEFORE_SECONDS))
+            .build()
+        // Storing the request happens on another thread: the process is kept until it's done.
+        val pending = goAsync()
+        runCatching {
+            val enqueued = WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request).result
+            enqueued.addListener(
+                {
+                    runCatching {
+                        enqueued.get()
+                        context.getSystemService(NotificationManager::class.java).cancel(tag, NOTIFICATION_ID)
+                        group.tidy(context, tag, NOTIFICATION_ID)
+                    }.onFailure { Log.w(TAG, "couldn't schedule the reminder: ${it.message}") }
+                    pending.finish()
+                },
+                ContextCompat.getMainExecutor(context),
+            )
+        }.onFailure {
+            Log.w(TAG, "couldn't schedule the reminder: ${it.message}")
+            pending.finish()
+        }
+    }
+
+    companion object {
+        private const val WORK_NAME = "weather-reminder"
+        private const val EXTRA_AT = "at"
+        private const val EXTRA_TAG = "tag"
+
+        internal fun intent(context: Context, tag: String, atEpochSeconds: Long): PendingIntent {
+            val intent = Intent(context, WeatherReminderReceiver::class.java).putExtra(EXTRA_AT, atEpochSeconds).putExtra(EXTRA_TAG, tag)
+            return PendingIntent.getBroadcast(context, tag.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        }
     }
 }
 
