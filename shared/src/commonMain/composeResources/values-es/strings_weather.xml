@@ -136,6 +136,7 @@
     </plurals>
     <string name="weather_forecast_less_certain">Los días más tenues están a una semana o más, y son menos seguros.</string>
     <string name="weather_day_description">%1$s: %2$s, máxima %3$s, mínima %4$s</string>
+    <string name="weather_day_description_wet">%1$s: %2$s, máxima %3$s, mínima %4$s. %5$s, %6$s</string>
     <string name="weather_day_expanded">Expandido</string>
     <string name="weather_day_collapsed">Contraído</string>
     <string name="weather_day_date">%1$s, %2$s</string>

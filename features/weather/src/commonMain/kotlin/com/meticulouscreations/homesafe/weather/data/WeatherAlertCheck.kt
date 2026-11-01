@@ -90,6 +90,21 @@ class WeatherAlertCheck(
     }
 
     /**
+     * What a shower's "Remind me" button asked for: its notification again, from a fresh forecast,
+     * if the rain is still coming and nothing has been switched off since. Says whether one went up.
+     */
+    suspend fun remind(): Boolean = running.withLock {
+        runCatching {
+            val prefs = preferences.observe().first()
+            if (!notifier.isSupported || !prefs.notices.enabled || !prefs.notices.precipitationSoon || mute.muted.value || !notifier.isAllowed()) return@runCatching false
+            val place = place() ?: return@runCatching false
+            val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return@runCatching false
+            val notice = WeatherNoticePlanner.reminder(report, place.name.takeIf { it.isNotBlank() }, prefs.units, clock.now().epochSeconds) ?: return@runCatching false
+            notifier.notify(notice.toNotification(place))
+        }.getOrDefault(false)
+    }
+
+    /**
      * Takes down what is over at [epochSeconds], from here rather than from the next check. A
      * sample can go out with the notifications switched off, when no check is scheduled to come,
      * and where the platform can't give a notification an end (iOS) nothing else would take it
@@ -143,6 +158,9 @@ class WeatherAlertCheck(
             ticks = chart?.ticks.orEmpty().map { textLoader.load(it) },
         ),
         urgent = urgent,
+        headsUp = headsUp,
+        reminderEpochSeconds = reminderEpochSeconds,
+        reminderLabel = reminderLabel?.let { textLoader.load(it) },
         place = this.place,
         detail = detail?.let { textLoader.load(it) },
         eventEpochSeconds = eventEpochSeconds,

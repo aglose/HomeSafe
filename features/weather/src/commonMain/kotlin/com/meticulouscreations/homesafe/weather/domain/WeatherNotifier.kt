@@ -30,7 +30,8 @@ data class WeatherNoticeArt(
  * the same thing. Beyond the two lines every notification has: the [place] it is for (a line of
  * its own where the platform has one), [detail] to open out into, the moment it is about
  * ([eventEpochSeconds]) and the moment it should be taken down ([expiresEpochSeconds]), its
- * picture ([art]) and where a tap lands ([link]).
+ * picture ([art]) and where a tap lands ([link]). [headsUp] brings it up over whatever is on the
+ * screen, and [reminderEpochSeconds] with [reminderLabel] is a button that says it again later.
  */
 @Immutable
 data class WeatherNotification(
@@ -44,6 +45,9 @@ data class WeatherNotification(
     val eventEpochSeconds: Long? = null,
     val expiresEpochSeconds: Long? = null,
     val link: WeatherDeepLink = WeatherDeepLink(),
+    val headsUp: Boolean = urgent,
+    val reminderEpochSeconds: Long? = null,
+    val reminderLabel: String? = null,
 )
 
 /**

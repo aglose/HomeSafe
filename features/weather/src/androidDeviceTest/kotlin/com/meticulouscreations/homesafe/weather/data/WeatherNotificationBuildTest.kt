@@ -34,8 +34,8 @@ class WeatherNotificationBuildTest {
 
     private val rain = WeatherNotification(
         id = "soon:1",
-        title = "Rain starting in about 25 min",
-        body = "Around 3:30 PM in Portland, for about 30 min",
+        title = "Rain at 3:30 PM",
+        body = "For about 30 min, around 0.04 in",
         art = WeatherNoticeArt(
             icon = WeatherNoticeIcon.RAIN,
             headline = "3:30 PM",
@@ -107,6 +107,13 @@ class WeatherNotificationBuildTest {
     @Test
     fun itOffersTheRadar() {
         assertEquals(listOf("Radar"), build(rain).actions.map { it.title.toString() })
+    }
+
+    @Test
+    fun rainAboutToStartComesUpOverTheScreenAndCanBePutOff() {
+        val built = build(rain.copy(headsUp = true, reminderEpochSeconds = nowSeconds + 900, reminderLabel = "Remind me at 3:15 PM"))
+        assertEquals(SOON_CHANNEL_ID, built.channelId)
+        assertEquals(listOf("Radar", "Remind me at 3:15 PM"), built.actions.map { it.title.toString() })
     }
 
     @Test
