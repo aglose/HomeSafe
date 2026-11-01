@@ -448,6 +448,33 @@ class DetectionAlertServiceTest {
     }
 
     @Test
+    fun whenEveryoneIsAwayAPersonWhoStepsOffTheSidewalkLaterIsStillTold() = runTest {
+        val h = Harness(this, on)
+        h.config = """{"cameras":{"amcrest_1":{"zones":{
+            "property":{"coordinates":"0,0.5,1,0.5,1,1,0,1","objects":["person"]}
+        }}}}"""
+        h.presenceRepo.everyoneAway(true)
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.pathById["visitor"] = listOf(0.2 to 0.3, 0.6 to 0.4)
+        h.events += Triple("visitor", "person", 1_000_001.0)
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "still on the sidewalk")
+
+        h.pathById["visitor"] = listOf(0.2 to 0.3, 0.6 to 0.4, 0.5 to 0.7)
+        eventually("the same person, now on the property") { h.notifier.posted.map { it.id } == listOf("visitor") }
+        assertTrue(h.notifier.posted.single().urgent, "away mode posts on the loud channel")
+
+        h.pathById["walker"] = listOf(0.2 to 0.3, 0.6 to 0.4)
+        h.events += Triple("walker", "person", 1_000_002.0)
+        settle()
+        h.endedById["walker"] = 1_000_010.0
+        settle()
+        assertEquals(listOf("visitor"), h.notifier.posted.map { it.id }, "someone who walked on by is never told")
+    }
+
+    @Test
     fun quietHoursHoldBackOrdinaryAlertsButNeverAwayOnes() = runTest {
         // 1 PM to 3 PM around the harness's 1:46 PM.
         val h = Harness(this, on.copy(quietHours = QuietHours(enabled = true, startMinute = 13 * 60, endMinute = 15 * 60)))

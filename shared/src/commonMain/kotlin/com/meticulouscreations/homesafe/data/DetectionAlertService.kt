@@ -166,7 +166,7 @@ class DetectionAlertService(
             apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = from).onSuccess { events ->
                 val now = clock()
                 events.filter { it.id !in seen }.sortedBy { it.startTime }.forEach { event ->
-                    if (shouldHold(event, now)) {
+                    if (shouldHold(event, zones, now)) {
                         pending[event.id] = event
                     } else {
                         pending.remove(event.id)
@@ -176,7 +176,7 @@ class DetectionAlertService(
                 }
                 // A held detection that fell out of the page (or ended without a name) is judged as it last stood.
                 val returned = events.mapTo(HashSet()) { it.id }
-                pending.values.filter { it.id !in returned && !shouldHold(it, now) }.forEach { event ->
+                pending.values.filter { it.id !in returned && !shouldHold(it, zones, now) }.forEach { event ->
                     pending.remove(event.id)
                     seen += event.id
                     decide(url, event, zones, recentVehicles)
@@ -192,20 +192,25 @@ class DetectionAlertService(
     }
 
     /**
-     * Two reasons to look again later rather than judge now. Frigate names a face a few seconds
+     * Three reasons to look again later rather than judge now. Frigate names a face a few seconds
      * into a person's visit, and a stranger-only rule can't be applied until then, so a
      * still-anonymous, still-present person is held for up to [RECOGNITION_GRACE_SECONDS] after
-     * they appeared before being judged a stranger. And a vehicle's path is a point or two when it
-     * first appears, whether it is pulling in or has sat there all day, so a still, still-present
-     * vehicle is held for up to [MOTION_GRACE_SECONDS] to give its path time to show travel.
+     * they appeared before being judged a stranger. With everyone away, someone still in view who
+     * hasn't reached a [PROPERTY_ZONE] may yet step off the sidewalk, so they are held for up to
+     * [PROPERTY_GRACE_SECONDS]. And a vehicle's path is a point or two when it first appears,
+     * whether it is pulling in or has sat there all day, so a still, still-present vehicle is held
+     * for up to [MOTION_GRACE_SECONDS] to give its path time to show travel.
      */
-    private fun shouldHold(event: FrigateEvent, now: Double): Boolean = when (categoryForLabel(event.label)) {
+    private fun shouldHold(event: FrigateEvent, zones: Map<String, List<DetectionZone>>, now: Double): Boolean = when (categoryForLabel(event.label)) {
         MomentCategory.PEOPLE ->
-            !everyoneAway &&
-                settings.value.quietFamiliarPeople &&
-                !event.isRecognized &&
-                event.endTime == null &&
-                now - event.startTime < RECOGNITION_GRACE_SECONDS
+            event.endTime == null &&
+                if (everyoneAway) {
+                    now - event.startTime < PROPERTY_GRACE_SECONDS && !onOurGround(event.toDomain(), zones[event.camera].orEmpty())
+                } else {
+                    settings.value.quietFamiliarPeople &&
+                        !event.isRecognized &&
+                        now - event.startTime < RECOGNITION_GRACE_SECONDS
+                }
 
         MomentCategory.VEHICLES ->
             event.endTime == null &&
@@ -229,8 +234,7 @@ class DetectionAlertService(
         val moment = event.toDomain()
         val cameraZones = zones[event.camera].orEmpty()
         val placed = moment.inZones(cameraZones, clock())
-        val onOurGround = cameraZones.none { it.name == PROPERTY_ZONE } || placed?.zones.orEmpty().contains(PROPERTY_ZONE)
-        val escalated = everyoneAway && category == MomentCategory.PEOPLE && onOurGround
+        val escalated = everyoneAway && category == MomentCategory.PEOPLE && onOurGround(moment, cameraZones)
         if (!escalated && settings.value.ordinaryAlertsSilenced(localMinuteOfDay())) return
         if (category == MomentCategory.VEHICLES && moment.isStill()) return
         if (!escalated && placed != null && isRepeatSighting(placed, recentVehicles)) return
@@ -248,6 +252,11 @@ class DetectionAlertService(
             }
         }
     }
+
+    /** Whether this person counts for Away mode: anywhere on a camera with no [PROPERTY_ZONE], otherwise once they have set foot in it. */
+    private fun onOurGround(moment: MomentEvent, cameraZones: List<DetectionZone>): Boolean =
+        cameraZones.none { it.name == PROPERTY_ZONE } ||
+            moment.inZones(cameraZones, clock())?.zones.orEmpty().contains(PROPERTY_ZONE)
 
     /** A vehicle already posted, kept so its re-detections at the same spot read as more sightings of it. */
     private class RecentVehicle(var moment: MomentEvent, var lastSeenEpochSeconds: Double)
@@ -327,6 +336,12 @@ class DetectionAlertService(
     private companion object {
         /** Where the household's own ground ends; the relay's `PROPERTY_ZONE`, same rule. */
         const val PROPERTY_ZONE = "property"
+
+        /**
+         * How long someone still in view is watched for reaching it. Only a bound for a copy left
+         * behind if the event falls out of the page: 90% of people on the Front Yard are gone in 35 s.
+         */
+        const val PROPERTY_GRACE_SECONDS = 600.0
 
         const val PAGE_SIZE = 50
         const val ZONES_REFRESH_SECONDS = 120.0
