@@ -21,7 +21,9 @@ import homesafe.shared.generated.resources.download_write_failed
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -48,7 +50,20 @@ private class AndroidClipDownloader(private val context: Context) : ClipDownload
         headers: Map<String, String>,
         fileName: String,
         onProgress: (ClipDownloadProgress) -> Unit,
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> {
+        val result = runCatching { downloadAndSave(url, headers, fileName, onProgress) }
+        // The save outlives a cancelled caller, but its result mustn't: a newer download may
+        // already be showing where this one's "Downloaded" would land.
+        currentCoroutineContext().ensureActive()
+        return result
+    }
+
+    private suspend fun downloadAndSave(
+        url: String,
+        headers: Map<String, String>,
+        fileName: String,
+        onProgress: (ClipDownloadProgress) -> Unit,
+    ) {
         val staging = withContext(Dispatchers.IO) { stagingFile(fileName) }
         val request = DownloadManager.Request(url.toUri())
             .setTitle(fileName)
@@ -83,21 +98,43 @@ private class AndroidClipDownloader(private val context: Context) : ClipDownload
     /**
      * A fresh file in the app's external files for [fileName] to download into. DownloadManager
      * only writes to external storage, and this part of it is the app's own and never scanned
-     * into the gallery. Anything left from a download the process died during is swept away.
+     * into the gallery. Anything left from a download the process died during is swept away,
+     * once it's old and no download still waiting or running (a paused one, offline) writes it.
      */
     private fun stagingFile(fileName: String): File {
         val root = context.getExternalFilesDir(null)
             ?: throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "No external storage")
         val dir = File(root, STAGING_DIR)
         dir.mkdirs()
-        val stale = System.currentTimeMillis() - STAGED_FILE_MAX_AGE_MS
-        dir.listFiles()?.filter { it.lastModified() < stale }?.forEach { it.delete() }
+        unfinishedDownloadPaths()?.let { inUse ->
+            val stale = System.currentTimeMillis() - STAGED_FILE_MAX_AGE_MS
+            dir.listFiles()
+                ?.filter { it.lastModified() < stale && it.absolutePath !in inUse }
+                ?.forEach { it.delete() }
+        }
         return File(dir, "${UUID.randomUUID()}-$fileName")
     }
 
     /**
-     * Follows [downloadId] until [DownloadManager] finishes it, failing if it didn't succeed. A
-     * cancelled caller stops following; the download itself carries on, notification and all.
+     * Where this app's pending, running and paused downloads are writing, or null when one of
+     * them doesn't say, in which case nothing is safe to sweep.
+     */
+    private fun unfinishedDownloadPaths(): Set<String>? {
+        val unfinished = DownloadManager.STATUS_PENDING or DownloadManager.STATUS_RUNNING or DownloadManager.STATUS_PAUSED
+        return downloadManager.query(DownloadManager.Query().setFilterByStatus(unfinished)).use { cursor ->
+            val column = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)
+            val paths = mutableSetOf<String>()
+            while (cursor.moveToNext()) {
+                val path = cursor.getString(column)?.toUri()?.path ?: return@use null
+                paths += File(path).absolutePath
+            }
+            paths
+        }
+    }
+
+    /**
+     * Follows [downloadId] until [DownloadManager] finishes it, failing if it didn't succeed. It
+     * runs to the end even for a cancelled caller (see [downloadAndSave]), so the clip still lands.
      */
     private suspend fun awaitCompletion(downloadId: Long, onProgress: (ClipDownloadProgress) -> Unit) {
         var last: ClipDownloadProgress = ClipDownloadProgress.Preparing
