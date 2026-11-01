@@ -53,8 +53,8 @@ object ChargingFixtures {
         ChargingMonth(
             key = "2026-10",
             cars = listOf(
-                CarMonth("car_a", "Alex", 196.0, 54.8, 41.0, 16.4, 0.0, 0.0, 9, 1012.0, 268.0, homePricedKwh = 196.0, fastPricedKwh = 41.0, homeBatteryKwh = 176.4, fastBatteryKwh = 41.0, fastIdle = 1.5, homePricedCost = 54.8, fastPricedCost = 14.9),
-                CarMonth("car_b", "Sam", 231.0, 64.6, 0.0, 0.0, 29.2, 6.5, 11, 1185.0, 301.0, homePricedKwh = 231.0, otherPricedKwh = 18.0, homeBatteryKwh = 207.9, otherBatteryKwh = 16.2, homePricedCost = 64.6, otherPricedCost = 6.5),
+                CarMonth("car_a", "Alex", 196.0, 54.8, 41.0, 16.4, 0.0, 0.0, 9, 1012.0, 268.0, usedMiles = 1012.0, homePricedKwh = 196.0, fastPricedKwh = 41.0, homeBatteryKwh = 176.4, fastBatteryKwh = 41.0, fastIdle = 1.5, homePricedCost = 54.8, fastPricedCost = 14.9),
+                CarMonth("car_b", "Sam", 231.0, 64.6, 0.0, 0.0, 29.2, 6.5, 11, 1185.0, 301.0, usedMiles = 1185.0, homePricedKwh = 231.0, otherPricedKwh = 18.0, homeBatteryKwh = 207.9, otherBatteryKwh = 16.2, homePricedCost = 64.6, otherPricedCost = 6.5),
             ),
             cardFast = 16.4,
             unmatched = 0.0,
@@ -65,8 +65,8 @@ object ChargingFixtures {
         ChargingMonth(
             key = "2026-09",
             cars = listOf(
-                CarMonth("car_a", "Alex", 172.0, 48.1, 62.0, 27.5, 0.0, 0.0, 8, 1120.0, 301.0, homePricedKwh = 172.0, fastPricedKwh = 62.0, homeBatteryKwh = 154.8, fastBatteryKwh = 62.0, homePricedCost = 48.1, fastPricedCost = 27.5),
-                CarMonth("car_b", "Sam", 204.0, 57.1, 18.0, 8.1, 0.0, 0.0, 9, 980.0, 266.0, homePricedKwh = 204.0, fastPricedKwh = 18.0, homeBatteryKwh = 183.6, fastBatteryKwh = 18.0, homePricedCost = 57.1, fastPricedCost = 8.1),
+                CarMonth("car_a", "Alex", 172.0, 48.1, 62.0, 27.5, 0.0, 0.0, 8, 1120.0, 301.0, usedMiles = 1120.0, homePricedKwh = 172.0, fastPricedKwh = 62.0, homeBatteryKwh = 154.8, fastBatteryKwh = 62.0, homePricedCost = 48.1, fastPricedCost = 27.5),
+                CarMonth("car_b", "Sam", 204.0, 57.1, 18.0, 8.1, 0.0, 0.0, 9, 980.0, 266.0, usedMiles = 980.0, homePricedKwh = 204.0, fastPricedKwh = 18.0, homeBatteryKwh = 183.6, fastBatteryKwh = 18.0, homePricedCost = 57.1, fastPricedCost = 8.1),
             ),
             cardFast = 50.0,
             unmatched = 14.4,
