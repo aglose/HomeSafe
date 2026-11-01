@@ -11350,6 +11350,21 @@ class FitnessSyncTest(unittest.TestCase):
         relay.require_frigate_session = lambda request: owner
         return relay.post_fitness_sync({"since": since, "changes": list(changes)}, object())
 
+    def test_rows_sent_from_the_start_dont_land_on_a_log_that_has_grown_since(self):
+        self.sync(changes=[self.weigh_in(1, 180.0)])
+        answer = self.sync(changes=[self.weigh_in(1, 200.0)])
+        self.assertTrue(answer["reset"])
+        self.assertEqual({"pounds": 180.0}, self.sync()["rows"][0]["data"], "the first to send keeps its row")
+
+    def test_tombstones_take_up_room_in_a_page(self):
+        changes = [self.weigh_in(day) for day in range(100)]
+        rev = self.sync(changes=changes)["rev"]
+        self.sync(since=rev, changes=[self.gone(day) for day in range(100)])
+        relay.FITNESS_PAGE_BYTES = 500
+        answer = self.sync(since=rev)
+        self.assertTrue(answer["more"])
+        self.assertLess(len(answer["rows"]), 100)
+
     @staticmethod
     def weigh_in(day, pounds=180.0):
         return {"kind": "weigh_in", "id": str(day), "data": {"pounds": pounds}}
@@ -11367,15 +11382,15 @@ class FitnessSyncTest(unittest.TestCase):
 
     def test_the_answer_comes_from_before_the_changes_sent_with_it(self):
         phone = self.sync(changes=[self.weigh_in(1)])
-        tablet = self.sync(changes=[self.weigh_in(2)])
+        tablet = self.sync(since=phone["rev"], changes=[self.weigh_in(2)])
         answer = self.sync(since=phone["rev"], changes=[self.weigh_in(3)])
         self.assertEqual([self.weigh_in(2)], answer["rows"])
         self.assertEqual(3, answer["rev"], "and goes on from past what it just sent")
         self.assertEqual(1, tablet["rev"] - phone["rev"])
 
     def test_the_last_device_to_send_a_row_wins(self):
-        self.sync(changes=[self.weigh_in(1, 180.0)])
-        self.sync(changes=[self.weigh_in(1, 175.0)])
+        first = self.sync(changes=[self.weigh_in(1, 180.0)])
+        self.sync(since=first["rev"], changes=[self.weigh_in(1, 175.0)])
         self.assertEqual([self.weigh_in(1, 175.0)], self.sync()["rows"])
 
     def test_a_deleted_row_is_told_to_a_device_that_was_away(self):
@@ -11417,13 +11432,14 @@ class FitnessSyncTest(unittest.TestCase):
 
     def test_changes_sent_mid_way_through_a_long_log_are_not_skipped(self):
         relay.FITNESS_PAGE_BYTES = 10
-        self.sync(changes=[self.weigh_in(1), self.weigh_in(2)])
-        answer = self.sync(changes=[self.weigh_in(3)])
+        first = self.sync(changes=[self.weigh_in(1)])
+        self.sync(since=first["rev"], changes=[self.weigh_in(2), self.weigh_in(3)])
+        answer = self.sync(since=first["rev"], changes=[self.weigh_in(4)])
         self.assertTrue(answer["more"])
-        self.assertEqual(1, answer["rev"], "goes on from where the page stopped, not from past what it just sent")
+        self.assertEqual(2, answer["rev"], "goes on from where the page stopped, not from past what it just sent")
         second = self.sync(since=answer["rev"])
         third = self.sync(since=second["rev"])
-        self.assertEqual(["2", "3"], [row["id"] for row in second["rows"] + third["rows"]])
+        self.assertEqual(["3", "4"], [row["id"] for row in second["rows"] + third["rows"]])
         self.assertFalse(third["more"])
 
     def test_each_login_has_a_log_of_its_own(self):

@@ -50,14 +50,21 @@ object NoFitnessLogSync : FitnessLogSync {
  * What a new row's id has to be at least. Ids rise from the log's highest, so that sets logged in one
  * second keep their order; but two devices that are apart would each take the same next number, and
  * those would then be taken for one row. So they begin here instead: the time, with twelve random bits
- * beneath it, which is above any id given before this existed. The numbers are too long for JavaScript
- * to read exactly (from 2039), and nothing that handles them is JavaScript: the app and the relay read
- * them as whole numbers of any size.
+ * beneath it, which is above any id given before this existed. A log can hold ids from a clock ahead of
+ * this one, and then two devices behind it are both past the time and at the same highest, so a step of
+ * a random size past that keeps them apart too. The numbers are too long for JavaScript to read exactly
+ * (from 2039), and nothing that handles them is JavaScript: the app and the relay read them as whole
+ * numbers of any size.
  */
 fun interface FitnessIdFloor {
-    fun next(): Long
+    /** Where a new id begins, in a log whose [highest] id is that. */
+    fun next(highest: Long): Long
 
     companion object {
-        val FromClock = FitnessIdFloor { (Clock.System.now().toEpochMilliseconds() shl 12) or Random.nextLong(1L shl 12) }
+        private const val STEP = 1L shl 24
+
+        val FromClock = FitnessIdFloor { highest ->
+            maxOf((Clock.System.now().toEpochMilliseconds() shl 12) or Random.nextLong(1L shl 12), highest + 1 + Random.nextLong(STEP))
+        }
     }
 }

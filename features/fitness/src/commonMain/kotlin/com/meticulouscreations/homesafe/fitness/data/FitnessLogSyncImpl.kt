@@ -133,7 +133,7 @@ class FitnessLogSyncImpl(
         val state = agreed.state()
         return when {
             state == null -> bringTogether(url, server)
-            state.server != server -> handOver(url, server)
+            state.handingOver || state.server != server -> handOver(url, server, state)
             else -> exchange(url, state)
         }
     }
@@ -145,17 +145,10 @@ class FitnessLogSyncImpl(
      * it ([FitnessRepositoryImpl.adopt]); what that leaves different is what the next exchange sends.
      */
     private suspend fun bringTogether(url: String, server: String): FitnessSyncStatus {
-        val rows = LinkedHashMap<String, JsonObject?>()
-        var answer: FitnessSyncAnswer
-        var cursor = 0L
-        do {
-            answer = api.sync(url, FitnessSyncRequest(since = cursor))
-            answer.rows.forEach { rows[FitnessSyncRows.key(it.kind, it.id)] = it.data }
-            cursor = answer.rev
-        } while (answer.more)
-
+        val heard = hearAll(url, null) ?: return FitnessSyncStatus.WAITING
+        val rows = heard.rows
         val written = rows.entries.mapNotNull { (key, data) -> data?.let { key to it } }.toMap()
-        val texts = written.mapNotNull { (key, data) -> FitnessSyncRows.forComparing(FitnessSyncRows.kindOf(key), data)?.let { key to it } }.toMap()
+        val texts = textsOf(rows)
 
         val logRows = written.filterKeys { FitnessSyncRows.isLog(it) && it in texts }
         if (logRows.isNotEmpty()) {
@@ -172,10 +165,49 @@ class FitnessLogSyncImpl(
             if (data == null && !FitnessSyncRows.isLog(key)) FitnessSyncRows.idOf(key).let { id -> if (runs.run(id)?.endEpochMillis != null) runs.removeRun(id) }
         }
 
-        val state = FitnessSyncStateEntity(server = server, owner = answer.owner, cursor = cursor)
+        val state = FitnessSyncStateEntity(server = server, owner = heard.owner, cursor = heard.cursor)
         agreed.record(texts.map { (key, text) -> FitnessSyncRowEntity(key, text) }, emptyList(), state)
         return exchange(url, state)
     }
+
+    /**
+     * The server has gone back to an older copy of itself: restored from a backup, or begun again. This
+     * device has heard of everything that copy holds, so nothing here is new to fit in around it: the
+     * ids stand, and what differs is what the server has lost since. So what it has becomes what was
+     * last agreed, and the next comparison sends the rest, the deletions with it.
+     */
+    private suspend fun catchServerUp(url: String, start: FitnessSyncStateEntity): FitnessSyncStatus {
+        val heard = hearAll(url, start.owner) ?: return FitnessSyncStatus.WAITING
+        val state = start.copy(cursor = heard.cursor)
+        agreed.startOver(textsOf(heard.rows).map { (key, text) -> FitnessSyncRowEntity(key, text) }, state)
+        return exchange(url, state)
+    }
+
+    private class WholeLog(val rows: Map<String, JsonObject?>, val owner: String, val cursor: Long)
+
+    /**
+     * The server's whole log, page by page, each page asked for from whoever the first one came from.
+     * Null if it stopped being the one log on the way (someone else signed in, the database restored),
+     * since pages of two logs mustn't be taken for one: the next pass begins again.
+     */
+    private suspend fun hearAll(url: String, expected: String?): WholeLog? {
+        val rows = LinkedHashMap<String, JsonObject?>()
+        var answer: FitnessSyncAnswer
+        var owner = expected
+        var cursor = 0L
+        do {
+            answer = api.sync(url, FitnessSyncRequest(owner, cursor))
+            if (answer.reset || (owner != null && answer.owner != owner)) return null
+            answer.rows.forEach { rows[FitnessSyncRows.key(it.kind, it.id)] = it.data }
+            owner = answer.owner
+            cursor = answer.rev
+        } while (answer.more)
+        return WholeLog(rows, answer.owner, cursor)
+    }
+
+    /** What the server holds, as text to compare, leaving out what's deleted and what this build can't read. */
+    private fun textsOf(rows: Map<String, JsonObject?>): Map<String, String> =
+        rows.entries.mapNotNull { (key, data) -> data?.let { FitnessSyncRows.forComparing(FitnessSyncRows.kindOf(key), it) }?.let { key to it } }.toMap()
 
     /** Sends what is different and takes in what has changed elsewhere, until there is neither. */
     private suspend fun exchange(url: String, start: FitnessSyncStateEntity): FitnessSyncStatus {
@@ -190,8 +222,10 @@ class FitnessLogSyncImpl(
             val changes = differences(before, last)
             val batch = batchOf(changes)
             val answer = api.sync(url, FitnessSyncRequest(start.owner, cursor, batch.rows))
-            if (answer.owner != start.owner) return handOver(url, start.server)
+            if (answer.owner != start.owner) return handOver(url, start.server, start)
             if (answer.reset) {
+                if (cursor > 0) return catchServerUp(url, start)
+                // Heard nothing yet, and someone else got there first: their rows and these may share ids.
                 agreed.forget()
                 return bringTogether(url, start.server)
             }
@@ -204,16 +238,27 @@ class FitnessLogSyncImpl(
     /**
      * Someone else is signed in than the log belongs to. If all of it is on the server it isn't lost by
      * going, so it makes way for theirs. If not it stays, and nothing crosses either way: the old owner
-     * signing back in finds it as it was.
+     * signing back in finds it as it was. A run being recorded is the old owner's too, and isn't on the
+     * server yet.
+     *
+     * The looking and the emptying are one piece, so a set logged meanwhile can't go unseen. The two
+     * databases can't change as one, so what is about to happen is noted first: stopped part-way, this
+     * carries on from the note (handingOver), and the emptied log is never taken for someone deleting it.
      */
-    private suspend fun handOver(url: String, server: String): FitnessSyncStatus {
-        val here = log.holdingLog { here() }
-        val last = agreed.rows().associate { it.key to it.data }
-        if (differences(here, last).isNotEmpty() && !wiped(here, last)) return FitnessSyncStatus.HELD_BACK
-        log.holdingLog {
+    private suspend fun handOver(url: String, server: String, state: FitnessSyncStateEntity): FitnessSyncStatus {
+        val emptied = log.holdingLog {
+            if (!state.handingOver) {
+                val here = here()
+                val last = agreed.rows().associate { it.key to it.data }
+                val unsaved = differences(here, last).isNotEmpty() && !wiped(here, last)
+                if (unsaved || runs.unfinished().isNotEmpty()) return@holdingLog false
+                agreed.upsertState(state.copy(handingOver = true))
+            }
             log.emptyLog()
             runs.observeFinished().first().forEach { runs.removeRun(it.id) }
+            true
         }
+        if (!emptied) return FitnessSyncStatus.HELD_BACK
         agreed.forget()
         return bringTogether(url, server)
     }

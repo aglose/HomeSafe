@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.fitness.data
 
 import com.meticulouscreations.homesafe.data.FitnessRecordedRunEntity
 import com.meticulouscreations.homesafe.data.FitnessRunEventEntity
+import com.meticulouscreations.homesafe.data.FitnessSyncDao
+import com.meticulouscreations.homesafe.data.FitnessSyncRowEntity
 import com.meticulouscreations.homesafe.data.InMemoryFitnessDao
 import com.meticulouscreations.homesafe.data.InMemoryFitnessRunDao
 import com.meticulouscreations.homesafe.data.InMemoryFitnessSyncDao
@@ -25,8 +27,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -36,6 +40,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 
 /** Several installs against one server that behaves as `fitness_sync` in `relay/relay.py` does (and `FitnessSyncTest` holds that to). */
 class FitnessLogSyncImplTest {
@@ -61,10 +66,11 @@ class FitnessLogSyncImplTest {
         override suspend fun sync(url: String, request: FitnessSyncRequest): FitnessSyncAnswer {
             requests++
             check(answering) { "The relay answered 500" }
-            if (request.owner != null && request.owner != signedIn) return FitnessSyncAnswer(signedIn)
+            val owner = signedIn
+            if (request.owner != null && request.owner != owner) return FitnessSyncAnswer(owner)
             val log = log()
             var head = log.values.maxOfOrNull { it.rev } ?: 0L
-            if (request.since > head) return FitnessSyncAnswer(signedIn, reset = true)
+            if (request.since > head || (request.since == 0L && head > 0 && request.changes.isNotEmpty())) return FitnessSyncAnswer(owner, reset = true)
             val after = log.entries.filter { it.value.rev > request.since }.sortedBy { it.value.rev }
             val page = after.take(pageRows)
             val more = page.size < after.size
@@ -79,14 +85,13 @@ class FitnessLogSyncImplTest {
                 log[key] = Held(change.data, ++head)
             }
             whileAnswering?.invoke()
-            return FitnessSyncAnswer(signedIn, rev = if (more) reached else head, more = more, rows = rows)
+            return FitnessSyncAnswer(owner, rev = if (more) reached else head, more = more, rows = rows)
         }
     }
 
-    private class Install(relay: FakeRelay, scope: CoroutineScope, url: String? = URL, firstId: Long? = null) {
+    private class Install(relay: FakeRelay, scope: CoroutineScope, url: String? = URL, firstId: Long? = null, val agreedDao: FitnessSyncDao = InMemoryFitnessSyncDao()) {
         val logDao = InMemoryFitnessDao()
         val runDao = InMemoryFitnessRunDao()
-        val agreedDao = InMemoryFitnessSyncDao()
         val log = if (firstId == null) FitnessRepositoryImpl(logDao) else FitnessRepositoryImpl(logDao) { firstId }
         val connection = FakeServerConnection(url)
         val sync = FitnessLogSyncImpl(log, runDao, agreedDao, relay, connection, scope)
@@ -97,7 +102,8 @@ class FitnessLogSyncImplTest {
         suspend fun sets() = log.sets.first().map { Triple(it.exerciseId, it.weight, it.reps) }.sortedBy { it.toString() }
     }
 
-    private fun TestScope.install(relay: FakeRelay, url: String? = URL, firstId: Long? = null) = Install(relay, backgroundScope, url, firstId)
+    private fun TestScope.install(relay: FakeRelay, url: String? = URL, firstId: Long? = null, agreedDao: FitnessSyncDao = InMemoryFitnessSyncDao()) =
+        Install(relay, backgroundScope, url, firstId, agreedDao)
 
     private fun run(id: String, start: Long = 1_000) = FitnessRecordedRunEntity(id, start, start + 600_000, -14_400, 1_609.0, 590_000)
 
@@ -280,14 +286,14 @@ class FitnessLogSyncImplTest {
 
         val second = install(relay)
         second.log.saveExercises(listOf(SQUAT))
-        val open = second.log.startWorkout(WorkoutFocus.LEGS, 2_000)
+        val open = second.log.startWorkout(WorkoutFocus.LEGS, Clock.System.now().epochSeconds)
         second.logSet(workout = open.id, weight = 315.0, at = 2_100)
         second.sync.syncNow()
         assertEquals(FitnessSyncStatus.WAITING, second.sync.status.value)
         assertEquals(open.id, second.log.workouts.first().single().id)
         assertEquals(listOf(Triple(SQUAT.id, 315.0, 5)), second.sets())
 
-        second.log.finishWorkout(open.id, 2_500)
+        second.log.finishWorkout(open.id, Clock.System.now().epochSeconds)
         second.sync.syncNow()
         assertEquals(FitnessSyncStatus.SAVED, second.sync.status.value)
         assertEquals(2, second.log.sets.first().size)
@@ -613,6 +619,211 @@ class FitnessLogSyncImplTest {
         assertEquals(listOf(BodyweightEntry(20_000, 130.0)), phone.log.bodyweights.first())
         assertEquals("Band", phone.log.heartSettings.first().sensor?.name, "the device's band is still the device's")
         assertEquals(1, relay.rowsOf(FitnessSyncRows.EXERCISE, "andrew").size, "and the other's is still theirs on the server")
+    }
+
+    @Test
+    fun aWorkoutWithTheSameIdThatIsAnotherWorkoutStillKeepsItsIdUntilItCloses() = runTest {
+        val relay = FakeRelay()
+        val phone = install(relay, firstId = 1)
+        phone.log.saveExercises(listOf(SQUAT))
+        val theirs = phone.log.startWorkout(WorkoutFocus.CHEST, 900)
+        phone.logSet(workout = theirs.id)
+        phone.log.finishWorkout(theirs.id, 1_000)
+        phone.sync.syncNow()
+
+        val second = install(relay, firstId = 1)
+        second.log.saveExercises(listOf(SQUAT))
+        val open = second.log.startWorkout(WorkoutFocus.LEGS, Clock.System.now().epochSeconds)
+        assertEquals(theirs.id, open.id)
+        second.sync.syncNow()
+        assertEquals(FitnessSyncStatus.WAITING, second.sync.status.value)
+        assertEquals(WorkoutFocus.LEGS, second.log.workouts.first().single { it.id == open.id }.focus)
+    }
+
+    @Test
+    fun aWorkoutLeftOpenAndWalkedAwayFromDoesNotHoldTheLogBackForEver() = runTest {
+        val relay = FakeRelay()
+        val phone = install(relay)
+        phone.log.saveExercises(listOf(SQUAT))
+        phone.sync.syncNow()
+
+        val second = install(relay)
+        second.log.saveExercises(listOf(SQUAT))
+        second.log.startWorkout(WorkoutFocus.LEGS, 2_000)
+        second.sync.syncNow()
+        assertEquals(FitnessSyncStatus.SAVED, second.sync.status.value)
+    }
+
+    @Test
+    fun twoFirstSyncsAtOnceCantOverwriteEachOthersRows() = runTest {
+        val relay = FakeRelay()
+        val phone = install(relay, firstId = 1)
+        phone.log.saveExercises(listOf(SQUAT))
+        phone.logSet(weight = 225.0, at = 1_000)
+        val second = install(relay, firstId = 1)
+        second.log.saveExercises(listOf(SQUAT))
+        second.logSet(weight = 315.0, at = 2_000)
+
+        // The second hears an empty log, and the phone's set 1 lands before it sends its own set 1.
+        relay.whileAnswering = {
+            relay.whileAnswering = null
+            phone.sync.syncNow()
+        }
+        second.sync.syncNow()
+        assertEquals(FitnessSyncStatus.SAVED, second.sync.status.value)
+        phone.sync.syncNow()
+        val both = listOf(Triple(SQUAT.id, 225.0, 5), Triple(SQUAT.id, 315.0, 5))
+        assertEquals(2, relay.rowsOf(FitnessSyncRows.SET).size)
+        assertEquals(both, second.sets())
+        assertEquals(both, phone.sets())
+    }
+
+    @Test
+    fun pagesFromTwoLoginsAreNeverTakenForOneLog() = runTest {
+        val relay = FakeRelay()
+        val phone = install(relay)
+        phone.log.saveExercises(listOf(SQUAT))
+        repeat(3) { phone.logSet(at = 1_000L + it, reps = it + 1) }
+        phone.sync.syncNow()
+
+        relay.pageRows = 1
+        relay.whileAnswering = {
+            relay.whileAnswering = null
+            relay.signedIn = "sarah"
+        }
+        val tablet = install(relay)
+        tablet.logSet(weight = 95.0, at = 5_000)
+        tablet.sync.syncNow()
+        assertEquals(FitnessSyncStatus.WAITING, tablet.sync.status.value)
+        assertEquals(emptyList(), tablet.log.exercises.first(), "nothing of the first page was kept")
+        assertEquals(emptyMap(), relay.log("sarah").toMap())
+    }
+
+    @Test
+    fun aRestoredServerGetsBackTheEditsAndDeletionsItLost() = runTest {
+        val relay = FakeRelay()
+        val phone = install(relay)
+        phone.log.saveExercises(listOf(SQUAT))
+        val kept = phone.logSet(weight = 225.0, at = 1_000)
+        val deleted = phone.logSet(weight = 315.0, at = 2_000)
+        phone.log.saveBodyweight(BodyweightEntry(20_000, 180.0))
+        phone.sync.syncNow()
+        val backup = LinkedHashMap(relay.log())
+
+        phone.log.saveBodyweight(BodyweightEntry(20_000, 175.0))
+        phone.log.updateSet(kept.copy(reps = 9))
+        phone.log.deleteSet(deleted.id)
+        phone.sync.syncNow()
+        relay.logs[relay.signedIn] = backup
+        phone.sync.syncNow()
+
+        assertEquals(FitnessSyncStatus.SAVED, phone.sync.status.value)
+        assertEquals(listOf(BodyweightEntry(20_000, 175.0)), phone.log.bodyweights.first(), "the newer weigh-in stands")
+        assertEquals(listOf(kept.copy(reps = 9)), phone.log.sets.first(), "one set, edited, under its own id")
+        val tablet = install(relay)
+        tablet.sync.syncNow()
+        assertEquals(listOf(BodyweightEntry(20_000, 175.0)), tablet.log.bodyweights.first())
+        assertEquals(listOf(kept.copy(reps = 9)), tablet.log.sets.first())
+    }
+
+    @Test
+    fun aRunBeingRecordedWhenSomeoneElseSignsInIsNotTheirs() = runTest {
+        val relay = FakeRelay()
+        val phone = install(relay)
+        phone.log.saveExercises(listOf(SQUAT))
+        phone.sync.syncNow()
+        phone.runDao.upsertRun(run("r1").copy(endEpochMillis = null))
+
+        relay.signedIn = "sarah"
+        phone.sync.syncNow()
+        assertEquals(FitnessSyncStatus.HELD_BACK, phone.sync.status.value)
+        assertEquals(1, phone.log.exercises.first().size)
+
+        phone.runDao.upsertRun(run("r1"))
+        phone.sync.syncNow()
+        assertEquals(FitnessSyncStatus.HELD_BACK, phone.sync.status.value)
+        assertEquals(emptyMap(), relay.log("sarah").toMap())
+
+        relay.signedIn = "andrew"
+        phone.sync.syncNow()
+        assertEquals(1, relay.rowsOf(FitnessSyncRows.RUN, "andrew").size)
+    }
+
+    @Test
+    fun aSetLoggedAsSomeoneElseSignsInIsNotClearedAway() = runTest {
+        val relay = FakeRelay()
+        var phone: Install? = null
+        var logged = false
+        val real = InMemoryFitnessSyncDao()
+        val watched = object : FitnessSyncDao by real {
+            // In the middle of looking at what was last agreed, a set is saved.
+            override suspend fun rows(): List<FitnessSyncRowEntity> {
+                if (relay.signedIn == "sarah" && !logged) {
+                    logged = true
+                    launch { phone!!.logSet(weight = 315.0, at = 2_000) }
+                    yield()
+                }
+                return real.rows()
+            }
+        }
+        phone = install(relay, agreedDao = watched)
+        phone.log.saveExercises(listOf(SQUAT))
+        phone.sync.syncNow()
+
+        relay.signedIn = "sarah"
+        phone.sync.syncNow()
+        advanceUntilIdle()
+        assertEquals(listOf(Triple(SQUAT.id, 315.0, 5)), phone.sets(), "it waited for the hand-over, rather than going under it")
+    }
+
+    @Test
+    fun beingKilledDuringAHandOverSendsNoDeletions() = runTest {
+        val relay = FakeRelay()
+        val real = InMemoryFitnessSyncDao()
+        var killed = false
+        val dying = object : FitnessSyncDao by real {
+            override suspend fun forget() {
+                if (relay.signedIn == "sarah" && !killed) {
+                    killed = true
+                    error("killed")
+                }
+                real.forget()
+            }
+        }
+        val phone = install(relay, agreedDao = dying)
+        phone.log.saveExercises(listOf(SQUAT))
+        phone.logSet()
+        phone.sync.syncNow()
+
+        relay.signedIn = "sarah"
+        phone.sync.syncNow()
+        assertTrue(killed)
+        assertEquals(emptyList(), phone.log.sets.first())
+
+        // The owner signing back in before it could carry on finds the log whole, on the server and here.
+        relay.signedIn = "andrew"
+        phone.sync.syncNow()
+        assertEquals(FitnessSyncStatus.SAVED, phone.sync.status.value)
+        assertEquals(1, relay.rowsOf(FitnessSyncRows.SET).size)
+        assertEquals(1, phone.log.sets.first().size)
+    }
+
+    @Test
+    fun twoDevicesBehindAnIdFromAClockAheadDontTakeTheSameNext() = runTest {
+        val relay = FakeRelay()
+        val ahead = install(relay, firstId = Long.MAX_VALUE / 4)
+        ahead.log.saveExercises(listOf(SQUAT))
+        ahead.logSet()
+        ahead.sync.syncNow()
+        val phone = install(relay)
+        val tablet = install(relay)
+        phone.sync.syncNow()
+        tablet.sync.syncNow()
+
+        val here = phone.logSet(weight = 100.0, at = 2_000)
+        val there = tablet.logSet(weight = 200.0, at = 2_000)
+        assertNotEquals(here.id, there.id)
+        assertTrue(here.id > Long.MAX_VALUE / 4 && there.id > Long.MAX_VALUE / 4, "and they still rise")
     }
 
     @Test

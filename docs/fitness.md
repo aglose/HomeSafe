@@ -513,9 +513,10 @@ again: what was sent and not noted is sent again, and the server takes that as n
   or one exercise, so this takes the same set edited on two devices between passes. A row changed
   here while an answer was on its way stays as it is, and goes next.
 - **A deleted row stays on the server as a tombstone**, so a device that was away hears of it.
-- **Ids can't collide.** A new row's id starts from the time with twelve random bits beneath it
+- **Ids don't collide.** A new row's id starts from the time with twelve random bits beneath it
   (`FitnessIdFloor`), where it used to be the next number up, which two devices apart would each
-  have taken. Ids still rise, so sets logged in one second keep their order.
+  have taken. Behind an id from a clock running ahead, it goes a random step past that instead.
+  Ids still rise, so sets logged in one second keep their order.
 - **The server's rows are kept as a format of their own** (`FitnessSyncRows`), not the database's
   column names, since they outlive any one version of the app.
 
@@ -526,8 +527,12 @@ log), that install's ids mean nothing to the server, so it is treated as [a copy
 log](#moving-the-log) brought into the server's: what is there stands, what only this device had
 is added under new ids, and what is the same set twice is one set. Two consequences:
 
-- That happens to a device with a workout open only if the workout is on the server already. If
-  not, the pass waits for the workout to close, because its id is about to change.
+- That happens to a device with a workout in progress only if the server has that same workout,
+  with the same id, focus and start. If not, the pass waits for the workout to close, because its
+  id is about to change.
+- Two devices doing this at once can't overwrite each other, though both found the server empty
+  and each has its own set 1. Rows sent from a place of 0 to a log that has rows by then aren't
+  saved (`reset`), and that device fits itself in around them first.
 - As with a copy, something deleted from the log before this device first came along comes back
   if this device still has it.
 
@@ -538,10 +543,15 @@ is added under new ids, and what is the same set twice is one set. Two consequen
   do. If at least twenty rows have gone and none are left, the device starts over from the server.
 - It won't mix logs. Each request says whose log the device believes it has, and the relay saves
   nothing if that isn't who is signed in. If someone else signs in, a log that is all on the server
-  makes way for theirs; one with changes the server hasn't got stays here, nothing is sent, and the
-  Lifts tab says so, until the owner signs back in.
-- If the relay's database is restored from before what a device has heard of, it says so (`reset`)
-  and the device brings its log together with it again, which puts back what was lost.
+  makes way for theirs; one with changes the server hasn't got, or a run still being recorded, stays
+  here, nothing is sent, and the Lifts tab says so, until the owner signs back in. The hand-over is
+  noted before the log is emptied, so being killed part-way carries on rather than looking like
+  deletions.
+- If the relay's database is restored from before what a device has heard of, it says so (`reset`).
+  The device has heard of everything that copy holds, so it takes what's there as the last thing
+  agreed and sends the difference, which puts back what was lost, edits and deletions included. Two
+  devices doing that go by the last to tell the server. A device that hadn't heard the restored
+  database's newest rows when another put them back can miss those, until they next change.
 
 **Whose log it is.** The relay files a log under `owner`, which is the Frigate login today and only
 `fitness_owner` in `relay/relay.py` decides. Everything else, in the relay and in the app, treats

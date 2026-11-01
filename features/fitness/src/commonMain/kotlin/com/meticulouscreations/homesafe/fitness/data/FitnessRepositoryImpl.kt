@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Clock
 
 /** The training log in the app's database ([FitnessDao]). */
 @Inject
@@ -101,7 +102,8 @@ class FitnessRepositoryImpl(
     override suspend fun bringIn(copy: LogCopy): LogMerge = writes.withLock {
         // Worked out and written under the one lock every writer takes, so nothing moves between the two; and written as
         // one transaction, so a copy that is cut off part-way (the app killed, the caller cancelled) leaves nothing behind.
-        val merge = LogCopies.merge(copy, held(), idFloor.next())
+        val here = held()
+        val merge = LogCopies.merge(copy, here, floorOver(here))
         if (!merge.isEmpty) {
             val rows = merge.toRows()
             dao.writeMerge(
@@ -118,7 +120,11 @@ class FitnessRepositoryImpl(
     }
 
     /** A new row's id: past the [highest] the log holds, and past [idFloor]. */
-    private fun newId(highest: Long?): Long = maxOf((highest ?: 0L) + 1, idFloor.next())
+    private fun newId(highest: Long?): Long = maxOf((highest ?: 0L) + 1, idFloor.next(highest ?: 0L))
+
+    /** Where the new ids of a merge into [log] begin. */
+    private fun floorOver(log: LogCopy): Long =
+        idFloor.next(maxOf(log.workouts.maxOfOrNull { it.id } ?: 0L, log.sets.maxOfOrNull { it.id } ?: 0L, log.phases.maxOfOrNull { it.id } ?: 0L))
 
     /** Runs [block] with no write to the log able to land in the middle of it: what the server is told, and what it says, are worked out under this. */
     internal suspend fun <T> holdingLog(block: suspend () -> T): T = writes.withLock { block() }
@@ -148,10 +154,11 @@ class FitnessRepositoryImpl(
      * and not on the server, so the next comparison sends them. One transaction, so that being stopped
      * part-way loses nothing, and if it runs again it finds nothing more to add.
      *
-     * Not while a workout the server hasn't got is open here (returns false): its id is about to
-     * change, and the screen is holding on to it. A later try will find it closed.
+     * Not while a workout in progress here would change its id (returns false), because the screen is
+     * holding on to it: anything but the server's same workout does, since another install's workout
+     * can have the id without being the one. A later try will find it closed.
      */
-    internal suspend fun adopt(server: FitnessLogRows, profile: HeartProfile): Boolean = writes.withLock {
+    internal suspend fun adopt(server: FitnessLogRows, profile: HeartProfile, nowEpochSeconds: Long = Clock.System.now().epochSeconds): Boolean = writes.withLock {
         val here = held()
         val theirs = LogCopy(
             exercises = server.exercises.map { it.toDomain() },
@@ -162,9 +169,9 @@ class FitnessRepositoryImpl(
             heart = HeartSettings(profile),
             heartSummaries = server.heartSummaries.associate { it.workoutId to it.toDomain() },
         )
-        val onServer = server.workouts.mapTo(HashSet()) { it.id }
-        if (here.workouts.any { it.finishedAtEpochSeconds == null && it.id !in onServer }) return@withLock false
-        val merge = LogCopies.merge(here, theirs, idFloor.next())
+        val keepsItsId = theirs.workouts.mapTo(HashSet()) { Triple(it.id, it.focus, it.startedAtEpochSeconds) }
+        if (here.workouts.any { it.isInProgress(nowEpochSeconds) && Triple(it.id, it.focus, it.startedAtEpochSeconds) !in keepsItsId }) return@withLock false
+        val merge = LogCopies.merge(here, theirs, floorOver(theirs))
         val added = merge.toRows()
         // The exercises the merge rewrites are the ones it says differ, so they go in over the server's own.
         val rewritten = added.exercises.mapTo(HashSet()) { it.id }

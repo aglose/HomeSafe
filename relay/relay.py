@@ -14784,23 +14784,28 @@ def fitness_sync(owner: str, since: int, changes: list[tuple[str, str, str | Non
 
     `reset` says the device has heard of more of this log than there is, so this database isn't the
     one it was talking to (restored, or begun again). Nothing is saved: it is to send its log anew.
+    It says the same to a device sending rows from a place of 0 when there is a log here by now.
+    That device heard an empty log and hasn't heard this one, whose ids may be the same as its own
+    for other rows, so it is to fit in around it first. Two first syncs at once can't overwrite each other.
     """
 
     def work(c: sqlite3.Connection) -> dict[str, Any]:
         if expected_owner is not None and expected_owner != owner:
             return {"owner": owner, "reset": False, "rev": 0, "more": False, "rows": []}
         head = c.execute("SELECT COALESCE(MAX(rev), 0) FROM fitness_rows WHERE owner=?", (owner,)).fetchone()[0]
-        if since > head:
+        if since > head or (since == 0 and head > 0 and changes):
             return {"owner": owner, "reset": True, "rev": 0, "more": False, "rows": []}
         # Read before this device's own changes are written, so they aren't handed back to it.
         rows: list[dict[str, Any]] = []
         size, reached, more = 0, since, False
         for kind, row_id, rev, data in c.execute("SELECT kind, id, rev, data FROM fitness_rows WHERE owner=? AND rev>? ORDER BY rev", (owner, since)):
-            if rows and size + len(data or "") > FITNESS_PAGE_BYTES:
+            # A row's kind and id take room as well, and they are all a deleted row is.
+            row_size = len(data or "") + len(kind) + len(row_id) + 32
+            if rows and size + row_size > FITNESS_PAGE_BYTES:
                 more = True
                 break
             rows.append({"kind": kind, "id": row_id, "data": json.loads(data) if data is not None else None})
-            size += len(data or "")
+            size += row_size
             reached = rev
         for kind, row_id, data in changes:
             held = c.execute("SELECT data FROM fitness_rows WHERE owner=? AND kind=? AND id=?", (owner, kind, row_id)).fetchone()

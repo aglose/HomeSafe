@@ -80,6 +80,8 @@ data class FitnessSyncStateEntity(
     val server: String,
     val owner: String,
     val cursor: Long,
+    /** Set just before this device's log is emptied for someone else's, so that being stopped part-way isn't taken for deletions. */
+    val handingOver: Boolean = false,
 )
 
 @Dao
@@ -110,6 +112,14 @@ interface FitnessSyncDao {
     suspend fun record(rows: List<FitnessSyncRowEntity>, gone: List<String>, state: FitnessSyncStateEntity) {
         if (rows.isNotEmpty()) upsertRows(rows)
         gone.forEach { deleteRow(it) }
+        upsertState(state)
+    }
+
+    /** What the server now has is [rows], in place of whatever was thought before. */
+    @Transaction
+    suspend fun startOver(rows: List<FitnessSyncRowEntity>, state: FitnessSyncStateEntity) {
+        deleteRows()
+        if (rows.isNotEmpty()) upsertRows(rows)
         upsertState(state)
     }
 
@@ -151,6 +161,12 @@ class InMemoryFitnessSyncDao : FitnessSyncDao {
     override suspend fun record(rows: List<FitnessSyncRowEntity>, gone: List<String>, state: FitnessSyncStateEntity) {
         upsertRows(rows)
         gone.forEach { deleteRow(it) }
+        upsertState(state)
+    }
+
+    override suspend fun startOver(rows: List<FitnessSyncRowEntity>, state: FitnessSyncStateEntity) {
+        deleteRows()
+        upsertRows(rows)
         upsertState(state)
     }
 
