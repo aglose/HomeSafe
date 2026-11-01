@@ -20,10 +20,10 @@ no detections: the Nest cameras are not Frigate cameras.
   "Living Room", `outdoor_doorbell` as "Doorbell".
 - The cards and the live page play the stream with go2rtc's WebRTC, falling back to HLS, exactly
   like Frigate's cards (`frigateLiveStreamUrl`, `frigateWebRtcSignalingUrl`).
-- **As Frigate cameras** (see "Frigate cameras" under the box setup): a Frigate camera reading a
-  Nest stream takes the Nest camera's place in the lists (`camerasWithNest`), with Frigate's
-  live snapshot for a poster and Frigate's camera page; Frigate keeps its stream running, so the
-  card never waits on Google to start the camera.
+- **As Frigate cameras** (optional, for detection; see "Frigate cameras" under the box setup): a
+  Frigate camera reading a Nest stream takes the Nest camera's place in the lists
+  (`camerasWithNest`), with Frigate's live snapshot for a poster and Frigate's camera page. The box
+  has none since 2026-11-01. The relay's primer is what keeps the streams running.
 - **A smaller stream for the cards**, like the Frigate cameras' `_sub` streams: a go2rtc stream
   named `<camera>_sub` beside a Nest camera's is what its card (and the launch prefetch) plays;
   its page starts on that and moves up to the camera's own stream once it has a picture, the
@@ -178,8 +178,10 @@ go2rtc re-encodes the camera on the GPU at 640 wide (the height follows the pict
 the box's `go2rtc.ffmpeg.h264/cuda` template already gives it a keyframe every 25 frames. That is
 the point: Google sends a Nest camera's keyframes seconds apart (7–10 s measured), and a viewer
 joining a running stream sees nothing until the next one, while a viewer joining `_sub` waits about
-a second. The cards also decode a quarter of the pixels and use far less data over Tailscale. The
-first viewer of a stream nobody is watching still waits for Google to start the camera.
+a second. The cards also decode a quarter of the pixels. The
+first viewer of a stream nobody is watching still waits for Google to start the camera. It doesn't
+save data, though: idle on 2026-11-01 the `_sub` streams ran 1.4–1.9 Mbit/s against 0.2–1.4 Mbit/s
+for their cameras' own streams.
 `curl :1984/api/streams` lists it with an `ffmpeg:` source, so the app never takes it for a camera
 of its own. Pull to refresh on Home and the cards move to it.
 
@@ -256,21 +258,30 @@ The relay logs `nest primer: <name> had no video for 60 s; dropping it` for the 
 warning `... restarting go2rtc` for the second (`docker logs homesafe-relay | grep "nest primer"`).
 The unavailable-camera push logs under `nest outage:`, with Google's answer.
 
-### 7. Frigate cameras (recommended): always ready
+### 7. Frigate cameras (optional): only for detection or recording
 
-A Nest stream exists only while someone watches it, so the first viewer after a quiet spell waits
-for Google to start the camera (1–11 s). Making each Nest camera a Frigate camera keeps its
-`_sub` stream running all the time, the way Frigate keeps the outdoor cameras' sub streams
-running, so every card joins a running stream that has a keyframe about every second. It also
-gives the cards Frigate's live snapshot as their poster, and the camera Frigate's page in the app
-(timeline, settings), with detection and recording off until you want them.
+Don't add a Nest camera to Frigate just to keep it ready. The primer (step 6) already holds each
+Nest stream and its `_sub`, so every card joins a running stream that has a keyframe about every
+second. That costs every camera streaming to Google and back all day, roughly 1–2 Mbps each over
+the home internet, and a camera with a "live" light keeps it on. Only for wired cameras; a battery
+one would be flat in days.
 
-The cost: every camera streams to Google and back all day, roughly 1–2 Mbps each over the home
-internet, and a camera with a "live" light keeps it on. Only for wired cameras; a battery one
-would be flat in days.
+All four cameras were Frigate cameras until 2026-11-01, with detection and recording off, and they
+were taken out because the readers did harm and no good:
 
-Under `cameras:` in `config/config.yml`, one per Nest camera, reading its `_sub` stream from
-go2rtc (the name must be the Nest stream's, so the app knows which Nest camera it is):
+- Google ends each Nest session after 5 or 10 minutes (go2rtc renews only one, once), so the
+  stream under a reader keeps breaking. Kitchen's restarted 285 times a day, mostly on Frigate's
+  "exceeded fps limit".
+- Two readers' watchdogs hung mid-restart on 2026-10-21. `/api/stats` kept showing their last
+  `camera_fps` (109) for 11 days with no reader running, and the cards kept streaming without them.
+- A camera Google refuses has its reader respawned every 10 s (8,620 times a day, 39% of Frigate's
+  log), and holds the relay's uptime check for the cameras at false.
+- A camera without frames gets Frigate's "No frames have been received" image from `latest.jpg`,
+  which the app shows as the card's poster.
+
+To run detection on a Nest camera anyway, it needs an entry under `cameras:` in `config/config.yml`
+reading its `_sub` stream from go2rtc (the name must be the Nest stream's, so the app knows which
+Nest camera it is), and it gets Frigate's camera page in the app:
 
 ```yaml
   living_room:
@@ -344,5 +355,5 @@ browser. In the app, pull to refresh on Home: the switch appears above the camer
   loop asks again at once until Google rate-limits the project.
 - **The doorbell**: on 2026-10-17 Google answered every stream request for it with "The camera is
   not available for streaming" (it had been turned off in Google Home), while the relay's primer
-  backed off asking. Turned back on 2026-10-18, it streams and is a Frigate camera like the others
-  (480x640, portrait); its card joins in 0.5–0.9 s.
+  backed off asking. Turned back on 2026-10-18, it streamed (480x640, portrait) and its card joined
+  in 0.5–0.9 s. Google has answered the same way since 07:00 on 2026-10-20.
