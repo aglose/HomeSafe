@@ -161,7 +161,8 @@ class HealthViewModel(
 
     /** The fitness app or the drawer came on screen, or both left it. */
     fun setActive(active: Boolean) {
-        if (!active || (!_uiState.value.supported && !recorder.isSupported)) return
+        // Followed everywhere, not only where runs can be recorded or read: a run recorded on the phone comes to the rest from the server.
+        if (!active) return
         if (following == null) {
             following = viewModelScope.launch {
                 launch {

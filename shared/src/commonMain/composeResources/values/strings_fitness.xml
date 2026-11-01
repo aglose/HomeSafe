@@ -285,6 +285,10 @@
     <string name="fitness_import_done_button">Done</string>
 
     <!-- A copy of the whole log, sent from one install of the app and read by another's import page -->
+    <string name="fitness_sync_saved">Saved to your server, so it's on every device you sign in on.</string>
+    <string name="fitness_sync_waiting">Saved on this device. It goes to your server as soon as that can be reached.</string>
+    <string name="fitness_sync_signed_out">Saved on this device only. Sign in and it goes to your server.</string>
+    <string name="fitness_sync_held_back">This log has changes from whoever was signed in before you. It's staying on this device and isn't being sent to your account.</string>
     <string name="fitness_lifts_send_copy">Send a copy of your log</string>
     <!-- Under that button, when the copy couldn't be handed to the share sheet -->
     <string name="fitness_copy_unsent">This log couldn't be sent. It may be too long to hand to another app in one piece.</string>

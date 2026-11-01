@@ -89,15 +89,13 @@ abba() {
   for variant in base head head base; do
     if [ "$variant" = base ]; then apk=$BASE_APK; mode=("${BASE_MODE[@]}"); else apk=$HEAD_APK; mode=(); fi
     echo "== $variant"
-    # -d: the two builds share a versionCode, and either may be the "older" one. The two may also
-    # be signed with different debug keys: the base's APK can be one main's run built and kept
-    # (ci.yml), and every runner makes a debug keystore of its own. Android won't put one over the
-    # other then, so the one that is there is taken off first. Nothing is lost by it: every block
-    # signs in afresh, and starts with a run that isn't counted.
-    if ! adb -s "$SERIAL" install -r -d "$apk" > /dev/null 2>&1; then
-      adb -s "$SERIAL" uninstall "$PACKAGE" > /dev/null 2>&1 || true
-      adb -s "$SERIAL" install -d "$apk" > /dev/null
-    fi
+    # The one that is there is always taken off first. A database the head has moved on would stop
+    # the base opening it (Room has no way down), and the two may be signed with different debug
+    # keys: the base's APK can be one main's run built and kept (ci.yml), and every runner makes a
+    # debug keystore of its own. Nothing is lost by it: every block signs in afresh, and starts with
+    # a run that isn't counted. -d: the two builds share a versionCode.
+    adb -s "$SERIAL" uninstall "$PACKAGE" > /dev/null 2>&1 || true
+    adb -s "$SERIAL" install -d "$apk" > /dev/null
     adb -s "$SERIAL" shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS || true
     # The runs' own lines, and any try that had to be made again.
     bench --runs 1 --label "warmup-$variant" "${mode[@]}" | grep -E '^run|never started' || true

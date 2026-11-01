@@ -52,8 +52,8 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
  * Their state is only fetched while this composition is on screen — under the iOS 26 host each
  * tab has its own, and only the visible one may run it.
  *
- * None of them needs the camera server (weather and the markets are public, fitness is all on
- * the device, and each, the atlas among them, opens on what the device kept), so the sign-in screen
+ * None of them needs the camera server (weather and the markets are public, and each, the atlas
+ * and fitness among them, opens on what the device kept), so the sign-in screen
  * draws this too, with a [ShellNavigation] of its own. That is how they are reached while
  * Tailscale or the server isn't.
  */

@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.fitness
 
+import com.meticulouscreations.homesafe.fitness.domain.FitnessLogSync
+import com.meticulouscreations.homesafe.fitness.domain.FitnessSyncStatus
 import com.meticulouscreations.homesafe.fitness.domain.HealthAvailability
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
 import com.meticulouscreations.homesafe.fitness.domain.HealthSample
@@ -12,6 +14,7 @@ import com.meticulouscreations.homesafe.fitness.domain.RunRecorder
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
 import com.meticulouscreations.homesafe.fitness.domain.SleepSession
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -125,5 +128,20 @@ internal class FakeRunRecorder(override val isSupported: Boolean = true) : RunRe
 
     override fun discard() {
         asked += "discard"
+    }
+}
+
+/** A [FitnessLogSync] that says what it is told to, and counts who is following it. */
+class FakeFitnessLogSync : FitnessLogSync {
+    override val status = MutableStateFlow(FitnessSyncStatus.SIGNED_OUT)
+    var following = 0
+
+    override suspend fun follow() {
+        following++
+        try {
+            awaitCancellation()
+        } finally {
+            following--
+        }
     }
 }

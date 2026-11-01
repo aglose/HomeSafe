@@ -7,6 +7,10 @@ import androidx.sqlite.execSQL
 import androidx.test.platform.app.InstrumentationRegistry
 import com.meticulouscreations.homesafe.data.AppDatabase
 import com.meticulouscreations.homesafe.data.FitnessDao
+import com.meticulouscreations.homesafe.data.FitnessExerciseEntity
+import com.meticulouscreations.homesafe.data.FitnessHeartSummaryEntity
+import com.meticulouscreations.homesafe.data.FitnessLogRows
+import com.meticulouscreations.homesafe.data.FitnessSetEntity
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.exercise
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
@@ -80,7 +84,7 @@ class FitnessLogCopyDatabaseTest {
 
     @Test
     fun aCopyBroughtInThroughTheDatabaseIsAllThereAndASecondTimeAddsNothing() = withDatabase { dao ->
-        val repository = FitnessRepositoryImpl(dao)
+        val repository = FitnessRepositoryImpl(dao) { 0 }
         val merge = repository.bringIn(copy)
         assertEquals(2, merge.newExercises)
         assertEquals(copy, repository.logCopy())
@@ -89,7 +93,7 @@ class FitnessLogCopyDatabaseTest {
 
     @Test
     fun aWorkoutDeletedThroughTheDatabaseTakesItsSetsAndItsHeartAndNothingElse() = withDatabase { dao ->
-        val repository = FitnessRepositoryImpl(dao)
+        val repository = FitnessRepositoryImpl(dao) { 0 }
         repository.bringIn(copy)
         val loose = repository.addSets(listOf(SetDraft(squat.id, 225.0, 5, 9_000), SetDraft(squat.id, 225.0, 4, 9_100)))
 
@@ -109,7 +113,7 @@ class FitnessLogCopyDatabaseTest {
         // The workout's own row refuses to go, after its sets and its heart have: all three must still be there.
         prepare = { it.execSQL("CREATE TRIGGER refuse_workout BEFORE DELETE ON FitnessWorkoutEntity BEGIN SELECT RAISE(ABORT, 'refused'); END") },
     ) { dao ->
-        val repository = FitnessRepositoryImpl(dao)
+        val repository = FitnessRepositoryImpl(dao) { 0 }
         repository.bringIn(copy)
 
         assertFailsWith<Exception> { repository.deleteWorkout(1) }
@@ -122,7 +126,7 @@ class FitnessLogCopyDatabaseTest {
         // The last table a copy is written to refuses every row, so the write fails with everything else already in.
         prepare = { it.execSQL("CREATE TRIGGER refuse_heart BEFORE INSERT ON FitnessHeartSummaryEntity BEGIN SELECT RAISE(ABORT, 'refused'); END") },
     ) { dao ->
-        val repository = FitnessRepositoryImpl(dao)
+        val repository = FitnessRepositoryImpl(dao) { 0 }
         repository.saveExercises(listOf(squat))
 
         assertFailsWith<Exception> { repository.bringIn(copy) }
@@ -135,5 +139,36 @@ class FitnessLogCopyDatabaseTest {
         assertEquals(HeartSettings(), repository.heartSettings.first())
         // The lock was let go: the log can still be written to.
         assertEquals(1L, repository.addSets(listOf(SetDraft(squat.id, 225.0, 5, 100))).single().id)
+    }
+
+    @Test
+    fun aLogBroughtTogetherWithTheServersIsEverythingFromBothAndTheSensorStays() = withDatabase { dao ->
+        val repository = FitnessRepositoryImpl(dao) { 0 }
+        repository.bringIn(copy)
+
+        val fromServer = FitnessLogRows(
+            exercises = listOf(FitnessExerciseEntity("back/row", "Row", "BACK", "CABLE", "WEIGHT", "LATS", "", 8, 12, 5.0, 120, "", false)),
+            sets = listOf(FitnessSetEntity(1_000, "back/row", null, 7_000, 150.0, 10, null, "", false)),
+        )
+        assertEquals(true, repository.adopt(fromServer, HeartProfile(restingBpm = 55)))
+
+        assertEquals(setOf("back/row", exercise().id, squat.id), repository.exercises.first().map { it.id }.toSet())
+        assertEquals(listOf(135.0, 225.0, 150.0), repository.sets.first().map { it.weight })
+        assertEquals(1, repository.workouts.first().size)
+        assertEquals(HeartSettings(HeartProfile(maxBpm = 188, restingBpm = 55), HeartSensor("AA:BB:CC:00:00:01", "Band")), repository.heartSettings.first())
+    }
+
+    @Test
+    fun aLogThatFailsPartWayThroughBeingBroughtTogetherIsLeftWhole() = withDatabase(
+        // Every table has been emptied and most written by the time this one refuses.
+        prepare = { it.execSQL("CREATE TRIGGER refuse_heart BEFORE INSERT ON FitnessHeartSummaryEntity WHEN NEW.peakBpm = 1 BEGIN SELECT RAISE(ABORT, 'refused'); END") },
+    ) { dao ->
+        val repository = FitnessRepositoryImpl(dao) { 0 }
+        repository.bringIn(copy)
+
+        val refused = FitnessLogRows(heartSummaries = listOf(FitnessHeartSummaryEntity(500, 0, 0, 0, 0, 0, 0, 0, 1)))
+        assertFailsWith<Exception> { repository.adopt(refused, HeartProfile()) }
+
+        assertEquals(copy, repository.logCopy())
     }
 }

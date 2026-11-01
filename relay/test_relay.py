@@ -11328,6 +11328,182 @@ class ChargingTest(unittest.TestCase):
         self.assertEqual([], self.sessions())
 
 
+class FitnessSyncTest(unittest.TestCase):
+    """Each device's training log against the one kept here: what it is told, and what it can't do."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {name: getattr(relay, name) for name in ("DB_PATH", "CONN", "FITNESS_PAGE_BYTES", "require_frigate_session")}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        relay.require_frigate_session = lambda request: "andrew"
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        self._dir.cleanup()
+
+    def sync(self, since=0, changes=(), owner="andrew"):
+        relay.require_frigate_session = lambda request: owner
+        return relay.post_fitness_sync({"since": since, "changes": list(changes)}, object())
+
+    def test_rows_sent_from_the_start_dont_land_on_a_log_that_has_grown_since(self):
+        self.sync(changes=[self.weigh_in(1, 180.0)])
+        answer = self.sync(changes=[self.weigh_in(1, 200.0)])
+        self.assertTrue(answer["reset"])
+        self.assertEqual({"pounds": 180.0}, self.sync()["rows"][0]["data"], "the first to send keeps its row")
+
+    def test_tombstones_take_up_room_in_a_page(self):
+        changes = [self.weigh_in(day) for day in range(100)]
+        rev = self.sync(changes=changes)["rev"]
+        self.sync(since=rev, changes=[self.gone(day) for day in range(100)])
+        relay.FITNESS_PAGE_BYTES = 500
+        answer = self.sync(since=rev)
+        self.assertTrue(answer["more"])
+        self.assertLess(len(answer["rows"]), 100)
+
+    @staticmethod
+    def weigh_in(day, pounds=180.0):
+        return {"kind": "weigh_in", "id": str(day), "data": {"pounds": pounds}}
+
+    @staticmethod
+    def gone(day):
+        return {"kind": "weigh_in", "id": str(day), "data": None}
+
+    def test_a_row_saved_on_one_device_reaches_the_other_and_not_itself_again(self):
+        phone = self.sync(changes=[self.weigh_in(1)])
+        self.assertEqual([], phone["rows"], "its own change isn't handed back")
+        self.assertEqual(1, phone["rev"])
+        self.assertEqual([self.weigh_in(1)], self.sync()["rows"], "another device, starting from nothing")
+        self.assertEqual([], self.sync(since=phone["rev"])["rows"], "the phone asking again hears nothing new")
+
+    def test_the_answer_comes_from_before_the_changes_sent_with_it(self):
+        phone = self.sync(changes=[self.weigh_in(1)])
+        tablet = self.sync(since=phone["rev"], changes=[self.weigh_in(2)])
+        answer = self.sync(since=phone["rev"], changes=[self.weigh_in(3)])
+        self.assertEqual([self.weigh_in(2)], answer["rows"])
+        self.assertEqual(3, answer["rev"], "and goes on from past what it just sent")
+        self.assertEqual(1, tablet["rev"] - phone["rev"])
+
+    def test_the_last_device_to_send_a_row_wins(self):
+        first = self.sync(changes=[self.weigh_in(1, 180.0)])
+        self.sync(since=first["rev"], changes=[self.weigh_in(1, 175.0)])
+        self.assertEqual([self.weigh_in(1, 175.0)], self.sync()["rows"])
+
+    def test_a_deleted_row_is_told_to_a_device_that_was_away(self):
+        first = self.sync(changes=[self.weigh_in(1), self.weigh_in(2)])
+        self.sync(since=first["rev"], changes=[self.gone(1)])
+        self.assertEqual([self.gone(1)], self.sync(since=first["rev"])["rows"])
+        self.assertEqual([self.weigh_in(2), self.gone(1)], self.sync()["rows"], "and so is one starting from nothing, so it can drop its own")
+
+    def test_sending_the_same_thing_again_is_no_news(self):
+        first = self.sync(changes=[self.weigh_in(1, 180.5), self.gone(9)])
+        again = self.sync(since=first["rev"], changes=[self.weigh_in(1, 180.5), self.gone(9)])
+        self.assertEqual(first["rev"], again["rev"], "the send whose answer never arrived, and a deletion of what was never here")
+        self.assertEqual([self.weigh_in(1, 180.5)], self.sync()["rows"])
+
+    def test_a_row_says_the_same_whatever_order_its_fields_came_in(self):
+        first = self.sync(changes=[{"kind": "set", "id": "1", "data": {"a": 1, "b": 2}}])
+        again = self.sync(since=first["rev"], changes=[{"kind": "set", "id": "1", "data": {"b": 2, "a": 1}}])
+        self.assertEqual(first["rev"], again["rev"])
+
+    def test_a_long_log_comes_a_page_at_a_time_and_all_of_it_arrives(self):
+        relay.FITNESS_PAGE_BYTES = 40
+        self.sync(changes=[self.weigh_in(day) for day in range(10)])
+        heard, since, pages = [], 0, 0
+        while True:
+            answer = self.sync(since=since)
+            heard += [row["id"] for row in answer["rows"]]
+            since, pages = answer["rev"], pages + 1
+            if not answer["more"]:
+                break
+        self.assertEqual([str(day) for day in range(10)], heard)
+        self.assertGreater(pages, 1)
+
+    def test_one_row_larger_than_a_page_still_arrives(self):
+        relay.FITNESS_PAGE_BYTES = 10
+        self.sync(changes=[{"kind": "run", "id": "r1", "data": {"e": list(range(100))}}, self.weigh_in(1)])
+        answer = self.sync()
+        self.assertEqual(["r1"], [row["id"] for row in answer["rows"]])
+        self.assertTrue(answer["more"])
+
+    def test_changes_sent_mid_way_through_a_long_log_are_not_skipped(self):
+        relay.FITNESS_PAGE_BYTES = 10
+        first = self.sync(changes=[self.weigh_in(1)])
+        self.sync(since=first["rev"], changes=[self.weigh_in(2), self.weigh_in(3)])
+        answer = self.sync(since=first["rev"], changes=[self.weigh_in(4)])
+        self.assertTrue(answer["more"])
+        self.assertEqual(2, answer["rev"], "goes on from where the page stopped, not from past what it just sent")
+        second = self.sync(since=answer["rev"])
+        third = self.sync(since=second["rev"])
+        self.assertEqual(["3", "4"], [row["id"] for row in second["rows"] + third["rows"]])
+        self.assertFalse(third["more"])
+
+    def test_each_login_has_a_log_of_its_own(self):
+        self.sync(changes=[self.weigh_in(1, 180.0)], owner="andrew")
+        answer = self.sync(owner="sarah")
+        self.assertEqual("sarah", answer["owner"])
+        self.assertEqual([], answer["rows"])
+        self.assertEqual(0, answer["rev"])
+        self.sync(changes=[self.weigh_in(1, 130.0)], owner="sarah")
+        self.assertEqual([self.weigh_in(1, 180.0)], self.sync(owner="andrew")["rows"])
+
+    def test_a_log_sent_for_someone_else_than_is_signed_in_is_not_saved(self):
+        self.sync(changes=[self.weigh_in(1, 130.0)], owner="sarah")
+        relay.require_frigate_session = lambda request: "sarah"
+        answer = relay.post_fitness_sync({"owner": "andrew", "since": 0, "changes": [self.weigh_in(2, 180.0)]}, object())
+        self.assertEqual("sarah", answer["owner"])
+        self.assertEqual([], answer["rows"], "and told nothing of hers")
+        self.assertEqual([self.weigh_in(1, 130.0)], self.sync(owner="sarah")["rows"])
+        self.assertEqual([], self.sync(owner="andrew")["rows"])
+
+    def test_a_device_that_has_heard_of_more_than_there_is_is_told_to_send_it_all_again(self):
+        answer = self.sync(since=99, changes=[self.weigh_in(1)])
+        self.assertTrue(answer["reset"])
+        self.assertEqual(0, answer["rev"])
+        self.assertEqual([], self.sync()["rows"], "and nothing it sent with that is kept")
+
+    def test_a_session_frigate_cant_name_gets_no_log(self):
+        with self.assertRaises(relay.HTTPException) as caught:
+            self.sync(owner="?")
+        self.assertEqual(502, caught.exception.status_code)
+
+    def test_what_cant_be_a_change_is_refused_and_nothing_of_it_is_kept(self):
+        for bad in (
+            {"changes": "x"},
+            {"changes": [{"kind": "secrets", "id": "1", "data": {}}]},
+            {"changes": [{"kind": "set", "id": "", "data": {}}]},
+            {"changes": [{"kind": "set", "id": 1, "data": {}}]},
+            {"changes": [{"kind": "set", "id": "x" * 201, "data": {}}]},
+            {"changes": [{"kind": "set", "id": "1", "data": "row"}]},
+            {"changes": ["set"]},
+            {"since": "soon"},
+            {"since": -1},
+            {"since": True},
+        ):
+            with self.assertRaises(relay.HTTPException, msg=str(bad)):
+                relay.post_fitness_sync(bad, object())
+        self.assertEqual([], self.sync()["rows"])
+
+    def test_a_row_too_large_to_keep_is_refused(self):
+        saved, relay.FITNESS_MAX_ROW_BYTES = relay.FITNESS_MAX_ROW_BYTES, 10
+        try:
+            with self.assertRaises(relay.HTTPException) as caught:
+                self.sync(changes=[{"kind": "run", "id": "r1", "data": {"e": list(range(100))}}])
+            self.assertEqual(413, caught.exception.status_code)
+        finally:
+            relay.FITNESS_MAX_ROW_BYTES = saved
+
+    def test_a_change_sent_and_saved_survives_the_relay_starting_again(self):
+        self.sync(changes=[self.weigh_in(1)])
+        relay.CONN.close()
+        relay.CONN = relay.db()
+        self.assertEqual([self.weigh_in(1)], self.sync()["rows"])
+
+
 class RainSoonForecastTest(unittest.TestCase):
     """What's worth announcing: the same cases as WeatherNoticePlannerTest, since the phone runs that planner over what it is sent."""
 

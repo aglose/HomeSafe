@@ -18,6 +18,7 @@ import com.meticulouscreations.homesafe.data.DeviceRegistrar
 import com.meticulouscreations.homesafe.data.FinanceSavedDao
 import com.meticulouscreations.homesafe.data.FitnessDao
 import com.meticulouscreations.homesafe.data.FitnessRunDao
+import com.meticulouscreations.homesafe.data.FitnessSyncDao
 import com.meticulouscreations.homesafe.data.GoogleHomeApp
 import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
 import com.meticulouscreations.homesafe.data.MAPS_KEYS
@@ -38,6 +39,7 @@ import com.meticulouscreations.homesafe.data.createDeviceInfo
 import com.meticulouscreations.homesafe.data.createFinanceSavedDao
 import com.meticulouscreations.homesafe.data.createFitnessDao
 import com.meticulouscreations.homesafe.data.createFitnessRunDao
+import com.meticulouscreations.homesafe.data.createFitnessSyncDao
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
 import com.meticulouscreations.homesafe.data.createGoogleHomeApp
 import com.meticulouscreations.homesafe.data.createIdentityCheck
@@ -228,6 +230,12 @@ interface AppGraph :
     @Provides
     fun provideFitnessRunDao(platformContext: PlatformContext): FitnessRunDao =
         createFitnessRunDao(platformContext)
+
+    /** What the fitness app last agreed with the server about the log and the runs. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideFitnessSyncDao(platformContext: PlatformContext): FitnessSyncDao =
+        createFitnessSyncDao(platformContext)
 
     /** What the finance app last fetched, for opening on without a connection. */
     @SingleIn(AppScope::class)
