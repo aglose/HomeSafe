@@ -4,8 +4,8 @@ HLS puts a couple of seconds of segments between the camera and the screen, and 
 to fetch a playlist and a segment before anything moves. WebRTC is a peer connection straight to
 go2rtc: after one signaling round trip the server pushes frames as the camera produces them, so a
 card shows moving video within a keyframe interval of connecting and stays a fraction of a second
-behind live. This is how Android and iOS play every live stream now; HLS remains the fallback there and
-the only path on desktop (see "Platforms" below).
+behind live. This is how Android and iOS play every live stream now; HLS remains the fallback there. The
+desktop has neither, and reads go2rtc's continuous fMP4 stream (see "Platforms" below).
 
 ## How a join works
 
@@ -218,8 +218,8 @@ know it. A camera's on-screen clock against a real one is still the only end-to-
     HLS it is the later of the newest sample held and the end the playlist claims for the last
     segment, and go2rtc claims `#EXTINF:0.500` for every segment whatever is in it.
   - iOS watches `loadedTimeRanges` grow, ten times a second.
-  - Desktop reports no delay. FFmpeg fetches a segment only once it has decoded the one
-    before and says nothing as it does, so there is no arrival to mark.
+- **Desktop** reports no delay. Its fMP4 stream carries no wall-clock time either, and FFmpeg says
+  nothing of when bytes arrive, so there is no arrival to mark.
 
 ## Platforms
 
@@ -244,8 +244,15 @@ know it. A camera's on-screen clock against a real one is still the only end-to-
   picture. The audio session is configured playback-only before the first peer, so there is
   no microphone prompt and sound stays on the speaker route. Opus decodes natively, so the
   detail screen has sound over WebRTC where HLS on AVFoundation had none.
-- **Desktop** — stays on HLS through FFmpeg. libwebrtc for the JVM would add a second large
-  native bundle per platform for a small latency win.
+- **Desktop** — FFmpeg reading go2rtc's continuous fMP4 (`/api/stream.mp4`, the same stream name and
+  `video`/`audio` choices as the HLS URL; `go2rtcContinuousUrl` in `DesktopLiveStream.kt`), since
+  libwebrtc for the JVM would add a second large native bundle per platform. Not HLS: go2rtc cuts a
+  segment when it is asked for one, so a player that decodes as it goes gets frames in bursts up to
+  half a second apart, and a join waits for a playlist and a segment. Against the real server on
+  2026-10-31 the same camera's sub stream went from 7–25 pictures a second with freezes of up to
+  450 ms to a steady 25, the 4K stream from 17 to 25, and a warm join from 2.6–4.4 s to about 1 s.
+  Moving between a camera's streams is make-before-break (the old stream plays on until the new
+  one has a picture, then closes), and pausing closes the connection and joins again on resuming.
 
 Watch a join on a device with `adb logcat -s HomeSafeLive:D` — the holder logs the elapsed time
 and, on failure, the reason before falling back.
