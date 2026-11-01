@@ -295,8 +295,10 @@ def db() -> sqlite3.Connection:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS charge_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, car TEXT NOT NULL, place TEXT, source TEXT NOT NULL,"
         " started REAL NOT NULL, ended REAL, soc_start REAL, soc_end REAL, energy_start REAL, energy_end REAL, power_kwh REAL, counter_kwh REAL,"
-        " kwh_battery REAL, kwh_wall REAL, how TEXT, peak_kw REAL, lat REAL, lng REAL, site TEXT, paid REAL, tesla_id TEXT UNIQUE, typed_cost REAL, note TEXT, updated REAL)"
+        " kwh_battery REAL, kwh_wall REAL, how TEXT, peak_kw REAL, lat REAL, lng REAL, site TEXT, paid REAL, tesla_id TEXT UNIQUE, typed_cost REAL, note TEXT, updated REAL, idle_fee REAL)"
     )
+    if "idle_fee" not in {row[1] for row in conn.execute("PRAGMA table_info(charge_sessions)")}:
+        conn.execute("ALTER TABLE charge_sessions ADD COLUMN idle_fee REAL")
     conn.execute("CREATE INDEX IF NOT EXISTS charge_sessions_started ON charge_sessions (started)")
     conn.execute("CREATE TABLE IF NOT EXISTS charge_hours (session_id INTEGER NOT NULL, hour REAL NOT NULL, kwh REAL NOT NULL, PRIMARY KEY (session_id, hour))")
     conn.execute("CREATE TABLE IF NOT EXISTS car_days (car TEXT NOT NULL, day TEXT NOT NULL, odometer REAL, energy_used REAL, PRIMARY KEY (car, day))")
@@ -13801,7 +13803,8 @@ def tesla_telemetry_status() -> dict[str, Any]:
 # customer charge is the house's, and is left out.
 #
 # A Supercharger's price is what Tesla billed (`charging_history_sync`, which needs the
-# vehicle_charging_cmds scope; docs/tesla.md), and goes back as far as Tesla's history does. What
+# vehicle_charging_cmds scope; docs/tesla.md), and goes back as far as Tesla's history does. Its
+# idle fees are kept apart too (`idle_fee`): they count in what it cost, not in what a kWh did. What
 # the cards were charged for Superchargers stands in for any of it Tesla's receipts don't cover.
 # Anywhere else the price isn't known: someone can type it in, session by session.
 #
@@ -13999,7 +14002,7 @@ def charging_add_energy(session_id: int, start: float, end: float, kw: float) ->
 
 CHARGE_COLUMNS = (
     "id", "car", "place", "source", "started", "ended", "soc_start", "soc_end", "energy_start", "energy_end", "power_kwh",
-    "counter_kwh", "kwh_battery", "kwh_wall", "how", "peak_kw", "lat", "lng", "site", "paid", "tesla_id", "typed_cost", "note", "updated",
+    "counter_kwh", "kwh_battery", "kwh_wall", "how", "peak_kw", "lat", "lng", "site", "paid", "tesla_id", "typed_cost", "note", "updated", "idle_fee",
 )
 
 
@@ -14268,14 +14271,17 @@ def charging_receipt(entry: dict[str, Any]) -> dict[str, Any] | None:
         ended = datetime.fromisoformat(str(stop).replace("Z", "+00:00")).timestamp() if stop else started
     except (KeyError, ValueError):
         return None
-    paid, kwh = 0.0, 0.0
+    paid, idle, kwh = 0.0, 0.0, 0.0
     for fee in entry.get("fees") or []:
-        paid += float(tesla_number(fee.get("totalDue")) or 0)
-        if str(fee.get("feeType")).upper() == "CHARGING" and str(fee.get("uom")).lower() == "kwh":
+        due = float(tesla_number(fee.get("totalDue")) or 0)
+        paid += due
+        if str(fee.get("feeType")).upper() != "CHARGING":
+            idle += due
+        elif str(fee.get("uom")).lower() == "kwh":
             kwh += sum(float(tesla_number(fee.get(k)) or 0) for k in ("usageBase", "usageTier1", "usageTier2", "usageTier3", "usageTier4"))
     return {
         "tesla_id": str(entry.get("sessionId")), "vin": entry.get("vin"), "started": started, "ended": ended,
-        "site": entry.get("siteLocationName") or None, "paid": round(paid, 2), "kwh": kwh,
+        "site": entry.get("siteLocationName") or None, "paid": round(paid, 2), "idle": round(idle, 2), "kwh": kwh,
     }
 
 
@@ -14296,11 +14302,11 @@ def charging_keep_receipt(name: str, receipt: dict[str, Any], now: float) -> Non
     guess = None if known or row or receipt["kwh"] <= 0 else with_db(lambda c: c.execute(
         f"SELECT {', '.join(CHARGE_COLUMNS)} FROM charge_sessions WHERE car=? AND source='soc' AND ended >= ? AND ended <= ? ORDER BY ended LIMIT 1",
         (name, receipt["ended"] - CHARGING_RECEIPT_SLACK_SECONDS, receipt["ended"] + CHARGING_RECEIPT_GUESS_SECONDS)).fetchone())
-    fields = {"tesla_id": tesla_id, "site": receipt["site"], "paid": receipt["paid"], "updated": now, "place": "supercharger"}
+    fields = {"tesla_id": tesla_id, "site": receipt["site"], "paid": receipt["paid"], "idle_fee": receipt.get("idle"), "updated": now, "place": "supercharger"}
     if receipt["kwh"] > 0:
         fields.update(kwh_wall=receipt["kwh"], how="receipt")
     if known:
-        with_db(lambda c: (c.execute("UPDATE charge_sessions SET site=?, paid=?, updated=? WHERE id=?", (receipt["site"], receipt["paid"], now, known[0])), c.commit()))
+        with_db(lambda c: (c.execute("UPDATE charge_sessions SET site=?, paid=?, idle_fee=?, updated=? WHERE id=?", (receipt["site"], receipt["paid"], receipt.get("idle"), now, known[0])), c.commit()))
     elif row:
         session = charging_row(row)
         session.update(fields)
@@ -14413,8 +14419,8 @@ def charging_hours_by_session() -> dict[int, list[tuple[float, float]]]:
 def charging_session_view(session: dict[str, Any], hours: list[tuple[float, float]], rates: dict[str, Any], plan_id: str | None, zone: ZoneInfo | None) -> dict[str, Any]:
     """
     A session as the phones see it. `cost` is, in order: what someone typed, Tesla's receipt, or at
-    home the plan's price of its hours. `cost_is` says which, null with no price known. An open
-    charge counts what's been measured so far.
+    home the plan's price of its hours. `cost_is` says which, null with no price known. `idle_fee` is
+    how much of a receipt's price was for staying plugged in. An open charge counts what's been measured so far.
     """
     place = session.get("place")
     kwh = session.get("kwh_wall")
@@ -14442,6 +14448,7 @@ def charging_session_view(session: dict[str, Any], hours: list[tuple[float, floa
         "soc_start": session.get("soc_start"), "soc_end": session.get("soc_end"), "kwh": round(float(kwh or 0), 2),
         "kwh_battery": session.get("kwh_battery"), "peak_kw": session.get("peak_kw"), "how": how, "site": session.get("site"),
         "cost": round(cost, 2) if cost is not None else None, "cost_is": cost_is, "note": session.get("note"),
+        "idle_fee": float(session.get("idle_fee") or 0) if cost_is == "receipt" else 0.0,
     }
 
 
@@ -14497,6 +14504,10 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
     (from `car_days`), and for someone allowed the finances what the cards paid for Superchargers
     and what was paid to the electricity provider. `unmatched` is what the cards paid for
     Superchargers beyond Tesla's receipts: real money no one car can be said to have spent.
+
+    A price per kWh or per mile only divides what has a price by the energy that has one, so each
+    place also has `_priced_kwh`, and `_battery_kwh` for what of it reached the battery. `fast_idle`
+    is what of `fast_cost` was idle fees.
     """
     months: dict[str, dict[str, Any]] = {}
 
@@ -14507,6 +14518,8 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         return month_of(key)["cars"].setdefault(name, {
             "car": name, "name": display_name(name), "home_kwh": 0.0, "home_cost": 0.0, "fast_kwh": 0.0, "fast_cost": 0.0,
             "other_kwh": 0.0, "other_cost": 0.0, "sessions": 0, "miles": None, "used_kwh": None, "unpriced": 0,
+            "home_priced_kwh": 0.0, "fast_priced_kwh": 0.0, "other_priced_kwh": 0.0, "home_battery_kwh": 0.0, "fast_battery_kwh": 0.0, "other_battery_kwh": 0.0, "fast_idle": 0.0,
+            "home_priced_cost": 0.0, "fast_priced_cost": 0.0, "other_priced_cost": 0.0,
         })
 
     plan_ids = list((rates.get("plans") or {}).keys())
@@ -14519,6 +14532,14 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         prefix = "home" if place == "home" else "fast" if place in ("supercharger", "fast") else "other"
         car[f"{prefix}_kwh"] += session["kwh"]
         car[f"{prefix}_cost"] += session["cost"] or 0.0
+        if session["cost"] is not None and session["kwh"] > 0:
+            # Not more than went in, which a battery's rounded percent can claim of a short charge.
+            battery = float(session.get("kwh_battery") or 0) or session["kwh"] * (1.0 if prefix == "fast" else CHARGING_AC_EFFICIENCY)
+            car[f"{prefix}_priced_kwh"] += session["kwh"]
+            # What those kWh cost, idle fee aside: a receipt with a price and no energy can't raise their rate.
+            car[f"{prefix}_priced_cost"] += session["cost"] - (session["idle_fee"] if prefix == "fast" else 0.0)
+            car[f"{prefix}_battery_kwh"] += min(battery, session["kwh"])
+        car["fast_idle"] += session["idle_fee"]
         if session["cost"] is None and session["kwh"] > 0:
             car["unpriced"] += 1
             # What the cards paid stands in for a Supercharger's receipt, for whoever may see them.
@@ -14560,7 +14581,7 @@ def charging_months(sessions: list[dict[str, Any]], by_session: dict[int, list[t
         month = months[key]
         cars = sorted(month["cars"].values(), key=lambda c: c["car"])
         for car in cars:
-            for field in ("home_kwh", "home_cost", "fast_kwh", "fast_cost", "other_kwh", "other_cost", "miles", "used_kwh"):
+            for field in ("home_kwh", "home_cost", "fast_kwh", "fast_cost", "other_kwh", "other_cost", "miles", "used_kwh", "home_priced_kwh", "fast_priced_kwh", "other_priced_kwh", "home_battery_kwh", "fast_battery_kwh", "other_battery_kwh", "fast_idle", "home_priced_cost", "fast_priced_cost", "other_priced_cost"):
                 if car[field] is not None:
                     car[field] = round(car[field], 2)
         answer.append({
@@ -14643,6 +14664,8 @@ def charging_summary(now: float, money: bool) -> dict[str, Any]:
                     if tou_id and charging_price(rates, tou_id, hour, zone)[1] == "peak":
                         peak_kwh += kwh
     history = state_get(CHARGING_HISTORY_KEY) or {}
+    # The first day a car was heard: no charge at home before it was written down, whatever the receipts and cards go back to.
+    first_day = with_db(lambda c: c.execute("SELECT MIN(day) FROM car_days").fetchone())[0]
     return {
         "provider": {"name": rates.get("provider"), "url": rates.get("url")} if rates else None,
         "plan": plan_id, "plans": charging_plans_view(rates, plan_id, zone, now),
@@ -14651,6 +14674,7 @@ def charging_summary(now: float, money: bool) -> dict[str, Any]:
         "months": charging_months(sessions, by_session, rates, plan_id, zone, money),
         "by_hour": [round(kwh, 2) for kwh in by_hour], "recent_peak_share": round(peak_kwh / sum(by_hour), 3) if tou_id and sum(by_hour) > 0 else None, "sessions": sessions[:CHARGING_PAGE], "more_sessions": len(sessions) > CHARGING_PAGE,
         "first_session": min((s["started"] for s in sessions), default=None),
+        "recording_from": first_day[:7] if first_day else None,
         "setup": {
             "rates": bool(rates), "power_stream": bool(state_get(CHARGING_SIGNALS_KEY)), "receipts": not history.get("scope_missing") and bool(history.get("kept") or (history.get("accounts") and not history.get("error"))),
             "receipts_at": history.get("at"),

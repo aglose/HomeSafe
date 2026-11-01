@@ -15,12 +15,44 @@ internal fun com.meticulouscreations.homesafe.charging.ui.BatteryBar(from: kotli
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.charging.ui.CarRow(car: com.meticulouscreations.homesafe.charging.domain.CarMonth, month: com.meticulouscreations.homesafe.charging.domain.ChargingMonth): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.charging.ui.CarDriving(car: com.meticulouscreations.homesafe.charging.domain.CarMonth, withOverall: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - car: STABLE (marked @Stable or @Immutable)
+    - withOverall: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.charging.ui.CarMonthRow(month: com.meticulouscreations.homesafe.charging.domain.ChargingMonth): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
     - month: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.charging.ui.CarPlaces(car: com.meticulouscreations.homesafe.charging.domain.CarMonth): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - car: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.charging.ui.CarRow(car: com.meticulouscreations.homesafe.charging.domain.CarMonth, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - car: STABLE (marked @Stable or @Immutable)
+    - onOpen: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.charging.ui.CarScreen(state: com.meticulouscreations.homesafe.charging.ChargingUiState, car: kotlin.String, padding: androidx.compose.foundation.layout.PaddingValues, onSeeCharges: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - car: STABLE (String is immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onSeeCharges: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.charging.ui.ChargeRow(session: com.meticulouscreations.homesafe.charging.domain.ChargeSession, nowEpochSeconds: kotlin.Long, onOpen: kotlin.Function1<kotlin.Long, kotlin.Unit>): kotlin.Unit
@@ -181,6 +213,13 @@ private fun com.meticulouscreations.homesafe.charging.ui.EmptyCard(): kotlin.Uni
   params:
 
 @Composable
+internal fun com.meticulouscreations.homesafe.charging.ui.FadedMonthsNote(months: kotlin.collections.List<com.meticulouscreations.homesafe.charging.domain.ChargingMonth>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - months: RUNTIME (requires runtime check)
+
+@Composable
 private fun com.meticulouscreations.homesafe.charging.ui.FilterPill(label: kotlin.String, selected: kotlin.Boolean, tag: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -266,23 +305,24 @@ private fun com.meticulouscreations.homesafe.charging.ui.LiveCard(car: com.metic
     - onOpenCharge: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.charging.ui.MonthBars(months: kotlin.collections.List<com.meticulouscreations.homesafe.charging.domain.ChargingMonth>, selected: kotlin.String?, onSelect: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.charging.ui.MonthBars(months: kotlin.collections.List<com.meticulouscreations.homesafe.charging.domain.ChargingMonth>, selected: kotlin.String?, modifier: androidx.compose.ui.Modifier, onSelect: kotlin.Function1<kotlin.String, kotlin.Unit>?): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - months: RUNTIME (requires runtime check)
     - selected: STABLE (class with no mutable properties)
-    - onSelect: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onSelect: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.charging.ui.OverviewScreen(state: com.meticulouscreations.homesafe.charging.ChargingUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenCharge: kotlin.Function1<kotlin.Long, kotlin.Unit>, onSeeRates: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.charging.ui.OverviewScreen(state: com.meticulouscreations.homesafe.charging.ChargingUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenCharge: kotlin.Function1<kotlin.Long, kotlin.Unit>, onOpenCar: kotlin.Function1<kotlin.String, kotlin.Unit>, onSeeRates: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - padding: STABLE (marked @Stable or @Immutable)
     - onOpenCharge: STABLE (function type)
+    - onOpenCar: STABLE (function type)
     - onSeeRates: STABLE (function type)
 
 @Composable
@@ -292,6 +332,26 @@ private fun com.meticulouscreations.homesafe.charging.ui.PaidCard(month: com.met
   params:
     - month: STABLE (marked @Stable or @Immutable)
     - summary: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.charging.ui.PerMileCard(home: kotlin.Double?, fast: kotlin.Double?, other: kotlin.Double?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - home: STABLE (class with no mutable properties)
+    - fast: STABLE (class with no mutable properties)
+    - other: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.charging.ui.PlaceLine(color: androidx.compose.ui.graphics.Color, label: kotlin.String, kwh: kotlin.Double, rate: kotlin.Double?, cost: kotlin.Double): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - color: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+    - kwh: STABLE (primitive type)
+    - rate: STABLE (class with no mutable properties)
+    - cost: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.charging.ui.PlanChooser(summary: com.meticulouscreations.homesafe.charging.domain.ChargingSummary, saving: kotlin.Boolean, onChoosePlan: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
@@ -382,6 +442,15 @@ private fun com.meticulouscreations.homesafe.charging.ui.SummaryCard(session: co
     - nowEpochSeconds: STABLE (primitive type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.charging.ui.TotalsCard(total: com.meticulouscreations.homesafe.charging.domain.CarMonth, driven: com.meticulouscreations.homesafe.charging.domain.CarMonth?, months: kotlin.collections.List<com.meticulouscreations.homesafe.charging.domain.ChargingMonth>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - total: STABLE (marked @Stable or @Immutable)
+    - driven: STABLE (marked @Stable or @Immutable)
+    - months: RUNTIME (requires runtime check)
+
+@Composable
 private fun com.meticulouscreations.homesafe.charging.ui.WhenCard(summary: com.meticulouscreations.homesafe.charging.domain.ChargingSummary): kotlin.Unit
   skippable: true
   restartable: true
@@ -443,6 +512,21 @@ internal fun com.meticulouscreations.homesafe.charging.ui.monthYearText(month: c
   restartable: false
   params:
     - month: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.charging.ui.perMileText(dollars: kotlin.Double): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - dollars: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.charging.ui.placeDetail(kwh: kotlin.Double, rate: kotlin.Double?): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - kwh: STABLE (primitive type)
+    - rate: STABLE (class with no mutable properties)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.charging.ui.rateText(rate: kotlin.Double): kotlin.String

@@ -54,6 +54,7 @@ import homesafe.shared.generated.resources.charging_drawer_month
 import homesafe.shared.generated.resources.charging_drawer_open
 import homesafe.shared.generated.resources.charging_drawer_subtitle
 import homesafe.shared.generated.resources.charging_drawer_title
+import homesafe.shared.generated.resources.charging_month_fast_only
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.sin
@@ -105,6 +106,8 @@ fun ChargingDrawerCard(charging: ChargingUiState, animated: Boolean, onOpen: (Of
                     }
                     if (now != null) {
                         Text(stringResource(Res.string.charging_drawer_charging, now.name, (now.battery ?: 0).toString()), style = MaterialTheme.typography.labelSmall, color = secondary, maxLines = 1)
+                    } else if (month != null && !month.homeRecorded) {
+                        Text(stringResource(Res.string.charging_month_fast_only), style = MaterialTheme.typography.labelSmall, color = secondary, maxLines = 1)
                     } else if (month != null) {
                         Text(stringResource(Res.string.charging_drawer_detail, kwhText(month.kwh), month.sessions.toString()), style = MaterialTheme.typography.labelSmall, color = secondary, maxLines = 1)
                     }

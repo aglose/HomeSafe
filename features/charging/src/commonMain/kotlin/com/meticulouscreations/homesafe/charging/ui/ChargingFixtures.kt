@@ -32,7 +32,7 @@ object ChargingFixtures {
     val sessions = listOf(
         charge(9, "car_a", "Alex", ChargePlace.HOME, 0, 3.5, 26.9, 7.07, ChargeCostSource.PLAN),
         charge(8, "car_b", "Sam", ChargePlace.HOME, 1, 4.2, 32.3, 8.49, ChargeCostSource.PLAN),
-        charge(7, "car_a", "Alex", ChargePlace.SUPERCHARGER, 3, 0.45, 41.0, 16.40, ChargeCostSource.RECEIPT, site = "Example Plaza", soc = 18 to 72),
+        charge(7, "car_a", "Alex", ChargePlace.SUPERCHARGER, 3, 0.45, 41.0, 16.40, ChargeCostSource.RECEIPT, site = "Example Plaza", soc = 18 to 72).copy(idleFee = 1.50),
         charge(6, "car_b", "Sam", ChargePlace.OTHER, 5, 2.0, 11.2, null, null, soc = 50 to 63),
         charge(5, "car_a", "Alex", ChargePlace.HOME, 6, 5.0, 30.1, 7.91, ChargeCostSource.PLAN, missed = true, measure = ChargeMeasure.BATTERY),
         charge(4, "car_b", "Sam", ChargePlace.OTHER, 8, 3.0, 18.0, 6.50, ChargeCostSource.TYPED, soc = 30 to 54),
@@ -53,8 +53,8 @@ object ChargingFixtures {
         ChargingMonth(
             key = "2026-10",
             cars = listOf(
-                CarMonth("car_a", "Alex", 196.0, 54.8, 41.0, 16.4, 0.0, 0.0, 9, 1012.0, 268.0),
-                CarMonth("car_b", "Sam", 231.0, 64.6, 0.0, 0.0, 29.2, 6.5, 11, 1185.0, 301.0),
+                CarMonth("car_a", "Alex", 196.0, 54.8, 41.0, 16.4, 0.0, 0.0, 9, 1012.0, 268.0, homePricedKwh = 196.0, fastPricedKwh = 41.0, homeBatteryKwh = 176.4, fastBatteryKwh = 41.0, fastIdle = 1.5, homePricedCost = 54.8, fastPricedCost = 14.9),
+                CarMonth("car_b", "Sam", 231.0, 64.6, 0.0, 0.0, 29.2, 6.5, 11, 1185.0, 301.0, homePricedKwh = 231.0, otherPricedKwh = 18.0, homeBatteryKwh = 207.9, otherBatteryKwh = 16.2, homePricedCost = 64.6, otherPricedCost = 6.5),
             ),
             cardFast = 16.4,
             unmatched = 0.0,
@@ -65,8 +65,8 @@ object ChargingFixtures {
         ChargingMonth(
             key = "2026-09",
             cars = listOf(
-                CarMonth("car_a", "Alex", 172.0, 48.1, 62.0, 27.5, 0.0, 0.0, 8, 1120.0, 301.0),
-                CarMonth("car_b", "Sam", 204.0, 57.1, 18.0, 8.1, 0.0, 0.0, 9, 980.0, 266.0),
+                CarMonth("car_a", "Alex", 172.0, 48.1, 62.0, 27.5, 0.0, 0.0, 8, 1120.0, 301.0, homePricedKwh = 172.0, fastPricedKwh = 62.0, homeBatteryKwh = 154.8, fastBatteryKwh = 62.0, homePricedCost = 48.1, fastPricedCost = 27.5),
+                CarMonth("car_b", "Sam", 204.0, 57.1, 18.0, 8.1, 0.0, 0.0, 9, 980.0, 266.0, homePricedKwh = 204.0, fastPricedKwh = 18.0, homeBatteryKwh = 183.6, fastBatteryKwh = 18.0, homePricedCost = 57.1, fastPricedCost = 8.1),
             ),
             cardFast = 50.0,
             unmatched = 14.4,
@@ -74,8 +74,8 @@ object ChargingFixtures {
             peakKwh = 20.0,
             planCosts = mapOf("tiered" to 105.2, "ev_tou" to 71.0),
         ),
-        ChargingMonth(key = "2026-08", cardFast = 22.0, unmatched = 22.0, electricPaid = 210.0),
-        ChargingMonth(key = "2026-07", cardFast = 9.0, unmatched = 9.0, electricPaid = 195.0),
+        ChargingMonth(key = "2026-08", cars = listOf(CarMonth("car_a", "Alex", fastKwh = 30.0, fastCost = 12.6, sessions = 1, fastPricedKwh = 30.0, fastBatteryKwh = 30.0, fastPricedCost = 12.6)), cardFast = 22.0, unmatched = 9.4, electricPaid = 210.0, homeRecorded = false),
+        ChargingMonth(key = "2026-07", cardFast = 9.0, unmatched = 9.0, electricPaid = 195.0, homeRecorded = false),
     )
 
     val summary = ChargingSummary(

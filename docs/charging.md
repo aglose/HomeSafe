@@ -33,6 +33,10 @@ same stretch replaces the guess.
 broker forgets what was heard: only a stated charge state, measured power or a filling battery
 keeps a charge going.
 
+**Home charging starts with the relay listening.** Months before the first day a car was heard
+(`recording_from`) are only what Tesla's receipts and the cards say of Superchargers. The app says so
+on those months, fades their bars, and doesn't compare them with later ones.
+
 **Costs aren't kept.** They are worked out from those rows when asked for, so changing the plan, or
 correcting a rate in the file, re-prices everything, past charges included. The rows themselves are
 in `relay.db`, in the nightly backup with everything else (`RELAY_BACKUP_DIR`).
@@ -45,9 +49,21 @@ in `relay.db`, in the nightly backup with everything else (`RELAY_BACKUP_DIR`).
   is left out. The month also shows what the same hours would come to on the other plan. That
   comparison is the car's kWh only: on a time-of-use plan the rest of the house moves to those rates
   too, so check the whole bill before switching.
-- **At a Supercharger:** what Tesla billed, parking fees included. Until the receipts are linked, or
+- **At a Supercharger:** what Tesla billed, idle fees included. Until the receipts are linked, or
   for a charge they don't cover, what the cards paid counts in the month but under no car.
 - **Anywhere else:** unknown until someone types in what was paid, on the charge's page.
+
+**A price per kWh** divides what has a price by the energy that has one: a charge with no price yet,
+and what the cards paid beyond the receipts, come into neither side. Idle fees count in what a charge
+cost but not in what its kWh cost.
+
+**A price per mile** by place compares home with fast charging fairly, since a home kWh is counted at
+the wall and loses about 10% on its way to the battery. It is the place's price over the battery
+energy it gave, at that car's own mileage from its odometer and lifetime energy. Idle fees are left
+out here too.
+
+**Each car** has a page of its own, from its row in the month: what it has come to so far, and each
+month's energy, prices and miles.
 
 The app's plan switch only changes how the app prices charges. Pick the plan printed on the bill.
 

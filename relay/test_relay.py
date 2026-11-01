@@ -11126,6 +11126,48 @@ class ChargingTest(unittest.TestCase):
         places = sorted(s["place"] for s in self.sessions())
         self.assertEqual(["home", "supercharger"], places)
 
+    def test_a_receipts_idle_fee_counts_in_its_cost_and_is_kept_apart(self):
+        receipt = relay.charging_receipt(self.RECEIPT)
+        self.assertEqual((20.4, 2.0, 42.0), (receipt["paid"], receipt["idle"], receipt["kwh"]))
+        relay.charging_keep_receipt("andrews_tesla", receipt, self.MONDAY)
+        session = self.sessions()[0]
+        self.assertEqual((20.4, 2.0), (session["cost"], session["idle_fee"]))
+        car = relay.charging_summary(self.MONDAY, True)["months"][0]["cars"][0]
+        self.assertEqual((20.4, 2.0, 42.0, 42.0), (car["fast_cost"], car["fast_idle"], car["fast_priced_kwh"], car["fast_battery_kwh"]))
+
+    def test_a_receipt_read_again_brings_its_idle_fee_to_the_row_it_already_made(self):
+        receipt = relay.charging_receipt(self.RECEIPT)
+        relay.charging_keep_receipt("andrews_tesla", {**receipt, "idle": None}, self.MONDAY)
+        relay.charging_keep_receipt("andrews_tesla", receipt, self.MONDAY + 60)
+        self.assertEqual(2.0, self.sessions()[0]["idle_fee"])
+
+    def test_a_price_typed_over_a_receipt_has_no_idle_fee_of_tesla_s(self):
+        relay.charging_keep_receipt("andrews_tesla", relay.charging_receipt(self.RECEIPT), self.MONDAY)
+        session = self.sessions()[0]
+        relay.with_db(lambda c: (c.execute("UPDATE charge_sessions SET typed_cost=9 WHERE id=?", (session["id"],)), c.commit()))
+        self.assertEqual((9.0, 0.0), (self.sessions()[0]["cost"], self.sessions()[0]["idle_fee"]))
+        self.assertEqual(0.0, relay.charging_summary(self.MONDAY, True)["months"][0]["cars"][0]["fast_idle"])
+
+    def test_energy_with_no_price_doesnt_water_down_the_price_of_a_kwh(self):
+        start = self.MONDAY + 3600
+        self.say(start, Location=self.AWAY, Soc=20, ChargerVoltage=240, ChargeAmps=16, DetailedChargeState="DetailedChargeStateCharging")
+        self.say(start + 3600, ChargerVoltage=241, DetailedChargeState="DetailedChargeStateComplete")
+        car = relay.charging_summary(start + 7200, True)["months"][0]["cars"][0]
+        self.assertGreater(car["other_kwh"], 0)
+        self.assertEqual((0.0, 0.0), (car["other_priced_kwh"], car["other_battery_kwh"]))
+
+    def test_a_charge_at_home_reaches_the_battery_less_what_charging_loses(self):
+        self.charge_at_home(self.MONDAY + 3600, 1)
+        car = relay.charging_summary(self.MONDAY + 7200, True)["months"][0]["cars"][0]
+        self.assertEqual(car["home_kwh"], car["home_priced_kwh"])
+        self.assertGreater(car["home_battery_kwh"], 0)
+        self.assertLessEqual(car["home_battery_kwh"], car["home_priced_kwh"])
+
+    def test_the_recording_starts_with_the_first_day_a_car_was_heard(self):
+        self.assertIsNone(relay.charging_summary(self.MONDAY, True)["recording_from"])
+        self.say(self.MONDAY, Odometer=1000)
+        self.assertEqual(relay.household_day(self.MONDAY)[:7], relay.charging_summary(self.MONDAY, True)["recording_from"])
+
     def test_tesla_refusing_the_history_says_a_relink_is_owed(self):
         relay.with_db(lambda c: (c.execute("INSERT INTO tesla_vehicles VALUES (?,?,?,?)", ("VIN_A", "andrew", "", 0)), c.commit()))
         relay.tesla_access = lambda account: "token"

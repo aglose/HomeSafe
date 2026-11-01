@@ -118,6 +118,9 @@ enum class ChargingTab(val label: StringResource, val icon: ImageVector) {
 sealed interface ChargingPage {
     /** One charge, hour by hour. */
     data class Charge(val id: Long) : ChargingPage
+
+    /** One car, month by month. */
+    data class Car(val id: String) : ChargingPage
 }
 
 /** Everything the charging screens can ask for, as one thing to hand down: the view model's side of the app. */
@@ -226,16 +229,22 @@ fun ChargingAppContent(
                     actions.onOpenCharge(id)
                     pages += ChargingPage.Charge(id)
                 }
+                val seeChargesOf: (String) -> Unit = { car ->
+                    chargesCar = car
+                    tab = ChargingTab.CHARGES
+                    pages.clear()
+                }
                 // The pages end at the keyboard while it is up, so the field being typed in scrolls up above it.
                 rememberPredictiveBackTransition(target, previous, back, label = "chargingPage").AnimatedContent(
                     modifier = Modifier.imePadding(),
                     transitionSpec = { chargingTransition(initialState, targetState, forward = depth[1] > 0 && !back.inProgress) },
                 ) { shown ->
                     when (shown) {
-                        ChargingTab.OVERVIEW -> OverviewScreen(state, tabPadding, onOpenCharge = openCharge, onSeeRates = { tab = ChargingTab.RATES })
+                        ChargingTab.OVERVIEW -> OverviewScreen(state, tabPadding, onOpenCharge = openCharge, onOpenCar = { pages += ChargingPage.Car(it) }, onSeeRates = { tab = ChargingTab.RATES })
                         ChargingTab.CHARGES -> ChargesScreen(state, chargesCar, tabPadding, onChooseCar = { chargesCar = it }, onOpenCharge = openCharge, onLoadMore = actions.onLoadMore)
                         ChargingTab.RATES -> RatesScreen(state, tabPadding, onChoosePlan = actions.onChoosePlan)
                         is ChargingPage.Charge -> ChargeScreen(state, shown.id, pagePadding, onSave = actions.onSaveCharge)
+                        is ChargingPage.Car -> CarScreen(state, shown.id, pagePadding, onSeeCharges = { seeChargesOf(shown.id) })
                         else -> Box(Modifier.fillMaxSize())
                     }
                 }
@@ -253,7 +262,11 @@ fun ChargingAppContent(
             }
 
             ChargingTopBar(
-                title = stringResource(if (page == null) Res.string.charging_title else Res.string.charging_title_charge),
+                title = when (page) {
+                    null -> stringResource(Res.string.charging_title)
+                    is ChargingPage.Charge -> stringResource(Res.string.charging_title_charge)
+                    is ChargingPage.Car -> state.summary.monthsOf(page.id).firstOrNull()?.cars?.firstOrNull()?.name ?: page.id
+                },
                 paged = page != null,
                 onBack = ::pop,
                 onRefresh = if (page == null && state.loaded) actions.onRefresh else null,

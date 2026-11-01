@@ -128,12 +128,13 @@ internal data class RelayCharge(
     val cost: Double? = null,
     @SerialName("cost_is") val costIs: String? = null,
     val note: String? = null,
+    @SerialName("idle_fee") val idleFee: Double = 0.0,
 ) {
     fun toDomain() = ChargeSession(
         id = id, car = car, carName = name.ifBlank { car }, place = ChargePlace.of(place), missed = source == "soc",
         startedEpochSeconds = started.roundToLong(), endedEpochSeconds = ended?.roundToLong(),
         socStart = socStart?.roundToInt(), socEnd = socEnd?.roundToInt(), kwh = kwh, peakKw = peakKw?.takeIf { it > 0 }, measure = ChargeMeasure.of(how),
-        site = site, cost = cost, costSource = ChargeCostSource.of(costIs), note = note, pageKey = started,
+        site = site, cost = cost, costSource = ChargeCostSource.of(costIs), note = note, pageKey = started, idleFee = idleFee,
     )
 }
 
@@ -163,9 +164,10 @@ internal data class RelayChargeDetail(
     val note: String? = null,
     val hours: List<RelayChargeHour> = emptyList(),
     val plans: Map<String, Double> = emptyMap(),
+    @SerialName("idle_fee") val idleFee: Double = 0.0,
 ) {
     fun toDomain() = ChargeSessionDetail(
-        session = RelayCharge(id, car, name, place, source, started, ended, socStart, socEnd, kwh, peakKw, how, site, cost, costIs, note).toDomain(),
+        session = RelayCharge(id, car, name, place, source, started, ended, socStart, socEnd, kwh, peakKw, how, site, cost, costIs, note, idleFee).toDomain(),
         hours = hours.map { ChargeHour(it.hour.roundToLong(), it.kwh, it.price, RatePeriod.of(it.period)) },
         plans = plans,
     )
@@ -185,6 +187,16 @@ internal data class RelayCarMonth(
     val miles: Double? = null,
     @SerialName("used_kwh") val usedKwh: Double? = null,
     val unpriced: Int = 0,
+    @SerialName("home_priced_kwh") val homePricedKwh: Double = 0.0,
+    @SerialName("fast_priced_kwh") val fastPricedKwh: Double = 0.0,
+    @SerialName("other_priced_kwh") val otherPricedKwh: Double = 0.0,
+    @SerialName("home_battery_kwh") val homeBatteryKwh: Double = 0.0,
+    @SerialName("fast_battery_kwh") val fastBatteryKwh: Double = 0.0,
+    @SerialName("other_battery_kwh") val otherBatteryKwh: Double = 0.0,
+    @SerialName("fast_idle") val fastIdle: Double = 0.0,
+    @SerialName("home_priced_cost") val homePricedCost: Double = 0.0,
+    @SerialName("fast_priced_cost") val fastPricedCost: Double = 0.0,
+    @SerialName("other_priced_cost") val otherPricedCost: Double = 0.0,
 )
 
 @Serializable
@@ -256,6 +268,7 @@ internal data class RelayCharging(
     val sessions: List<RelayCharge> = emptyList(),
     @SerialName("more_sessions") val moreSessions: Boolean = false,
     @SerialName("first_session") val firstSession: Double? = null,
+    @SerialName("recording_from") val recordingFrom: String? = null,
     val setup: RelayChargingSetup = RelayChargingSetup(),
 ) {
     fun toDomain() = ChargingSummary(
@@ -281,13 +294,21 @@ internal data class RelayCharging(
         months = months.map { m ->
             ChargingMonth(
                 key = m.month,
-                cars = m.cars.map { CarMonth(it.car, it.name.ifBlank { it.car }, it.homeKwh, it.homeCost, it.fastKwh, it.fastCost, it.otherKwh, it.otherCost, it.sessions, it.miles, it.usedKwh, it.unpriced) },
+                cars = m.cars.map {
+                    CarMonth(
+                        it.car, it.name.ifBlank { it.car }, it.homeKwh, it.homeCost, it.fastKwh, it.fastCost, it.otherKwh, it.otherCost, it.sessions, it.miles, it.usedKwh, it.unpriced,
+                        it.homePricedKwh, it.fastPricedKwh, it.otherPricedKwh, it.homeBatteryKwh, it.fastBatteryKwh, it.otherBatteryKwh, it.fastIdle,
+                        it.homePricedCost, it.fastPricedCost, it.otherPricedCost,
+                    )
+                },
                 cardFast = m.cardFast,
                 unmatched = m.unmatched,
                 electricPaid = m.electricPaid,
                 peakKwh = m.peakKwh,
                 planCosts = m.plans,
                 unpriced = m.unpriced,
+                // Keys sort as the months do. Home charging heard says so by itself, whatever else was or wasn't said.
+                homeRecorded = recordingFrom?.let { m.month >= it } == true || m.cars.any { it.homeKwh > 0 },
             )
         },
         byHour = byHour,
