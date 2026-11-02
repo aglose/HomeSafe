@@ -26,6 +26,7 @@ import homesafe.shared.generated.resources.ski_note_clear
 import homesafe.shared.generated.resources.ski_note_rain
 import homesafe.shared.generated.resources.ski_note_spread
 import homesafe.shared.generated.resources.ski_note_wind
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -35,6 +36,7 @@ import kotlin.test.assertTrue
 class SkiPlannerTest {
     private val today = 20_459 // A Tuesday.
     private val saturday = 20_463
+    private val now = today * SkiForecast.DAY_SECONDS + 43_200
     private val units = WeatherUnits()
 
     private fun ref(slug: String) = SkiResortRef(slug, "california", slug)
@@ -54,7 +56,7 @@ class SkiPlannerTest {
     private fun forecast(vararg days: SkiForecastDay) = SkiForecast(0, -28_800, days = days.toList())
 
     private fun report(slug: String, state: SkiOpenState = SkiOpenState.OPEN, opens: Int? = null, closes: Int? = null, outlook: List<SkiSnowDay> = emptyList()) =
-        SkiReport(slug, "california", slug, state = state, openingEpochDay = opens, closingEpochDay = closes, outlook = outlook)
+        SkiReport(slug, "california", slug, state = state, openingEpochDay = opens, closingEpochDay = closes, outlook = outlook, updatedAtEpochSeconds = now - 3_600)
 
     private fun entry(slug: String, days: List<SkiForecastDay> = emptyList(), driveHours: Double? = null, adult: Double? = null, state: SkiOpenState = SkiOpenState.OPEN, opens: Int? = null) = SkiEntry(
         ref(slug),
@@ -64,38 +66,38 @@ class SkiPlannerTest {
         price = adult?.let { SkiTicketPrice(adultDay = it) },
     )
 
-    private fun view(entry: SkiEntry, plan: SkiPlan = SkiPlan()) = SkiPlanner.view(entry, plan, saturday, today, units)
+    private fun view(entry: SkiEntry, plan: SkiPlan = SkiPlan()) = SkiPlanner.view(entry, plan, saturday, today, now, units)
 
     // ---- Is it running ----------------------------------------------------------------------------
 
     @Test
     fun aClosedResortRunsFromTheDateItGave() {
         val report = report("a", SkiOpenState.CLOSED, opens = saturday)
-        assertTrue(report.runsOn(saturday, today))
-        assertFalse(report.runsOn(saturday - 1, today))
+        assertTrue(report.runsOn(saturday, today, now))
+        assertFalse(report.runsOn(saturday - 1, today, now))
     }
 
     @Test
     fun aDateAlreadyPastSaysNothingAboutAClosedResort() {
         // It said it would open back in spring and it's shut: last season's date.
-        assertFalse(report("a", SkiOpenState.CLOSED, opens = today - 200).runsOn(saturday, today))
+        assertFalse(report("a", SkiOpenState.CLOSED, opens = today - 200).runsOn(saturday, today, now))
     }
 
     @Test
     fun anOpenResortRunsUntilItCloses() {
         val report = report("a", SkiOpenState.OPEN, closes = today + 1)
-        assertTrue(report.runsOn(today + 1, today))
-        assertFalse(report.runsOn(today + 2, today))
+        assertTrue(report.runsOn(today + 1, today, now))
+        assertFalse(report.runsOn(today + 2, today, now))
     }
 
     @Test
     fun aClosingDateAlreadyPastDoesntCloseAnOpenResort() {
-        assertTrue(report("a", SkiOpenState.OPEN, closes = today - 30).runsOn(saturday, today))
+        assertTrue(report("a", SkiOpenState.OPEN, closes = today - 30).runsOn(saturday, today, now))
     }
 
     @Test
     fun aResortNotOperatingNeverRuns() {
-        assertFalse(report("a", SkiOpenState.NOT_OPERATING, opens = saturday).runsOn(saturday, today))
+        assertFalse(report("a", SkiOpenState.NOT_OPERATING, opens = saturday).runsOn(saturday, today, now))
     }
 
     @Test
@@ -103,7 +105,15 @@ class SkiPlannerTest {
         val report = report("a").copy(updatedAtEpochSeconds = 1_000)
         assertTrue(report.isCurrent(1_000 + 6 * 86_400))
         assertFalse(report.isCurrent(1_000 + 8 * 86_400))
-        assertFalse(report("b").isCurrent(1_000), "one that has never said anything")
+        assertFalse(report("b").copy(updatedAtEpochSeconds = null).isCurrent(1_000), "one that has never said anything")
+    }
+
+    @Test
+    fun anOpenFromAnOldReportDoesntMeanItsRunning() {
+        val old = report("a", SkiOpenState.OPEN).copy(updatedAtEpochSeconds = now - 30 * 86_400)
+        assertFalse(old.runsOn(saturday, today, now))
+        assertFalse(old.runningNow(now))
+        assertTrue(old.copy(openingEpochDay = saturday).runsOn(saturday, today, now), "a date it gave still ahead still counts")
     }
 
     // ---- Comparing --------------------------------------------------------------------------------
@@ -246,6 +256,25 @@ class SkiPlannerTest {
     }
 
     @Test
+    fun aDayMissingInsideTheCalendarHasNoPriceOfItsOwn() {
+        val tier = SkiPriceTier(SkiPriceTier.Kind.ANY_DAY, SkiDayPrice(adultWindow = 100.0))
+        val entry = SkiEntry(ref("a"), prices = SkiResortPrices("https://a.example", days = mapOf(saturday - 1 to dated, saturday + 1 to dated), tiers = listOf(tier)))
+        val cost = SkiPlanner.cost(plan, entry, saturday)
+        assertEquals(SkiCost.Source.RESORT_TABLE, cost.source, "Sunday's price isn't Saturday's")
+        assertEquals(100.0, cost.adult)
+        assertNull(entry.prices?.priceFor(saturday))
+    }
+
+    @Test
+    fun aRateThatsOnlyWherePricesStartIsSaidToBe() {
+        val starting = SkiPriceTier(SkiPriceTier.Kind.ANY_DAY, SkiDayPrice(adultOnline = 89.0, adultWindow = 189.0), onlineIsLowest = true)
+        val entry = SkiEntry(ref("a"), prices = SkiResortPrices("https://a.example", tiers = listOf(starting)))
+        assertTrue(SkiPlanner.cost(plan, entry, saturday).startsAt)
+        val windowOnly = entry.copy(prices = SkiResortPrices("https://a.example", tiers = listOf(starting.copy(price = SkiDayPrice(adultWindow = 189.0)))))
+        assertFalse(SkiPlanner.cost(plan, windowOnly, saturday).startsAt, "a window price is the price")
+    }
+
+    @Test
     fun aDatePastTheLastPriceFallsToTheRates() {
         val tier = SkiPriceTier(SkiPriceTier.Kind.ANY_DAY, SkiDayPrice(adultWindow = 100.0))
         val entry = SkiEntry(ref("a"), prices = SkiResortPrices("https://a.example", days = mapOf(saturday - 5 to dated), tiers = listOf(tier)))
@@ -260,12 +289,12 @@ class SkiPlannerTest {
         val prices = SkiResortPrices(
             "https://a.example",
             tiers = listOf(
-                SkiPriceTier(SkiPriceTier.Kind.WEEKDAY, SkiDayPrice(adultWindow = 189.0)),
-                SkiPriceTier(SkiPriceTier.Kind.WEEKEND, SkiDayPrice(adultWindow = 249.0)),
+                SkiPriceTier(SkiPriceTier.Kind.SUNDAY_TO_FRIDAY, SkiDayPrice(adultWindow = 189.0)),
+                SkiPriceTier(SkiPriceTier.Kind.SATURDAY, SkiDayPrice(adultWindow = 249.0)),
             ),
         )
         assertEquals(249.0, prices.tierOn(saturday)?.price?.adult)
-        assertEquals(249.0, prices.tierOn(saturday + 1)?.price?.adult, "Sunday counts with the weekend, when nothing says otherwise")
+        assertEquals(189.0, prices.tierOn(saturday + 1)?.price?.adult, "the table gives Sunday with the cheaper days")
         assertEquals(189.0, prices.tierOn(today)?.price?.adult)
     }
 
@@ -276,6 +305,7 @@ class SkiPlannerTest {
             tiers = listOf(SkiPriceTier(SkiPriceTier.Kind.NON_PEAK, SkiDayPrice(adultWindow = 167.0)), SkiPriceTier(SkiPriceTier.Kind.PEAK, SkiDayPrice(adultWindow = 191.0))),
         )
         assertEquals(191.0, prices.tierOn(saturday)?.price?.adult)
+        assertEquals(191.0, prices.tierOn(saturday + 1)?.price?.adult, "Sunday counts with the weekend here, as nothing says otherwise")
         assertEquals(167.0, prices.tierOn(today)?.price?.adult)
     }
 
@@ -287,9 +317,31 @@ class SkiPlannerTest {
     // ---- The resort's own word --------------------------------------------------------------------
 
     @Test
-    fun aResortsOwnPageWithNoDateIsTakenAtItsWord() {
-        val news = SkiResortNews("https://a.example", last24Cm = 5.0)
-        assertTrue(report("a").merged(news).isCurrent(1_000_000))
+    fun aResortsOwnPageWithNoDateIsTakenAtItsWordWhileItsBeenReadLately() {
+        val news = SkiResortNews("https://a.example", last24Cm = 5.0, fetchedAtEpochSeconds = 1_000_000)
+        assertTrue(report("a").merged(news).isCurrent(1_000_000 + 86_400))
+        assertFalse(report("a").merged(news).isCurrent(1_000_000 + 8 * 86_400), "a site down for a week leaves nothing to go by")
+    }
+
+    @Test
+    fun anOldListingsCountsDontPassForTheResortsOwn() {
+        val listing = report("a").copy(liftsOpen = 12, liftsTotal = 20, runsOpen = 80, runsTotal = 100, runsOpenPercent = 80)
+        val merged = listing.merged(SkiResortNews("https://a.example", last24Cm = 5.0, updatedAtEpochSeconds = now))
+        assertNull(merged.liftsOpen)
+        assertNull(merged.liftsTotal)
+        assertNull(merged.runsOpen)
+        assertNull(merged.runsTotal)
+        assertNull(merged.runsOpenPercent)
+    }
+
+    @Test
+    fun theTripsHoursGoByTheMountainsZoneAcrossAClockChange() {
+        val clocksChange = LocalDate(2027, 3, 14).toEpochDays().toInt()
+        val midnightUtc = clocksChange * SkiForecast.DAY_SECONDS
+        val pacific = SkiForecast(0, -28_800, timeZoneId = "America/Los_Angeles")
+        assertEquals(midnightUtc + 14 * 3_600, pacific.epochSecondsAt(clocksChange, 7), "7 AM daylight time, though the forecast was fetched on standard")
+        assertEquals(midnightUtc + 15 * 3_600, pacific.copy(timeZoneId = "").epochSecondsAt(clocksChange, 7), "no zone: the offset is all there is")
+        assertEquals(midnightUtc + 15 * 3_600, pacific.copy(timeZoneId = "Nowhere/Much").epochSecondsAt(clocksChange, 7))
     }
 
     @Test

@@ -2,11 +2,19 @@ package com.meticulouscreations.homesafe.weather.ski.domain
 
 import androidx.compose.runtime.Immutable
 import com.meticulouscreations.homesafe.weather.domain.WeatherKind
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atTime
+import kotlinx.datetime.toInstant
 import kotlinx.serialization.Serializable
 import org.jetbrains.compose.resources.StringResource
 
 /** How long a report counts as saying how things are. */
 private const val REPORT_CURRENT_SECONDS = 7 * 86_400L
+
+/** Days of the week, counting from Monday. */
+private const val SATURDAY = 5
+private const val SUNDAY = 6
 
 /** A resort the household can follow: [slug] and [regionSlug] are where its pages are, [name] is what it calls itself. */
 @Immutable
@@ -67,6 +75,8 @@ data class SkiReport(
     val conditions: String? = null,
     /** The resort's own page these numbers came from, or null where they are OnTheSnow's listing. */
     val resortPageUrl: String? = null,
+    /** When the resort's own page was read, which is all there is to go by where it puts no date on its report. */
+    val fetchedAtEpochSeconds: Long? = null,
 ) {
     val ref: SkiResortRef get() = SkiResortRef(slug, regionSlug, name)
 
@@ -75,9 +85,13 @@ data class SkiReport(
 
     /**
      * Said something this week: an old report's snow has melted, and its lifts aren't turning. A
-     * resort's own page with no date on it is taken at its word, since it's what it says today.
+     * resort's own page with no date on it is taken at its word for as long as it was read lately:
+     * a site that has stopped answering leaves its last reading behind.
      */
-    fun isCurrent(nowEpochSeconds: Long): Boolean = updatedAtEpochSeconds?.let { nowEpochSeconds - it <= REPORT_CURRENT_SECONDS } ?: (resortPageUrl != null)
+    fun isCurrent(nowEpochSeconds: Long): Boolean = (updatedAtEpochSeconds ?: fetchedAtEpochSeconds)?.let { nowEpochSeconds - it <= REPORT_CURRENT_SECONDS } ?: false
+
+    /** Running today, by a report recent enough to say so. */
+    fun runningNow(nowEpochSeconds: Long): Boolean = (state == SkiOpenState.OPEN || state == SkiOpenState.LIMITED) && isCurrent(nowEpochSeconds)
 
     /**
      * This listing with the resort's own figures over it. The dates it opens and closes stay the
@@ -95,10 +109,11 @@ data class SkiReport(
         last7DaysCm = news.last7DaysCm,
         seasonCm = news.seasonCm,
         conditions = news.conditions,
-        liftsOpen = news.liftsOpen ?: liftsOpen,
-        liftsTotal = news.liftsTotal ?: liftsTotal,
-        runsOpen = news.runsOpen ?: runsOpen,
-        runsTotal = news.runsTotal ?: runsTotal,
+        liftsOpen = news.liftsOpen,
+        liftsTotal = news.liftsTotal,
+        runsOpen = news.runsOpen,
+        runsTotal = news.runsTotal,
+        runsOpenPercent = null,
         state = when {
             news.running == true || (news.liftsOpen ?: 0) > 0 -> if (state == SkiOpenState.LIMITED) state else SkiOpenState.OPEN
             news.running == false -> SkiOpenState.CLOSED
@@ -106,14 +121,15 @@ data class SkiReport(
         },
         updatedAtEpochSeconds = news.updatedAtEpochSeconds,
         resortPageUrl = news.pageUrl,
+        fetchedAtEpochSeconds = news.fetchedAtEpochSeconds,
     )
 
-    /** Whether it should be running on [epochDay], going by its state now and the dates it gave. */
-    fun runsOn(epochDay: Int, todayEpochDay: Int): Boolean {
+    /** Whether it should be running on [epochDay], going by its state now and the dates it gave. An "open" from an old report says nothing about now. */
+    fun runsOn(epochDay: Int, todayEpochDay: Int, nowEpochSeconds: Long): Boolean {
         if (state == SkiOpenState.NOT_OPERATING) return false
         closingEpochDay?.let { closes -> if (epochDay > closes && closes >= todayEpochDay) return false }
-        if (state == SkiOpenState.OPEN || state == SkiOpenState.LIMITED) return true
-        // Closed today. It runs that day only if it gave an opening date still ahead, and not after it.
+        if (runningNow(nowEpochSeconds)) return true
+        // Not known to be running today. It runs that day only if it gave an opening date still ahead, and not after it.
         val opens = openingEpochDay ?: return false
         return opens > todayEpochDay && epochDay >= opens
     }
@@ -141,6 +157,8 @@ data class SkiResortNews(
     /** Where it says outright whether it's running. */
     val running: Boolean? = null,
     val updatedAtEpochSeconds: Long? = null,
+    /** When this was read from the site. */
+    val fetchedAtEpochSeconds: Long? = null,
 )
 
 /** A one-day ticket from a resort's own site. Online is what it sells for ahead; window is at the mountain, or its price before any online saving. */
@@ -166,7 +184,7 @@ data class SkiPriceTier(
     /** Its online figure is the lowest it starts at, not the price on any given day. */
     val onlineIsLowest: Boolean = false,
 ) {
-    enum class Kind { ANY_DAY, WEEKDAY, WEEKEND, NON_PEAK, PEAK }
+    enum class Kind { ANY_DAY, SUNDAY_TO_FRIDAY, SATURDAY, NON_PEAK, PEAK }
 }
 
 /** A resort's ticket prices from its own site: by date where it sells that way, as a rate table where it doesn't. */
@@ -180,13 +198,24 @@ data class SkiResortPrices(
     /** Every day its shop has been asked about, sold or not: before a season most aren't, and that's an answer. */
     val daysAsked: Set<Int> = emptySet(),
 ) {
-    /** The price on [epochDay], or else on the first day after it that has one: before a season opens, the first day's. */
-    fun onOrAfter(epochDay: Int): Pair<Int, SkiDayPrice>? = days.keys.filter { it >= epochDay }.minOrNull()?.let { it to days.getValue(it) }
+    /** The price on [epochDay], or before a season opens the first day's. A day with none inside the calendar has none: another day's isn't its price. */
+    fun priceFor(epochDay: Int): Pair<Int, SkiDayPrice>? {
+        days[epochDay]?.let { return epochDay to it }
+        val first = days.keys.minOrNull()?.takeIf { it > epochDay } ?: return null
+        return first to days.getValue(first)
+    }
 
-    /** The rate that applies on [epochDay], if the table says. Peak dates it doesn't give: a weekend is taken as peak. 1 January 1970 was a Thursday. */
+    /**
+     * The rate that applies on [epochDay], if the table says. Peak dates it doesn't give: a weekend,
+     * Sunday included, is taken as peak. A table with a Saturday rate gives Sunday as a cheaper day
+     * itself. 1 January 1970 was a Thursday, so Monday is 0.
+     */
     fun tierOn(epochDay: Int): SkiPriceTier? {
-        val weekend = (epochDay + 3).mod(7) >= 5
-        val kinds = if (weekend) listOf(SkiPriceTier.Kind.WEEKEND, SkiPriceTier.Kind.PEAK) else listOf(SkiPriceTier.Kind.WEEKDAY, SkiPriceTier.Kind.NON_PEAK)
+        val kinds = when ((epochDay + 3).mod(7)) {
+            SATURDAY -> listOf(SkiPriceTier.Kind.SATURDAY, SkiPriceTier.Kind.PEAK)
+            SUNDAY -> listOf(SkiPriceTier.Kind.SUNDAY_TO_FRIDAY, SkiPriceTier.Kind.PEAK)
+            else -> listOf(SkiPriceTier.Kind.SUNDAY_TO_FRIDAY, SkiPriceTier.Kind.NON_PEAK)
+        }
         return tiers.firstOrNull { it.kind in kinds } ?: tiers.firstOrNull { it.kind == SkiPriceTier.Kind.ANY_DAY }
     }
 }
@@ -309,6 +338,13 @@ data class SkiForecast(
         epochDayOf(hour.epochSeconds) == epochDay && (hour.epochSeconds + utcOffsetSeconds).mod(DAY_SECONDS) / 3600 in 8L..16L
     }
 
+    /** When [hour] o'clock comes on [epochDay] at the mountain: by its own zone, as the clocks may change before then, and by today's offset where the zone isn't known. */
+    fun epochSecondsAt(epochDay: Int, hour: Int): Long {
+        val zone = timeZoneId.takeIf { it.isNotBlank() }?.let { id -> runCatching { TimeZone.of(id) }.getOrNull() }
+            ?: return epochDay * DAY_SECONDS + hour * 3_600L - utcOffsetSeconds
+        return LocalDate.fromEpochDays(epochDay).atTime(hour, 0).toInstant(zone).epochSeconds
+    }
+
     companion object {
         const val DAY_SECONDS = 86_400L
     }
@@ -362,6 +398,10 @@ data class ChainControl(
     /** Caltrans's own sentence about it. */
     val description: String = "",
 )
+
+/** What's in force along a road, and whether that's all known: nothing found is no all-clear when [complete] is false, as a file couldn't be read. */
+@Immutable
+data class SkiChainReport(val controls: List<ChainControl> = emptyList(), val complete: Boolean = true)
 
 /** The season passes the app knows the resorts of. [slug] is where the pass's list of resorts is. */
 enum class SkiPass(val slug: String) {

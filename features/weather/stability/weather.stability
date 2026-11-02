@@ -371,10 +371,11 @@ internal fun com.meticulouscreations.homesafe.weather.ski.ui.label(): kotlin.Str
   params:
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ski.ui.stateColor(): androidx.compose.ui.graphics.Color
+internal fun com.meticulouscreations.homesafe.weather.ski.ui.stateColor(nowEpochSeconds: kotlin.Long): androidx.compose.ui.graphics.Color
   skippable: false
   restartable: false
   params:
+    - nowEpochSeconds: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.weather.ui.AirQualityTile(report: com.meticulouscreations.homesafe.weather.domain.WeatherReport, modifier: androidx.compose.ui.Modifier): kotlin.Unit

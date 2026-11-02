@@ -52,10 +52,12 @@
     <string name="ski_chains_on_road">%1$s en %2$s</string>
     <string name="ski_chain_at">%1$s en %2$s, %3$s</string>
     <string name="ski_chains_none">Ahora no hay controles de cadenas en el camino.</string>
+    <string name="ski_chains_unavailable">Caltrans no responde, así que los controles de cadenas pueden faltar o estar desactualizados.</string>
     <string name="ski_chains_unknown">Los controles de cadenas solo se conocen en California. Consulta el servicio local de carreteras.</string>
     <string name="ski_state_open">Abierta</string>
     <string name="ski_state_limited">Abierta en parte</string>
     <string name="ski_state_closed">Cerrada</string>
+    <string name="ski_state_no_recent_report">Sin parte reciente</string>
     <string name="ski_state_not_operating">No funciona</string>
     <string name="ski_state_opens">Abre el %1$s</string>
     <string name="ski_follow">Seguir</string>
@@ -165,6 +167,7 @@
     <string name="ski_pass_mountain_collective">Mountain Collective</string>
     <string name="ski_pass_powder_alliance">Powder Alliance</string>
     <string name="ski_cost_label_listed">Publicado</string>
+    <string name="ski_cost_label_from">Desde</string>
     <string name="ski_last7">Últimos 7 días</string>
     <string name="ski_season_total">Total temporada</string>
     <string name="ski_conditions">Superficie: %1$s</string>
@@ -174,6 +177,7 @@
     <string name="ski_ticket_party_dated">Para tu grupo el %1$s, en línea, de la estación</string>
     <string name="ski_ticket_party_first_day">Para tu grupo el %1$s, su primer día a la venta</string>
     <string name="ski_ticket_party_table">Para tu grupo, un día, según las tarifas de la estación</string>
+    <string name="ski_ticket_party_from">Lo mínimo que pagaría tu grupo por un día, según las tarifas de la estación</string>
     <string name="ski_ticket_party_window">%1$s en taquilla</string>
     <string name="ski_ticket_adult_online">Adulto, en línea</string>
     <string name="ski_ticket_adult_window">Adulto, taquilla</string>

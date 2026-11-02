@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.weather.data.weatherJson
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherPlacesRepository
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiChainReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDayPrice
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
@@ -70,8 +71,9 @@ class SkiRepositoryImpl(
     private val locks = HashMap<String, Mutex>()
     private val guard = Mutex()
     private val districtsHeld = HashMap<Int, Pair<Long, List<ChainControl>>>()
+    private val districtsFailed = HashMap<Int, Long>()
 
-    /** The key was refused routes this session (it may only be allowed map tiles): don't ask on every drive. */
+    /** The key was refused routes this session: don't ask on every drive. Anything else that goes wrong gets asked about again. */
     private var routesRefused = false
 
     override fun plan(): Flow<SkiPlan> = dao.observe(PLAN_KEY).map { row -> row?.let(::readPlan) ?: SkiPlan() }
@@ -128,33 +130,51 @@ class SkiRepositoryImpl(
         val key = keys.current(HouseholdKeys.GOOGLE_MAPS)?.takeIf { !routesRefused }
         if (key != null) {
             val traffic = cached("drive:$trip:${departEpochSeconds ?: "now"}", SkiDrive.serializer(), TRAFFIC_MAX_AGE, force = false) {
-                routes.withTraffic(from, to, departEpochSeconds, key)?.let { Result.success(it) } ?: Result.failure(RoutesRefused)
+                routes.withTraffic(from, to, departEpochSeconds, key)
             }
             if (traffic.isSuccess) return traffic
-            routesRefused = true
+            if (traffic.exceptionOrNull() is RoutesRefused) routesRefused = true
         }
         // An empty road is the same at any hour, and takes the same time for long enough to keep it.
         return cached("road:$trip", SkiDrive.serializer(), ROAD_MAX_AGE, force = false) { routes.freeFlow(from, to) }
     }
 
-    private object RoutesRefused : RuntimeException("Routes refused")
-
     private fun roundedKey(point: SkiPoint) = "${(point.latitude * 100).toInt()},${(point.longitude * 100).toInt()}"
 
-    override suspend fun chainControls(path: String): List<ChainControl> {
-        if (path.isEmpty()) return emptyList()
+    override suspend fun chainControls(path: String): SkiChainReport {
+        if (path.isEmpty()) return SkiChainReport()
         val road = withContext(Dispatchers.Default) { decodePolyline(path) }
-        val box = boxAround(road) ?: return emptyList()
-        val inForce = coroutineScope { chains.districtsAround(box).map { async { district(it) } }.awaitAll().flatten() }
-        return withContext(Dispatchers.Default) { inForce.filter { passesNear(road, it.latitude, it.longitude) } }
+        val box = boxAround(road) ?: return SkiChainReport()
+        val districts = coroutineScope { chains.districtsAround(box).map { async { district(it) } }.awaitAll() }
+        val onRoad = withContext(Dispatchers.Default) { districts.flatMap { it.controls }.filter { passesNear(road, it.latitude, it.longitude) } }
+        return SkiChainReport(onRoad, complete = districts.all { it.complete })
     }
 
-    /** One district's file, held for a while: several resorts' roads run through the same ones, and each file is a couple of hundred kilobytes. */
-    private suspend fun district(number: Int): List<ChainControl> {
+    /**
+     * One district's file, held for a while: several resorts' roads run through the same ones, and
+     * each file is a couple of hundred kilobytes. One that can't be read leaves the last one read,
+     * marked as not the whole story, and is tried again shortly: a failure never reads as all clear.
+     */
+    private suspend fun district(number: Int): SkiChainReport {
         val lock = guard.withLock { locks.getOrPut("district:$number") { Mutex() } }
         return lock.withLock {
-            guard.withLock { districtsHeld[number] }?.takeIf { (at, _) -> now() - at < CHAINS_MAX_AGE }?.second
-                ?: suspendRunCatching { chains.district(number) }.getOrDefault(emptyList()).also { fetched -> guard.withLock { districtsHeld[number] = now() to fetched } }
+            val held = guard.withLock { districtsHeld[number] }
+            if (held != null && now() - held.first < CHAINS_MAX_AGE) return@withLock SkiChainReport(held.second)
+            val lastFailed = guard.withLock { districtsFailed[number] }
+            if (lastFailed != null && now() - lastFailed < CHAINS_RETRY_AFTER) return@withLock SkiChainReport(held?.second.orEmpty(), complete = false)
+            suspendRunCatching { chains.district(number) }.fold(
+                onSuccess = { fetched ->
+                    guard.withLock {
+                        districtsHeld[number] = now() to fetched
+                        districtsFailed.remove(number)
+                    }
+                    SkiChainReport(fetched)
+                },
+                onFailure = {
+                    guard.withLock { districtsFailed[number] = now() }
+                    SkiChainReport(held?.second.orEmpty(), complete = false)
+                },
+            )
         }
     }
 
@@ -163,7 +183,7 @@ class SkiRepositoryImpl(
     override suspend fun resortNews(slug: String, force: Boolean): SkiResortNews? {
         if (!hasResortSite(slug)) return null
         return cached("news:$slug", SkiResortNews.serializer(), NEWS_MAX_AGE, force) {
-            suspendRunCatching { sites.news(slug) ?: throw NoAnswer }
+            suspendRunCatching { (sites.news(slug) ?: throw NoAnswer).copy(fetchedAtEpochSeconds = now()) }
         }.getOrNull()
     }
 
@@ -171,8 +191,8 @@ class SkiRepositoryImpl(
 
     /**
      * Its rate table from a plain page, its dated prices from its shop through the browser. What the
-     * shop gave is kept for a day and only asked for again if a day is wanted that isn't in it: a
-     * trip of the browser is a whole page.
+     * shop gave is kept for a day and only asked for again if a day is wanted that isn't in it, or the
+     * shop hasn't answered yet: a rate table is no answer from it, and a trip of the browser is a whole page.
      */
     override suspend fun resortPrices(slug: String, epochDays: List<Int>): SkiResortPrices? {
         val site = ResortSite.ALL[slug] ?: return null
@@ -182,33 +202,48 @@ class SkiRepositoryImpl(
             val row = suspendRunCatching { dao.kept(key) }.getOrNull()
             val held = row?.let { kept -> withContext(Dispatchers.Default) { runCatching { weatherJson.decodeFromString(SkiResortPrices.serializer(), kept.json) }.getOrNull() } }
             val fresh = held?.takeIf { row.savedAtEpochSeconds + SITE_PRICE_MAX_AGE > now() }
-            val datedByDay = site is ResortSite.Vail
-            if (fresh != null && (!datedByDay || epochDays.all { it in fresh.daysAsked })) return@withLock fresh
+            val upToDate = fresh != null && when {
+                !browser.isSupported -> true
+                site is ResortSite.Vail -> epochDays.all { it in fresh.daysAsked }
+                site.hasCalendar -> fresh.daysAsked.isNotEmpty()
+                else -> true
+            }
+            if (upToDate) return@withLock fresh
             val table = suspendRunCatching { sites.priceTable(slug) }.getOrDefault(emptyList())
             val dated = datedPrices(site, epochDays)
-            if (table.isEmpty() && dated.isEmpty()) return@withLock held
+            // A Vail shop's refusals come back as nothing priced. A calendar's come back as no answer at all, so an empty one is a shop with no dates on sale.
+            val shopAnswered = dated != null && (dated.isNotEmpty() || site !is ResortSite.Vail)
+            if (table.isEmpty() && !shopAnswered) return@withLock held
             val prices = SkiResortPrices(
                 pageUrl = site.ticketsUrl.orEmpty(),
-                days = fresh?.days.orEmpty() + dated,
+                days = fresh?.days.orEmpty() + dated.orEmpty(),
                 tiers = table.ifEmpty { fresh?.tiers.orEmpty() },
                 fetchedAtEpochSeconds = now(),
                 // Only if the shop answered at all: a browser that got nowhere has learned nothing about these days.
-                daysAsked = fresh?.daysAsked.orEmpty() + if (dated.isEmpty()) emptyList() else epochDays,
+                daysAsked = fresh?.daysAsked.orEmpty() + if (shopAnswered) epochDays else emptyList(),
             )
             suspendRunCatching { dao.keep(SkiKeptEntity(key, weatherJson.encodeToString(SkiResortPrices.serializer(), prices), now())) }
             prices
         }
     }
 
-    private suspend fun datedPrices(site: ResortSite, epochDays: List<Int>): Map<Int, SkiDayPrice> {
-        if (!browser.isSupported) return emptyMap()
+    private val ResortSite.hasCalendar: Boolean
+        get() = when (this) {
+            is ResortSite.Feed -> shop != null
+            is ResortSite.Powdr -> shop != null
+            is ResortSite.Vail, is ResortSite.Pages -> false
+        }
+
+    /** What its shop said, or null if nothing did. */
+    private suspend fun datedPrices(site: ResortSite, epochDays: List<Int>): Map<Int, SkiDayPrice>? {
+        if (!browser.isSupported) return null
         val answer = when (site) {
             is ResortSite.Vail -> browser.read(site.ticketsUrl, ResortScripts.vail(epochDays.map { LocalDate.fromEpochDays(it).toString() }))
             is ResortSite.Feed -> site.shop?.let { browser.read(it.url, ResortScripts.shop(it.categorySlug, it.productPattern)) }
             is ResortSite.Powdr -> site.shop?.let { browser.read(it.url, ResortScripts.shop(it.categorySlug, it.productPattern)) }
             is ResortSite.Pages -> null
         }
-        return answer?.let { withContext(Dispatchers.Default) { ResortPages.datedPrices(it) } }.orEmpty()
+        return answer?.let { withContext(Dispatchers.Default) { ResortPages.datedPrices(it) } }
     }
 
     override suspend fun passResorts(pass: SkiPass): Result<Set<String>> =
@@ -234,6 +269,9 @@ class SkiRepositoryImpl(
         /** Prices move as a date comes nearer, but a day at a time. */
         const val SITE_PRICE_MAX_AGE = 86_400L
         const val CHAINS_MAX_AGE = 10 * 60L
+
+        /** Long enough that every resort on a road doesn't wait on the same dead file in turn. */
+        const val CHAINS_RETRY_AFTER = 60L
         const val ALERTS_TIMEOUT_MS = 4_000L
     }
 }
