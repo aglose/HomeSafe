@@ -43,7 +43,7 @@ for journey in ${JOURNEYS[@]}; do
   # `pm clear` tears the old task down in the background, and that can kill the process of a launch
   # that comes too soon, which leaves the splash icon up with no app behind it. A launch after that
   # stays up. An app that never does is the app's failure, for the agent to report.
-  for attempt in 1 2 3; do
+  for attempt in 1 2 3 4 5; do
     adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 > /dev/null
     sleep 5
     adb shell pidof "$APP_ID" > /dev/null && break
@@ -57,7 +57,9 @@ for journey in ${JOURNEYS[@]}; do
 
   expected="$(grep -c '<action>' "$journey")"
   passed="$( { grep -E '^### Action' "$result" 2> /dev/null || true; } | grep -c '✅')"
-  if [ -f "$result" ] && ! grep -q '❌' "$result" && [ "$passed" -eq "$expected" ]; then
+  # At least, because the skill has an agent split an action that lists several things into one
+  # heading each.
+  if [ -f "$result" ] && ! grep -q '❌' "$result" && [ "$passed" -ge "$expected" ]; then
     echo "PASS  $name ($passed/$expected actions)"
   else
     echo "FAIL  $name ($passed/$expected actions) — see $result and $OUT/$name.log"
