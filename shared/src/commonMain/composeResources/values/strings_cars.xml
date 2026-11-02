@@ -51,4 +51,10 @@
     <string name="household_cars_unlocked">Unlocked</string>
     <string name="household_cars_sentry">Sentry on</string>
     <string name="household_cars_inside">Inside %1$s</string>
+    <string name="household_cars_view_3d">See %1$s in 3D</string>
+    <string name="household_cars_3d_hint">Drag to turn it, pinch or scroll to zoom</string>
+    <string name="household_cars_3d_description">3D model of %1$s. Drag to turn it, pinch or scroll to zoom.</string>
+    <string name="car_model_blue_performance">2023 Model Y Performance, Deep Blue</string>
+    <string name="car_model_red_long_range">2022 Model Y Long Range, Red Multi-Coat</string>
+    <string name="car_model_credit">Based on “2021 Tesla Model Y” by tonielpro520 (CC BY 4.0), with new wheels, materials and lighting</string>
 </resources>
