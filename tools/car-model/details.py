@@ -218,7 +218,8 @@ def photo_ray(camera, pixel, width):
     right = forward.cross(Vector((0, 0, 1))).normalized()
     up = right.cross(forward)
     roll = camera["roll"]
-    turned = Matrix.Rotation(roll, 3, forward)
+    # fit_camera.rotation() turns right and up the other way round the line of sight.
+    turned = Matrix.Rotation(-roll, 3, forward)
     right, up = turned @ right, turned @ up
     focal = camera["lens"] / 36.0 * width
     height = width / camera["aspect"]

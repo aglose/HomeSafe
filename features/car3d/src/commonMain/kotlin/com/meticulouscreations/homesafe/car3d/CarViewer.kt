@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -21,7 +22,10 @@ fun CarViewer(model: CarModel, modifier: Modifier = Modifier, state: CarOrbitSta
     val live = !LocalInspectionMode.current && carDrawsLive
     Box(modifier) {
         if (live) {
-            CarSurface(model, state, onFirstFrame = { drawing = true }, Modifier.fillMaxSize())
+            // Keyed by model: a new model gets a new surface, so its first frame is reported again.
+            key(model) {
+                CarSurface(model, state, onFirstFrame = { drawing = true }, Modifier.fillMaxSize())
+            }
         }
         if (!drawing) {
             CarPoster(model, Modifier.fillMaxSize())

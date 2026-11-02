@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,6 +52,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -210,7 +210,14 @@ fun CarsContent(
     // The car being looked at in 3D, over the whole page; only a key, like focus.
     var inThreeD by rememberSaveable { mutableStateOf<String?>(null) }
     Box(modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // Hidden from screen readers while the 3D page is over it, so they can't reach its controls.
+        val behindThreeD = state.cars.any { it.id == inThreeD }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .then(if (behindThreeD) Modifier.clearAndSetSemantics {} else Modifier),
+        ) {
             CarsHeader(onBack = onBack, onRefresh = onRefresh)
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 if (pins.isNotEmpty()) {
@@ -403,7 +410,7 @@ internal fun CarModelPage(car: HouseholdCar, onClose: () -> Unit, modifier: Modi
             }
         }
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = bottomNavClearance()).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
