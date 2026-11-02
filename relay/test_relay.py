@@ -11328,6 +11328,124 @@ class ChargingTest(unittest.TestCase):
         self.assertEqual([], self.sessions())
 
 
+class FitnessHealthTest(unittest.TestCase):
+    """What a phone read from its health store, kept for the same login's other devices."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {name: getattr(relay, name) for name in ("DB_PATH", "CONN", "FITNESS_HEALTH_MAX_BYTES", "require_frigate_session")}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        self.login("andrew")
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        self._dir.cleanup()
+
+    @staticmethod
+    def login(owner):
+        relay.require_frigate_session = lambda request: owner
+
+    @staticmethod
+    def send(steps=1000, tracks=(), device="phone", fingerprint="a"):
+        return relay.put_fitness_health({"device": device, "snapshot": {"at": 5, "steps": {"100": steps}}, "tracks": dict.fromkeys(tracks, fingerprint)}, object())
+
+    @staticmethod
+    def send_track(track_id="r1", fingerprint="a"):
+        return relay.put_fitness_health_track({"id": track_id, "fingerprint": fingerprint, "track": {"heart": [{"t": 1, "v": 150.0}]}}, object())
+
+    def test_a_snapshot_is_read_back_as_it_was_sent(self):
+        self.assertIsNone(relay.get_fitness_health(object())["snapshot"])
+        self.send()
+        self.assertEqual({"at": 5, "steps": {"100": 1000}}, relay.get_fitness_health(object())["snapshot"])
+
+    def test_the_next_snapshot_replaces_the_last_whole(self):
+        relay.put_fitness_health({"device": "phone", "snapshot": {"sleep": [1]}, "tracks": {}}, object())
+        relay.put_fitness_health({"device": "phone", "snapshot": {"steps": {}}, "tracks": {}}, object())
+        self.assertEqual({"steps": {}}, relay.get_fitness_health(object())["snapshot"], "a kind switched off on the phone is gone from here")
+
+    def test_each_login_has_its_own(self):
+        self.send(steps=1000)
+        self.login("sarah")
+        self.assertIsNone(relay.get_fitness_health(object())["snapshot"])
+        self.send(steps=2000)
+        self.assertEqual({"100": 2000}, relay.get_fitness_health(object())["snapshot"]["steps"])
+        self.login("andrew")
+        self.assertEqual({"100": 1000}, relay.get_fitness_health(object())["snapshot"]["steps"])
+
+    def test_a_login_can_only_read_its_own_track(self):
+        self.send(tracks=["r1"])
+        self.send_track()
+        self.login("sarah")
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_session_frigate_cant_name_gets_nothing(self):
+        self.login("?")
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.get_fitness_health(object())
+        self.assertEqual(502, refused.exception.status_code)
+
+    def test_a_track_is_kept_and_its_fingerprint_told(self):
+        self.send(tracks=["r1"])
+        self.assertEqual({}, self.send(tracks=["r1"])["tracks"], "not sent yet, so it is still wanted")
+        self.assertTrue(self.send_track(fingerprint="a")["kept"])
+        self.assertEqual({"r1": "a"}, self.send(tracks=["r1"])["tracks"])
+        self.assertEqual({"heart": [{"t": 1, "v": 150.0}]}, relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_track_the_snapshot_stops_listing_is_let_go(self):
+        self.send(tracks=["r1", "r2"])
+        self.send_track("r1")
+        self.send_track("r2")
+        self.assertEqual({"r2": "a"}, self.send(tracks=["r2"])["tracks"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_track_read_under_what_is_no_longer_shared_goes_with_the_snapshot_that_says_so(self):
+        self.send(tracks=["r1", "r2"], fingerprint="heart shared")
+        self.send_track("r1", "heart shared")
+        self.send_track("r2", "heart shared")
+        self.assertEqual({}, self.send(tracks=["r1", "r2"], fingerprint="heart not shared")["tracks"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"], "gone at once, however few the phone sends again")
+        self.assertIsNone(relay.get_fitness_health_track("r2", object())["track"])
+
+    def test_a_track_on_its_way_from_before_a_change_isnt_kept(self):
+        self.send(tracks=["r1"], fingerprint="heart not shared")
+        self.assertFalse(self.send_track("r1", "heart shared")["kept"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_track_on_its_way_as_its_run_went_isnt_kept(self):
+        self.send(tracks=[])
+        self.assertFalse(self.send_track("r1")["kept"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_the_phone_that_sent_it_can_take_it_away(self):
+        self.send(tracks=["r1"])
+        self.send_track()
+        self.assertTrue(relay.delete_fitness_health("phone", object())["cleared"])
+        self.assertIsNone(relay.get_fitness_health(object())["snapshot"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_another_install_with_nothing_shared_doesnt_wipe_it(self):
+        self.send(device="phone")
+        self.assertFalse(relay.delete_fitness_health("debug-build", object())["cleared"])
+        self.assertIsNotNone(relay.get_fitness_health(object())["snapshot"])
+
+    def test_what_cant_be_a_snapshot_is_refused(self):
+        for body in ({}, {"device": "phone"}, {"device": "", "snapshot": {}}, {"device": "phone", "snapshot": []}, {"device": "phone", "snapshot": {}, "tracks": ["r1"]}, {"device": "phone", "snapshot": {}, "tracks": {"r1": 1}}):
+            with self.assertRaises(relay.HTTPException) as refused:
+                relay.put_fitness_health(body, object())
+            self.assertEqual(400, refused.exception.status_code)
+
+    def test_too_large_a_snapshot_is_refused(self):
+        relay.FITNESS_HEALTH_MAX_BYTES = 10
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.send()
+        self.assertEqual(413, refused.exception.status_code)
+
+
 class FitnessSyncTest(unittest.TestCase):
     """Each device's training log against the one kept here: what it is told, and what it can't do."""
 

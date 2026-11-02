@@ -61,9 +61,11 @@ import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.createFinanceTipLedger
+import com.meticulouscreations.homesafe.fitness.data.RelayHealthSource
 import com.meticulouscreations.homesafe.fitness.data.createHealthSource
 import com.meticulouscreations.homesafe.fitness.data.createHeartRateLink
 import com.meticulouscreations.homesafe.fitness.data.createRunLocation
+import com.meticulouscreations.homesafe.fitness.domain.HealthAvailability
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
 import com.meticulouscreations.homesafe.fitness.domain.HeartRateLink
 import com.meticulouscreations.homesafe.fitness.domain.RunLocation
@@ -343,10 +345,11 @@ interface AppGraph :
     @Provides
     fun provideRunLocation(platformContext: PlatformContext): RunLocation = createRunLocation(platformContext)
 
-    /** The device's health store, which the fitness app reads steps, sleep and runs from (`HealthViewModel`). */
+    /** The device's health store, which the fitness app reads steps, sleep and runs from (`HealthViewModel`); with none here, what this login's phone last read from its own. */
     @SingleIn(AppScope::class)
     @Provides
-    fun provideHealthSource(platformContext: PlatformContext): HealthSource = createHealthSource(platformContext)
+    fun provideHealthSource(platformContext: PlatformContext, fromThePhone: RelayHealthSource): HealthSource =
+        createHealthSource(platformContext).takeIf { it.availability() != HealthAvailability.UNSUPPORTED } ?: fromThePhone
 
     /** How often the finance app's nudges have been shown on this install. */
     @SingleIn(AppScope::class)

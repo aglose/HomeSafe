@@ -163,7 +163,7 @@ internal fun TodayScreen(
         }
 
         // The body first: how ready it is decides how the rest of the page is read.
-        if (health.supported) BodyCard(health, onConnectHealth, onManageHealth, animated = animated)
+        if (health.bodyCardShown) BodyCard(health, onConnectHealth, onManageHealth, animated = animated)
 
         if (state.isEmpty) {
             FitnessCard(Modifier.testTag("fitness_today_empty")) {

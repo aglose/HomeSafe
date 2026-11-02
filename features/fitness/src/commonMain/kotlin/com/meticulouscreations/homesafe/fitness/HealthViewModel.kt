@@ -8,8 +8,10 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyBoards
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
 import com.meticulouscreations.homesafe.fitness.domain.HealthAvailability
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
+import com.meticulouscreations.homesafe.fitness.domain.HealthReadings
 import com.meticulouscreations.homesafe.fitness.domain.HealthSample
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
+import com.meticulouscreations.homesafe.fitness.domain.HealthUpload
 import com.meticulouscreations.homesafe.fitness.domain.HeartZones
 import com.meticulouscreations.homesafe.fitness.domain.ReadinessScore
 import com.meticulouscreations.homesafe.fitness.domain.RecordedRun
@@ -38,6 +40,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
@@ -90,8 +93,16 @@ data class HealthUiState(
     val canRecord: Boolean = false,
     /** The user wouldn't let the app know where the phone is, the last time a run was started. */
     val locationRefused: Boolean = false,
+    /** When the phone read what is shown, on a device with no store of its own; null where the store is this device's. */
+    val fromPhoneAtEpochSeconds: Long? = null,
 ) {
     val supported: Boolean get() = access != HealthAccess.UNSUPPORTED
+
+    /** What is shown came from another device by way of the server. Nothing here can change what is shared. */
+    val fromPhone: Boolean get() = fromPhoneAtEpochSeconds != null
+
+    /** Today has a body card: an invitation or the readings on a device with a store, and only the readings on one without. */
+    val bodyCardShown: Boolean get() = supported && (!fromPhone || bodyShared)
 
     /** There are runs to show, or a way to record one: the runs door is there. */
     val runsShown: Boolean get() = runsShared || canRecord || runs.runs.isNotEmpty()
@@ -103,7 +114,7 @@ data class HealthUiState(
     val bodyShared: Boolean get() = access == HealthAccess.ON && BODY_KINDS.any { it in granted }
 
     /** Some of what the app reads is shared and some isn't: only the store's own page can add the rest. */
-    val partlyShared: Boolean get() = access == HealthAccess.ON && !granted.containsAll(HealthKind.entries)
+    val partlyShared: Boolean get() = access == HealthAccess.ON && !fromPhone && !granted.containsAll(HealthKind.entries)
 
     companion object {
         val BODY_KINDS = setOf(HealthKind.STEPS, HealthKind.SLEEP, HealthKind.RESTING_HEART_RATE, HealthKind.HEART_RATE_VARIABILITY)
@@ -118,7 +129,9 @@ data class HealthUiState(
  * [setActive] says the fitness app (or the drawer, whose card shows today's readiness) is on
  * screen, and then again each time it comes back after [FRESH_SECONDS]: the band syncs through
  * the phone every quarter of an hour or so, and there is no telling when from here. Nothing read
- * is kept: it is the store's, and is asked for again.
+ * is kept on the device: it is the store's, and is asked for again. What was read goes to the
+ * server ([HealthUpload]), for this login's devices with no store, which read it through a
+ * [HealthSource] of their own ([HealthAvailability.REMOTE]) and so come through here the same way.
  */
 @Inject
 @ViewModelKey
@@ -128,6 +141,7 @@ class HealthViewModel(
     private val repository: FitnessRepository,
     private val recordedRuns: RecordedRuns,
     private val recorder: RunRecorder,
+    private val upload: HealthUpload,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -143,6 +157,10 @@ class HealthViewModel(
     private var reading: Job? = null
     private var opening: Job? = null
     private var following: Job? = null
+    private var sending: Job? = null
+
+    /** The store shares nothing, and the server has been told so since it last shared anything. */
+    private var cleared = false
     private var lastReadAt = 0L
     private var records: Map<String, RunRecord> = emptyMap()
     private var bounds: ZoneBounds? = null
@@ -186,7 +204,7 @@ class HealthViewModel(
                 }
             }
         }
-        if (_uiState.value.supported) refresh()
+        if (source.availability() != HealthAvailability.UNSUPPORTED) refresh()
     }
 
     /** Starts recording a run with the phone's GPS, asking for its location first where it has to. */
@@ -269,6 +287,8 @@ class HealthViewModel(
             if (route.isEmpty()) return@launch
             openTrack = open.copy(track = open.track.copy(route = route))
             redrawDetail()
+            // The store won't give this up unasked, so this is the one chance to send it along.
+            records[id]?.let { record -> attempt { upload.sendRoute(record, route) } }
         }
     }
 
@@ -334,7 +354,8 @@ class HealthViewModel(
         if (!force && lastReadAt != 0L && at - lastReadAt < FRESH_SECONDS) return
         reading = viewModelScope.launch {
             val availability = source.availability()
-            val granted = if (availability == HealthAvailability.AVAILABLE) {
+            val hasStore = availability == HealthAvailability.AVAILABLE
+            val granted = if (hasStore || availability == HealthAvailability.REMOTE) {
                 attempt { source.granted() } ?: run {
                     // The store couldn't say what is allowed. That isn't being told nothing is: what is shown stands,
                     // still checking on a first look, and is asked again the next time the app comes on screen.
@@ -356,12 +377,17 @@ class HealthViewModel(
                 rebuildRuns()
                 // A run recorded here is still there to show, from the phone's own positions, without the band's heart.
                 if (wasOpen != null && _uiState.value.runs.run(wasOpen)?.recorded == true) openRun(wasOpen)
+                if (access == HealthAccess.OFF && !cleared) {
+                    // One on its way began before this: it lands first, so that this is what stands.
+                    sending?.join()
+                    cleared = attempt { upload.clear() } != null
+                }
                 return@launch
             }
             // Shared, then, before any of it is read, which takes a call to the store a run: the card says it is
             // reading rather than offering to connect. What is shared is set with what was read, so nothing that
-            // goes by it (the runs door) shows ahead of its readings.
-            if (_uiState.value.access != HealthAccess.ON) _uiState.update { it.copy(access = HealthAccess.ON, refused = false) }
+            // goes by it (the runs door) shows ahead of its readings. A copy on the server has come already.
+            if (_uiState.value.access != HealthAccess.ON && hasStore) _uiState.update { it.copy(access = HealthAccess.ON, refused = false) }
             val offsetAt = { seconds: Long -> localUtcOffsetSeconds(seconds.toDouble()) }
             val today = (at + offsetAt(at)).floorDiv(SECONDS_PER_DAY)
             var failed = false
@@ -403,8 +429,11 @@ class HealthViewModel(
                     runs = board(),
                     refused = false,
                     failed = failed,
+                    fromPhoneAtEpochSeconds = source.readAtEpochSeconds(),
                 )
             }
+            // A kind that couldn't be read just now would go from the server as though it had stopped being shared: it waits for a whole read.
+            if (hasStore && !failed) send(at, granted, now)
             val open = openTrack
             val openId = open?.id ?: _uiState.value.detail?.runId
             when {
@@ -414,6 +443,23 @@ class HealthViewModel(
                 open != null && open.granted != granted -> rereadOpenTrack(open, granted)
 
                 else -> redrawDetail()
+            }
+        }
+    }
+
+    /** Puts what was just read on the server, behind the screen: nothing waits for it, and what fails goes with the next read. */
+    private fun send(at: Long, granted: Set<HealthKind>, read: Readings) {
+        cleared = false
+        if (sending?.isActive == true) return
+        sending = viewModelScope.launch {
+            attempt {
+                val offsetAt = { seconds: Long -> localUtcOffsetSeconds(seconds.toDouble()) }
+                val today = (at + offsetAt(at)).floorDiv(SECONDS_PER_DAY)
+                val ours = Runs.board(read.runs.orEmpty(), today, offsetAt, workouts, recordedRuns.runs.first()).runs.filter { it.recorded }
+                upload.send(
+                    HealthReadings(at, granted, read.steps.orEmpty(), read.sleep.orEmpty(), read.resting.orEmpty(), read.variability.orEmpty(), read.runs.orEmpty()),
+                    ours,
+                )
             }
         }
     }
@@ -451,9 +497,10 @@ class HealthViewModel(
             it.startedAtEpochSeconds..maxOf(end, it.startedAtEpochSeconds)
         }
 
-        /** [granted] is null when the store hasn't been asked yet. */
+        /** [granted] is null when the store hasn't been asked yet. With no store here and nothing from a phone, there is simply nothing to show. */
         fun accessOf(availability: HealthAvailability, granted: Set<HealthKind>?): HealthAccess = when {
             availability == HealthAvailability.UNSUPPORTED -> HealthAccess.UNSUPPORTED
+            availability == HealthAvailability.REMOTE && granted.isNullOrEmpty() -> HealthAccess.UNSUPPORTED
             availability == HealthAvailability.MISSING -> HealthAccess.MISSING
             granted == null -> HealthAccess.CHECKING
             granted.isEmpty() -> HealthAccess.OFF

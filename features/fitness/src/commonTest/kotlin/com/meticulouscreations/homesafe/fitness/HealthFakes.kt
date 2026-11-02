@@ -1,14 +1,23 @@
 package com.meticulouscreations.homesafe.fitness
 
+import com.meticulouscreations.homesafe.fitness.data.HealthRelayApi
+import com.meticulouscreations.homesafe.fitness.data.HealthSendAnswer
+import com.meticulouscreations.homesafe.fitness.data.HealthSendRequest
+import com.meticulouscreations.homesafe.fitness.data.HealthSnapshot
+import com.meticulouscreations.homesafe.fitness.data.HealthTrackRequest
+import com.meticulouscreations.homesafe.fitness.data.HealthTrackRows
 import com.meticulouscreations.homesafe.fitness.domain.FitnessLogSync
 import com.meticulouscreations.homesafe.fitness.domain.FitnessSyncStatus
 import com.meticulouscreations.homesafe.fitness.domain.HealthAvailability
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
+import com.meticulouscreations.homesafe.fitness.domain.HealthReadings
 import com.meticulouscreations.homesafe.fitness.domain.HealthSample
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
+import com.meticulouscreations.homesafe.fitness.domain.HealthUpload
 import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
 import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.RoutePoint
+import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
 import com.meticulouscreations.homesafe.fitness.domain.RunRecorder
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
@@ -101,6 +110,77 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
     override suspend fun requestRoute(runId: String): List<RoutePoint> {
         reads += "route $runId"
         return routes[runId].orEmpty()
+    }
+}
+
+/** A [HealthUpload] for tests: it keeps what it was given, and fails when told to. */
+internal class FakeHealthUpload : HealthUpload {
+    val sent = mutableListOf<Pair<HealthReadings, List<Run>>>()
+    val routes = mutableListOf<Pair<String, List<RoutePoint>>>()
+    var clears = 0
+    var failing = false
+
+    override suspend fun send(readings: HealthReadings, recorded: List<Run>) {
+        check(!failing) { "the server is away" }
+        sent += readings to recorded
+    }
+
+    override suspend fun sendRoute(run: RunRecord, route: List<RoutePoint>) {
+        check(!failing) { "the server is away" }
+        routes += run.id to route
+    }
+
+    override suspend fun clear() {
+        check(!failing) { "the server is away" }
+        clears++
+    }
+}
+
+/** The relay's side of a health copy, as `fitness_health_save` and the rest in `relay/relay.py` do it (`FitnessHealthTest` holds them to that). */
+internal class FakeHealthRelay : HealthRelayApi {
+    var snapshot: HealthSnapshot? = null
+    var device: String? = null
+    var listed: Map<String, String> = emptyMap()
+    val tracks = mutableMapOf<String, Pair<String, HealthTrackRows>>()
+    val sentTracks = mutableListOf<String>()
+    var sends = 0
+    var failing = false
+
+    private fun answer() = check(!failing) { "the relay is away" }
+
+    override suspend fun send(url: String, request: HealthSendRequest): HealthSendAnswer {
+        answer()
+        sends++
+        snapshot = request.snapshot
+        device = request.device
+        listed = request.tracks
+        tracks.entries.removeAll { (id, held) -> request.tracks[id] != held.first }
+        return HealthSendAnswer(tracks.mapValues { it.value.first })
+    }
+
+    override suspend fun sendTrack(url: String, request: HealthTrackRequest): Boolean {
+        answer()
+        sentTracks += request.id
+        if (listed[request.id] != request.fingerprint) return false
+        tracks[request.id] = request.fingerprint to request.track
+        return true
+    }
+
+    override suspend fun clear(url: String, device: String) {
+        answer()
+        if (device != this.device) return
+        snapshot = null
+        tracks.clear()
+    }
+
+    override suspend fun read(url: String): HealthSnapshot? {
+        answer()
+        return snapshot
+    }
+
+    override suspend fun readTrack(url: String, id: String): HealthTrackRows? {
+        answer()
+        return tracks[id]?.second
     }
 }
 

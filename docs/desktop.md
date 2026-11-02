@@ -128,7 +128,7 @@ acts on while it is up. On Android a hardware keyboard sends the same, with Ctrl
 | The network | Watched for changes every few seconds; the tailnet is read off the computer's own addresses, and Tailscale.app can be opened from the app. |
 | Data | `~/Library/Application Support/HomeSafe` and the app's preferences. |
 | App icon | The one chosen in Settings goes in the Dock while the app runs. |
-| Not here | Away mode's location (a computer stays home), Health Connect and run recording, heart-rate straps, push. |
+| Not here | Away mode's location (a computer stays home), Health Connect itself (Today shows [what the phone last read](fitness.md#on-another-device)) and run recording, heart-rate straps, push. |
 
 ## Tests
 

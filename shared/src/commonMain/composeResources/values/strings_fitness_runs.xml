@@ -70,6 +70,7 @@
     <!-- On the page of a session left out, under its name -->
     <string name="fitness_run_not_run_walk">Not counted as a run: it was walking pace the whole way.</string>
     <string name="fitness_run_not_run_workout">Not counted as a run: it covered hardly any ground, or happened during a workout.</string>
+    <string name="fitness_run_source_phone">Runs come from your phone, which reads them from Health Connect or records them with its GPS.</string>
     <string name="fitness_run_source">Runs come from your band or the Google Health app by way of Health Connect, or are recorded here with your phone's GPS.</string>
 
     <!-- Recording a run in the app with the phone's GPS -->
