@@ -280,6 +280,8 @@ fun WeatherApp(
             onPass = skiViewModel::setPass,
             onOrigin = skiViewModel::setOrigin,
             onOwnPrice = skiViewModel::setOwnPrice,
+            onTrip = skiViewModel::setTrip,
+            onOwnParking = skiViewModel::setOwnParking,
         )
     }
     // The mountain cameras come through the weather's own client, so Frigate's cookies stay home.
@@ -532,7 +534,14 @@ fun WeatherAppContent(
                         )
                     }
 
-                    WeatherPage.SkiSetup -> SkiSetupScreen(ski.plan, skiActions, pagePadding, canLocate = ski.canLocate, startCity = ski.startCity)
+                    WeatherPage.SkiSetup -> SkiSetupScreen(
+                        ski.plan,
+                        skiActions,
+                        pagePadding,
+                        canLocate = ski.canLocate,
+                        startCity = ski.startCity,
+                        siteTrouble = ski.siteTrouble.map { (slug, since) -> (ski.entries[slug]?.ref?.name ?: ski.regions.values.firstNotNullOfOrNull { load -> load.reports.firstOrNull { it.slug == slug }?.name } ?: slug) to since },
+                    )
 
                     WeatherPage.Places -> PlacesScreen(
                         state = state,

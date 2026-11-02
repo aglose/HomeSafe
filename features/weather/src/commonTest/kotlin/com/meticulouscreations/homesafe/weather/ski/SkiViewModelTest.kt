@@ -132,7 +132,7 @@ class SkiViewModelTest {
 
         override suspend fun resortNews(slug: String, force: Boolean) = news.takeIf { hasResortSite(slug) }
 
-        override suspend fun resortPrices(slug: String, epochDays: List<Int>): SkiResortPrices? {
+        override suspend fun resortPrices(slug: String, epochDays: List<Int>, tripDays: Int): SkiResortPrices? {
             pricedDays += epochDays
             heldPrices?.await()
             return resortPrices
@@ -536,6 +536,33 @@ class SkiViewModelTest {
         runCurrent()
         assertTrue(ski.driveCalls.isEmpty())
         assertNull(vm.uiState.value.entries["palisades-tahoe"]?.driveOut)
+    }
+
+    @Test
+    fun aTripIsPricedForItsDaysAndComesBackOnItsLast() = skiTest(FakeSki().apply { resortPrices = SkiResortPrices("https://resort.example/tickets") }) { vm, ski, _ ->
+        vm.setTrip(3, 300, 12)
+        runCurrent()
+        assertEquals(3, ski.planFlow.value.tripDays)
+        assertEquals(300, ski.planFlow.value.lodgingPerNight)
+        assertEquals(12, ski.planFlow.value.drivingCentsPerMile)
+        vm.setActive(true)
+        runCurrent()
+        val state = vm.uiState.value
+        assertTrue(state.tripEpochDay + 2 in ski.pricedDays.last())
+        vm.openResort(palisades)
+        runCurrent()
+        val lastDayMidnight = (state.tripEpochDay + 2) * SkiForecast.DAY_SECONDS + 28_800
+        assertEquals(lastDayMidnight + 16 * 3_600, vm.uiState.value.entries["palisades-tahoe"]?.driveBack?.departEpochSeconds)
+    }
+
+    @Test
+    fun parkingTheHouseholdSetsIsKeptByResort() = skiTest { vm, ski, _ ->
+        vm.setOwnParking("palisades-tahoe", 40)
+        runCurrent()
+        assertEquals(mapOf("palisades-tahoe" to 40), ski.planFlow.value.ownParking)
+        vm.setOwnParking("palisades-tahoe", null)
+        runCurrent()
+        assertEquals(emptyMap(), ski.planFlow.value.ownParking)
     }
 
     @Test

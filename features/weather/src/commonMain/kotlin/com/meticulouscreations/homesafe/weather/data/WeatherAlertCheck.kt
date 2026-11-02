@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.weather.data
 
 import com.meticulouscreations.homesafe.domain.platform.NotificationMute
+import com.meticulouscreations.homesafe.finance.data.suspendRunCatching
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.text.UiText
@@ -19,6 +20,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherPlacesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherPreferencesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiBackgroundRefresh
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -68,6 +70,8 @@ class WeatherAlertCheck(
     /** Settings → Notifications' "Mute all notifications": while it's on, a check posts nothing. */
     private val mute: NotificationMute,
     private val claims: WeatherSoonClaims,
+    /** The Ski tab's data rides along with this check, which is what the OS wakes for. */
+    private val skiRefresh: SkiBackgroundRefresh = SkiBackgroundRefresh {},
 ) {
     private val running = Mutex()
     private var watching = false
@@ -92,8 +96,10 @@ class WeatherAlertCheck(
     }
 
     /** Checks now; returns how many notifications were posted. Never throws: a failed check is tried again next time. */
-    suspend fun run(): Int = running.withLock {
-        runCatching { check() }.getOrDefault(0)
+    suspend fun run(): Int {
+        val posted = running.withLock { runCatching { check() }.getOrDefault(0) }
+        suspendRunCatching { skiRefresh.refresh() }
+        return posted
     }
 
     /**

@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.weather.ski.domain
 
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 /** A place on the map a drive starts from. [city] is its name when it's a city the household added, not home or where the device is. */
 data class SkiPoint(val latitude: Double, val longitude: Double, val city: String? = null)
@@ -46,12 +47,24 @@ interface SkiRepository {
 
     /**
      * The resort's own ticket prices, for these days at least where it sells by the date. Null
-     * where it publishes none the app can read, or its shop wouldn't answer.
+     * where it publishes none the app can read, or its shop wouldn't answer. [tripDays] is how long a
+     * ticket is wanted, where each length has to be asked after.
      */
-    suspend fun resortPrices(slug: String, epochDays: List<Int>): SkiResortPrices?
+    suspend fun resortPrices(slug: String, epochDays: List<Int>, tripDays: Int = 1): SkiResortPrices?
+
+    /** Which resorts' sites have stopped being readable. */
+    fun siteHealth(): Flow<SkiSiteHealth> = flowOf(SkiSiteHealth())
+
+    /** What the resort's own site says about parking, where the app knows. */
+    fun parking(slug: String): SkiParking? = null
 
     /** The slugs of the resorts a pass gets into. */
     suspend fun passResorts(pass: SkiPass): Result<Set<String>>
+}
+
+/** Brings the tab's data up to date while it isn't open. */
+fun interface SkiBackgroundRefresh {
+    suspend fun refresh()
 }
 
 /** Where a drive starts from, as far as the device knows. */

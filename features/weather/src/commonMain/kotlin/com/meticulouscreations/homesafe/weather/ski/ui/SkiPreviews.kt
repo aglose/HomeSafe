@@ -22,6 +22,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastDay
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastHour
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOpenState
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiParking
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlanner
@@ -34,6 +35,8 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortPrices
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiSnowDay
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiTicketPrice
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.ski_parking_note_palisades
 
 /**
  * A made-up weekend for previews and tests: a storm coming in midweek, a good Saturday after it,
@@ -256,6 +259,51 @@ private fun SkiResortPagePreview() {
 private fun SkiResortListingPreview() {
     val state = SkiFixtures.state()
     SkiResortScreen(state.entries.getValue("northstar-california").ref, state.copy(plan = state.plan.copy(passes = emptySet())), SkiActions(), null, PagePadding)
+}
+
+// A long weekend: days added up, a night's lodging, parking the household set, and the drive.
+@Preview(name = "Ski tab, a three-day trip", heightDp = 900)
+@Composable
+private fun SkiBoardTripPreview() {
+    val state = SkiFixtures.state()
+    SkiBackdrop { SkiScreen(state.copy(plan = state.plan.copy(tripDays = 3, passes = emptySet())), SkiActions(), PagePadding, {}, {}, {}, {}) }
+}
+
+@Preview(name = "Ski resort, a three-day trip", heightDp = 2600)
+@Composable
+private fun SkiResortTripPreview() {
+    val state = SkiFixtures.state()
+    val plan = state.plan.copy(tripDays = 3, lodgingPerNight = 320, ownParking = mapOf("palisades-tahoe" to 40), passes = emptySet())
+    val entry = state.entries.getValue("palisades-tahoe").copy(parking = SkiParking("https://example.com/parking", Res.string.ski_parking_note_palisades, reservationNeeded = true))
+    SkiResortScreen(entry.ref, state.copy(plan = plan, entries = state.entries + (entry.ref.slug to entry)), SkiActions(), null, PagePadding)
+}
+
+// A closed pass on the way, and a road service's own words on another stretch; and one that couldn't be read.
+@Preview(name = "Ski resort, roads", heightDp = 2300)
+@Composable
+private fun SkiResortRoadsPreview() {
+    val state = SkiFixtures.state()
+    val entry = state.entries.getValue("palisades-tahoe").copy(
+        chains = listOf(
+            ChainControl(ChainLevel.CLOSED, "SR-89", "Monitor Pass", latitude = 38.66, longitude = -119.72, description = "Closed to traffic."),
+            ChainControl(ChainLevel.NOTICE, "SR-431 (Mt. Rose Hwy)", "From Diamond Peak to Incline Lake", latitude = 0.0, longitude = 0.0, description = "Snow Covered"),
+        ),
+        chainsUnavailable = true,
+    )
+    SkiResortScreen(entry.ref, state.copy(entries = state.entries + (entry.ref.slug to entry)), SkiActions(), null, PagePadding)
+}
+
+// A site that has stopped being readable: on the tab, and by name in the setup.
+@Preview(name = "Ski tab, a site not readable", heightDp = 1400)
+@Composable
+private fun SkiBoardSiteTroublePreview() {
+    SkiBackdrop { SkiScreen(SkiFixtures.state().copy(siteTrouble = mapOf("kirkwood" to SkiFixtures.NOW - 5 * 86_400)), SkiActions(), PagePadding, {}, {}, {}, {}) }
+}
+
+@Preview(name = "Ski setup, a site not readable", heightDp = 1100)
+@Composable
+private fun SkiSetupSiteTroublePreview() {
+    SkiSetupScreen(SkiFixtures.state().plan, SkiActions(), PagePadding, siteTrouble = listOf("Kirkwood" to SkiFixtures.NOW - 5 * 86_400))
 }
 
 @Preview

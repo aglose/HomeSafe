@@ -357,4 +357,67 @@ class ResortPagesTest {
         assertNull(ResortPages.slashDate("13/40/2026 03:57 PM", pacific))
         assertFalse(ResortPages.slashDate("04/05/2026 12:30 AM", pacific) == ResortPages.slashDate("04/05/2026 12:30 PM", pacific))
     }
+
+    // ---- Peak dates, calendars and tickets for several days --------------------------------------
+
+    private fun day(year: Int, month: Int, day: Int) = kotlinx.datetime.LocalDate(year, month, day).toEpochDays().toInt()
+
+    @Test
+    fun sierrasPeakDatesAreTheOnesItPublishes() {
+        val days = ResortPages.peakDates("Proceed to lift! 2026/27 Peak Dates November 27-28, 2026 / December 19, 2026 &#8211; January 3, 2027 / January 16 &#8211; 18, 2027 / February 13 &#8211; 21, 2027 Lift operations will run on holiday hours during peak periods")
+        assertEquals(2 + 16 + 3 + 9, days.size)
+        assertTrue(day(2026, 11, 27) in days)
+        assertTrue(day(2026, 12, 31) in days)
+        assertTrue(day(2027, 1, 18) in days)
+        assertFalse(day(2027, 1, 9) in days, "a Saturday not on the list")
+    }
+
+    @Test
+    fun aRateTableSaysWhichSeasonItIsFor() {
+        val tier = ResortPages.donnerRanchPrices("<h1>Pricing 2025 - 2026</h1><p>Lift Tickets All Day Adult (13-69) ${'$'}119 Child (6-12) ${'$'}69</p>").single()
+        assertEquals("2025 - 2026", tier.season)
+        assertEquals(119.0, tier.price.adult)
+    }
+
+    private fun row(date: String, price: Double, quantity: Int = 5, days: Int = 1, bundle: Boolean = false) =
+        """{"Price":$price,"Days":$days,"Date":"$date","Quantity":$quantity,"BundleOnly":$bundle}"""
+
+    @Test
+    fun inntopiasLowestPriceWithAnyLeftIsTheOne() {
+        val adult = "[" + listOf(row("2026-12-26", 269.0), row("2026-12-26", 219.0, quantity = 0), row("2026-12-26", 229.0), row("2026-12-26", 100.0, bundle = true), row("2026-12-27", 199.0)).joinToString(",") + "]"
+        val child = "[" + row("2026-12-26", 110.0) + "," + row("2026-12-27", 0.0) + "]"
+        val prices = ResortPages.inntopiaPrices(adult, child, 1, childrenFree = false)
+        assertEquals(229.0, prices[day(2026, 12, 26)]?.adultOnline)
+        assertEquals(110.0, prices[day(2026, 12, 26)]?.childOnline)
+        assertEquals(0.0, prices[day(2026, 12, 27)]?.child, "a week the resort lets children ski free")
+        assertNull(prices[day(2026, 12, 26)]?.adultWindow, "it publishes no window price")
+    }
+
+    @Test
+    fun aResortWhereChildrenSkiFreeCostsThemNothing() {
+        val prices = ResortPages.inntopiaPrices("[" + row("2026-12-26", 149.0) + "]", null, 1, childrenFree = true)
+        assertEquals(0.0, prices[day(2026, 12, 26)]?.child)
+    }
+
+    @Test
+    fun onlyTicketsOfTheLengthAskedAfterCount() {
+        val prices = ResortPages.inntopiaPrices("[" + row("2026-12-26", 394.0, days = 2) + "," + row("2026-12-26", 199.0) + "]", null, 2, childrenFree = false)
+        assertEquals(394.0, prices[day(2026, 12, 26)]?.adultOnline)
+    }
+
+    @Test
+    fun entabenisCalendarGivesTheAdultsPrice() {
+        val prices = ResortPages.entabeniPrices("""{"data":{"ecommerce":{"calendarPrices":[{"displayPrice":84.0,"date":"2026-12-18","soldOut":false},{"displayPrice":109.0,"date":"2026-12-26","soldOut":true}]}}}""")
+        assertEquals(84.0, prices[day(2026, 12, 18)]?.adultOnline)
+        assertNull(prices[day(2026, 12, 26)], "sold out")
+    }
+
+    @Test
+    fun aShopsTicketsForSeveralDaysAreKeptByLengthAndStartDay() {
+        val answer = """{"2026-12-26":[205,284,144,199],"packs":{"2026-12-26":{"2":[408,568,286,398],"3":[606,822,null,null]}}}"""
+        val packs = ResortPages.packPrices(answer)
+        assertEquals(408.0, packs[day(2026, 12, 26)]?.get(2)?.adultOnline)
+        assertEquals(822.0, packs[day(2026, 12, 26)]?.get(3)?.adultWindow)
+        assertEquals(setOf(day(2026, 12, 26)), ResortPages.datedPrices(answer).keys, "a pack isn't a day")
+    }
 }

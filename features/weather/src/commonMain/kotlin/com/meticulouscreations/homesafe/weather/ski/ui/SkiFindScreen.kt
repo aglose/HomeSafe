@@ -22,6 +22,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.Group
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -51,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.WithTooltip
 import com.meticulouscreations.homesafe.ui.handCursor
+import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.ski.SkiRegionLoad
 import com.meticulouscreations.homesafe.weather.ski.SkiUiState
@@ -109,15 +112,23 @@ import homesafe.shared.generated.resources.ski_region_wyoming
 import homesafe.shared.generated.resources.ski_setup_adults
 import homesafe.shared.generated.resources.ski_setup_children
 import homesafe.shared.generated.resources.ski_setup_count
+import homesafe.shared.generated.resources.ski_setup_days
 import homesafe.shared.generated.resources.ski_setup_decrease
+import homesafe.shared.generated.resources.ski_setup_driving
+import homesafe.shared.generated.resources.ski_setup_driving_hint
 import homesafe.shared.generated.resources.ski_setup_from_city
 import homesafe.shared.generated.resources.ski_setup_from_here
 import homesafe.shared.generated.resources.ski_setup_from_home
 import homesafe.shared.generated.resources.ski_setup_from_title
 import homesafe.shared.generated.resources.ski_setup_increase
+import homesafe.shared.generated.resources.ski_setup_lodging
 import homesafe.shared.generated.resources.ski_setup_party_title
 import homesafe.shared.generated.resources.ski_setup_passes_body
 import homesafe.shared.generated.resources.ski_setup_passes_title
+import homesafe.shared.generated.resources.ski_setup_trip_title
+import homesafe.shared.generated.resources.ski_sites_trouble_body
+import homesafe.shared.generated.resources.ski_sites_trouble_row
+import homesafe.shared.generated.resources.ski_sites_trouble_title
 import org.jetbrains.compose.resources.stringResource
 
 /** The parts of the world the app can look through, and each pass's list of resorts, which has the same shape. */
@@ -294,7 +305,7 @@ private fun RegionRow(report: SkiReport, listed: SkiTicketPrice?, state: SkiUiSt
 /** Who's going, from where, and on which passes: what turns the listed numbers into this household's. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SkiSetupScreen(plan: SkiPlan, actions: SkiActions, padding: PaddingValues, modifier: Modifier = Modifier, canLocate: Boolean = true, startCity: String? = null) {
+internal fun SkiSetupScreen(plan: SkiPlan, actions: SkiActions, padding: PaddingValues, modifier: Modifier = Modifier, canLocate: Boolean = true, startCity: String? = null, siteTrouble: List<Pair<String, Long>> = emptyList()) {
     val colors = WeatherTheme.colors
     LazyColumn(
         modifier.fillMaxSize().background(colors.surface).testTag("ski_setup_page"),
@@ -307,6 +318,15 @@ internal fun SkiSetupScreen(plan: SkiPlan, actions: SkiActions, padding: Padding
                 Stepper(stringResource(Res.string.ski_setup_adults), plan.adults, "ski_adults") { actions.onParty(it, plan.children) }
                 Spacer(Modifier.height(10.dp))
                 Stepper(stringResource(Res.string.ski_setup_children), plan.children, "ski_children") { actions.onParty(plan.adults, it) }
+            }
+        }
+        item(key = "trip") {
+            WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.ski_setup_trip_title), icon = Icons.Filled.CalendarMonth) {
+                Stepper(stringResource(Res.string.ski_setup_days), plan.tripDays, "ski_trip_days") { actions.onTrip(it, plan.lodgingPerNight, plan.drivingCentsPerMile) }
+                Spacer(Modifier.height(10.dp))
+                SkiAmountField(stringResource(Res.string.ski_setup_lodging), plan.lodgingPerNight.takeIf { it > 0 }, "ski_lodging", { actions.onTrip(plan.tripDays, it ?: 0, plan.drivingCentsPerMile) })
+                Spacer(Modifier.height(10.dp))
+                SkiAmountField(stringResource(Res.string.ski_setup_driving), plan.drivingCentsPerMile, "ski_driving", { actions.onTrip(plan.tripDays, plan.lodgingPerNight, it ?: 0) }, hint = stringResource(Res.string.ski_setup_driving_hint))
             }
         }
         item(key = "passes") {
@@ -326,6 +346,17 @@ internal fun SkiSetupScreen(plan: SkiPlan, actions: SkiActions, padding: Padding
                             onCheckedChange = null,
                             colors = SwitchDefaults.colors(checkedTrackColor = colors.accent),
                         )
+                    }
+                }
+            }
+        }
+        if (siteTrouble.isNotEmpty()) {
+            item(key = "site_trouble") {
+                WeatherCard(Modifier.cardWidth().testTag("ski_site_trouble_card"), title = stringResource(Res.string.ski_sites_trouble_title), icon = Icons.Filled.Warning) {
+                    Text(stringResource(Res.string.ski_sites_trouble_body), style = WeatherTheme.type.label, color = colors.onSkyMuted)
+                    siteTrouble.forEach { (name, since) ->
+                        Spacer(Modifier.height(6.dp))
+                        Text(stringResource(Res.string.ski_sites_trouble_row, name, WeatherFormat.date(since, localUtcOffsetSeconds(since.toDouble())).resolve()), style = WeatherTheme.type.body, color = colors.onSky)
                     }
                 }
             }

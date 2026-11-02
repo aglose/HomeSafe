@@ -119,15 +119,16 @@ holds for the geofences, and is never told where a phone is.
 ## The Ski tab
 
 Pick a day from the strip (it starts on the coming Saturday; each day's column is the most snow any
-followed resort expects then) and the followed resorts are compared for it. The best-looking comes
+followed resort expects then) and the followed resorts are compared for it, or for that day and the
+ones after it, on a trip of several days. The best-looking comes
 first with the reasons; under it the rest, each with the last three days' snow, what the day will
 have by then, the drive and the cost; then the regions being watched. A resort that won't be running
 that day goes to the bottom, the first to open first. Pull to refresh, or on a wide window use the
 refresh button in the title bar, as a mouse can't pull.
 
 The search icon looks through regions and passes, so a resort anywhere can be starred onto the tab
-and a whole region watched. The sliders hold who's going, which passes they hold and where drives
-start. A resort's own page has the report, the hours of the chosen day and the ten days ahead, the
+and a whole region watched. The sliders hold who's going, how many days, what a night and a mile cost, which passes they hold and
+where drives start. A resort's own page has the report, the hours of the chosen day and the ten days ahead, the
 road, the tickets, the cameras and the mountain's numbers.
 
 `SkiPlanner` is the comparison, and pure: snow in centimetres over the three days up to the trip
@@ -138,12 +139,13 @@ and ticket price. It's a sort order and nothing more; the numbers behind it are 
 
 | What | From | Notes |
 |---|---|---|
-| **Snow totals, depths, lifts and runs open** | **The resort's own website**, for the 32 in `ResortSite.ALL` | Each family of sites is read its own way (`ResortPages`): Vail's write theirs into the page as `FR.snowReportData`; Alterra's come from the feed their pages draw on (`v4.mtnfeed.com` for the token, fetched each time, then `mtnpowder.com`); POWDR's from a small API; the rest from their plain pages. Kept 15 minutes. The card says which site it's from |
+| **Snow totals, depths, lifts and runs open** | **The resort's own website**, for the 41 in `ResortSite.ALL` | Each family of sites is read its own way (`ResortPages`): Vail's write theirs into the page as `FR.snowReportData`; Alterra's come from the feed their pages draw on (`v4.mtnfeed.com` for the token, fetched each time, then `mtnpowder.com`); POWDR's from a small API; the rest from their plain pages. Kept 15 minutes. The card says which site it's from |
 | **Ticket prices** | **The resort's own shop or rate table** | See below. Kept a day |
+| Parking | The resort's own parking page, for the six followed by default | `ResortParking`, written down by hand in November 2026, so it dates: the least a car pays on an ordinary day, and a line on the lots and reservations. The household can set its own figure for any resort |
 | Everything else about a resort, and any resort not in that list | [OnTheSnow](https://www.onthesnow.com) | Opening dates, cameras, elevations, coordinates, and for other resorts its report and listed prices, read from its pages (`OnTheSnowPages`, `NextFlightRows`), since it has no API. The card says when a figure is only a listing |
 | Mountain forecast | [Open-Meteo](https://open-meteo.com) | Asked at the summit's and the base's own heights, from the blend and from ECMWF and GFS, whose spread is the range shown. Rain at the base and the freezing level come from here too. Kept an hour |
 | Drive times | [OSRM](https://project-osrm.org) over OpenStreetMap, or [Google Routes](https://developers.google.com/maps/documentation/routes) with the household's Google key (see [key-vault.md](key-vault.md)) | OSRM knows no traffic and runs long over mountain roads, so its time is labelled a rough estimate. Google is used when the key is in the vault and the Routes API is enabled for it, and is what makes the 7 AM out and 4 PM back figures possible, by the resort's own clock on that date. A key refused falls back for the session; any other failure falls back for that drive only. Both are told the start to the hundredth of a degree |
-| Chain controls | [Caltrans](https://cwwp2.dot.ca.gov/documentation/cc/cc.htm) | California only, one file per district; only those a route runs through are read, and a checkpoint counts if the route passes within 1.5 km of it. A file that can't be read is never an all-clear: the last one read stays, and the card says it may be out of date. Outside California the card says it doesn't know |
+| Chain controls and closed roads | [Caltrans](https://cwwp2.dot.ca.gov/documentation/cc/cc.htm), and [Nevada's road service](https://www.nvroads.com) around Tahoe | Caltrans publishes one file per district, and only those a route runs through are read. A checkpoint counts if the route passes within 1.5 km of it; a road marked closed, such as a pass shut for the winter, within 500 m, since its gate is on the road. Nevada's list names stretches of road with no coordinates, so `NevadaRoadsApi.STRETCHES` says where the ones that matter are (Mt. Rose Highway, SR-28, Kingsbury Grade, US-50, I-80, I-580, US-395), and what it reports goes through in its own words. A source that can't be read is never an all-clear: the last answer stays, and the card says it may be out of date. Elsewhere the card says it doesn't know. Caltrans's lane closure files aren't read: they run to megabytes a district, and their full closures are overnight road work |
 | Warnings at the resort | National Weather Service | As for any place |
 
 ### Ticket prices
@@ -155,9 +157,11 @@ listing, which can be a season old and is labelled as listed.
 
 | Sites | How | Gives |
 |---|---|---|
-| Vail's (Heavenly, Northstar, Kirkwood, and so on) | `SkiBrowser`, `ResortScripts.vail` | Online and window prices, adult and child, for each day asked about (the ten that can be chosen, and the first on sale) |
-| The shop platform of Alterra's and POWDR's mountains (Palisades, Winter Park, Boreal) | `SkiBrowser`, `ResortScripts.shop` | The season's calendar at once, adult and child, online and base price |
-| Sugar Bowl, Sierra-at-Tahoe, China Peak, Donner Ski Ranch, Boreal's starting price | A plain page | Rates by kind of day. Sierra doesn't say which dates are peak, so a weekend is taken as one; Sugar Bowl's table has Sunday with its cheaper days. Sugar Bowl's, China Peak's and Boreal's online figures are where prices *start*, so a cost from them reads "From" |
+| Vail's (Heavenly, Northstar, Kirkwood, and so on) | `SkiBrowser`, `ResortScripts.vail` | Online and window prices, adult and child, for each day asked about (the ten that can be chosen, and the first on sale), and its tickets of two to seven days from each |
+| Mammoth and June | A plain request to their Inntopia calendar (`ResortSiteApi.calendar`), no browser | The lowest online price with any left, adult and child, and the length of ticket the trip wants. No window price. June says children ski free |
+| Mt. Shasta | A plain request to its Entabeni shop | The adult's online price: a child's isn't available this way, and the cost says it left them out |
+| The shop platform of Alterra's and POWDR's mountains (Palisades, Winter Park, Boreal) | `SkiBrowser`, `ResortScripts.shop` | The season's calendar at once, adult and child, online and base price, and where the shop sells them, tickets such as "2 out of 3 Days" (Winter Park; Palisades' calendar has no longer tickets) |
+| Sugar Bowl, Sierra-at-Tahoe, China Peak, Donner Ski Ranch, Boreal's starting price | A plain page | Rates by kind of day. Sierra's own peak dates are read from its page; a table with peak rates and no dates would take a weekend as peak. Sugar Bowl's table has Sunday with its cheaper days. Donner Ski Ranch's says which season it's for, which the card repeats: as of November 2026 still 2025-26. Sugar Bowl's, China Peak's and Boreal's online figures are where prices *start*, so a cost from them reads "From" |
 
 Those shops turn away anything but a page of their own: Vail's sit behind Akamai and a Queue-it
 waiting room, and the others behind a web application firewall. So **`SkiBrowser`** opens the shop in
@@ -179,15 +183,33 @@ Vail's shops don't mind. So the Mac's page is in a real window of a couple of po
 of the screen, all but transparent, that the mouse goes through, as the iPhone's is. With the Mac's
 screen off or locked it can't be seen either, those shops give nothing, and they're asked again later.
 
-Mammoth, June, Homewood, Diamond Peak, Dodge Ridge, Bear Valley, Tahoe Donner, Mt. Rose and Mt. Shasta
-hadn't published day prices the app can read as of 1 November 2026 (many say "TBD" or "mid-November");
-they show OnTheSnow's listing where it has one and always link to their own page.
+Homewood, Diamond Peak, Dodge Ridge, Bear Valley and Tahoe Donner hadn't published 2026-27 day prices as
+of 1 November 2026 (they say "TBD", "TBA" or "mid-November"), so they show OnTheSnow's listing where it has
+one and always link to their own page. They'll each want a reader once they post. Mt. Rose has
+published its prices, but its shop gives them only inside a session of its own; reading them would mean
+reusing that session's tokens, which isn't done, so it stays on the listing and the link.
+
+### The whole trip
+
+A resort's page adds up the trip (`SkiPlanner.trip`): tickets, lodging for its nights, parking and the
+drive there and back. Tickets are one ticket for all the days where the shop sells that, otherwise each
+day's own added up, with any day that has no price left out and said to be. Lodging and gas or charging
+are what the household sets in the setup (15 cents a mile until it does), not looked up. Anything not
+known is said to be, and the total then reads "At least".
 
 ### What it can't see
 
 Bear Valley's site disagrees with itself (0" in one place, 227" in another) and Badger Pass publishes
 no snow figures at all; Mt. Shasta's published sheet is empty until its season. Those show OnTheSnow's
 listing. A site that changes shape falls back the same way, and says so.
+
+A resort's site that fails for three days while others are being read has probably changed, and the tab
+says so, naming it in the setup (`SkiSiteHealth`). Every site failing at once is the connection, and says
+nothing.
+
+Followed resorts are brought up to date in the background every few hours, along with the weather's own
+background check (`SkiBackgroundRefresh`), which only runs on a device with weather notifications on:
+reports, forecast and the drive, one resort at a time and spaced out, as the resorts' bot protection doesn't take long to stop answering a household's address. Prices wait for the tab, as a shop's browser is a whole page and needs a window. The Mac has no background check, so its tab catches up when it opens.
 
 A report older than a week counts as no report: out of season the numbers on a resort's page are
 last spring's. A site that puts no date on its report goes by when it was last read, so one that has

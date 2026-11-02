@@ -69,6 +69,7 @@ import homesafe.shared.generated.resources.ski_cost_label
 import homesafe.shared.generated.resources.ski_cost_label_from
 import homesafe.shared.generated.resources.ski_cost_label_listed
 import homesafe.shared.generated.resources.ski_day_prompt
+import homesafe.shared.generated.resources.ski_day_prompt_trip
 import homesafe.shared.generated.resources.ski_drive_label
 import homesafe.shared.generated.resources.ski_empty_body
 import homesafe.shared.generated.resources.ski_empty_title
@@ -88,7 +89,9 @@ import homesafe.shared.generated.resources.ski_region_top_snow
 import homesafe.shared.generated.resources.ski_regions_title
 import homesafe.shared.generated.resources.ski_resorts_all_title
 import homesafe.shared.generated.resources.ski_resorts_title
+import homesafe.shared.generated.resources.ski_sites_trouble
 import homesafe.shared.generated.resources.ski_ticket_kids_left_out
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** How many days ahead the strip of days goes: as far as the forecast has any skill. */
@@ -150,7 +153,7 @@ internal fun SkiScreen(
             if (followed.isEmpty()) {
                 item(key = "empty") { SkiEmpty(Modifier.cardWidth()) }
             } else {
-                item(key = "days", contentType = "days") { DaysCard(strip, state.tripEpochDay, actions.onPickDay, Modifier.cardWidth()) }
+                item(key = "days", contentType = "days") { DaysCard(strip, state.tripEpochDay, state.plan.tripDays, actions.onPickDay, Modifier.cardWidth()) }
                 if (!state.hasStart) {
                     item(key = "no_start") { Text(stringResource(Res.string.ski_no_start), style = WeatherTheme.type.label, color = colors.onSkyMuted, modifier = Modifier.cardWidth().padding(horizontal = 8.dp)) }
                 }
@@ -184,6 +187,16 @@ internal fun SkiScreen(
                     RegionsCard(state.plan.regions, state.regions, state.nowEpochSeconds, onOpenRegion, Modifier.cardWidth())
                 }
             }
+            if (state.siteTrouble.isNotEmpty()) {
+                item(key = "site_trouble") {
+                    Text(
+                        pluralStringResource(Res.plurals.ski_sites_trouble, state.siteTrouble.size, state.siteTrouble.size),
+                        style = WeatherTheme.type.label,
+                        color = colors.watch,
+                        modifier = Modifier.cardWidth().padding(horizontal = 8.dp).testTag("ski_site_trouble"),
+                    )
+                }
+            }
             item(key = "find") {
                 PillButton(stringResource(Res.string.ski_find_button), onOpenFind, Modifier.padding(top = 4.dp).testTag("ski_find"), icon = Icons.Filled.Search, filled = false)
             }
@@ -195,9 +208,9 @@ internal fun SkiScreen(
 }
 
 @Composable
-private fun DaysCard(strip: List<SkiStripDay>, selected: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
-    WeatherCard(modifier, title = stringResource(Res.string.ski_day_prompt), icon = Icons.Filled.CalendarMonth, padding = 0.dp) {
-        SkiDayStrip(strip, selected, onPick, Modifier.padding(bottom = 8.dp))
+private fun DaysCard(strip: List<SkiStripDay>, selected: Int, tripDays: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
+    WeatherCard(modifier, title = stringResource(if (tripDays > 1) Res.string.ski_day_prompt_trip else Res.string.ski_day_prompt), icon = Icons.Filled.CalendarMonth, padding = 0.dp) {
+        SkiDayStrip(strip, selected, onPick, Modifier.padding(bottom = 8.dp), tripDays = tripDays)
     }
 }
 
@@ -212,7 +225,7 @@ private fun BestBet(view: SkiDayView, strip: List<SkiStripDay>, selected: Int, n
         Spacer(Modifier.height(10.dp))
         Stats(view, now)
         Spacer(Modifier.height(12.dp))
-        SkiSnowBars(view.entry, strip, selected)
+        SkiSnowBars(view.entry, strip, selected, tripDays = view.trip.days)
         ChainsLine(view)
     }
 }
@@ -256,7 +269,7 @@ private fun ResortCard(view: SkiDayView, strip: List<SkiStripDay>, selected: Int
         Spacer(Modifier.height(10.dp))
         Stats(view, now)
         Spacer(Modifier.height(10.dp))
-        SkiSnowBars(view.entry, strip, selected)
+        SkiSnowBars(view.entry, strip, selected, tripDays = view.trip.days)
         ChainsLine(view)
     }
 }
@@ -276,6 +289,7 @@ private fun Stats(view: SkiDayView, now: Long) {
     val report = view.entry.latest
     val placeholder = stringResource(Res.string.ski_placeholder)
     val cost = view.cost
+    val tickets = view.trip.tickets
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SkiStat(stringResource(Res.string.ski_new_label), report?.takeIf { it.isCurrent(now) }?.last24Cm?.let { WeatherFormat.snow(it, units).resolve() } ?: placeholder, Modifier.weight(1f))
@@ -283,7 +297,7 @@ private fun Stats(view: SkiDayView, now: Long) {
             SkiStat(stringResource(Res.string.ski_drive_label), view.entry.drive?.let { driveText(it.seconds).resolve() } ?: placeholder, Modifier.weight(1.1f))
             val money = when {
                 cost.coveredBy != null -> stringResource(Res.string.ski_cost_covered)
-                cost.total != null -> SkiPlanner.money(cost.total, view.entry.price?.currency ?: "US$")
+                tickets != null -> SkiPlanner.money(tickets, view.entry.price?.currency ?: "US$")
                 else -> stringResource(Res.string.ski_no_price)
             }
             val costLabel = when {
@@ -307,7 +321,7 @@ private fun ChainsLine(view: SkiDayView) {
         Icon(Icons.Filled.Warning, contentDescription = null, tint = WeatherTheme.colors.watch, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(
-            stringResource(Res.string.ski_chains_on_road, stringResource(worst.level.labelRes()), worst.route),
+            stringResource(Res.string.ski_chains_on_road, worst.levelText(), worst.route),
             style = WeatherTheme.type.label,
             color = WeatherTheme.colors.watch,
         )

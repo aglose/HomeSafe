@@ -8,16 +8,22 @@ import com.meticulouscreations.homesafe.weather.data.MutableClock
 import com.meticulouscreations.homesafe.weather.data.NwsApi
 import com.meticulouscreations.homesafe.weather.data.weatherJson
 import com.meticulouscreations.homesafe.weather.ski.data.CaltransChainApi
+import com.meticulouscreations.homesafe.weather.ski.data.NevadaRoadsApi
 import com.meticulouscreations.homesafe.weather.ski.data.OnTheSnowApi
 import com.meticulouscreations.homesafe.weather.ski.data.ResortSiteApi
+import com.meticulouscreations.homesafe.weather.ski.data.SkiBackgroundRefreshImpl
 import com.meticulouscreations.homesafe.weather.ski.data.SkiBrowser
 import com.meticulouscreations.homesafe.weather.ski.data.SkiForecastApi
 import com.meticulouscreations.homesafe.weather.ski.data.SkiRepositoryImpl
 import com.meticulouscreations.homesafe.weather.ski.data.SkiRoutesApi
+import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDriveSource
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiOrigin
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPoint
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiStartingPoint
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -80,7 +86,7 @@ class SkiRepositoryImplTest {
             },
         )
         val browser = FakeBrowser()
-        val repository = SkiRepositoryImpl(OnTheSnowApi(client), SkiForecastApi(client), SkiRoutesApi(client), CaltransChainApi(client), ResortSiteApi(client, clock), browser, NwsApi(client), keys, dao, clock)
+        val repository = SkiRepositoryImpl(OnTheSnowApi(client), SkiForecastApi(client), SkiRoutesApi(client), CaltransChainApi(client), NevadaRoadsApi(client), ResortSiteApi(client, clock), browser, NwsApi(client), keys, dao, clock)
     }
 
     private class Answer(val body: String? = null, val status: HttpStatusCode = HttpStatusCode.OK)
@@ -416,12 +422,148 @@ class SkiRepositoryImplTest {
         assertEquals(1, web.browser.asked.size, "it's a whole page, and it'll say the same for a while")
     }
 
+    private val inntopiaAnswer = """[{"Price":219.0,"Days":1,"Date":"2026-12-26","Quantity":5,"BundleOnly":false}]"""
+
+    @Test
+    fun aCalendarThatAnswersPlainlyNeedsNoBrowser() = runTest {
+        val web = Web { request -> if ("book.mammothmountain.com" in request.url.host) Answer(inntopiaAnswer) else Answer(status = HttpStatusCode.NotFound) }
+        web.browser.isSupported = false
+        val prices = web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813))
+        assertEquals(219.0, prices?.days?.get(20_813)?.adultOnline)
+        assertTrue(web.browser.asked.isEmpty())
+
+        val asked = web.asked.size
+        web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813))
+        assertEquals(asked, web.asked.size, "kept for the day")
+    }
+
+    @Test
+    fun aLongerTripAsksAfterThatLengthOfTicketOnce() = runTest {
+        val web = Web { request ->
+            if ("book.mammothmountain.com" !in request.url.host) return@Web Answer(status = HttpStatusCode.NotFound)
+            val form = (request.body as io.ktor.client.request.forms.FormDataContent).formData
+            if (form["days"] == "2") Answer("""[{"Price":394.0,"Days":2,"Date":"2026-12-26","Quantity":5,"BundleOnly":false}]""") else Answer(inntopiaAnswer)
+        }
+        web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813))
+        val prices = web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813), tripDays = 2)
+        assertEquals(394.0, prices?.packs?.get(20_813)?.get(2)?.adultOnline)
+        assertEquals(219.0, prices?.days?.get(20_813)?.adultOnline)
+        val asked = web.asked.size
+        web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813), tripDays = 2)
+        assertEquals(asked, web.asked.size)
+    }
+
+    @Test
+    fun aCalendarThatWontAnswerLearnsNothing() = runTest {
+        var up = false
+        val web = Web { request -> if (up && "book.mammothmountain.com" in request.url.host) Answer(inntopiaAnswer) else Answer(status = HttpStatusCode.BadGateway) }
+        assertEquals(null, web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813)))
+        up = true
+        assertEquals(219.0, web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813))?.days?.get(20_813)?.adultOnline)
+    }
+
+    @Test
+    fun aSiteWithOnlyAShopHasNoReportToFailAt() = runTest {
+        val web = Web { Answer(vailPage) }
+        web.repository.resortNews("mount-shasta-board-ski-park")
+        assertEquals(emptyMap(), web.repository.siteHealth().first().failingSince)
+    }
+
+    @Test
+    fun aMountainInASharedConfigIsAskedForByItsOwnId() = runTest {
+        val web = Web { request -> if ("mtnfeed" in request.url.host) Answer("""{"bearerToken":"t","resortIds":[173,57,58]}""") else Answer("{}") }
+        web.repository.resortNews("bear-mountain")
+        assertTrue(web.asked.any { "mtnpowder" in it.url.host && "=57" in it.url.toString() }, web.asked.map { it.url.toString() }.toString())
+    }
+
     @Test
     fun aPlainRateTableNeedsNoBrowser() = runTest {
         val web = Web { Answer("Sat+Holiday Window Rates Adult (23-64) \$89 \$189 \$114 \$249 Child (6-12) \$49 \$109 \$66 \$139 Super Senior") }
         val prices = web.repository.resortPrices("sugar-bowl-resort", listOf(20_813))
         assertEquals(2, prices?.tiers?.size)
         assertTrue(web.browser.asked.isEmpty())
+    }
+
+    // ---- While the tab isn't open --------------------------------------------------------------------
+
+    private class AtHome(private val point: SkiPoint) : SkiStartingPoint {
+        override suspend fun of(origin: SkiOrigin) = point
+    }
+
+    @Test
+    fun theBackgroundLeavesItAloneUntilTheTabHasBeenUsed() = runTest {
+        val web = Web { Answer(vailPage) }
+        SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock).refresh()
+        assertTrue(web.asked.isEmpty())
+    }
+
+    @Test
+    fun theBackgroundBringsTheNewsUpToDateEveryFewHoursWithNoBrowser() = runTest {
+        val web = Web { request -> if ("snow-and-weather" in request.url.encodedPath) Answer(vailPage) else Answer(status = HttpStatusCode.NotFound) }
+        val background = SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock)
+        web.repository.updatePlan { it.copy(resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"))) }
+        web.repository.resortNews("northstar-california")
+
+        web.asked.clear()
+        web.clock.seconds += 1_800
+        background.refresh()
+        assertTrue(web.asked.any { "snow-and-weather" in it.url.encodedPath }, "news older than its age is read")
+        assertTrue(web.browser.asked.isEmpty())
+
+        web.asked.clear()
+        web.clock.seconds += 1_800
+        background.refresh()
+        assertTrue(web.asked.isEmpty(), "not again so soon")
+
+        web.clock.seconds += 3 * 3_600
+        background.refresh()
+        assertTrue(web.asked.isNotEmpty())
+    }
+
+    // ---- Which sites have stopped being readable -----------------------------------------------------
+
+    @Test
+    fun aSiteThatStopsWhileOthersAnswerIsSaidToHaveAfterAFewDays() = runTest {
+        var broken = false
+        val web = Web { request ->
+            if (broken && "northstar" in request.url.host) {
+                Answer("<html>new look</html>")
+            } else if ("snow-and-weather" in request.url.encodedPath) {
+                Answer(vailPage)
+            } else {
+                Answer(status = HttpStatusCode.NotFound)
+            }
+        }
+        web.repository.resortNews("northstar-california")
+        broken = true
+        val brokeAt = web.clock.seconds + 1_000
+        web.clock.seconds = brokeAt
+        web.repository.resortNews("northstar-california")
+
+        assertEquals(emptyMap(), web.repository.siteHealth().first().trouble(web.clock.seconds), "not after one bad read")
+
+        web.clock.seconds += 3 * 86_400
+        web.repository.resortNews("northstar-california")
+        web.repository.resortNews("heavenly-mountain-resort")
+        assertEquals(mapOf("northstar-california" to brokeAt), web.repository.siteHealth().first().trouble(web.clock.seconds))
+
+        broken = false
+        web.clock.seconds += 3_600
+        web.repository.resortNews("northstar-california")
+        assertEquals(emptyMap(), web.repository.siteHealth().first().trouble(web.clock.seconds))
+    }
+
+    @Test
+    fun everySiteFailingIsTheConnectionNotTheSites() = runTest {
+        var up = true
+        val web = Web { request -> if (up && "snow-and-weather" in request.url.encodedPath) Answer(vailPage) else Answer(status = HttpStatusCode.BadGateway) }
+        web.repository.resortNews("northstar-california")
+        up = false
+        web.clock.seconds += 3_600
+        web.repository.resortNews("northstar-california")
+        web.clock.seconds += 4 * 86_400
+        web.repository.resortNews("heavenly-mountain-resort")
+        assertEquals(emptyMap(), web.repository.siteHealth().first().trouble(web.clock.seconds))
     }
 
     // ---- Chain controls ---------------------------------------------------------------------------
@@ -475,6 +617,64 @@ class SkiRepositoryImplTest {
         web.clock.seconds += 660
         web.repository.chainControls(road)
         assertTrue(web.asked.size > asked)
+    }
+
+    @Test
+    fun aClosedRoadIsOneOfThem() = runTest {
+        val web = Web { Answer(chainFile("ROAD CLOSED", 39.6, -120.575)) }
+        val report = web.repository.chainControls(road)
+        assertEquals(ChainLevel.CLOSED, report.controls.first().level)
+    }
+
+    @Test
+    fun aClosedRoadThatOnlyGoesByIsntOnTheWay() = runTest {
+        // Half a kilometer or more off the drive: near enough for a chain checkpoint, not for a gate.
+        val web = Web { Answer(chainFile("ROAD CLOSED", 39.6, -120.555)) }
+        assertTrue(web.repository.chainControls(road).controls.isEmpty())
+    }
+
+    /** Up the Mt. Rose Highway: (39.30, -119.90) to (39.35, -119.85). */
+    private val mtRose = "_xznF~}xzUowHowH"
+
+    private fun nevadaList(condition: String, stale: Boolean = false, also: String = "") =
+        """{"data":[{"area":"Reno","roadway":"SR-431 (Mt. Rose Hwy)","description":"From Diamond Peak to Incline Lake","stale":$stale,"primaryCondition":"$condition","secondaryConditions":[$also]},{"area":"Las Vegas","roadway":"SR-431x","description":"Elsewhere","stale":false,"primaryCondition":"Road Closed","secondaryConditions":[]}]}"""
+
+    private fun nevadaWeb(list: () -> Answer) = Web { request -> if ("nvroads" in request.url.host) list() else Answer(chainFile("R-0", 0.0, 0.0)) }
+
+    @Test
+    fun aDriveThroughNevadaHearsFromNevada() = runTest {
+        val web = nevadaWeb { Answer(nevadaList("Snow Covered", also = "\"Chains Advised\"")) }
+        val report = web.repository.chainControls(mtRose)
+        val notice = report.controls.first { it.route.startsWith("SR-431 (") }
+        assertEquals(ChainLevel.NOTICE, notice.level)
+        assertEquals("Snow Covered, Chains Advised", notice.description, "its own words")
+        assertEquals("From Diamond Peak to Incline Lake", notice.place)
+        assertTrue(report.complete)
+        assertTrue(web.asked.any { "nvroads" in it.url.host && "SR-431" in it.url.toString() })
+    }
+
+    @Test
+    fun aClosedNevadaRoadIsClosed() = runTest {
+        val web = nevadaWeb { Answer(nevadaList("Road Closed")) }
+        assertEquals(ChainLevel.CLOSED, web.repository.chainControls(mtRose).controls.first().level)
+    }
+
+    @Test
+    fun nothingToReportOrAnOldReportIsNothing() = runTest {
+        assertTrue(nevadaWeb { Answer(nevadaList("No Report")) }.repository.chainControls(mtRose).controls.none { it.route.startsWith("SR-431 (") })
+        assertTrue(nevadaWeb { Answer(nevadaList("Snow Covered", stale = true)) }.repository.chainControls(mtRose).controls.none { it.route.startsWith("SR-431 (") })
+    }
+
+    @Test
+    fun nevadaNotAnsweringIsNoAllClear() = runTest {
+        assertFalse(nevadaWeb { Answer(status = HttpStatusCode.BadGateway) }.repository.chainControls(mtRose).complete)
+    }
+
+    @Test
+    fun aDriveThatStaysOutOfNevadaDoesntAskIt() = runTest {
+        val web = Web { Answer(chainFile("R-1", 39.6, -120.575)) }
+        web.repository.chainControls(road)
+        assertFalse(web.asked.any { "nvroads" in it.url.host })
     }
 
     @Test

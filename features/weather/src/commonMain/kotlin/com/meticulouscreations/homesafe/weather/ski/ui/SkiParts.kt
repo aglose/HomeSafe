@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.weather.ski.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,10 +21,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,17 +38,20 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
+import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
@@ -55,12 +65,15 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiStripDay
 import com.meticulouscreations.homesafe.weather.ui.WeatherTheme
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.ski_chain_closed
+import homesafe.shared.generated.resources.ski_chain_notice
 import homesafe.shared.generated.resources.ski_chain_r1
 import homesafe.shared.generated.resources.ski_chain_r2
 import homesafe.shared.generated.resources.ski_chain_r3
 import homesafe.shared.generated.resources.ski_day_snow_description
 import homesafe.shared.generated.resources.ski_drive_hours
 import homesafe.shared.generated.resources.ski_drive_minutes
+import homesafe.shared.generated.resources.ski_own_price_hint
 import homesafe.shared.generated.resources.ski_pass_epic
 import homesafe.shared.generated.resources.ski_pass_ikon
 import homesafe.shared.generated.resources.ski_pass_indy
@@ -95,6 +108,8 @@ class SkiActions(
     val onPass: (SkiPass, Boolean) -> Unit = { _, _ -> },
     val onOrigin: (SkiOrigin) -> Unit = {},
     val onOwnPrice: (String, Int?) -> Unit = { _, _ -> },
+    val onTrip: (Int, Int, Int) -> Unit = { _, _, _ -> },
+    val onOwnParking: (String, Int?) -> Unit = { _, _ -> },
 )
 
 /** A calendar day (counted from 1970) as an instant the weather's date formats can read, on their zero-offset clock. */
@@ -118,10 +133,16 @@ internal fun driveText(seconds: Long): UiText {
 }
 
 internal fun ChainLevel.labelRes(): StringResource = when (this) {
+    ChainLevel.NOTICE -> Res.string.ski_chain_notice
     ChainLevel.R1 -> Res.string.ski_chain_r1
     ChainLevel.R2 -> Res.string.ski_chain_r2
     ChainLevel.R3 -> Res.string.ski_chain_r3
+    ChainLevel.CLOSED -> Res.string.ski_chain_closed
 }
+
+/** What's in force, in a few words. A notice is the road service's own words, as nobody else's would do. */
+@Composable
+internal fun ChainControl.levelText(): String = if (level == ChainLevel.NOTICE && description.isNotBlank()) description else stringResource(level.labelRes())
 
 internal fun SkiPriceTier.Kind.labelRes(): StringResource = when (this) {
     SkiPriceTier.Kind.ANY_DAY -> Res.string.ski_tier_any_day
@@ -143,6 +164,35 @@ internal fun SkiReport.stateText(todayEpochDay: Int, nowEpochSeconds: Long): UiT
     state != SkiOpenState.CLOSED -> UiText.of(Res.string.ski_state_no_recent_report)
 
     else -> UiText.of(Res.string.ski_state_closed)
+}
+
+/** A box for a figure the household knows better than any listing: what it pays, what a night or a mile comes to. */
+@Composable
+internal fun SkiAmountField(label: String, amount: Int?, tag: String, onChange: (Int?) -> Unit, modifier: Modifier = Modifier, hint: String = stringResource(Res.string.ski_own_price_hint)) {
+    val colors = WeatherTheme.colors
+    var text by remember(amount) { mutableStateOf(amount?.toString().orEmpty()) }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = WeatherTheme.type.label, color = colors.onSkyMuted, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
+        Box(
+            Modifier.width(92.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceRaised).border(1.dp, colors.cardBorder, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            if (text.isEmpty()) Text(hint, style = WeatherTheme.type.body, color = colors.onSkyFaint)
+            BasicTextField(
+                value = text,
+                onValueChange = { typed ->
+                    val digits = typed.filter { it.isDigit() }.take(4)
+                    text = digits
+                    onChange(digits.toIntOrNull())
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                textStyle = WeatherTheme.type.body.copy(color = colors.onSky),
+                cursorBrush = SolidColor(colors.accent),
+                modifier = Modifier.fillMaxWidth().testTag(tag),
+            )
+        }
+    }
 }
 
 /** A little coloured label: is it open, what does the pass cover. */
@@ -182,7 +232,7 @@ internal fun SkiStat(label: String, value: String, modifier: Modifier = Modifier
  * are written brighter, since that's when anyone can go.
  */
 @Composable
-internal fun SkiDayStrip(days: List<SkiStripDay>, selected: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun SkiDayStrip(days: List<SkiStripDay>, selected: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier, tripDays: Int = 1) {
     val colors = WeatherTheme.colors
     val type = WeatherTheme.type
     val units = WeatherTheme.units
@@ -198,7 +248,7 @@ internal fun SkiDayStrip(days: List<SkiStripDay>, selected: Int, onPick: (Int) -
         val dayWidth = if (shared >= STRIP_DAY_NARROWEST) shared else STRIP_DAY_WIDTH
         LazyRow(Modifier.fillMaxWidth().testTag("ski_day_strip"), state = list, contentPadding = PaddingValues(horizontal = STRIP_EDGE), horizontalArrangement = Arrangement.spacedBy(STRIP_GAP)) {
             items(days, key = { it.epochDay }) { day ->
-                val isSelected = day.epochDay == selected
+                val isSelected = day.epochDay in selected until selected + tripDays.coerceAtLeast(1)
                 val instant = day.epochDay.asInstant()
                 val weekend = WeatherFormat.isWeekend(instant, 0)
                 val date = WeatherFormat.date(instant, 0).resolve()
@@ -213,7 +263,7 @@ internal fun SkiDayStrip(days: List<SkiStripDay>, selected: Int, onPick: (Int) -
                         .clickable(role = Role.Tab) { onPick(day.epochDay) }
                         .handCursor()
                         .semantics(mergeDescendants = true) {
-                            this.selected = isSelected
+                            this.selected = day.epochDay == selected
                             contentDescription = description
                         }
                         .padding(vertical = 8.dp),
@@ -239,12 +289,12 @@ internal fun SkiDayStrip(days: List<SkiStripDay>, selected: Int, onPick: (Int) -
  * the most any model expects: how far to trust a tall column is how far its whisker goes.
  */
 @Composable
-internal fun SkiSnowBars(entry: SkiEntry, days: List<SkiStripDay>, selected: Int, modifier: Modifier = Modifier) {
+internal fun SkiSnowBars(entry: SkiEntry, days: List<SkiStripDay>, selected: Int, modifier: Modifier = Modifier, tripDays: Int = 1) {
     val colors = WeatherTheme.colors
     val forecast = entry.forecast
     val values = days.map { day ->
         val at = forecast?.day(day.epochDay)
-        Triple(at?.snowCm ?: entry.latest?.outlook?.firstOrNull { it.epochDay == day.epochDay }?.cm ?: 0.0, at?.snowHighCm, day.epochDay == selected)
+        Triple(at?.snowCm ?: entry.latest?.outlook?.firstOrNull { it.epochDay == day.epochDay }?.cm ?: 0.0, at?.snowHighCm, day.epochDay in selected until selected + tripDays.coerceAtLeast(1))
     }
     val scale = (values.maxOfOrNull { (snow, high, _) -> high ?: snow } ?: 0.0).coerceAtLeast(MIN_BAR_SCALE_CM)
     val snowColor = colors.snow

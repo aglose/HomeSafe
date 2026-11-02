@@ -48,11 +48,14 @@
     <string name="ski_chain_r1">R-1 chains or snow tires</string>
     <string name="ski_chain_r2">R-2 chains, except 4WD with snow tires</string>
     <string name="ski_chain_r3">R-3 chains on all vehicles</string>
+    <string name="ski_chain_closed">Road closed</string>
+    <string name="ski_chain_notice">Road conditions</string>
     <string name="ski_chains_on_road">%1$s on %2$s</string>
     <string name="ski_chain_at">%1$s on %2$s at %3$s</string>
-    <string name="ski_chains_none">No chain controls on the way right now.</string>
-    <string name="ski_chains_unavailable">Caltrans isn't answering, so chain controls may be missing or out of date.</string>
-    <string name="ski_chains_unknown">Chain controls are only known for California. Check the local road service.</string>
+    <string name="ski_chain_stretch">%1$s on %2$s: %3$s</string>
+    <string name="ski_chains_none">No chain controls or closures on the way right now.</string>
+    <string name="ski_chains_unavailable">A road service isn't answering, so chain controls and closures may be missing or out of date.</string>
+    <string name="ski_chains_unknown">Chain controls are only known for California and the Nevada roads around Tahoe. Check the local road service.</string>
     <string name="ski_state_open">Open</string>
     <string name="ski_state_limited">Partly open</string>
     <string name="ski_state_closed">Closed</string>
@@ -189,4 +192,45 @@
     <string name="ski_tier_weekend">Saturdays and holidays</string>
     <string name="ski_tier_non_peak">Non-peak days</string>
     <string name="ski_tier_peak">Peak days</string>
+    <string name="ski_day_prompt_trip">Which days?</string>
+    <string name="ski_setup_trip_title">The trip</string>
+    <string name="ski_setup_days">Days on the mountain</string>
+    <string name="ski_setup_lodging">Lodging a night</string>
+    <string name="ski_setup_driving">Gas or charging a mile, in cents</string>
+    <string name="ski_setup_driving_hint">¢</string>
+    <string name="ski_trip_title">Whole trip</string>
+    <string name="ski_trip_not_known">Not known</string>
+    <string name="ski_trip_tickets">Lift tickets</string>
+    <string name="ski_trip_tickets_covered">Lift tickets, on %1$s</string>
+    <string name="ski_trip_tickets_one">A %1$d-day ticket</string>
+    <string name="ski_trip_tickets_days">Day tickets, %1$d days</string>
+    <string name="ski_trip_parking">Parking</string>
+    <string name="ski_trip_driving">Gas or charging, there and back</string>
+    <string name="ski_trip_total">Total</string>
+    <string name="ski_trip_total_at_least">At least</string>
+    <string name="ski_own_parking_label">What parking costs a day</string>
+    <string name="ski_parking_reservation">The resort asks for a parking reservation.</string>
+    <string name="ski_parking_button">Parking at the resort</string>
+    <string name="ski_sites_trouble_title">Sites the app can't read</string>
+    <string name="ski_sites_trouble_body">These resorts' own sites have stopped being readable, probably because they changed. Until the app catches up, they show OnTheSnow's listing.</string>
+    <string name="ski_sites_trouble_row">%1$s, since %2$s</string>
+    <plurals name="ski_trip_lodging">
+        <item quantity="one">Lodging, %1$d night</item>
+        <item quantity="other">Lodging, %1$d nights</item>
+    </plurals>
+    <plurals name="ski_trip_days_not_priced">
+        <item quantity="one">%1$d day has no price yet, so it isn't counted.</item>
+        <item quantity="other">%1$d days have no price yet, so they aren't counted.</item>
+    </plurals>
+    <plurals name="ski_sites_trouble">
+        <item quantity="one">%1$d resort's site can't be read, so it shows OnTheSnow's listing. Setup lists it.</item>
+        <item quantity="other">%1$d resorts' sites can't be read, so they show OnTheSnow's listing. Setup lists them.</item>
+    </plurals>
+    <string name="ski_tier_season">%1$s (%2$s rates)</string>
+    <string name="ski_parking_note_palisades">Reservations are needed on weekends and holidays until 1 PM, and most are free. Spots paid for ahead cost $30. Weekdays need none.</string>
+    <string name="ski_parking_note_northstar">Castle Peak is free. Village View takes a reservation on weekends and peak days, $20 for 3 or fewer and free for 4 or more. Preferred lots are $25 to $50.</string>
+    <string name="ski_parking_note_sugar_bowl">The main lots are free, first come. Priority spots in the Upper Lot are $35 on some holidays and peak weekends.</string>
+    <string name="ski_parking_note_heavenly">Boulder and Stagecoach are always free. California Base takes a reservation on weekends and peak days before 11:30 AM, $20 for 3 or fewer and free for 4 or more.</string>
+    <string name="ski_parking_note_kirkwood">All lots take a reservation on weekends and peak days before noon. Lower 7 is free; most others are $20 for 3 or fewer and free for 4 or more.</string>
+    <string name="ski_parking_note_sierra">$25 a day with a reservation on weekends and holidays until noon. Free for passholders, for cars of 4 or more, and after noon.</string>
 </resources>

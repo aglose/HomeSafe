@@ -7,6 +7,8 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -16,6 +18,8 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlin.math.roundToInt
 import kotlin.time.Instant
 
@@ -226,7 +230,7 @@ internal object ResortPages {
         )
     }
 
-    /** Sierra-at-Tahoe's rate table: a single-day ticket as non-peak and peak. Which days are which it doesn't say here. */
+    /** Sierra-at-Tahoe's rate table: a single-day ticket as non-peak and peak, and the dates it calls peak, listed further up the page. */
     fun sierraPrices(html: String): List<SkiPriceTier> {
         val text = textOf(html)
         val table = text.substringAfter("Non-Peak/Peak Lift Ticket", "").takeIf { it.isNotEmpty() } ?: return emptyList()
@@ -235,8 +239,28 @@ internal object ResortPages {
         val child = prices("Child")
         return listOf(
             SkiPriceTier(SkiPriceTier.Kind.NON_PEAK, SkiDayPrice(adultWindow = adult[0], childWindow = child?.get(0))),
-            SkiPriceTier(SkiPriceTier.Kind.PEAK, SkiDayPrice(adultWindow = adult[1], childWindow = child?.get(1))),
+            SkiPriceTier(SkiPriceTier.Kind.PEAK, SkiDayPrice(adultWindow = adult[1], childWindow = child?.get(1)), onDays = peakDates(text)),
         )
+    }
+
+    /** "Peak Dates November 27-28, 2026 / December 19, 2026 – January 3, 2027 / January 16 – 18, 2027". */
+    internal fun peakDates(text: String): Set<Int> {
+        val section = text.substringAfter("Peak Dates", "").take(PEAK_DATES_LENGTH)
+        val range = Regex("([A-Z][a-z]+) (\\d{1,2})(?:, (\\d{4}))?\\s*(?:-|–|&#8211;)\\s*(?:([A-Z][a-z]+) )?(\\d{1,2})(?:, (\\d{4}))?")
+        return range.findAll(section).flatMap { m ->
+            val (fromMonth, fromDay, fromYear, toMonth, toDay, toYear) = m.destructured
+            val lastYear = toYear.toIntOrNull() ?: return@flatMap emptyList()
+            val firstYear = fromYear.toIntOrNull() ?: lastYear
+            val from = monthDay(firstYear, fromMonth, fromDay) ?: return@flatMap emptyList()
+            val to = monthDay(lastYear, toMonth.ifEmpty { fromMonth }, toDay) ?: return@flatMap emptyList()
+            (from..to).toList()
+        }.toSet()
+    }
+
+    private fun monthDay(year: Int, month: String, day: String): Int? {
+        val number = MONTHS.indexOf(month.take(3)) + 1
+        if (number == 0) return null
+        return runCatching { LocalDate(year, number, day.toInt()).toEpochDays().toInt() }.getOrNull()
     }
 
     /** A POWDR mountain's latest snow report (its `dor/drupal/snow-reports`) with its lifts and trails (`dor/lift-trail-report`). */
@@ -376,7 +400,8 @@ internal object ResortPages {
         val text = textOf(html).substringAfter("Lift Tickets All Day", "")
         fun price(label: String) = Regex("$label \\([^)]*\\) \\$(\\d+)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
         val adult = price("Adult") ?: return emptyList()
-        return listOf(SkiPriceTier(SkiPriceTier.Kind.ANY_DAY, SkiDayPrice(adultWindow = adult, childWindow = price("Child"))))
+        val season = Regex("Pricing (\\d{4} ?- ?\\d{4})").find(textOf(html))?.groupValues?.get(1)
+        return listOf(SkiPriceTier(SkiPriceTier.Kind.ANY_DAY, SkiDayPrice(adultWindow = adult, childWindow = price("Child")), season = season))
     }
 
     /** China Peak's single-day passes: "as low as" online, "up to" at the resort. */
@@ -407,10 +432,63 @@ internal object ResortPages {
         val root = runCatching { json.parseToJsonElement(answer) }.getOrNull() as? JsonObject ?: return emptyMap()
         return root.entries.mapNotNull { (date, values) ->
             val day = runCatching { LocalDate.parse(date).toEpochDays().toInt() }.getOrNull() ?: return@mapNotNull null
-            val list = (values as? JsonArray)?.map { (it as? JsonPrimitive)?.doubleOrNull?.takeIf { value -> value > 0 } } ?: return@mapNotNull null
-            if (list.size < 4 || list.all { it == null }) return@mapNotNull null
-            day to SkiDayPrice(list[0], list[1], list[2], list[3])
+            prices(values)?.let { day to it }
         }.toMap()
+    }
+
+    /**
+     * Inntopia's calendar for an adult and a child: each date has a row for each price it's sold at,
+     * the lowest going first, so the lowest with any left is what it costs. It has no window price.
+     * A child's $0 is the resort's own: children ski free that week.
+     */
+    fun inntopiaPrices(adult: String, child: String?, days: Int, childrenFree: Boolean): Map<Int, SkiDayPrice> {
+        val adults = inntopiaLowest(adult, days)
+        val children = child?.let { inntopiaLowest(it, days) }.orEmpty()
+        return (adults.keys + children.keys).associateWith { day ->
+            SkiDayPrice(adultOnline = adults[day], childOnline = children[day] ?: 0.0.takeIf { childrenFree && day in adults })
+        }
+    }
+
+    private fun inntopiaLowest(answer: String, days: Int): Map<Int, Double> {
+        val rows = runCatching { json.decodeFromString<List<InntopiaRowDto>>(answer) }.getOrDefault(emptyList())
+        return rows.filter { it.days == days && !it.bundleOnly && it.quantity > 0 && it.price != null }.mapNotNull { row ->
+            val day = runCatching { LocalDate.parse(row.date.orEmpty().take(10)).toEpochDays().toInt() }.getOrNull() ?: return@mapNotNull null
+            day to row.price!!
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, prices) -> prices.min() }
+    }
+
+    /** Entabeni's calendar: an adult's price for each date, what it's sold at online. */
+    fun entabeniPrices(answer: String): Map<Int, SkiDayPrice> {
+        val rows = runCatching {
+            json.parseToJsonElement(answer).jsonObject["data"]?.jsonObject?.get("ecommerce")?.jsonObject?.get("calendarPrices")?.jsonArray
+        }.getOrNull() ?: return emptyMap()
+        return rows.mapNotNull { row ->
+            val fields = row as? JsonObject ?: return@mapNotNull null
+            if (fields.flag("soldOut") == true) return@mapNotNull null
+            val day = runCatching { LocalDate.parse(fields.text("date").orEmpty()).toEpochDays().toInt() }.getOrNull() ?: return@mapNotNull null
+            val price = fields.number("displayPrice")?.takeIf { it > 0 } ?: return@mapNotNull null
+            day to SkiDayPrice(adultOnline = price)
+        }.toMap()
+    }
+
+    /** The tickets for several days the shop scripts leave under `packs`: `{"packs":{"2026-12-26":{"2":[adultOnline,adultWindow,childOnline,childWindow]}}}`. */
+    fun packPrices(answer: String): Map<Int, Map<Int, SkiDayPrice>> {
+        val root = runCatching { json.parseToJsonElement(answer) }.getOrNull() as? JsonObject ?: return emptyMap()
+        val packs = root["packs"] as? JsonObject ?: return emptyMap()
+        return packs.entries.mapNotNull { (date, byLength) ->
+            val day = runCatching { LocalDate.parse(date).toEpochDays().toInt() }.getOrNull() ?: return@mapNotNull null
+            val lengths = (byLength as? JsonObject)?.entries.orEmpty().mapNotNull { (length, values) ->
+                val days = length.toIntOrNull() ?: return@mapNotNull null
+                prices(values)?.let { days to it }
+            }.toMap()
+            lengths.takeIf { it.isNotEmpty() }?.let { day to it }
+        }.toMap()
+    }
+
+    private fun prices(values: JsonElement): SkiDayPrice? {
+        val list = (values as? JsonArray)?.map { (it as? JsonPrimitive)?.doubleOrNull?.takeIf { value -> value > 0 } } ?: return null
+        if (list.size < 4 || list.all { it == null }) return null
+        return SkiDayPrice(list[0], list[1], list[2], list[3])
     }
 
     /** The days a Vail shop's script got an answer for, whatever the answer was. */
@@ -458,6 +536,9 @@ internal object ResortPages {
 
     private const val CM_PER_INCH = 2.54
 
+    /** Far enough down the page to get all of a season's peak dates, and not the ones after them. */
+    private const val PEAK_DATES_LENGTH = 200
+
     /** More than a row of Homewood's table takes up, so what follows it isn't read as part of it. */
     private const val TABLE_ROW_LENGTH = 60
 
@@ -491,9 +572,11 @@ internal object ResortScripts {
           var dates = ${dates.joinToString(",", "[", "]") { "'$it'" }};
           if (first && dates.indexOf(first) < 0) dates.push(first);
           var out = {};
+          var packs = {};
           var checked = [];
           var next = function (i) {
             if (i >= dates.length) {
+              if (Object.keys(packs).length) out.packs = packs;
               out.checked = checked;
               window.__ski = JSON.stringify(out);
               return;
@@ -503,10 +586,17 @@ internal object ResortScripts {
             }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
               // A day that answered, priced or not: one that failed gets asked about again.
               if (j && j.LiftTickets) checked.push(dates[i]);
-              var one = ((j && j.LiftTickets) || []).filter(function (t) { return t.NumberOfDays === 1 && t.IsProductAvailable; });
-              var of = function (age) { return one.filter(function (t) { return t.AgeCategoryDisplay === age; })[0] || {}; };
-              var a = of('Adult'), c = of('Child');
-              if (a.Price || c.Price) out[dates[i]] = [a.Price || null, a.WindowPrice || null, c.Price || null, c.WindowPrice || null];
+              var tickets = ((j && j.LiftTickets) || []).filter(function (t) { return t.IsProductAvailable; });
+              // A price is for the whole ticket, however many days it's for.
+              var row = function (days) {
+                var of = function (age) { return tickets.filter(function (t) { return t.NumberOfDays === days && t.AgeCategoryDisplay === age; })[0] || {}; };
+                var a = of('Adult'), c = of('Child');
+                return (a.Price || c.Price) ? [a.Price || null, a.WindowPrice || null, c.Price || null, c.WindowPrice || null] : null;
+              };
+              if (row(1)) out[dates[i]] = row(1);
+              for (var days = 2; days <= 7; days++) {
+                if (row(days)) { (packs[dates[i]] = packs[dates[i]] || {})[days] = row(days); }
+              }
             }).catch(function () {}).then(function () { next(i + 1); });
           };
           next(0);
@@ -549,28 +639,54 @@ internal object ResortScripts {
             var adult = named(/^(18|19|23) to (64|69|79)$/) || named(/^adult/i) || named(/^1\d and over$/i);
             var child = named(/^\d+ to 12$/) || named(/^child/i);
             if (!adult) return finish({});
-            var rest = lists.filter(function (a) { return a !== ageOf; }).map(function (a) {
-              var values = a.ProductAttributeValues;
-              return (values.filter(function (v) { return v.IsPreselected; })[0] || values[0]).Id;
-            });
+            var duration = lists.filter(function (a) { return a !== ageOf && /duration/i.test(a.Name); })[0];
+            var rest = function (length) {
+              return lists.filter(function (a) { return a !== ageOf; }).map(function (a) {
+                if (length && a === duration) return length.Id;
+                var values = a.ProductAttributeValues;
+                return (values.filter(function (v) { return v.IsPreselected; })[0] || values[0]).Id;
+              });
+            };
             var now = new Date();
             var later = new Date(now.getTime() + 240 * 86400000);
-            var ask = function (age) {
+            var ask = function (age, length) {
               return fetch('/api/v1/product-variant', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-                body: JSON.stringify({ ProductAttributeValueIds: [age.Id].concat(rest), ProductId: id, StartDate: now.toISOString(), EndDate: later.toISOString(), WithPriceLists: true, WithInventory: true })
+                body: JSON.stringify({ ProductAttributeValueIds: [age.Id].concat(rest(length)), ProductId: id, StartDate: now.toISOString(), EndDate: later.toISOString(), WithPriceLists: true, WithInventory: true })
               }).then(json).then(function (j) { return (j.Variants && j.Variants[0] && j.Variants[0].DayPriceLists) || []; });
             };
-            return Promise.all([ask(adult), child ? ask(child) : Promise.resolve([])]).then(function (both) {
-              var out = {};
-              both[0].forEach(function (d) { out[d.Date] = [d.Price || null, d.BasePrice || null, null, null]; });
-              both[1].forEach(function (d) {
-                var row = out[d.Date] || (out[d.Date] = [null, null, null, null]);
-                row[2] = d.Price || null;
-                row[3] = d.BasePrice || null;
+            var calendar = function (length) {
+              return Promise.all([ask(adult, length), child ? ask(child, length) : Promise.resolve([])]).then(function (both) {
+                var rows = {};
+                both[0].forEach(function (d) { rows[d.Date] = [d.Price || null, d.BasePrice || null, null, null]; });
+                both[1].forEach(function (d) {
+                  var row = rows[d.Date] || (rows[d.Date] = [null, null, null, null]);
+                  row[2] = d.Price || null;
+                  row[3] = d.BasePrice || null;
+                });
+                return rows;
               });
-              finish(out);
+            };
+            // Its tickets for several days, "2 out of 3 Days" and so on, where it sells them. The price is for the whole ticket.
+            var lengths = duration ? duration.ProductAttributeValues.filter(function (v) { return /^\d+ out of/i.test(v.Name.trim()); }) : [];
+            var began = Date.now();
+            return calendar(null).then(function (out) {
+              var packs = {};
+              var more = lengths.reduce(function (done, length) {
+                return done.then(function () {
+                  // A slow shop still gives its day tickets: these are the extra, and the browser won't wait for ever.
+                  if (Date.now() - began > 20000) return;
+                  return calendar(length).then(function (rows) {
+                    var days = parseInt(length.Name, 10);
+                    Object.keys(rows).forEach(function (date) { (packs[date] = packs[date] || {})[days] = rows[date]; });
+                  }, function () {});
+                });
+              }, Promise.resolve());
+              return more.then(function () {
+                if (Object.keys(packs).length) out.packs = packs;
+                finish(out);
+              });
             });
             });
             });
@@ -583,3 +699,20 @@ internal object ResortScripts {
         })()
     """.trimIndent()
 }
+
+/** What a resort's shop says, whichever way it was asked. */
+internal class ShopPrices(
+    val days: Map<Int, SkiDayPrice>,
+    val packs: Map<Int, Map<Int, SkiDayPrice>> = emptyMap(),
+    /** The days it got an answer for, where it's asked a day at a time; null where it answers for them all or not at all. */
+    val checked: Set<Int>? = null,
+)
+
+@Serializable
+internal class InntopiaRowDto(
+    @SerialName("Price") val price: Double? = null,
+    @SerialName("Days") val days: Int = 1,
+    @SerialName("Date") val date: String? = null,
+    @SerialName("Quantity") val quantity: Int = 0,
+    @SerialName("BundleOnly") val bundleOnly: Boolean = false,
+)

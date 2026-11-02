@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Landscape
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -65,6 +66,7 @@ import com.meticulouscreations.homesafe.weather.domain.MeasureSystem
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
 import com.meticulouscreations.homesafe.weather.ski.SkiUiState
+import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiCost
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDriveSource
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry
@@ -75,6 +77,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlanner
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortFacts
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiTripCost
 import com.meticulouscreations.homesafe.weather.ui.PillButton
 import com.meticulouscreations.homesafe.weather.ui.WeatherCard
 import com.meticulouscreations.homesafe.weather.ui.WeatherGlyph
@@ -84,6 +87,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.ski_attribution
 import homesafe.shared.generated.resources.ski_cams_title
 import homesafe.shared.generated.resources.ski_chain_at
+import homesafe.shared.generated.resources.ski_chain_stretch
 import homesafe.shared.generated.resources.ski_chains_none
 import homesafe.shared.generated.resources.ski_chains_unavailable
 import homesafe.shared.generated.resources.ski_chains_unknown
@@ -124,8 +128,11 @@ import homesafe.shared.generated.resources.ski_mountain_vertical
 import homesafe.shared.generated.resources.ski_no_report
 import homesafe.shared.generated.resources.ski_no_start
 import homesafe.shared.generated.resources.ski_no_ticket_price
+import homesafe.shared.generated.resources.ski_own_parking_label
 import homesafe.shared.generated.resources.ski_own_price_hint
 import homesafe.shared.generated.resources.ski_own_price_label
+import homesafe.shared.generated.resources.ski_parking_button
+import homesafe.shared.generated.resources.ski_parking_reservation
 import homesafe.shared.generated.resources.ski_pass_covers
 import homesafe.shared.generated.resources.ski_placeholder
 import homesafe.shared.generated.resources.ski_rain_at_base
@@ -157,11 +164,25 @@ import homesafe.shared.generated.resources.ski_ticket_party_table
 import homesafe.shared.generated.resources.ski_ticket_party_window
 import homesafe.shared.generated.resources.ski_ticket_season
 import homesafe.shared.generated.resources.ski_tickets_title
+import homesafe.shared.generated.resources.ski_tier_season
+import homesafe.shared.generated.resources.ski_trip_days_not_priced
+import homesafe.shared.generated.resources.ski_trip_driving
+import homesafe.shared.generated.resources.ski_trip_lodging
+import homesafe.shared.generated.resources.ski_trip_not_known
+import homesafe.shared.generated.resources.ski_trip_parking
+import homesafe.shared.generated.resources.ski_trip_tickets
+import homesafe.shared.generated.resources.ski_trip_tickets_covered
+import homesafe.shared.generated.resources.ski_trip_tickets_days
+import homesafe.shared.generated.resources.ski_trip_tickets_one
+import homesafe.shared.generated.resources.ski_trip_title
+import homesafe.shared.generated.resources.ski_trip_total
+import homesafe.shared.generated.resources.ski_trip_total_at_least
 import homesafe.shared.generated.resources.ski_units_feet
 import homesafe.shared.generated.resources.ski_units_meters
 import homesafe.shared.generated.resources.ski_visibility_low
 import homesafe.shared.generated.resources.ski_website_button
 import io.ktor.http.encodeURLParameter
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
@@ -182,7 +203,7 @@ internal fun SkiResortScreen(
     val colors = WeatherTheme.colors
     val units = WeatherTheme.units
     LaunchedEffect(ref.slug) { actions.onOpenResort(ref) }
-    LaunchedEffect(ref.slug, state.tripEpochDay) { actions.onPlanTrip(ref) }
+    LaunchedEffect(ref.slug, state.tripEpochDay, state.plan.tripDays) { actions.onPlanTrip(ref) }
     val entry = state.entries[ref.slug] ?: SkiEntry(ref)
     val report = entry.latest
     val following = state.plan.follows(ref.slug)
@@ -239,7 +260,7 @@ internal fun SkiResortScreen(
         }
         item(key = "day", contentType = "day") {
             WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.ski_day_title), icon = Icons.Filled.CalendarMonth, padding = 0.dp) {
-                SkiDayStrip(strip, state.tripEpochDay, actions.onPickDay)
+                SkiDayStrip(strip, state.tripEpochDay, actions.onPickDay, tripDays = state.plan.tripDays)
                 DaySummary(view.day, view.notes.map { it.text.resolve() to it.tone.color() }, entry.forecast, state.tripEpochDay)
             }
         }
@@ -247,10 +268,11 @@ internal fun SkiResortScreen(
         entry.forecast?.let { forecast ->
             val hours = forecast.skiingHours(state.tripEpochDay)
             if (hours.isNotEmpty()) item(key = "hours", contentType = "hours") { HoursCard(hours, forecast, Modifier.cardWidth()) }
-            item(key = "forecast", contentType = "forecast") { ForecastCard(forecast, state.todayEpochDay, state.tripEpochDay, Modifier.cardWidth()) }
+            item(key = "forecast", contentType = "forecast") { ForecastCard(forecast, state.todayEpochDay, state.tripEpochDay, state.plan.tripDays, Modifier.cardWidth()) }
         }
         item(key = "drive", contentType = "drive") { DriveCard(entry, state.hasStart, state.startCity, Modifier.cardWidth()) }
         item(key = "tickets", contentType = "tickets") { TicketsCard(entry, view.cost, actions, state.plan.ownPrices[ref.slug], state.tripEpochDay, Modifier.cardWidth()) }
+        item(key = "trip", contentType = "trip") { TripCostCard(entry, view.trip, state.plan.ownParking[ref.slug], actions, Modifier.cardWidth()) }
         val webcams = entry.page?.webcams.orEmpty()
         if (webcams.isNotEmpty() && pictures != null) {
             item(key = "cams", contentType = "cams") { WebcamsCard(entry, pictures, Modifier.cardWidth()) }
@@ -441,14 +463,14 @@ private fun HoursCard(hours: List<SkiForecastHour>, forecast: SkiForecast, modif
 
 /** The ten days, a line each: the snow with its range, the sky, the temperatures at the top. */
 @Composable
-private fun ForecastCard(forecast: SkiForecast, today: Int, trip: Int, modifier: Modifier = Modifier) {
+private fun ForecastCard(forecast: SkiForecast, today: Int, trip: Int, tripDays: Int, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
     val units = WeatherTheme.units
     val days = forecast.days.filter { forecast.epochDayOf(it.epochSeconds) >= today }
     WeatherCard(modifier.testTag("ski_forecast"), title = stringResource(Res.string.ski_forecast_title), icon = Icons.Filled.Landscape, padding = 0.dp) {
         days.forEach { day ->
             val epochDay = forecast.epochDayOf(day.epochSeconds)
-            val lit = epochDay == trip
+            val lit = epochDay in trip until trip + tripDays.coerceAtLeast(1)
             Row(
                 Modifier.fillMaxWidth().background(if (lit) colors.accent.copy(alpha = 0.14f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -516,15 +538,15 @@ private fun DriveCard(entry: SkiEntry, hasStart: Boolean, startCity: String?, mo
                             Icon(Icons.Filled.Warning, contentDescription = null, tint = colors.watch, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Column {
-                                Text(stringResource(Res.string.ski_chain_at, stringResource(control.level.labelRes()), control.route, control.place), style = WeatherTheme.type.label, color = colors.onSky)
-                                if (control.description.isNotBlank()) Text(control.description, style = WeatherTheme.type.label, color = colors.onSkyMuted)
+                                Text(stringResource(if (control.level == ChainLevel.NOTICE) Res.string.ski_chain_stretch else Res.string.ski_chain_at, control.levelText(), control.route, control.place), style = WeatherTheme.type.label, color = colors.onSky)
+                                if (control.description.isNotBlank() && control.level != ChainLevel.NOTICE) Text(control.description, style = WeatherTheme.type.label, color = colors.onSkyMuted)
                             }
                         }
                     }
 
                     entry.chainsUnavailable -> Unit
 
-                    inCalifornia(entry.page?.facts) -> Text(stringResource(Res.string.ski_chains_none), style = WeatherTheme.type.label, color = colors.good)
+                    roadsKnown(entry.page?.facts) -> Text(stringResource(Res.string.ski_chains_none), style = WeatherTheme.type.label, color = colors.good)
 
                     else -> Text(stringResource(Res.string.ski_chains_unknown), style = WeatherTheme.type.label, color = colors.onSkyFaint)
                 }
@@ -544,9 +566,13 @@ private fun DriveCard(entry: SkiEntry, hasStart: Boolean, startCity: String?, mo
     }
 }
 
-/** Caltrans says what's in force in California and nobody here reads anywhere else: outside it, "no chains" isn't known. */
-private fun inCalifornia(facts: SkiResortFacts?): Boolean =
-    facts != null && facts.latitude in 32.5..42.0 && facts.longitude in -124.5..-117.0 && !(facts.latitude > 39.0 && facts.longitude > -120.0)
+/** Caltrans says what's in force in California and Nevada's road service around Tahoe. Nobody here reads anywhere else: outside them, "no chains" isn't known. */
+private fun roadsKnown(facts: SkiResortFacts?): Boolean {
+    if (facts == null) return false
+    val aroundTahoe = facts.latitude in 38.7..39.7 && facts.longitude in -120.1..-119.5
+    val inCalifornia = facts.latitude in 32.5..42.0 && facts.longitude in -124.5..-117.0 && !(facts.latitude > 39.0 && facts.longitude > -120.0)
+    return aroundTahoe || inCalifornia
+}
 
 @Composable
 private fun TicketsCard(entry: SkiEntry, cost: SkiCost, actions: SkiActions, ownPrice: Int?, epochDay: Int, modifier: Modifier = Modifier) {
@@ -598,7 +624,7 @@ private fun TicketsCard(entry: SkiEntry, cost: SkiCost, actions: SkiActions, own
 
             !prices?.tiers.isNullOrEmpty() -> prices.tiers.forEach { tier ->
                 Column(Modifier.padding(bottom = 8.dp)) {
-                    Text(stringResource(tier.kind.labelRes()), style = WeatherTheme.type.label, color = colors.onSkyFaint)
+                    Text(tier.season?.let { stringResource(Res.string.ski_tier_season, stringResource(tier.kind.labelRes()), it) } ?: stringResource(tier.kind.labelRes()), style = WeatherTheme.type.label, color = colors.onSkyFaint)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         tier.price.adultOnline?.let { SkiStat(stringResource(if (tier.onlineIsLowest) Res.string.ski_ticket_adult_from else Res.string.ski_ticket_adult_online), SkiPlanner.money(it, currency), Modifier.weight(1f)) }
                         tier.price.adultWindow?.let { SkiStat(stringResource(Res.string.ski_ticket_adult_window), SkiPlanner.money(it, currency), Modifier.weight(1f)) }
@@ -631,7 +657,7 @@ private fun TicketsCard(entry: SkiEntry, cost: SkiCost, actions: SkiActions, own
             )
         }
         Spacer(Modifier.height(12.dp))
-        OwnPriceField(ownPrice) { actions.onOwnPrice(entry.ref.slug, it) }
+        SkiAmountField(stringResource(Res.string.ski_own_price_label), ownPrice, "ski_own_price", { actions.onOwnPrice(entry.ref.slug, it) })
         // The resort's shop if the app knows it; then whatever link it gave; otherwise a search finds its page.
         val link = prices?.pageUrl?.takeIf { it.isNotEmpty() } ?: entry.price?.purchaseUrl ?: entry.page?.facts?.ticketsUrl ?: ("https://www.google.com/search?q=" + "${entry.ref.name} lift tickets".encodeURLParameter())
         Spacer(Modifier.height(12.dp))
@@ -639,31 +665,46 @@ private fun TicketsCard(entry: SkiEntry, cost: SkiCost, actions: SkiActions, own
     }
 }
 
-/** A box for what the household really pays: most mountains sell by the date, and the listing can't know. */
+/** The whole trip, a part at a time: what's known, and plainly what isn't. */
 @Composable
-private fun OwnPriceField(price: Int?, onChange: (Int?) -> Unit) {
+private fun TripCostCard(entry: SkiEntry, trip: SkiTripCost, ownParking: Int?, actions: SkiActions, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
-    var text by remember(price) { mutableStateOf(price?.toString().orEmpty()) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(Res.string.ski_own_price_label), style = WeatherTheme.type.label, color = colors.onSkyMuted, modifier = Modifier.weight(1f))
-        Spacer(Modifier.width(10.dp))
-        Box(
-            Modifier.width(92.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceRaised).border(1.dp, colors.cardBorder, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            if (text.isEmpty()) Text(stringResource(Res.string.ski_own_price_hint), style = WeatherTheme.type.body, color = colors.onSkyFaint)
-            BasicTextField(
-                value = text,
-                onValueChange = { typed ->
-                    val digits = typed.filter { it.isDigit() }.take(4)
-                    text = digits
-                    onChange(digits.toIntOrNull())
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                textStyle = WeatherTheme.type.body.copy(color = colors.onSky),
-                cursorBrush = SolidColor(colors.accent),
-                modifier = Modifier.fillMaxWidth().testTag("ski_own_price"),
-            )
+    val uri = LocalUriHandler.current
+    val currency = entry.price?.currency ?: "US$"
+
+    @Composable
+    fun Line(label: String, amount: Double?, tag: String) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = WeatherTheme.type.body, color = colors.onSkyMuted, modifier = Modifier.weight(1f))
+            Text(amount?.let { SkiPlanner.money(it, currency) } ?: stringResource(Res.string.ski_trip_not_known), style = WeatherTheme.type.bodyStrong, color = if (amount != null) colors.onSky else colors.onSkyFaint)
+        }
+    }
+    WeatherCard(modifier.testTag("ski_trip_cost"), title = stringResource(Res.string.ski_trip_title), icon = Icons.Filled.Payments) {
+        val ticketsLabel = when {
+            trip.coveredBy != null -> stringResource(Res.string.ski_trip_tickets_covered, trip.coveredBy.label())
+            trip.ticketsAreOne -> stringResource(Res.string.ski_trip_tickets_one, trip.days)
+            trip.days > 1 -> stringResource(Res.string.ski_trip_tickets_days, trip.days)
+            else -> stringResource(Res.string.ski_trip_tickets)
+        }
+        Line(ticketsLabel, trip.tickets, "ski_trip_tickets")
+        if (trip.nights > 0) Line(pluralStringResource(Res.plurals.ski_trip_lodging, trip.nights, trip.nights), trip.lodging, "ski_trip_lodging")
+        Line(stringResource(Res.string.ski_trip_parking), trip.parking, "ski_trip_parking")
+        Line(stringResource(Res.string.ski_trip_driving), trip.driving, "ski_trip_driving")
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.hairline))
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth().testTag("ski_trip_total"), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(if (trip.complete) Res.string.ski_trip_total else Res.string.ski_trip_total_at_least), style = WeatherTheme.type.bodyStrong, color = colors.onSky, modifier = Modifier.weight(1f))
+            Text(trip.total?.let { SkiPlanner.money(it, currency) } ?: stringResource(Res.string.ski_trip_not_known), style = WeatherTheme.type.value, color = colors.onSky)
+        }
+        if (trip.daysNotPriced > 0) Text(pluralStringResource(Res.plurals.ski_trip_days_not_priced, trip.daysNotPriced, trip.daysNotPriced), style = WeatherTheme.type.label, color = colors.watch)
+        Spacer(Modifier.height(12.dp))
+        SkiAmountField(stringResource(Res.string.ski_own_parking_label), ownParking, "ski_own_parking", { actions.onOwnParking(entry.ref.slug, it) })
+        entry.parking?.let { parking ->
+            Spacer(Modifier.height(10.dp))
+            if (parking.reservationNeeded) Text(stringResource(Res.string.ski_parking_reservation), style = WeatherTheme.type.label, color = colors.watch, modifier = Modifier.padding(bottom = 2.dp))
+            Text(stringResource(parking.note), style = WeatherTheme.type.label, color = colors.onSkyMuted, modifier = Modifier.padding(bottom = 6.dp))
+            PillButton(stringResource(Res.string.ski_parking_button), { uri.openUri(parking.pageUrl) }, Modifier.testTag("ski_parking"), icon = Icons.AutoMirrored.Filled.OpenInNew, filled = false)
         }
     }
 }

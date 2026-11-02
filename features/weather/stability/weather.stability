@@ -34,12 +34,13 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.DaySummary(day: com.
     - epochDay: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ski.ui.DaysCard(strip: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ski.domain.SkiStripDay>, selected: kotlin.Int, onPick: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ski.ui.DaysCard(strip: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ski.domain.SkiStripDay>, selected: kotlin.Int, tripDays: kotlin.Int, onPick: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - strip: RUNTIME (requires runtime check)
     - selected: STABLE (primitive type)
+    - tripDays: STABLE (primitive type)
     - onPick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
@@ -54,13 +55,14 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.DriveCard(entry: com
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ski.ui.ForecastCard(forecast: com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast, today: kotlin.Int, trip: kotlin.Int, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ski.ui.ForecastCard(forecast: com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast, today: kotlin.Int, trip: kotlin.Int, tripDays: kotlin.Int, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - forecast: STABLE (marked @Stable or @Immutable)
     - today: STABLE (primitive type)
     - trip: STABLE (primitive type)
+    - tripDays: STABLE (primitive type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -106,14 +108,6 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.OriginButton(label: 
     - selected: STABLE (primitive type)
     - tag: STABLE (String is immutable)
     - onClick: STABLE (function type)
-
-@Composable
-private fun com.meticulouscreations.homesafe.weather.ski.ui.OwnPriceField(price: kotlin.Int?, onChange: kotlin.Function1<kotlin.Int?, kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - price: STABLE (class with no mutable properties)
-    - onChange: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ski.ui.RegionGroup(title: kotlin.String, regions: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ski.domain.SkiRegion>, plan: com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -180,6 +174,18 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.ResortCard(view: com
     - sayIfShut: STABLE (primitive type)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiAmountField(label: kotlin.String, amount: kotlin.Int?, tag: kotlin.String, onChange: kotlin.Function1<kotlin.Int?, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, hint: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - amount: STABLE (class with no mutable properties)
+    - tag: STABLE (String is immutable)
+    - onChange: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - hint: STABLE (String is immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.weather.ski.ui.SkiBackdrop(content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -187,7 +193,7 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.SkiBackdrop(content:
     - content: STABLE (composable function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiDayStrip(days: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ski.domain.SkiStripDay>, selected: kotlin.Int, onPick: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiDayStrip(days: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ski.domain.SkiStripDay>, selected: kotlin.Int, onPick: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, tripDays: kotlin.Int): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -195,6 +201,7 @@ internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiDayStrip(days: k
     - selected: STABLE (primitive type)
     - onPick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - tripDays: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ski.ui.SkiEmpty(modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -270,7 +277,7 @@ internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiScreen(state: co
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiSetupScreen(plan: com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan, actions: com.meticulouscreations.homesafe.weather.ski.ui.SkiActions, padding: androidx.compose.foundation.layout.PaddingValues, modifier: androidx.compose.ui.Modifier, canLocate: kotlin.Boolean, startCity: kotlin.String?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiSetupScreen(plan: com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan, actions: com.meticulouscreations.homesafe.weather.ski.ui.SkiActions, padding: androidx.compose.foundation.layout.PaddingValues, modifier: androidx.compose.ui.Modifier, canLocate: kotlin.Boolean, startCity: kotlin.String?, siteTrouble: kotlin.collections.List<kotlin.Pair<kotlin.String, kotlin.Long>>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -280,9 +287,10 @@ internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiSetupScreen(plan
     - modifier: STABLE (marked @Stable or @Immutable)
     - canLocate: STABLE (primitive type)
     - startCity: STABLE (class with no mutable properties)
+    - siteTrouble: RUNTIME (requires runtime check)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiSnowBars(entry: com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry, days: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ski.domain.SkiStripDay>, selected: kotlin.Int, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiSnowBars(entry: com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry, days: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ski.domain.SkiStripDay>, selected: kotlin.Int, modifier: androidx.compose.ui.Modifier, tripDays: kotlin.Int): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -290,6 +298,7 @@ internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiSnowBars(entry: 
     - days: RUNTIME (requires runtime check)
     - selected: STABLE (primitive type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - tripDays: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.weather.ski.ui.SkiStat(label: kotlin.String, value: kotlin.String, modifier: androidx.compose.ui.Modifier, color: androidx.compose.ui.graphics.Color): kotlin.Unit
@@ -342,6 +351,26 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.TicketsCard(entry: c
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.weather.ski.ui.TripCostCard(entry: com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry, trip: com.meticulouscreations.homesafe.weather.ski.domain.SkiTripCost, ownParking: kotlin.Int?, actions: com.meticulouscreations.homesafe.weather.ski.ui.SkiActions, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - entry: STABLE (marked @Stable or @Immutable)
+    - trip: STABLE (marked @Stable or @Immutable)
+    - ownParking: STABLE (class with no mutable properties)
+    - actions: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.weather.ski.ui.TripCostCard.Line(label: kotlin.String, amount: kotlin.Double?, tag: kotlin.String): kotlin.Unit
+  skippable: false
+  restartable: false
+  params:
+    - label: STABLE (String is immutable)
+    - amount: STABLE (class with no mutable properties)
+    - tag: STABLE (String is immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.weather.ski.ui.WebcamsCard(entry: com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry, pictures: coil3.ImageLoader, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -366,6 +395,12 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.heightText(meters: k
 
 @Composable
 internal fun com.meticulouscreations.homesafe.weather.ski.ui.label(): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
+internal fun com.meticulouscreations.homesafe.weather.ski.ui.levelText(): kotlin.String
   skippable: false
   restartable: false
   params:

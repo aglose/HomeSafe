@@ -49,11 +49,14 @@
     <string name="ski_chain_r1">R-1: cadenas o neumáticos de nieve</string>
     <string name="ski_chain_r2">R-2: cadenas, salvo 4x4 con neumáticos de nieve</string>
     <string name="ski_chain_r3">R-3: cadenas en todos los vehículos</string>
+    <string name="ski_chain_closed">Carretera cerrada</string>
+    <string name="ski_chain_notice">Estado de la carretera</string>
     <string name="ski_chains_on_road">%1$s en %2$s</string>
     <string name="ski_chain_at">%1$s en %2$s, %3$s</string>
-    <string name="ski_chains_none">Ahora no hay controles de cadenas en el camino.</string>
-    <string name="ski_chains_unavailable">Caltrans no responde, así que los controles de cadenas pueden faltar o estar desactualizados.</string>
-    <string name="ski_chains_unknown">Los controles de cadenas solo se conocen en California. Consulta el servicio local de carreteras.</string>
+    <string name="ski_chain_stretch">%1$s en %2$s: %3$s</string>
+    <string name="ski_chains_none">Ahora no hay controles de cadenas ni cierres en el camino.</string>
+    <string name="ski_chains_unavailable">Un servicio de carreteras no responde, así que los controles de cadenas y los cierres pueden faltar o estar desactualizados.</string>
+    <string name="ski_chains_unknown">Los controles de cadenas solo se conocen en California y en las carreteras de Nevada cerca de Tahoe. Consulta el servicio local de carreteras.</string>
     <string name="ski_state_open">Abierta</string>
     <string name="ski_state_limited">Abierta en parte</string>
     <string name="ski_state_closed">Cerrada</string>
@@ -190,4 +193,45 @@
     <string name="ski_tier_weekend">Sábados y festivos</string>
     <string name="ski_tier_non_peak">Días de temporada baja</string>
     <string name="ski_tier_peak">Días de temporada alta</string>
+    <string name="ski_day_prompt_trip">¿Qué días?</string>
+    <string name="ski_setup_trip_title">El viaje</string>
+    <string name="ski_setup_days">Días en la montaña</string>
+    <string name="ski_setup_lodging">Alojamiento por noche</string>
+    <string name="ski_setup_driving">Gasolina o carga por milla, en centavos</string>
+    <string name="ski_setup_driving_hint">¢</string>
+    <string name="ski_trip_title">Todo el viaje</string>
+    <string name="ski_trip_not_known">Sin datos</string>
+    <string name="ski_trip_tickets">Forfaits</string>
+    <string name="ski_trip_tickets_covered">Forfaits, con %1$s</string>
+    <string name="ski_trip_tickets_one">Un forfait de %1$d días</string>
+    <string name="ski_trip_tickets_days">Forfaits de un día, %1$d días</string>
+    <string name="ski_trip_parking">Aparcamiento</string>
+    <string name="ski_trip_driving">Gasolina o carga, ida y vuelta</string>
+    <string name="ski_trip_total">Total</string>
+    <string name="ski_trip_total_at_least">Como mínimo</string>
+    <string name="ski_own_parking_label">Lo que cuesta aparcar al día</string>
+    <string name="ski_parking_reservation">La estación pide reservar el aparcamiento.</string>
+    <string name="ski_parking_button">Aparcamiento de la estación</string>
+    <string name="ski_sites_trouble_title">Sitios que la app no puede leer</string>
+    <string name="ski_sites_trouble_body">Los sitios de estas estaciones ya no se pueden leer, probablemente porque han cambiado. Hasta que la app se actualice, muestran los datos de OnTheSnow.</string>
+    <string name="ski_sites_trouble_row">%1$s, desde el %2$s</string>
+    <plurals name="ski_trip_lodging">
+        <item quantity="one">Alojamiento, %1$d noche</item>
+        <item quantity="other">Alojamiento, %1$d noches</item>
+    </plurals>
+    <plurals name="ski_trip_days_not_priced">
+        <item quantity="one">%1$d día aún no tiene precio, así que no se cuenta.</item>
+        <item quantity="other">%1$d días aún no tienen precio, así que no se cuentan.</item>
+    </plurals>
+    <plurals name="ski_sites_trouble">
+        <item quantity="one">El sitio de %1$d estación no se puede leer, así que muestra los datos de OnTheSnow. Aparece en la configuración.</item>
+        <item quantity="other">Los sitios de %1$d estaciones no se pueden leer, así que muestran los datos de OnTheSnow. Aparecen en la configuración.</item>
+    </plurals>
+    <string name="ski_tier_season">%1$s (tarifas de %2$s)</string>
+    <string name="ski_parking_note_palisades">Hay que reservar los fines de semana y festivos hasta las 13:00, y la mayoría es gratis. Las plazas de pago anticipado cuestan $30. Entre semana no hace falta.</string>
+    <string name="ski_parking_note_northstar">Castle Peak es gratis. Village View pide reserva los fines de semana y días punta: $20 para 3 personas o menos y gratis para 4 o más. Los aparcamientos preferentes cuestan de $25 a $50.</string>
+    <string name="ski_parking_note_sugar_bowl">Los aparcamientos principales son gratis, por orden de llegada. Las plazas prioritarias del Upper Lot cuestan $35 algunos festivos y fines de semana punta.</string>
+    <string name="ski_parking_note_heavenly">Boulder y Stagecoach siempre son gratis. California Base pide reserva los fines de semana y días punta antes de las 11:30: $20 para 3 personas o menos y gratis para 4 o más.</string>
+    <string name="ski_parking_note_kirkwood">Todos los aparcamientos piden reserva los fines de semana y días punta antes del mediodía. Lower 7 es gratis; la mayoría de los demás cuestan $20 para 3 personas o menos y son gratis para 4 o más.</string>
+    <string name="ski_parking_note_sierra">$25 al día con reserva los fines de semana y festivos hasta el mediodía. Gratis con forfait de temporada, para coches con 4 personas o más y después del mediodía.</string>
 </resources>

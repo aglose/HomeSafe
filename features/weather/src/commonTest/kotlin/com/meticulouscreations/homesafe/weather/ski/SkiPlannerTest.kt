@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.weather.ski
 
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
+import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
+import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiCost
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDayPrice
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
@@ -321,6 +323,81 @@ class SkiPlannerTest {
         assertEquals(191.0, prices.tierOn(saturday)?.price?.adult)
         assertEquals(191.0, prices.tierOn(saturday + 1)?.price?.adult, "Sunday counts with the weekend here, as nothing says otherwise")
         assertEquals(167.0, prices.tierOn(today)?.price?.adult)
+    }
+
+    // ---- The whole trip -----------------------------------------------------------------------------
+
+    private val threeDays = SkiPlan(adults = 2, tripDays = 3, lodgingPerNight = 300, drivingCentsPerMile = 10)
+    private val threeDayPrices = SkiResortPrices(
+        "https://a.example",
+        days = mapOf(saturday to SkiDayPrice(adultOnline = 100.0), saturday + 1 to SkiDayPrice(adultOnline = 110.0), saturday + 2 to SkiDayPrice(adultOnline = 120.0)),
+    )
+
+    @Test
+    fun aTripAddsUpItsDaysLodgingParkingAndTheDrive() {
+        val entry = SkiEntry(ref("a"), prices = threeDayPrices, drive = SkiDrive(10_000, 160_934.4, SkiDriveSource.FREE_FLOW))
+        val trip = SkiPlanner.trip(threeDays.copy(ownParking = mapOf("a" to 40)), entry, saturday)
+        assertEquals(660.0, trip.tickets)
+        assertFalse(trip.ticketsAreOne)
+        assertEquals(2, trip.nights)
+        assertEquals(600.0, trip.lodging)
+        assertEquals(120.0, trip.parking)
+        assertEquals(20.0, trip.driving!!, 0.001, "100 miles each way at ten cents")
+        assertEquals(1_400.0, trip.total!!, 0.001)
+        assertTrue(trip.complete)
+    }
+
+    @Test
+    fun aTicketForAllTheDaysBeatsAddingUpDays() {
+        val prices = threeDayPrices.copy(packs = mapOf(saturday to mapOf(3 to SkiDayPrice(adultOnline = 280.0))))
+        val trip = SkiPlanner.trip(threeDays, SkiEntry(ref("a"), prices = prices), saturday)
+        assertEquals(560.0, trip.tickets)
+        assertTrue(trip.ticketsAreOne)
+    }
+
+    @Test
+    fun whatIsntKnownIsLeftOutAndSaidToBe() {
+        val trip = SkiPlanner.trip(threeDays.copy(lodgingPerNight = 0), SkiEntry(ref("a"), prices = threeDayPrices.copy(days = threeDayPrices.days - (saturday + 1))), saturday)
+        assertEquals(1, trip.daysNotPriced)
+        assertEquals(440.0, trip.tickets)
+        assertNull(trip.lodging)
+        assertNull(trip.parking)
+        assertNull(trip.driving)
+        assertEquals(440.0, trip.total)
+        assertFalse(trip.complete)
+    }
+
+    @Test
+    fun aDayTripHasNoNightsToPayFor() {
+        val trip = SkiPlanner.trip(SkiPlan(adults = 1, lodgingPerNight = 300), SkiEntry(ref("a"), prices = threeDayPrices, drive = SkiDrive(1, 1_000.0, SkiDriveSource.FREE_FLOW)), saturday)
+        assertEquals(0, trip.nights)
+        assertEquals(0.0, trip.lodging)
+    }
+
+    @Test
+    fun aTripsFreshSnowRunsToItsLastDay() {
+        val entry = entry("a", listOf(day(saturday - 1, 5.0), day(saturday, 1.0), day(saturday + 1, 20.0), day(saturday + 2, 40.0)))
+        assertEquals(26.0, SkiPlanner.view(entry, SkiPlan(tripDays = 2), saturday, today, now, units).freshCm)
+    }
+
+    @Test
+    fun aClosedRoadOnTheWayCounts() {
+        val closed = ChainControl(ChainLevel.CLOSED, "SR-89", "Monitor Pass", latitude = 38.66, longitude = -119.7)
+        val open = view(entry("a", listOf(day(saturday, 10.0))))
+        val shut = view(entry("a", listOf(day(saturday, 10.0))).copy(chains = listOf(closed)))
+        assertTrue(shut.score < open.score)
+        val notice = ChainControl(ChainLevel.NOTICE, "SR-431", "Summit", latitude = 0.0, longitude = 0.0, description = "Snow Covered")
+        assertEquals(open.score, view(entry("a", listOf(day(saturday, 10.0))).copy(chains = listOf(notice))).score, "words aren't a requirement")
+    }
+
+    @Test
+    fun publishedPeakDatesBeatTheWeekendGuess() {
+        val prices = SkiResortPrices(
+            "https://a.example",
+            tiers = listOf(SkiPriceTier(SkiPriceTier.Kind.NON_PEAK, SkiDayPrice(adultWindow = 167.0)), SkiPriceTier(SkiPriceTier.Kind.PEAK, SkiDayPrice(adultWindow = 191.0), onDays = setOf(today))),
+        )
+        assertEquals(167.0, prices.tierOn(saturday)?.price?.adult, "a weekend off the peak list isn't peak")
+        assertEquals(191.0, prices.tierOn(today)?.price?.adult, "a weekday on it is")
     }
 
     @Test

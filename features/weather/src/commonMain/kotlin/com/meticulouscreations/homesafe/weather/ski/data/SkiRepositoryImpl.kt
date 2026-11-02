@@ -11,10 +11,12 @@ import com.meticulouscreations.homesafe.weather.data.weatherJson
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherPlacesRepository
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
+import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiChainReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOrigin
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiParking
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPoint
@@ -25,6 +27,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortNews
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortPage
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortPrices
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiSiteHealth
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiStartingPoint
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiTicketPrice
 import dev.zacsweers.metro.AppScope
@@ -49,6 +52,9 @@ import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlin.time.Clock
 
+/** Kept once the tab has fetched anything: how the background knows anyone uses it. */
+internal const val SITE_HEALTH_KEY = "site-health"
+
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
@@ -57,6 +63,7 @@ class SkiRepositoryImpl(
     private val forecasts: SkiForecastApi,
     private val routes: SkiRoutesApi,
     private val chains: CaltransChainApi,
+    private val nevada: NevadaRoadsApi,
     private val sites: ResortSiteApi,
     private val browser: SkiBrowser,
     private val nws: NwsApi,
@@ -67,10 +74,12 @@ class SkiRepositoryImpl(
     private fun now(): Long = clock.now().epochSeconds
 
     private val planLock = Mutex()
+    private val healthLock = Mutex()
     private val locks = HashMap<String, Mutex>()
     private val guard = Mutex()
     private val districtsHeld = HashMap<Int, Pair<Long, List<ChainControl>>>()
     private val districtsFailed = HashMap<Int, Long>()
+    private val nevadaHeld = HashMap<String, Pair<Long, List<ChainControl>>>()
 
     /** The key was refused routes this session: don't ask on every drive. Anything else that goes wrong gets asked about again. */
     private var routesRefused = false
@@ -146,8 +155,28 @@ class SkiRepositoryImpl(
         val road = withContext(Dispatchers.Default) { decodePolyline(path) }
         val box = boxAround(road) ?: return SkiChainReport()
         val districts = coroutineScope { chains.districtsAround(box).map { async { district(it) } }.awaitAll() }
-        val onRoad = withContext(Dispatchers.Default) { districts.flatMap { it.controls }.filter { passesNear(road, it.latitude, it.longitude) } }
-        return SkiChainReport(onRoad, complete = districts.all { it.complete })
+        val onRoad = withContext(Dispatchers.Default) {
+            districts.flatMap { it.controls }.filter { passesNear(road, it.latitude, it.longitude, if (it.level == ChainLevel.CLOSED) CLOSURE_MATCH_METERS else CHAIN_MATCH_METERS) }
+        }
+        val inNevada = coroutineScope { nevada.roadsOn(road).map { async { nevadaRoad(it, road) } }.awaitAll() }
+        return SkiChainReport(onRoad + inNevada.flatMap { it.controls }, complete = districts.all { it.complete } && inNevada.all { it.complete })
+    }
+
+    /** One Nevada road's reports, which aren't marked on a map: only the stretches this drive comes through, so held by the drive as well as the road. */
+    private suspend fun nevadaRoad(name: String, road: List<SkiPoint>): SkiChainReport {
+        val key = "nevada:$name:${road.first().latitude},${road.first().longitude}:${road.size}"
+        val lock = guard.withLock { locks.getOrPut(key) { Mutex() } }
+        return lock.withLock {
+            val held = guard.withLock { nevadaHeld[key] }
+            if (held != null && now() - held.first < CHAINS_MAX_AGE) return@withLock SkiChainReport(held.second)
+            suspendRunCatching { nevada.conditions(name, road) }.fold(
+                onSuccess = { fetched ->
+                    guard.withLock { nevadaHeld[key] = now() to fetched }
+                    SkiChainReport(fetched)
+                },
+                onFailure = { SkiChainReport(held?.second.orEmpty(), complete = false) },
+            )
+        }
     }
 
     /**
@@ -183,8 +212,30 @@ class SkiRepositoryImpl(
     override suspend fun resortNews(slug: String, force: Boolean): SkiResortNews? {
         if (!hasResortSite(slug)) return null
         return cached("news:$slug", SkiResortNews.serializer(), NEWS_MAX_AGE, force) {
-            suspendRunCatching { (sites.news(slug) ?: throw NoAnswer).copy(fetchedAtEpochSeconds = now()) }
+            suspendRunCatching { (sites.news(slug) ?: throw NoAnswer).copy(fetchedAtEpochSeconds = now()) }.also {
+                // A site that has only its shop to read has no report to fail at.
+                if ((ResortSite.ALL[slug] as? ResortSite.Pages)?.report != null || ResortSite.ALL[slug] !is ResortSite.Pages) noteSite(slug, it.isSuccess)
+            }
         }.getOrNull()
+    }
+
+    override fun siteHealth(): Flow<SkiSiteHealth> = dao.observe(HEALTH_KEY).map { row -> row?.let(::readHealth) ?: SkiSiteHealth() }
+
+    private fun readHealth(row: SkiKeptEntity): SkiSiteHealth = runCatching { weatherJson.decodeFromString(SkiSiteHealth.serializer(), row.json) }.getOrDefault(SkiSiteHealth())
+
+    override fun parking(slug: String): SkiParking? = ResortParking.ALL[slug]
+
+    private suspend fun noteSite(slug: String, read: Boolean) = healthLock.withLock {
+        suspendRunCatching {
+            val before = dao.kept(HEALTH_KEY)?.let(::readHealth) ?: SkiSiteHealth()
+            val now = now()
+            val after = if (read) {
+                before.copy(lastReadEpochSeconds = now, failingSince = before.failingSince - slug)
+            } else {
+                before.copy(failingSince = before.failingSince + (slug to (before.failingSince[slug] ?: now)))
+            }
+            dao.keep(SkiKeptEntity(HEALTH_KEY, weatherJson.encodeToString(SkiSiteHealth.serializer(), after), now))
+        }
     }
 
     private object NoAnswer : RuntimeException("The resort's site said nothing")
@@ -194,7 +245,7 @@ class SkiRepositoryImpl(
      * shop gave is kept for a day and only asked for again if a day is wanted that isn't in it, or the
      * shop hasn't answered yet: a rate table is no answer from it, and a trip of the browser is a whole page.
      */
-    override suspend fun resortPrices(slug: String, epochDays: List<Int>): SkiResortPrices? {
+    override suspend fun resortPrices(slug: String, epochDays: List<Int>, tripDays: Int): SkiResortPrices? {
         val site = ResortSite.ALL[slug] ?: return null
         val key = "site-prices:$slug"
         val lock = guard.withLock { locks.getOrPut(key) { Mutex() } }
@@ -203,6 +254,7 @@ class SkiRepositoryImpl(
             val held = row?.let { kept -> withContext(Dispatchers.Default) { runCatching { weatherJson.decodeFromString(SkiResortPrices.serializer(), kept.json) }.getOrNull() } }
             val fresh = held?.takeIf { row.savedAtEpochSeconds + SITE_PRICE_MAX_AGE > now() }
             val upToDate = fresh != null && when {
+                site.hasPlainCalendar -> epochDays.all { it in fresh.daysAsked } && (tripDays <= 1 || tripDays in fresh.packLengthsAsked)
                 !browser.isSupported -> true
                 site is ResortSite.Vail -> epochDays.all { it in fresh.daysAsked }
                 site.hasCalendar -> fresh.daysAsked.isNotEmpty()
@@ -210,14 +262,17 @@ class SkiRepositoryImpl(
             }
             if (upToDate) return@withLock fresh
             val table = suspendRunCatching { sites.priceTable(slug) }.getOrDefault(emptyList())
-            val answer = shopAnswer(site, epochDays)
-            val dated = answer?.let { withContext(Dispatchers.Default) { ResortPages.datedPrices(it) } }.orEmpty()
-            // A Vail shop is asked a day at a time, and says which it got an answer for. A calendar answers all at once or not at all, and an empty one is a shop with no dates on sale.
-            val checked = when {
-                answer == null -> emptySet()
-                site is ResortSite.Vail -> ResortPages.checkedDays(answer)
-                else -> epochDays.toSet()
+            val shop = if (site.hasPlainCalendar) {
+                suspendRunCatching { sites.calendar(slug, epochDays, tripDays) }.getOrNull()
+            } else {
+                shopAnswer(site, epochDays)?.let { answer ->
+                    withContext(Dispatchers.Default) { ShopPrices(ResortPages.datedPrices(answer), ResortPages.packPrices(answer), ResortPages.checkedDays(answer).takeIf { site is ResortSite.Vail }) }
+                }
             }
+            val dated = shop?.days.orEmpty()
+            val packs = shop?.packs.orEmpty()
+            // A Vail shop is asked a day at a time, and says which it got an answer for. A calendar answers all at once or not at all, and an empty one is a shop with no dates on sale.
+            val checked = shop?.let { it.checked ?: epochDays.toSet() }.orEmpty()
             if (table.isEmpty() && checked.isEmpty()) return@withLock held
             val prices = SkiResortPrices(
                 pageUrl = site.ticketsUrl.orEmpty(),
@@ -227,11 +282,21 @@ class SkiRepositoryImpl(
                 fetchedAtEpochSeconds = now(),
                 // Only if the shop answered at all: a browser that got nowhere has learned nothing about these days.
                 daysAsked = fresh?.daysAsked.orEmpty() + epochDays.filter { it in checked },
+                packs = fresh?.packs.orEmpty() + packs,
+                packLengthsAsked = fresh?.packLengthsAsked.orEmpty() + if (checked.isNotEmpty() && tripDays > 1) setOf(tripDays) else emptySet(),
             )
             suspendRunCatching { dao.keep(SkiKeptEntity(key, weatherJson.encodeToString(SkiResortPrices.serializer(), prices), now())) }
             prices
         }
     }
+
+    /** A shop that answers a plain request, a day at a time, with no browser. */
+    private val ResortSite.hasPlainCalendar: Boolean
+        get() = when (this) {
+            is ResortSite.Feed -> inntopia != null
+            is ResortSite.Pages -> entabeni != null
+            else -> false
+        }
 
     private val ResortSite.hasCalendar: Boolean
         get() = when (this) {
@@ -258,6 +323,7 @@ class SkiRepositoryImpl(
 
     private companion object {
         const val PLAN_KEY = "plan"
+        const val HEALTH_KEY = SITE_HEALTH_KEY
         const val REPORT_MAX_AGE = 20 * 60L
         const val FORECAST_MAX_AGE = 60 * 60L
         const val TRAFFIC_MAX_AGE = 15 * 60L

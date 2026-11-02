@@ -12,6 +12,9 @@ import org.jetbrains.compose.resources.StringResource
 /** How long a report counts as saying how things are. */
 private const val REPORT_CURRENT_SECONDS = 7 * 86_400L
 
+/** How long a site has to have been failing before it's worth saying so: a bad day of theirs is no redesign. */
+private const val SITE_TROUBLE_SECONDS = 3 * 86_400L
+
 /** Days of the week, counting from Monday. */
 private const val SATURDAY = 5
 private const val SUNDAY = 6
@@ -183,6 +186,10 @@ data class SkiPriceTier(
     val price: SkiDayPrice,
     /** Its online figure is the lowest it starts at, not the price on any given day. */
     val onlineIsLowest: Boolean = false,
+    /** The dates it's for, where the resort publishes them. */
+    val onDays: Set<Int> = emptySet(),
+    /** The season the resort says these rates are for, as it writes it. */
+    val season: String? = null,
 ) {
     enum class Kind { ANY_DAY, SUNDAY_TO_FRIDAY, SATURDAY, NON_PEAK, PEAK }
 }
@@ -197,6 +204,10 @@ data class SkiResortPrices(
     val fetchedAtEpochSeconds: Long = 0,
     /** Every day its shop has been asked about, sold or not: before a season most aren't, and that's an answer. */
     val daysAsked: Set<Int> = emptySet(),
+    /** Tickets for several days, where it sells them: by the day they start, then by how many days. */
+    val packs: Map<Int, Map<Int, SkiDayPrice>> = emptyMap(),
+    /** How many days long a ticket has been asked after, where each length is a request of its own. */
+    val packLengthsAsked: Set<Int> = emptySet(),
 ) {
     /** The price on [epochDay], or before a season opens the first day's. A day with none inside the calendar has none: another day's isn't its price. */
     fun priceFor(epochDay: Int): Pair<Int, SkiDayPrice>? {
@@ -206,11 +217,13 @@ data class SkiResortPrices(
     }
 
     /**
-     * The rate that applies on [epochDay], if the table says. Peak dates it doesn't give: a weekend,
-     * Sunday included, is taken as peak. A table with a Saturday rate gives Sunday as a cheaper day
-     * itself. 1 January 1970 was a Thursday, so Monday is 0.
+     * The rate that applies on [epochDay], if the table says. A resort that publishes its peak dates
+     * goes by them. Where it doesn't, a weekend, Sunday included, is taken as peak. A table with a
+     * Saturday rate gives Sunday as a cheaper day itself. 1 January 1970 was a Thursday, so Monday is 0.
      */
     fun tierOn(epochDay: Int): SkiPriceTier? {
+        val peak = tiers.firstOrNull { it.kind == SkiPriceTier.Kind.PEAK && it.onDays.isNotEmpty() }
+        if (peak != null) return if (epochDay in peak.onDays) peak else tiers.firstOrNull { it.kind == SkiPriceTier.Kind.NON_PEAK }
         val kinds = when ((epochDay + 3).mod(7)) {
             SATURDAY -> listOf(SkiPriceTier.Kind.SATURDAY, SkiPriceTier.Kind.PEAK)
             SUNDAY -> listOf(SkiPriceTier.Kind.SUNDAY_TO_FRIDAY, SkiPriceTier.Kind.PEAK)
@@ -218,6 +231,25 @@ data class SkiResortPrices(
         }
         return tiers.firstOrNull { it.kind in kinds } ?: tiers.firstOrNull { it.kind == SkiPriceTier.Kind.ANY_DAY }
     }
+}
+
+/**
+ * What a resort's own site says about parking: [dayPrice] is the least a car pays on an ordinary
+ * day, and [note] says what's behind that, as lots and rules are too various to reckon.
+ */
+@Immutable
+data class SkiParking(val pageUrl: String, val note: StringResource, val reservationNeeded: Boolean = false, val dayPrice: Int? = null)
+
+/**
+ * Which resorts' own sites have stopped answering usefully. A site that fails while others are being
+ * read has probably changed; if nothing's being read, it's the connection.
+ */
+@Immutable
+@Serializable
+data class SkiSiteHealth(val lastReadEpochSeconds: Long = 0, val failingSince: Map<String, Long> = emptyMap()) {
+    /** The sites worth telling anyone about, and since when. */
+    fun trouble(nowEpochSeconds: Long): Map<String, Long> =
+        failingSince.filterValues { since -> nowEpochSeconds - since >= SITE_TROUBLE_SECONDS && lastReadEpochSeconds > since }
 }
 
 /** A day ticket's listed price, from OnTheSnow. A figure the resort hasn't given is null (a listed 0 means it gave none). */
@@ -367,8 +399,11 @@ data class SkiDrive(
     val departEpochSeconds: Long? = null,
 )
 
-/** How much a chain control asks of a car, in Caltrans's own requirement levels. */
+/** What a road's state asks of a car, the least first: mostly Caltrans's own requirement levels. */
 enum class ChainLevel {
+    /** Worth knowing, in the road service's own words: its [ChainControl.description]. */
+    NOTICE,
+
     /** R-1: chains or snow tires on the drive wheels. */
     R1,
 
@@ -377,9 +412,12 @@ enum class ChainLevel {
 
     /** R-3: chains on everything, usually just before the road closes. */
     R3,
+
+    /** The road is shut, such as a pass closed for the winter. */
+    CLOSED,
 }
 
-/** A chain control in force at a checkpoint on a California highway. */
+/** What's in force at a checkpoint or along a stretch of highway. */
 @Immutable
 @Serializable
 data class ChainControl(
@@ -429,10 +467,21 @@ data class SkiPlan(
     val origin: SkiOrigin = SkiOrigin.HOME,
     /** What the household actually pays a day at a resort, by its slug, where that isn't the listed price (or none is listed). */
     val ownPrices: Map<String, Int> = emptyMap(),
+    /** How many days on the mountain, from the day chosen. */
+    val tripDays: Int = 1,
+    /** What a night's lodging comes to, in whole dollars. Nothing set isn't free: it's left out and said to be. */
+    val lodgingPerNight: Int = 0,
+    /** Gas or charging, in cents a mile. The default is a rough figure for an ordinary car. */
+    val drivingCentsPerMile: Int = DEFAULT_DRIVING_CENTS_PER_MILE,
+    /** What parking costs a day at a resort, by its slug, as the household finds it. */
+    val ownParking: Map<String, Int> = emptyMap(),
 ) {
     fun follows(slug: String): Boolean = resorts.any { it.slug == slug }
 
     companion object {
+        const val DEFAULT_DRIVING_CENTS_PER_MILE = 15
+        const val MAX_TRIP_DAYS = 7
+
         /** Northern California's big mountains, where the household goes to start with. */
         val DEFAULT_RESORTS = listOf(
             SkiResortRef("palisades-tahoe", "california", "Palisades Tahoe"),

@@ -15,6 +15,7 @@ import homesafe.shared.generated.resources.ski_note_snowing
 import homesafe.shared.generated.resources.ski_note_spread
 import homesafe.shared.generated.resources.ski_note_wind
 import kotlin.math.min
+import kotlin.math.round
 import kotlin.math.roundToInt
 
 /** Everything known about one resort, each part arriving when its service answers. */
@@ -37,6 +38,8 @@ data class SkiEntry(
     val chains: List<ChainControl> = emptyList(),
     /** Part of the road couldn't be checked, so [chains] may be missing some or out of date. */
     val chainsUnavailable: Boolean = false,
+    /** What the resort's own site says about parking. */
+    val parking: SkiParking? = null,
     val alerts: List<WeatherAlert> = emptyList(),
     /** Which of the household's passes get in here. */
     val passes: Set<SkiPass> = emptySet(),
@@ -86,6 +89,32 @@ data class SkiCost(
     }
 }
 
+/** What the whole trip comes to, a part at a time. A part that's null isn't known, and [total] leaves it out. */
+@Immutable
+data class SkiTripCost(
+    val days: Int,
+    /** Every ticket for every day. */
+    val tickets: Double? = null,
+    /** [tickets] is a ticket for all the [days] the resort sells as one, not day tickets added up. */
+    val ticketsAreOne: Boolean = false,
+    /** Days with no price, which [tickets] leaves out. */
+    val daysNotPriced: Int = 0,
+    val coveredBy: SkiPass? = null,
+    /** [tickets] is the least they could be. */
+    val startsAt: Boolean = false,
+    val nights: Int = 0,
+    /** Null when no price for a night has been set. */
+    val lodging: Double? = null,
+    val parking: Double? = null,
+    /** Gas or charging, there and back. */
+    val driving: Double? = null,
+) {
+    val total: Double? get() = listOfNotNull(tickets, lodging, parking, driving).takeIf { it.isNotEmpty() }?.sum()
+
+    /** Everything that goes in it is known, so [total] is the whole of it. */
+    val complete: Boolean get() = tickets != null && daysNotPriced == 0 && !startsAt && (lodging != null || nights == 0) && parking != null && driving != null
+}
+
 /** A thing worth saying about a resort's day, and how it should read. */
 @Immutable
 data class SkiNote(val text: UiText, val tone: Tone) {
@@ -103,6 +132,8 @@ data class SkiDayView(
     /** Snow over the three days up to and including the trip's, whichever of them are past or to come. */
     val freshCm: Double,
     val cost: SkiCost,
+    /** The whole trip's, from this day for as many days as the household is going. */
+    val trip: SkiTripCost,
     val notes: List<SkiNote>,
     /** How it ranks: higher is a better day out. Only ever compared with another resort's that same day. */
     val score: Double,
@@ -113,6 +144,8 @@ data class SkiDayView(
  * Nothing here fetches or remembers anything.
  */
 object SkiPlanner {
+    private const val METERS_PER_MILE = 1_609.344
+
     /** Snow that makes a day worth talking about: about four inches. */
     private const val FRESH_WORTH_SAYING_CM = 10.0
 
@@ -132,6 +165,9 @@ object SkiPlanner {
     /** A gap between the models this much wider than their middle guess isn't a forecast yet. */
     private const val SPREAD_WATCH_CM = 15.0
 
+    /** A closed road on the way may only mean a detour, but it's worth about a foot of snow. */
+    private const val ROAD_CLOSED_POINTS = 30.0
+
     /** Keeps a day from turning on the far end of the forecast: the first days are the ones to trust. */
     private const val FRESH_DAYS = 3
 
@@ -141,7 +177,8 @@ object SkiPlanner {
         val report = entry.latest
         val runs = report?.runsOn(epochDay, todayEpochDay, nowEpochSeconds) ?: false
         // Day by day: a forecast kept from a while back may not reach them all, and the report's outlook can.
-        val fresh = ((epochDay - (FRESH_DAYS - 1))..epochDay).sumOf { each ->
+        val lastDay = epochDay + plan.tripDays.coerceAtLeast(1) - 1
+        val fresh = ((epochDay - (FRESH_DAYS - 1))..lastDay).sumOf { each ->
             forecast?.day(each)?.snowCm ?: report?.outlook?.firstOrNull { it.epochDay == each }?.cm ?: 0.0
         }
         val cost = cost(plan, entry, epochDay)
@@ -152,6 +189,7 @@ object SkiPlanner {
             day = day,
             freshCm = fresh,
             cost = cost,
+            trip = trip(plan, entry, epochDay),
             notes = notes(day, fresh, units),
             score = score(entry, day, fresh, cost, report),
         )
@@ -183,7 +221,8 @@ object SkiPlanner {
         if (lifts != null && total != null && total > 0 && lifts > 0) score += 10.0 * lifts / total
         entry.drive?.let { score -= 2.0 * it.seconds / 3600 }
         cost.adult?.let { score -= it / 60 }
-        score -= entry.chains.size.coerceAtMost(3)
+        score -= entry.chains.count { it.level != ChainLevel.NOTICE }.coerceAtMost(3)
+        if (entry.chains.any { it.level == ChainLevel.CLOSED }) score -= ROAD_CLOSED_POINTS
         return score
     }
 
@@ -221,6 +260,33 @@ object SkiPlanner {
         }
         val listed = entry.price ?: return SkiCost()
         return party(plan, SkiDayPrice(adultWindow = listed.adultDay, childWindow = listed.childDay), SkiCost.Source.LISTING, null)?.copy(windowTotal = null) ?: SkiCost()
+    }
+
+    /**
+     * The whole trip, from [epochDay]. Tickets come as one ticket for all the days where the resort
+     * sells that, otherwise each day's own. Parking is what the household set, or what the resort
+     * publishes. Driving is one trip there and back.
+     */
+    fun trip(plan: SkiPlan, entry: SkiEntry, epochDay: Int): SkiTripCost {
+        val days = plan.tripDays.coerceIn(1, SkiPlan.MAX_TRIP_DAYS)
+        val nights = days - 1
+        val first = cost(plan, entry, epochDay)
+        val pack = if (days > 1 && first.coveredBy == null && !first.own) entry.prices?.packs?.get(epochDay)?.get(days)?.let { party(plan, it, SkiCost.Source.RESORT_DATED, epochDay) } else null
+        val daily = if (pack == null) (0 until days).map { cost(plan, entry, epochDay + it) } else emptyList()
+        val parkingADay = plan.ownParking[entry.ref.slug] ?: entry.parking?.dayPrice
+        return SkiTripCost(
+            days = days,
+            tickets = pack?.total ?: daily.mapNotNull { it.total }.takeIf { it.isNotEmpty() }?.sum(),
+            ticketsAreOne = pack != null,
+            daysNotPriced = daily.count { it.total == null },
+            coveredBy = first.coveredBy,
+            startsAt = daily.any { it.startsAt },
+            nights = nights,
+            lodging = plan.lodgingPerNight.takeIf { it > 0 }?.let { (it * nights).toDouble() },
+            parking = parkingADay?.let { (it * days).toDouble() },
+            // A rough figure, so not to the cent.
+            driving = entry.drive?.let { round(2 * it.meters / METERS_PER_MILE * plan.drivingCentsPerMile / 100) },
+        )
     }
 
     private fun party(plan: SkiPlan, price: SkiDayPrice, source: SkiCost.Source, onEpochDay: Int?): SkiCost? {
