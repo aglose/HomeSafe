@@ -6,15 +6,15 @@
     <actions>
         <action>Clear the server URL field and type http://10.0.2.2:8971, type admin as the username and correct-horse as the password, then tap "Connect"</action>
         <action>Tap "Settings" in the bottom navigation</action>
-        <action>Verify that the Settings screen has a "Server" row describing the server as healthy</action>
+        <action>Verify that the Settings screen has a "Server" row describing the server as healthy (scroll down if needed)</action>
         <action>Tap the "Server" row</action>
         <action>Verify that the Server page shows the server's version, 0.17.2-test (scroll down if needed)</action>
         <action>Press the system back button</action>
         <action>Verify that no "Object detection" switch is shown on the Settings screen</action>
-        <action>Tap the "Cameras" row</action>
+        <action>Tap the "Cameras" row (scroll up if needed)</action>
         <action>Verify that an "Object detection" switch is shown for the "Back Yard" camera (scroll down if needed)</action>
         <action>Tap the "Cameras" row again (scroll up if needed)</action>
-        <action>Tap "Faces" under "Recognition"</action>
+        <action>Tap "Faces" under "Recognition" (scroll up if needed)</action>
         <action>Verify that the face library lists the people "Alice" and "Bob"</action>
         <action>Press the system back button</action>
         <action>Verify that the Settings screen is shown again</action>
