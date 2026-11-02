@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
 import com.meticulouscreations.homesafe.weather.data.WEATHER_CLIENT
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOrigin
@@ -122,7 +123,12 @@ class SkiViewModel(
         viewModelScope.launch {
             repository.plan().collect { plan ->
                 val before = _uiState.value.plan
-                _uiState.update { it.copy(plan = plan) }
+                _uiState.update { state ->
+                    // The day picked last time, if it hasn't gone by and nothing has been picked since.
+                    val saved = plan.tripEpochDay?.takeIf { !dayChosen && it >= state.todayEpochDay }
+                    if (saved != null) dayChosen = true
+                    state.copy(plan = plan, tripEpochDay = saved ?: state.tripEpochDay)
+                }
                 // Whatever was on its way was for the old plan. What it already fetched is kept, so this costs only what's new.
                 if (active && (before.resorts != plan.resorts || before.regions != plan.regions || before.origin != plan.origin || before.passes != plan.passes)) load(force = false, restart = true)
             }
@@ -136,6 +142,8 @@ class SkiViewModel(
         pollJob?.cancel()
         pollJob = null
         if (!active) return
+        // From here the resorts it follows are ones someone has seen: its notifications can start.
+        viewModelScope.launch { repository.updatePlan { if (it.tabOpened) it else it.copy(tabOpened = true) } }
         pollJob = viewModelScope.launch {
             while (isActive) {
                 _uiState.update(::today)
@@ -158,6 +166,8 @@ class SkiViewModel(
     fun pickDay(epochDay: Int) {
         dayChosen = true
         _uiState.update { it.copy(tripEpochDay = epochDay) }
+        // Kept, as the big-snow notification is about the day picked as well as the weekend.
+        viewModelScope.launch { repository.updatePlan { it.copy(tripEpochDay = epochDay) } }
     }
 
     private fun load(force: Boolean, restart: Boolean = false) {
@@ -402,6 +412,10 @@ class SkiViewModel(
             startingFor = null
             repository.updatePlan { it.copy(origin = origin) }
         }
+    }
+
+    fun setAlerts(alerts: SkiAlerts) {
+        viewModelScope.launch { repository.updatePlan { it.copy(alerts = alerts) } }
     }
 
     /** What the household pays a day at a resort; null goes back to the listed price. */

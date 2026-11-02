@@ -187,8 +187,11 @@ internal fun buildWeatherNotification(context: Context, notification: WeatherNot
         .setAutoCancel(true)
         .setOnlyAlertOnce(true)
         .setContentIntent(openIntent(context, notification.link))
-        .addAction(look.glyph.drawableRes, context.getString(R.string.notif_action_weather_radar), openIntent(context, notification.link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null)))
         .apply {
+            // The radar is of here, not of a mountain.
+            if (notification.link.view != WeatherDeepLink.View.SKI) {
+                addAction(look.glyph.drawableRes, context.getString(R.string.notif_action_weather_radar), openIntent(context, notification.link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null)))
+            }
             val at = notification.reminderEpochSeconds
             val label = notification.reminderLabel
             if (at != null && label != null) addAction(look.glyph.drawableRes, label, WeatherReminderReceiver.intent(context, notification.id, at))

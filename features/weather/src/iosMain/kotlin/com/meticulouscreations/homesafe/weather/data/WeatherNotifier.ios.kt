@@ -85,7 +85,10 @@ private class IosWeatherNotifier : WeatherNotifier {
             setBody(notification.detail ?: notification.body)
             setThreadIdentifier(THREAD)
             // iOS declares a notification's buttons ahead of time: one that can be put off wears the set with "Remind me".
-            setCategoryIdentifier(if (notification.reminderEpochSeconds != null) IosWeatherActions.CATEGORY_SOON else IosWeatherActions.CATEGORY)
+            // A skiing one wears none: the radar is of here, not of a mountain.
+            if (notification.link.view != WeatherDeepLink.View.SKI) {
+                setCategoryIdentifier(if (notification.reminderEpochSeconds != null) IosWeatherActions.CATEGORY_SOON else IosWeatherActions.CATEGORY)
+            }
             setInterruptionLevel(
                 when {
                     notification.urgent -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive

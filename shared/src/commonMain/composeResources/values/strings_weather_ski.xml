@@ -189,4 +189,31 @@
     <string name="ski_tier_weekend">Saturdays and holidays</string>
     <string name="ski_tier_non_peak">Non-peak days</string>
     <string name="ski_tier_peak">Peak days</string>
+    <string name="ski_notice_snow_title">Big snow by %1$s</string>
+    <string name="ski_notice_snow_range">%1$s: %2$s, the models say %3$s to %4$s</string>
+    <string name="ski_notice_resort_amount">%1$s %2$s</string>
+    <plurals name="ski_notice_and_more">
+        <item quantity="one">and %1$d more</item>
+        <item quantity="other">and %1$d more</item>
+    </plurals>
+    <string name="ski_notice_fresh_title_one">Fresh snow at %1$s</string>
+    <plurals name="ski_notice_fresh_title_many">
+        <item quantity="one">Fresh snow at %1$d resort</item>
+        <item quantity="other">Fresh snow at %1$d resorts</item>
+    </plurals>
+    <string name="ski_notice_fresh_body_one">%1$s in the last day, by its own report</string>
+    <string name="ski_notice_fresh_body_many">%1$s in the last day, by their own reports</string>
+    <string name="ski_notice_chains_title_r1">Chain controls on %1$s</string>
+    <string name="ski_notice_chains_title_r2">Chains required on %1$s</string>
+    <string name="ski_notice_chains_title_r3">Chains on every vehicle on %1$s</string>
+    <string name="ski_notice_chains_road">%1$s on %2$s at %3$s, on the way to %4$s</string>
+    <string name="ski_notice_list_separator">, </string>
+    <string name="ski_settings_notices_title">Skiing</string>
+    <string name="ski_settings_notices_snow">Big snow on the way</string>
+    <string name="ski_settings_notices_snow_body">About a foot or more forecast at a resort you follow, by the coming weekend or the day you picked. Once for each</string>
+    <string name="ski_settings_notices_fresh">Fresh snow</string>
+    <string name="ski_settings_notices_fresh_body">Six inches or more in a day, as a resort you follow reports it on its own site</string>
+    <string name="ski_settings_notices_chains">Chain controls</string>
+    <string name="ski_settings_notices_chains_body">On the road from home to a resort you follow. California only, and only with a home set</string>
+    <string name="ski_settings_notices_note">For the resorts on your Ski tab, wherever you are. Your home server watches for these, and it is told the resorts, not where you are.</string>
 </resources>

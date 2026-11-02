@@ -547,6 +547,9 @@ def db() -> sqlite3.Connection:
         ("rain_soon_key", "TEXT"),
         ("rain_soon_at", "REAL"),
         ("rain_soon_by", "TEXT"),
+        # See "ski notices": what this phone follows and wants to hear of, and what it's been told.
+        ("ski", "TEXT"),
+        ("ski_told", "TEXT"),
     ):
         if column not in columns:
             conn.execute(f"ALTER TABLE devices ADD COLUMN {column} {declaration}")
@@ -650,6 +653,9 @@ def apns_parts(title: str, body: str, data: dict[str, str], away: bool) -> tuple
         # draw its picture (see "rain soon").
         aps.update({"thread-id": "weather", "category": "weather.soon" if data.get("homesafe_weather_remind_at") else "weather", "relevance-score": 0.8, "content-available": 1})
         aps["alert"]["subtitle"] = data.get("weather_place", "")
+    if data.get("ski_notice"):
+        # In the weather's stack, with no buttons (the radar is of nowhere near a mountain), waking the app when iOS allows it to word it (see "ski notices").
+        aps.update({"thread-id": "weather", "relevance-score": 0.5, "content-available": 1})
     return headers, aps
 
 
@@ -4858,6 +4864,7 @@ def startup() -> None:
     threading.Thread(target=packages_forever, name="packages", daemon=True).start()
     threading.Thread(target=charging_forever, name="charging", daemon=True).start()
     threading.Thread(target=rain_soon_forever, name="rain-soon", daemon=True).start()
+    threading.Thread(target=ski_forever, name="ski-notices", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -5780,6 +5787,966 @@ def claim_rain_soon(ident: str, claim: RainSoonClaim, request: Request) -> dict[
     if row is None:
         raise HTTPException(status_code=404, detail="Unknown device")
     return rain_soon_claim(row[0], claim.key, time.time(), "phone")
+
+
+# ---------------------------------------------------------------- ski notices
+
+# The Ski tab's three notifications (docs/weather.md, "Ski notifications"): big snow forecast for
+# the weekend or the chosen day, fresh snow a resort reports on its own site, and chain controls on
+# the road to a resort. All three are here rather than on the phone, for the reason rain soon is:
+# a phone can't be counted on to wake. Unlike rain soon there is no check on the phone as well,
+# since none of it depends on where the phone is, so every phone that follows a resort hears, at
+# home or not.
+#
+# What a phone tells (`PUT /devices/{id}/ski`): the resorts it follows, where they are (public
+# facts off each resort's page), the day it has chosen, and its switches. Never where it is, or
+# where its drives start: the road to a resort is asked for here, from home, which this already
+# holds, so a phone's own route (which may start where the phone is) never comes here. With no home
+# set there's no road, and no chain controls.
+#
+# How often: a tick every SKI_TICK_SECONDS, nothing on it between 10 PM and 6 AM by that phone's
+# clock. Caltrans's files on every tick; a resort's site hourly, one page, a couple of seconds
+# apart, since Vail's sit behind Akamai, which stops answering this household's address if leaned
+# on, the phones' reading of it included; the forecast every three hours, one call a resort.
+#
+# Once each (`ski_told` on the phone's row): the first forecast of a weekend's big snow, a resort's
+# snow once a day, a road's controls once until Caltrans has shown them gone for
+# SKI_CHAINS_CLEAR_SECONDS or they ask for more. A failed push isn't marked, so the next tick tries again.
+#
+# The push is what was decided, not its words: an Android phone (and an iPhone, when iOS wakes the
+# app) writes it from `ski_notice` in the reader's language and units (`SkiNoticePlanner`). iOS
+# draws `aps.alert` first, in English.
+SKI_TICK_SECONDS = 15 * 60
+SKI_FRESH_POLL_SECONDS = 60 * 60
+SKI_FORECAST_POLL_SECONDS = 3 * 3600
+SKI_READ_GAP_SECONDS = 2
+SKI_BACKOFF_SECONDS = 60 * 60
+SKI_QUIET_FROM_HOUR = 22
+SKI_QUIET_UNTIL_HOUR = 6
+# Resorts write their reports from about 5 to 7, so this says what most of them said at once.
+SKI_FRESH_FROM_HOUR = 7
+# A foot by the models' blend: ski_note_fresh's "worth saying" is a third of this.
+SKI_BIG_SNOW_CM = 30.0
+# And half that from the least hopeful model: wider than this and it isn't a forecast yet.
+SKI_BIG_SNOW_LOW_CM = 15.0
+# As SkiPlanner.FRESH_DAYS: the snow a day has is what fell over it and the two before.
+SKI_SNOW_WINDOW_DAYS = 3
+# A week off is as far as the models are worth a notification.
+SKI_SNOW_LEAD_DAYS = 7
+# Six inches, as a resort reports it.
+SKI_FRESH_CM = 15.0
+# Older than this and a resort's dated report isn't about last night.
+SKI_FRESH_MAX_AGE_SECONDS = 36 * 3600
+SKI_FRESH_COOLDOWN_SECONDS = 6 * 3600
+SKI_CHAINS_CLEAR_SECONDS = 12 * 3600
+# `REPORT_CURRENT_SECONDS`: how long a report's word on a resort running holds.
+SKI_REPORT_CURRENT_SECONDS = 7 * 86400
+SKI_CHAINS_EXPIRE_SECONDS = 6 * 3600
+SKI_CHAIN_MATCH_METERS = 1500.0
+SKI_ROAD_MAX_AGE_SECONDS = 14 * 86400
+SKI_ROADS_KEY = "ski_roads"
+SKI_TOLD_DAYS = 40
+SKI_MAX_RESORTS = 40
+SKI_SHOWN_RESORTS = 3
+SKI_CM_PER_INCH = 2.54
+# The same words the app asks with (WEATHER_USER_AGENT). A library's default is refused by some.
+SKI_USER_AGENT = "(HomeSafe, https://github.com/aglose/HomeSafe)"
+SKI_PACIFIC = "America/Los_Angeles"
+SKI_MOUNTAIN = "America/Denver"
+SKI_EASTERN = "America/New_York"
+SKI_LEVEL_WORDS = {1: "Chain controls", 2: "Chains required", 3: "Chains on every vehicle"}
+# As CaltransChainApi.DISTRICTS: each district's extent, generously: south, north, west, east.
+SKI_CHAIN_DISTRICTS = {
+    1: (38.2, 42.1, -124.6, -122.3), 2: (39.4, 42.1, -123.8, -119.9), 3: (38.3, 40.2, -122.5, -119.8), 6: (34.7, 37.8, -121.3, -117.9),
+    7: (33.6, 35.0, -119.6, -117.5), 8: (33.4, 35.9, -118.1, -114.1), 9: (34.8, 38.8, -119.8, -117.0), 10: (36.9, 39.0, -121.8, -119.1), 11: (32.5, 33.6, -117.7, -114.4),
+}
+
+
+def _ski_vail(host: str, zone: str = SKI_PACIFIC) -> dict[str, str]:
+    return {"kind": "vail", "url": f"https://{host}/the-mountain/mountain-conditions/snow-and-weather-report.aspx", "zone": zone}
+
+
+def _ski_feed(slug: str) -> dict[str, str]:
+    return {"kind": "feed", "slug": slug}
+
+
+def _ski_powdr(host: str) -> dict[str, str]:
+    return {"kind": "powdr", "url": f"https://{host}/api/v1/dor/drupal/snow-reports?sort=date&direction=desc"}
+
+
+def _ski_page(kind: str, url: str) -> dict[str, str]:
+    return {"kind": kind, "url": url, "zone": SKI_PACIFIC}
+
+
+# Where each resort reports its own snow, by its slug: ResortSite.ALL's reports. A test holds the two
+# lists to each other. Anything else has no fresh-snow notification: OnTheSnow's listing is only
+# ever a listing, and isn't what these are about.
+SKI_SITES: dict[str, dict[str, str]] = {
+    "heavenly-mountain-resort": _ski_vail("www.skiheavenly.com"),
+    "northstar-california": _ski_vail("www.northstarcalifornia.com"),
+    "kirkwood": _ski_vail("www.kirkwood.com"),
+    "vail": _ski_vail("www.vail.com", SKI_MOUNTAIN),
+    "beaver-creek": _ski_vail("www.beavercreek.com", SKI_MOUNTAIN),
+    "breckenridge": _ski_vail("www.breckenridge.com", SKI_MOUNTAIN),
+    "keystone": _ski_vail("www.keystoneresort.com", SKI_MOUNTAIN),
+    "park-city-mountain-resort": _ski_vail("www.parkcitymountain.com", SKI_MOUNTAIN),
+    "whistler-blackcomb": _ski_vail("www.whistlerblackcomb.com"),
+    "stowe-mountain-resort": _ski_vail("www.stowe.com", SKI_EASTERN),
+    "okemo-mountain-resort": _ski_vail("www.okemo.com", SKI_EASTERN),
+    "palisades-tahoe": _ski_feed("palisades-tahoe"),
+    "mammoth-mountain-ski-area": _ski_feed("mammoth"),
+    "june-mountain": _ski_feed("june-mountain"),
+    "steamboat": _ski_feed("steamboat"),
+    "winter-park-resort": _ski_feed("winter-park"),
+    "deer-valley-resort": _ski_feed("deer-valley"),
+    "stratton-mountain": _ski_feed("stratton"),
+    "sugarbush": _ski_feed("sugarbush"),
+    "solitude-mountain-resort": _ski_feed("solitude"),
+    "crystal-mountain-wa": _ski_feed("crystal-mountain"),
+    "boreal": _ski_powdr("api.rideboreal.com"),
+    "soda-springs": _ski_powdr("api.skisodasprings.com"),
+    "sugar-bowl-resort": _ski_page("sugar_bowl", "https://www.sugarbowl.com/conditions"),
+    "sierra-at-tahoe": _ski_page("sierra", "https://sierraattahoe.com/weather-snow-report/"),
+    "mt-rose-ski-tahoe": _ski_page("rose", "https://skirose.com/feed/snow-report-xml"),
+    "homewood-mountain-resort": _ski_page("homewood", "https://skihomewood.com/snowreport/"),
+    "donner-ski-ranch": _ski_page("donner_ranch", "https://www.donnerskiranch.com/liftstatus"),
+    "tahoe-donner": _ski_page("tahoe_donner", "https://www.tahoedonner.com/amenities/amenities/downhill-ski/trails-conditions/snow-weather/"),
+    "diamond-peak": _ski_page("diamond_peak", "https://www.diamondpeak.com/the-mountain/mountain-report/"),
+    "dodge-ridge": _ski_page("dodge_ridge", "https://dodgeridge.com/snow-report/"),
+    "ski-china-peak": _ski_page("china_peak", "https://www.skichinapeak.com/conditions"),
+}
+
+
+def ski_text_of(page: str) -> str:
+    """A page with its markup taken out and its spaces closed up: what a person reads (`ResortPages.textOf`)."""
+    no_scripts = re.sub(r"<(script|style|noscript)\b.*?</\1>", " ", page, flags=re.S | re.I)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", no_scripts))).strip()
+
+
+def _ski_inches(pattern: str, text: str) -> float | None:
+    match = re.search(pattern, text)
+    try:
+        return float(match.group(1)) * SKI_CM_PER_INCH if match else None
+    except ValueError:
+        return None
+
+
+def _ski_when(moment: str, layout: str, zone: str) -> int | None:
+    try:
+        return int(datetime.strptime(moment, layout).replace(tzinfo=ZoneInfo(zone)).timestamp())
+    except ValueError:
+        return None
+
+
+def _ski_chairs(pattern: str, text: str) -> int | None:
+    chairs = re.findall(pattern, text)
+    return sum(1 for state in chairs if state.lower() != "closed") if chairs else None
+
+
+def ski_read_vail(page: str, zone: str = SKI_PACIFIC) -> dict[str, Any] | None:
+    """The snow in `FR.snowReportData`. Akamai's challenge, which is also a 200, has none. Its lifts are on a second page, left alone: the phone's word on whether it's running will do."""
+    at = re.search(r"FR\.snowReportData\s*=\s*", page)
+    if not at:
+        return None
+    try:
+        snow, _ = json.JSONDecoder().raw_decode(page, at.end())
+    except ValueError:
+        return None
+
+    def inches(key: str) -> float | None:
+        try:
+            return float(snow[key]["Inches"]) * SKI_CM_PER_INCH
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    updated = re.search(r"([A-Z][a-z]+ \d{1,2}, \d{4}) at (\d{1,2}:\d{2} [AP]M)", str(snow.get("LastUpdatedText") or ""))
+    return {
+        "last12": inches("OvernightSnowfall"), "last24": inches("TwentyFourHourSnowfall"),
+        "updated": _ski_when(f"{updated.group(1)} {updated.group(2)}", "%B %d, %Y %I:%M %p", zone) if updated else None,
+    }
+
+
+def ski_read_feed(feed: dict[str, Any]) -> dict[str, Any] | None:
+    """The feed Alterra's sites draw on: a resort's figure is the most any of its areas reports, and `--` is nothing reported."""
+    resorts = feed.get("Resorts") or []
+    report = (resorts[0] or {}).get("SnowReport") if resorts else None
+    if not report:
+        return None
+    last24 = []
+    for name in ("BaseArea", "MidMountainArea", "SummitArea"):
+        try:
+            last24.append(float((report.get(name) or {}).get("Last24HoursIn")))
+        except (TypeError, ValueError):
+            pass
+    updated = None
+    try:
+        updated = int(datetime.strptime(str(report.get("LastUpdate")), "%Y-%m-%dT%H:%M:%S%z").timestamp())
+    except ValueError:
+        pass
+    status = resorts[0].get("OperatingStatus")
+    lifts = report.get("TotalOpenLifts")
+    return {
+        "last12": None, "last24": max(last24) * SKI_CM_PER_INCH if last24 else None, "updated": updated,
+        "running": str(status).lower() != "closed" if status else None, "lifts_open": int(lifts) if isinstance(lifts, (int, float)) else None,
+    }
+
+
+def ski_read_powdr(reports: Any) -> dict[str, Any] | None:
+    """A POWDR mountain's latest report from its small API."""
+    latest = reports[0] if isinstance(reports, list) and reports else None
+    if not isinstance(latest, dict):
+        return None
+
+    def number(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    overnight, day, updated = number(latest.get("overnight_amount")), number((latest.get("computed") or {}).get("24_hour")), number(latest.get("updated"))
+    return {
+        "last12": overnight * SKI_CM_PER_INCH if overnight is not None else None, "last24": day * SKI_CM_PER_INCH if day is not None else None,
+        "updated": int(updated) if updated is not None else None,
+    }
+
+
+def ski_read_sugar_bowl(page: str, zone: str = SKI_PACIFIC) -> dict[str, Any] | None:
+    text = ski_text_of(page)
+    start = text.find("Last Updated: ")
+    if start < 0:
+        return None
+    body = text[start:]
+    summit = body.split("Summit ", 1)[1].split(" Base 6,", 1)[0] if "Summit " in body else ""
+    lifts = re.search(r"(\d+) /\d+ Lifts Open", body)
+    status = re.search(r"Mountain Status (\w+)", body)
+    updated = re.search(r"Last Updated: (\d{2}/\d{2}/\d{4} \d{1,2}:\d{2} [AP]M)", body)
+    return {
+        "last12": _ski_inches(r'([\d.]+) " Overnight', summit), "last24": _ski_inches(r'([\d.]+) " 24 Hour', summit),
+        "updated": _ski_when(updated.group(1), "%m/%d/%Y %I:%M %p", zone) if updated else None,
+        "running": status.group(1).lower() != "closed" if status else None, "lifts_open": int(lifts.group(1)) if lifts else None,
+    }
+
+
+def ski_read_sierra(page: str, zone: str = SKI_PACIFIC) -> dict[str, Any] | None:
+    text = ski_text_of(page)
+    start = text.find("Summit Base 12 Hour")
+    if start < 0:
+        return None
+    body = text[start:]
+    lifts = re.search(r"Lifts Open (\d+) /\d+", body)
+    updated = re.search(r"[A-Z][a-z]{2} ([A-Z][a-z]{2} \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M) Snow Reporter", body)
+    return {
+        "last12": _ski_inches(r'12 Hour ([\d.]+)[″"]', body), "last24": _ski_inches(r'24 Hour ([\d.]+)[″"]', body),
+        "updated": _ski_when(updated.group(1), "%b %d, %Y %I:%M %p", zone) if updated else None, "lifts_open": int(lifts.group(1)) if lifts else None,
+    }
+
+
+def ski_read_rose(xml: str, zone: str = SKI_PACIFIC) -> dict[str, Any] | None:
+    """Mt. Rose's XML feed, whose new snow is written as a range (`2-4"`): the most of it, as the app reads it."""
+    def tag(name: str) -> str | None:
+        match = re.search(rf"<{name}>(.*?)</{name}>", xml, re.S)
+        return match.group(1).strip() if match else None
+
+    moment = tag("Updated_Time")
+    if moment is None:
+        return None
+    numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", tag("New_Snow") or "")]
+    lifts = re.findall(r"<\w+>(\w+)</\w+>", tag("Lift_Status") or "")
+    updated = re.match(r"([A-Z][a-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2} [ap]m)", moment)
+    return {
+        "last12": None, "last24": max(numbers) * SKI_CM_PER_INCH if numbers else None,
+        "updated": _ski_when(updated.group(1), "%B %d, %Y %I:%M %p", zone) if updated else None,
+        "lifts_open": sum(1 for state in lifts if state.lower() != "closed") if lifts else None,
+    }
+
+
+def ski_read_homewood(page: str) -> dict[str, Any] | None:
+    """Homewood's table of Base then Summit, each with 12 hour, 24 hour, depth and season figures; the summit's are the ones the app reads."""
+    text = ski_text_of(page)
+    if "Season Total Base " not in text:
+        return None
+    table = text.split("Season Total Base ", 1)[1]
+    base = re.findall(r"([\d.]+) in", table.split("Summit ", 1)[0])
+    if len(base) < 4:
+        return None
+    summit = re.findall(r"([\d.]+) in", table.split("Summit ", 1)[1][:60]) if "Summit " in table else []
+    return {
+        "last12": float(summit[0]) * SKI_CM_PER_INCH if len(summit) > 0 else None,
+        "last24": float(summit[1]) * SKI_CM_PER_INCH if len(summit) > 1 else None, "updated": None,
+    }
+
+
+def ski_read_donner_ranch(page: str, zone: str = SKI_PACIFIC) -> dict[str, Any] | None:
+    text = ski_text_of(page)
+    last24 = _ski_inches(r"24-hour snow total: ([\d.]+) in", text)
+    if last24 is None:
+        return None
+    updated = re.search(r"Updated (\d{2}/\d{2}/\d{4})", text)
+    return {
+        "last12": None, "last24": last24, "updated": _ski_when(f"{updated.group(1)} 12:00 PM", "%m/%d/%Y %I:%M %p", zone) if updated else None,
+        "lifts_open": _ski_chairs(r"Chair \d+: (\w+)", text),
+    }
+
+
+def ski_read_tahoe_donner(page: str, now: float, zone: str = SKI_PACIFIC) -> dict[str, Any] | None:
+    """Tahoe Donner's date has no year, so it's the latest such date there's been."""
+    text = ski_text_of(page)
+    last24 = _ski_inches(r"Snow Report ([\d.]+) inches 24 HRS [\d.]+ inches 48 HRS [\d.]+ inches BASE", text)
+    if last24 is None:
+        return None
+    updated = None
+    moment = re.search(r"Report updated: \w+ ([A-Z][a-z]{2} \d{1,2}) \| (\d{1,2}:\d{2}) ([ap]m)", text)
+    if moment:
+        year = datetime.fromtimestamp(now, ZoneInfo(zone)).year
+        stamp = f"{moment.group(1)} {moment.group(2)} {moment.group(3)}"
+        updated = _ski_when(f"{year} {stamp}", "%Y %b %d %I:%M %p", zone)
+        if updated is not None and updated > now + 86400:
+            updated = _ski_when(f"{year - 1} {stamp}", "%Y %b %d %I:%M %p", zone)
+    return {"last12": None, "last24": last24, "updated": updated}
+
+
+def ski_read_diamond_peak(page: str) -> dict[str, Any] | None:
+    text = ski_text_of(page)
+    if "Mountain Report New Snow" not in text:
+        return None
+    report = "New Snow" + text.split("Mountain Report New Snow", 1)[1]
+    last24 = _ski_inches(r"New Snow 24H Total ([\d.]+) Inches", report)
+    return {"last12": _ski_inches(r"New Snow Overnight ([\d.]+) Inches", report), "last24": last24, "updated": None} if last24 is not None else None
+
+
+def ski_read_dodge_ridge(page: str) -> dict[str, Any] | None:
+    text = ski_text_of(page)
+    if "Snowfall Totals" not in text:
+        return None
+    last24 = _ski_inches(r'24 hrs ([\d.]+)[″"]', text.split("Snowfall Totals", 1)[1])
+    return {"last12": None, "last24": last24, "updated": None} if last24 is not None else None
+
+
+def ski_read_china_peak(page: str) -> dict[str, Any] | None:
+    text = ski_text_of(page)
+    last24 = _ski_inches(r'Last 24 Hours: ([\d.]+)"', text)
+    return {"last12": None, "last24": last24, "updated": None, "lifts_open": _ski_chairs(r"Chair \w+: (\w+)", text)} if last24 is not None else None
+
+
+SKI_PAGE_READERS: dict[str, Callable[[str], dict[str, Any] | None]] = {
+    "sugar_bowl": ski_read_sugar_bowl, "sierra": ski_read_sierra, "rose": ski_read_rose, "homewood": ski_read_homewood, "donner_ranch": ski_read_donner_ranch,
+    "diamond_peak": ski_read_diamond_peak, "dodge_ridge": ski_read_dodge_ridge, "china_peak": ski_read_china_peak,
+}
+
+
+def ski_get(url: str, **params: Any) -> Any:
+    """A GET as the app makes it. Raises what `requests` raises, and for a refusal."""
+    r = requests.get(url, params=params or None, headers={"User-Agent": SKI_USER_AGENT}, timeout=20)
+    r.raise_for_status()
+    return r
+
+
+def ski_read_site(slug: str, now: float) -> dict[str, Any] | None:
+    """What a resort's own site says of its snow, or None where it has none, or said nothing."""
+    site = SKI_SITES.get(slug)
+    if site is None:
+        return None
+    # One after another across a tick: see the top of this section.
+    time.sleep(SKI_READ_GAP_SECONDS)
+    kind = site["kind"]
+    if kind == "feed":
+        config = ski_get(f"https://v4.mtnfeed.com/resorts/{site['slug']}.json").json()
+        ids = config.get("resortIds") or []
+        if not config.get("bearerToken") or not ids:
+            return None
+        return ski_read_feed(ski_get("https://mtnpowder.com/feed/v3.json", bearer_token=config["bearerToken"], **{"resortId[]": ids[0]}).json())
+    page = ski_get(site["url"])
+    if kind == "powdr":
+        return ski_read_powdr(page.json())
+    if kind == "vail":
+        return ski_read_vail(page.text, site["zone"])
+    if kind == "tahoe_donner":
+        return ski_read_tahoe_donner(page.text, now)
+    return SKI_PAGE_READERS[kind](page.text)
+
+
+def ski_forecast_read(raw: dict[str, Any]) -> dict[str, Any]:
+    """
+    Open-Meteo's answer as `MountainDto.toForecast` reads it: for each calendar day at the mountain,
+    the blend's snow and each model's. A field is named for its model when several were asked for.
+    """
+    daily, offset = raw.get("daily") or {}, int(raw.get("utc_offset_seconds") or 0)
+    names = [name for name in daily if name.startswith("snowfall_sum_")]
+    best = daily.get("snowfall_sum_best_match") or daily.get("snowfall_sum") or []
+    days: dict[int, dict[str, Any]] = {}
+    for i, at in enumerate(daily.get("time") or []):
+        models = {name: (daily[name] + [None] * (i + 1))[i] for name in names}
+        spread = [value for value in models.values() if value is not None]
+        blend = best[i] if i < len(best) and best[i] is not None else (spread[0] if spread else 0.0)
+        days[(int(at) + offset) // 86400] = {"best": float(blend), "models": models}
+    return {"offset": offset, "days": days}
+
+
+def ski_forecast_fetch(resort: dict[str, Any]) -> dict[str, Any]:
+    """The snow to come at a resort's summit, from the models the Ski tab asks. Raises what `requests` raises. To the hundredth of a degree, as everywhere."""
+    params: dict[str, Any] = {
+        "latitude": rain_soon_coarse(resort["lat"]), "longitude": rain_soon_coarse(resort["lng"]), "daily": "snowfall_sum",
+        "models": "best_match,ecmwf_ifs025,gfs_seamless", "past_days": 3, "forecast_days": 10, "timezone": "auto", "timeformat": "unixtime",
+    }
+    if resort.get("summit_m") is not None:
+        params["elevation"] = round(resort["summit_m"])
+    return ski_forecast_read(ski_get("https://api.open-meteo.com/v1/forecast", **params).json())
+
+
+def ski_snow_by(forecast: dict[str, Any], day: int) -> tuple[float, float, float]:
+    """
+    The snow a day will have by then, as the Ski tab's card adds it up: the blend's over the window
+    up to it, and the least and the most of the models' own totals for the same days. A storm a
+    model times differently is the same storm, so these are totals rather than each day's lowest.
+    """
+    window = [forecast["days"].get(d) for d in range(day - SKI_SNOW_WINDOW_DAYS + 1, day + 1)]
+    best = sum(d["best"] for d in window if d)
+    totals = [best]
+    names = {name for d in window if d for name in d["models"]}
+    for name in names:
+        values = [d["models"].get(name) if d else None for d in window]
+        if all(v is not None for v in values):
+            totals.append(sum(values))
+    return best, min(totals), max(totals)
+
+
+def ski_next_saturday(today: int) -> int:
+    """`SkiPlanner.nextSaturday`: the Saturday coming, or today if it is one. 1 January 1970 was a Thursday."""
+    return today + (5 - (today + 3) % 7) % 7
+
+
+def ski_said_lately(moment: int | None, today: int) -> bool:
+    """`SkiReport.isCurrent`, to the day, which is all a tick's `today` knows."""
+    return moment is not None and today * 86400 - moment <= SKI_REPORT_CURRENT_SECONDS
+
+
+def ski_runs_on(resort: dict[str, Any], reading: dict[str, Any] | None, day: int, today: int) -> bool:
+    """
+    `SkiReport.runsOn` with the resort's own word over what the phone last knew (`SkiReport.merged`).
+    An "open" from an old report says nothing about now, the phone's or a dated page's; the dates
+    a resort gave still stand.
+    """
+    state = resort.get("state") or "CLOSED"
+    if state in ("OPEN", "LIMITED") and not ski_said_lately(resort.get("as_of"), today):
+        state = "CLOSED"
+    if reading:
+        lifts_turning = reading.get("running") is True or (reading.get("lifts_open") or 0) > 0
+        if lifts_turning and (reading.get("updated") is None or ski_said_lately(reading["updated"], today)):
+            state = state if state == "LIMITED" else "OPEN"
+        elif reading.get("running") is False:
+            state = "CLOSED"
+    if state == "NOT_OPERATING":
+        return False
+    closes, opens = resort.get("closes"), resort.get("opens")
+    if closes is not None and day > closes and closes >= today:
+        return False
+    if state in ("OPEN", "LIMITED"):
+        return True
+    return opens is not None and opens > today and day >= opens
+
+
+def ski_worth_reading(resort: dict[str, Any], today: int) -> bool:
+    """Whether a resort's site could have anything to say yet: not one that isn't running this season, or that gave an opening date still to come."""
+    opens = resort.get("opens")
+    return resort.get("slug") in SKI_SITES and resort.get("state") != "NOT_OPERATING" and not (opens is not None and opens > today + 1)
+
+
+def ski_big_snow(wish: dict[str, Any], forecasts: dict[str, Any], readings: dict[str, Any], today: int, told: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    What there is to say of big snow, or None: the chosen day first, then the coming weekend, each
+    said once whatever the models do afterwards. A resort counts where the blend reaches
+    SKI_BIG_SNOW_CM by then, the least hopeful model SKI_BIG_SNOW_LOW_CM, and it should be running.
+    The weekend's Saturday, or its Sunday if it's only there by then.
+    """
+    saturday = ski_next_saturday(today)
+    targets = [(saturday, [saturday, saturday + 1])]
+    trip = wish.get("trip_day")
+    if trip is not None and today <= trip <= today + SKI_SNOW_LEAD_DAYS and trip not in targets[0][1]:
+        targets.insert(0, (trip, [trip]))
+    said = told.get("said") or {}
+    for target, days in targets:
+        key = f"ski:snow:{target}"
+        if key in said:
+            continue
+        for day in days:
+            found = []
+            for resort in wish.get("resorts") or []:
+                forecast = forecasts.get(resort["slug"])
+                if not forecast or not ski_runs_on(resort, readings.get(resort["slug"]), day, today):
+                    continue
+                best, low, high = ski_snow_by(forecast, day)
+                if best >= SKI_BIG_SNOW_CM and low >= SKI_BIG_SNOW_LOW_CM:
+                    found.append({"n": resort["name"], "s": resort["slug"], "cm": round(best, 1), "lo": round(low, 1), "hi": round(high, 1)})
+            if found:
+                found.sort(key=lambda r: -r["cm"])
+                return {"kind": "snow", "key": key, "day": day, "resorts": found}
+    return None
+
+
+def ski_fresh_snow(wish: dict[str, Any], readings: dict[str, Any], today: int, hour: int, now: float, told: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Fresh snow to tell of, or None: the resorts running today whose own site says SKI_FRESH_CM or
+    more in the last day, in a report still about last night. A resort once a day, and never
+    the same reading twice (a site that didn't update, which is all an undated one can show). One
+    push from SKI_FRESH_FROM_HOUR for what's reported by then, and another no sooner than
+    SKI_FRESH_COOLDOWN_SECONDS for a resort that was late.
+    """
+    if hour < SKI_FRESH_FROM_HOUR or now - (told.get("fresh_at") or 0) < SKI_FRESH_COOLDOWN_SECONDS:
+        return None
+    before = told.get("fresh") or {}
+    found = []
+    for resort in wish.get("resorts") or []:
+        slug = resort["slug"]
+        reading = readings.get(slug)
+        if not reading:
+            continue
+        figures = [cm for cm in (reading.get("last12"), reading.get("last24")) if cm is not None]
+        cm = max(figures) if figures else 0.0
+        updated = reading.get("updated")
+        if cm < SKI_FRESH_CM or (updated is not None and now - updated > SKI_FRESH_MAX_AGE_SECONDS) or not ski_runs_on(resort, reading, today, today):
+            continue
+        last = before.get(slug) or {}
+        if last.get("day") == today or (last.get("cm") == round(cm, 1) and last.get("updated") == updated):
+            continue
+        found.append({"n": resort["name"], "s": slug, "cm": round(cm, 1), "updated": updated})
+    if not found:
+        return None
+    found.sort(key=lambda r: -r["cm"])
+    return {"kind": "fresh", "key": f"ski:fresh:{today}:{hour}", "day": today, "resorts": found}
+
+
+def ski_decode_polyline(encoded: str) -> list[tuple[float, float]]:
+    """`decodePolyline`: a road's points, five decimal places, each a difference from the last."""
+    points, index, latitude, longitude = [], 0, 0, 0
+
+    def next_value() -> int | None:
+        nonlocal index
+        result, shift = 0, 0
+        while True:
+            if index >= len(encoded):
+                return None
+            b = ord(encoded[index]) - 63
+            index += 1
+            result |= (b & 0x1f) << shift
+            shift += 5
+            if b < 0x20:
+                return ~(result >> 1) if result & 1 else result >> 1
+
+    while index < len(encoded):
+        dlat, dlng = next_value(), next_value()
+        if dlat is None or dlng is None:
+            break
+        latitude, longitude = latitude + dlat, longitude + dlng
+        points.append((latitude / 1e5, longitude / 1e5))
+    return points
+
+
+def ski_passes_near(road: list[tuple[float, float]], latitude: float, longitude: float, meters: float = SKI_CHAIN_MATCH_METERS) -> bool:
+    """`passesNear`: whether a road comes near enough to a checkpoint to be on it: a checkpoint's mapped position is only roughly on its highway."""
+    per_lat = 111320.0
+    per_lng = per_lat * math.cos(math.radians(latitude))
+    flat = [((lng - longitude) * per_lng, (lat - latitude) * per_lat) for lat, lng in road]
+    for (ax, ay), (bx, by) in zip(flat, flat[1:]):
+        dx, dy = bx - ax, by - ay
+        length = dx * dx + dy * dy
+        t = 0.0 if length == 0 else max(0.0, min(1.0, -(ax * dx + ay * dy) / length))
+        if math.hypot(ax + t * dx, ay + t * dy) <= meters:
+            return True
+    return False
+
+
+def ski_chain_controls(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """What's in force in a Caltrans district's file, which lists every checkpoint whether anything is or not (`ChainPointDto.toControl`)."""
+    controls = []
+    for entry in raw.get("data") or []:
+        point = (entry or {}).get("cc") or {}
+        status = str((point.get("statusData") or {}).get("status") or "").strip().upper().replace("-", "")
+        where = point.get("location") or {}
+        if point.get("inService") != "true" or status not in ("R1", "R2", "R3"):
+            continue
+        try:
+            latitude, longitude = float(where.get("latitude")), float(where.get("longitude"))
+        except (TypeError, ValueError):
+            continue
+        controls.append({"level": int(status[1]), "route": where.get("route") or "", "place": where.get("locationName") or where.get("nearbyPlace") or "", "lat": latitude, "lng": longitude})
+    return controls
+
+
+def ski_chains_fetch(number: int) -> list[dict[str, Any]]:
+    return ski_chain_controls(ski_get(f"https://cwwp2.dot.ca.gov/data/d{number}/cc/ccStatusD{number:02d}.json").json())
+
+
+def ski_road_fetch(home: dict[str, Any], resort: dict[str, Any]) -> str:
+    """The road from home to a resort as an encoded polyline, from OSRM. Home goes to the hundredth of a degree, as it does to Open-Meteo."""
+    start = f"{rain_soon_coarse(home['lng'])},{rain_soon_coarse(home['lat'])}"
+    end = f"{rain_soon_coarse(resort['lng'])},{rain_soon_coarse(resort['lat'])}"
+    routes = ski_get(f"https://router.project-osrm.org/route/v1/driving/{start};{end}", overview="full", geometries="polyline").json().get("routes") or []
+    return routes[0].get("geometry") or "" if routes else ""
+
+
+def ski_road(home: dict[str, Any], resort: dict[str, Any], now: float, fetch: Callable[[dict[str, Any], dict[str, Any]], str]) -> list[tuple[float, float]]:
+    """The road to a resort, kept a fortnight on this box: it asks OSRM, which asks not to be leaned on, once per road. Empty if it can't be had."""
+    held = state_get(SKI_ROADS_KEY) or {}
+    key = f"{rain_soon_coarse(home['lat'])},{rain_soon_coarse(home['lng'])}>{resort['slug']}"
+    kept = held.get(key)
+    if kept and now - kept["at"] < SKI_ROAD_MAX_AGE_SECONDS:
+        return ski_decode_polyline(kept["path"])
+    try:
+        path = fetch(home, resort)
+    except Exception as e:  # noqa: BLE001 - the last road will do, or none until the next tick
+        log.warning("ski notices: no road (%s)", type(e).__name__)
+        return ski_decode_polyline(kept["path"]) if kept else []
+    held[key] = {"at": now, "path": path}
+    state_set(SKI_ROADS_KEY, held)
+    return ski_decode_polyline(path)
+
+
+def ski_chains_ahead(wish: dict[str, Any], roads: dict[str, list[tuple[float, float]]], controls: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The chain controls on the roads to a phone's resorts, by highway: the worst of them, where it is, and which resorts it's on the way to."""
+    ahead: dict[str, dict[str, Any]] = {}
+    for resort in wish.get("resorts") or []:
+        road = roads.get(resort["slug"]) or []
+        for control in controls:
+            if not control["route"] or not ski_passes_near(road, control["lat"], control["lng"]):
+                continue
+            route = ahead.setdefault(control["route"], {"route": control["route"], "level": 0, "place": "", "to": []})
+            if control["level"] > route["level"]:
+                route.update(level=control["level"], place=control["place"])
+            if resort["name"] not in route["to"]:
+                route["to"].append(resort["name"])
+    return ahead
+
+
+def ski_chains_news(ahead: dict[str, dict[str, Any]], today: int, told: dict[str, Any]) -> dict[str, Any] | None:
+    """Roads to tell of, or None: controls not yet told of, or asking more than was told. Fewer asks nothing new, and a storm's flicker between levels says nothing."""
+    before = told.get("chains") or {}
+    roads = [road for name, road in ahead.items() if road["level"] > (before.get(name) or {}).get("level", 0)]
+    if not roads:
+        return None
+    roads.sort(key=lambda r: (-r["level"], r["route"]))
+    names = ",".join(f"{r['route']}:{r['level']}" for r in sorted(roads, key=lambda r: r["route"]))
+    # The storm's number keeps a control back the same day from looking, to the phone's ledger, like the one it has said; a retry of this one has the same.
+    return {"kind": "chains", "key": f"ski:chains:{today}:{told.get('chains_storm', 0)}:{names}"[:64], "day": today, "roads": roads}
+
+
+def ski_chains_seen(ahead: dict[str, dict[str, Any]], now: float, told: dict[str, Any], read_all: bool = True) -> None:
+    """
+    Keeps a road's controls in mind while they last, and forgets them once they've been gone long
+    enough to be another storm's. A look with a file that couldn't be read ([read_all] false) can't
+    say they've gone, so it counts as seeing them: only looks that came back clear add up.
+    """
+    chains = told.setdefault("chains", {})
+    for name, road in chains.items():
+        if name in ahead or not read_all:
+            road["seen"] = now
+    gone = [n for n, road in chains.items() if now - road.get("seen", 0) >= SKI_CHAINS_CLEAR_SECONDS]
+    for name in gone:
+        del chains[name]
+    if gone:
+        told["chains_storm"] = told.get("chains_storm", 0) + 1
+
+
+def ski_amount(cm: float, imperial: bool) -> str:
+    return f"{round(cm / SKI_CM_PER_INCH)} in" if imperial else f"{round(cm)} cm"
+
+
+def ski_listed(resorts: list[dict[str, Any]], imperial: bool) -> str:
+    listed = ", ".join(f"{r['n']} {ski_amount(r['cm'], imperial)}" for r in resorts[:SKI_SHOWN_RESORTS])
+    return listed + (f", and {len(resorts) - SKI_SHOWN_RESORTS} more" if len(resorts) > SKI_SHOWN_RESORTS else "")
+
+
+def ski_text(news: dict[str, Any], imperial: bool) -> tuple[str, str]:
+    """What an iPhone shows until, and unless, iOS wakes the app; an Android phone words its own. In English, as every push from here is."""
+    if news["kind"] == "snow":
+        weekday = datetime.fromtimestamp(news["day"] * 86400, timezone.utc).strftime("%A")
+        return f"Big snow by {weekday}", ski_listed(news["resorts"], imperial)
+    if news["kind"] == "fresh":
+        resorts = news["resorts"]
+        title = f"Fresh snow at {resorts[0]['n']}" if len(resorts) == 1 else f"Fresh snow at {len(resorts)} resorts"
+        return title, f"{ski_listed(resorts, imperial)} in the last day"
+    roads = news["roads"]
+    worst = roads[0]
+    return (
+        f"{SKI_LEVEL_WORDS[worst['level']]} on {worst['route']}",
+        ". ".join(f"R-{r['level']} on {r['route']} at {r['place']}, on the way to {', '.join(r['to'][:SKI_SHOWN_RESORTS])}" for r in roads),
+    )
+
+
+def ski_day_end(day: int, zone: Any) -> int:
+    """When a calendar day is over, on a clock."""
+    moment = datetime.fromtimestamp((day + 1) * 86400, timezone.utc).replace(tzinfo=zone)
+    return int(moment.timestamp())
+
+
+def ski_data(news: dict[str, Any], now: float, zone: Any) -> dict[str, str]:
+    """
+    The push's data. `ski_notice` is what was decided, for the app to word (`SkiNoticePush`), as
+    little as will do since a push has 4 KB. `homesafe_weather`, `view`, `day` and `resort` are
+    `WeatherDeepLink.toMap`, so a tap on an iPhone's banner lands on the Ski tab, on that day, or on
+    the resort's page if there's only the one.
+    """
+    if news["kind"] == "chains":
+        payload: dict[str, Any] = {"k": "chains", "d": news["day"], "c": [{"n": r["route"], "p": r["place"], "l": r["level"], "t": r["to"][:SKI_SHOWN_RESORTS]} for r in news["roads"][:SKI_SHOWN_RESORTS]]}
+        expires = int(now) + SKI_CHAINS_EXPIRE_SECONDS
+        resort = None
+    else:
+        resorts = news["resorts"]
+        shown = [{key: r[key] for key in ("n", "s", "cm", "lo", "hi") if key in r} for r in resorts[:SKI_SHOWN_RESORTS]]
+        payload = {"k": news["kind"], "d": news["day"], "r": shown, "m": max(0, len(resorts) - SKI_SHOWN_RESORTS)}
+        expires = ski_day_end(news["day"], zone)
+        resort = resorts[0]["s"] if len(resorts) == 1 else None
+    payload["x"] = expires
+    data = {
+        "ski_notice": json.dumps(payload, separators=(",", ":")),
+        "notif_id": news["key"],
+        "push_until": str(expires),
+        "homesafe_weather": "1",
+        "view": "ski",
+        "day": str(news["day"]),
+        "homesafe_weather_expires": str(expires),
+    }
+    if resort:
+        data["resort"] = resort
+    return data
+
+
+def ski_phone_clock(now: float, tz: str | None, utc_offset: int | None) -> tuple[int, int, Any]:
+    """The hour and the calendar day on a phone's clock (the household's, if it hasn't said), and the clock."""
+    zone: Any = None
+    if tz:
+        try:
+            zone = ZoneInfo(tz)
+        except Exception:
+            zone = None
+    if zone is None and utc_offset is not None:
+        zone = timezone(timedelta(minutes=utc_offset))
+    zone = zone or household_zone() or timezone.utc
+    local = datetime.fromtimestamp(now, zone)
+    return local.hour, (local.date() - datetime(1970, 1, 1).date()).days, zone
+
+
+def ski_phones(now: float) -> list[dict[str, Any]]:
+    """The phones with something to hear, awake on their own clocks."""
+    rows = with_db(lambda c: c.execute("SELECT device_id, token, tz, utc_offset, ski, ski_told FROM devices WHERE token IS NOT NULL AND ski IS NOT NULL").fetchall())
+    phones = []
+    for device_id, token, tz, utc_offset, ski, told in rows:
+        if not can_push(token):
+            continue
+        hour, today, zone = ski_phone_clock(now, tz, utc_offset)
+        if hour < SKI_QUIET_UNTIL_HOUR or hour >= SKI_QUIET_FROM_HOUR:
+            continue
+        phones.append({"id": device_id, "token": token, "hour": hour, "today": today, "zone": zone, "wish": json.loads(ski), "told": json.loads(told) if told else {}})
+    return phones
+
+
+# What was last read, by what it's of: (when, the answer). A failure is an answer of None until the
+# next poll, and a tick asks nothing the last one already asked within its own time.
+_ski_held: dict[str, tuple[float, Any]] = {}
+
+
+def _ski_fresh(kind: str, key: str, now: float, max_age: float, fetch: Callable[[], Any]) -> Any:
+    held = _ski_held.get(f"{kind}:{key}")
+    if held and now - held[0] < max_age:
+        return held[1]
+    try:
+        answer = fetch()
+    except Exception as e:  # noqa: BLE001 - this one's answer, not the rest's. Its own words would have the coordinates in them, in the URL.
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if status == 429:
+            raise
+        log.warning("ski notices: no %s from %s (%s %s)", kind, key, type(e).__name__, status or "")
+        answer = None
+    _ski_held[f"{kind}:{key}"] = (now, answer)
+    return answer
+
+
+def ski_tick(
+    now: float,
+    forecast: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    site: Callable[[str, float], dict[str, Any] | None] | None = None,
+    chains: Callable[[int], list[dict[str, Any]]] | None = None,
+    road: Callable[[dict[str, Any], dict[str, Any]], str] | None = None,
+    push: Callable[..., str] | None = None,
+) -> dict[str, int] | None:
+    """One look, when there is anyone to tell; answers what was pushed. The callables stand in for the services and `deliver` in tests."""
+    phones = ski_phones(now)
+    if not phones:
+        return None
+    forecast, site, chains, road = forecast or ski_forecast_fetch, site or ski_read_site, chains or ski_chains_fetch, road or ski_road_fetch
+    following: dict[str, dict[str, Any]] = {}
+    for phone in phones:
+        for resort in phone["wish"].get("resorts") or []:
+            following.setdefault(resort["slug"], resort)
+
+    # A resort's site is asked only where a phone's answer turns on it; the forecast only for one wanting it.
+    today = {phone["id"]: phone["today"] for phone in phones}
+    readings: dict[str, Any] = {}
+    forecasts: dict[str, Any] = {}
+    for slug, resort in following.items():
+        wanting = [p for p in phones if any(r["slug"] == slug for r in p["wish"].get("resorts") or [])]
+        if any(p["wish"].get("fresh") or p["wish"].get("snow") for p in wanting) and any(ski_worth_reading(resort, today[p["id"]]) for p in wanting):
+            readings[slug] = _ski_fresh("site", slug, now, SKI_FRESH_POLL_SECONDS, lambda slug=slug: site(slug, now))
+        if any(p["wish"].get("snow") for p in wanting):
+            forecasts[slug] = _ski_fresh("forecast", slug, now, SKI_FORECAST_POLL_SECONDS, lambda resort=resort: forecast(resort))
+
+    home = state_get(HOME_KEY)
+    roads: dict[str, list[tuple[float, float]]] = {}
+    controls: list[dict[str, Any]] = []
+    read_all = True
+    if home and any(p["wish"].get("chains") for p in phones):
+        for phone in phones:
+            if phone["wish"].get("chains"):
+                for resort in phone["wish"].get("resorts") or []:
+                    if resort["slug"] not in roads:
+                        roads[resort["slug"]] = ski_road(home, resort, now, road)
+        points = [point for way in roads.values() for point in way]
+        if points:
+            south, north = min(p[0] for p in points), max(p[0] for p in points)
+            west, east = min(p[1] for p in points), max(p[1] for p in points)
+            for number, (s, n, w, e) in SKI_CHAIN_DISTRICTS.items():
+                if s <= north and n >= south and w <= east and e >= west:
+                    district = _ski_fresh("chains", str(number), now, SKI_TICK_SECONDS - 60, lambda number=number: chains(number))
+                    if district is None:
+                        read_all = False
+                    else:
+                        controls += district
+
+    results = []
+    for phone in phones:
+        wish, told = phone["wish"], phone["told"]
+        imperial = wish.get("imperial", True)
+        news = []
+        if wish.get("snow"):
+            big = ski_big_snow(wish, forecasts, readings, phone["today"], told)
+            if big:
+                news.append(big)
+        if wish.get("fresh"):
+            fresh = ski_fresh_snow(wish, readings, phone["today"], phone["hour"], now, told)
+            if fresh:
+                news.append(fresh)
+        ahead: dict[str, dict[str, Any]] = {}
+        if wish.get("chains") and home:
+            ahead = ski_chains_ahead(wish, roads, controls)
+            road_news = ski_chains_news(ahead, phone["today"], told)
+            if road_news:
+                news.append(road_news)
+        ski_chains_seen(ahead, now, told, read_all)
+        for item in news:
+            title, body = ski_text(item, imperial)
+            # Firebase out of reach raises rather than answering: this push failing, not the rest's.
+            try:
+                result = (push or deliver)(phone["token"], title, body, ski_data(item, now, phone["zone"]))
+            except Exception as e:  # noqa: BLE001
+                log.warning("ski notices: push failed (%s)", type(e).__name__)
+                result = "failed"
+            results.append(result)
+            # Not told, so not held to it: the next tick says it.
+            if result != "failed":
+                ski_mark_told(told, item, now)
+        ski_prune_told(told, now)
+        with_db(lambda c, told=told, device_id=phone["id"]: (c.execute("UPDATE devices SET ski_told=? WHERE device_id=?", (json.dumps(told), device_id)), c.commit()))
+    if not results:
+        return None
+    outcome = {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed")}
+    log.info("ski notices: push: %s", outcome)
+    return outcome
+
+
+def ski_mark_told(told: dict[str, Any], news: dict[str, Any], now: float) -> None:
+    told.setdefault("said", {})[news["key"]] = now
+    if news["kind"] == "fresh":
+        told["fresh_at"] = now
+        for resort in news["resorts"]:
+            told.setdefault("fresh", {})[resort["s"]] = {"day": news["day"], "cm": resort["cm"], "updated": resort.get("updated")}
+    elif news["kind"] == "chains":
+        for road in news["roads"]:
+            told.setdefault("chains", {})[road["route"]] = {"level": road["level"], "seen": now}
+
+
+def ski_prune_told(told: dict[str, Any], now: float) -> None:
+    said = told.get("said") or {}
+    for key in [k for k, at in said.items() if now - at >= SKI_TOLD_DAYS * 86400]:
+        del said[key]
+
+
+def ski_forever() -> None:
+    while True:
+        wait = SKI_TICK_SECONDS
+        try:
+            ski_tick(time.time())
+        except Exception as e:  # noqa: BLE001 - nothing this time; the next tick looks again
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 429:
+                wait = SKI_BACKOFF_SECONDS
+            log.warning("ski notices: %s %s", type(e).__name__, status or "")
+        time.sleep(wait)
+
+
+def ski_notice_test(kind: str = "snow", now: float | None = None) -> dict[str, int]:
+    """
+    A made-up notification of [kind], "snow", "fresh" or "chains", about the first resort each phone
+    follows, pushed to every phone that follows one whatever its clock says and however lately it
+    was told: there's no summoning a storm to try it. `python relay.py ski-notice-test snow`.
+    """
+    now = time.time() if now is None else now
+    rows = with_db(lambda c: c.execute("SELECT token, tz, utc_offset, ski FROM devices WHERE token IS NOT NULL AND ski IS NOT NULL").fetchall())
+    results = []
+    for token, tz, utc_offset, ski in rows:
+        wish = json.loads(ski)
+        resorts = wish.get("resorts") or []
+        if not resorts:
+            continue
+        _, today, zone = ski_phone_clock(now, tz, utc_offset)
+        name, slug = resorts[0]["name"], resorts[0]["slug"]
+        key = f"ski:test:{kind}:{int(now)}"
+        if kind == "chains":
+            news: dict[str, Any] = {"kind": "chains", "key": key, "day": today, "roads": [{"route": "I-80", "level": 2, "place": "Donner Summit", "to": [name]}]}
+        elif kind == "fresh":
+            news = {"kind": "fresh", "key": key, "day": today, "resorts": [{"n": name, "s": slug, "cm": 25.4}]}
+        else:
+            news = {"kind": "snow", "key": key, "day": ski_next_saturday(today), "resorts": [{"n": name, "s": slug, "cm": 45.7, "lo": 30.5, "hi": 61.0}]}
+        title, body = ski_text(news, wish.get("imperial", True))
+        results.append(deliver(token, title, body, ski_data(news, now, zone)))
+    return {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed")}
+
+
+class SkiResortWish(BaseModel):
+    slug: str
+    name: str
+    lat: float
+    lng: float
+    summit_m: float | None = None
+    # SkiOpenState's name, as the phone last knew it, when the report saying so is from, and the dates it gave as calendar days.
+    state: str = "CLOSED"
+    as_of: int | None = None
+    opens: int | None = None
+    closes: int | None = None
+
+
+class SkiWishes(BaseModel):
+    snow: bool = False
+    fresh: bool = False
+    chains: bool = False
+    imperial: bool = True
+    trip_day: int | None = None
+    resorts: list[SkiResortWish] = []
+
+
+@app.put("/devices/{ident}/ski")
+def set_ski_wishes(ident: str, wishes: SkiWishes, request: Request) -> dict[str, Any]:
+    """
+    What this phone wants to hear of skiing, in full each time. Nothing wanted, or nothing followed,
+    forgets it. Proves itself with its device secret, as presence does: this also runs from a
+    background job with no session. What it was told of stays, so a list changing says nothing twice.
+    """
+    authenticate(request, ident)
+    row = find_device(ident)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    wanted = wishes.resorts[:SKI_MAX_RESORTS] if wishes.snow or wishes.fresh or wishes.chains else []
+    value = json.dumps({**wishes.model_dump(exclude={"resorts"}), "resorts": [r.model_dump() for r in wanted]}) if wanted else None
+    with_db(lambda c: (c.execute("UPDATE devices SET ski=? WHERE device_id=?", (value, row[0])), c.commit()))
+    return {"ok": True, "resorts": len(wanted)}
 
 
 # ---------------------------------------------------------------- doors
@@ -18190,6 +19157,10 @@ if __name__ == "__main__":
     if command == "rain-soon-test":
         # A made-up shower to every phone that wants these (see `rain_soon_test`).
         print(json.dumps(rain_soon_test()))
+        sys.exit(0)
+    if command == "ski-notice-test":
+        # A made-up notification to every phone that follows a resort (see `ski_notice_test`).
+        print(json.dumps(ski_notice_test(sys.argv[2] if len(sys.argv) > 2 else "snow")))
         sys.exit(0)
     if not tesla_on():
         sys.exit("Set TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL first (tesla.env).")

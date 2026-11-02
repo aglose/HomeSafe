@@ -72,6 +72,7 @@ val WeatherNoticeIcon.look: WeatherNoticeLook
         WeatherNoticeIcon.HURRICANE -> WeatherNoticeLook(NotificationGlyph.HURRICANE, Color(0xFFE8527A), Color(0xFF981D4C))
         WeatherNoticeIcon.FIRE -> WeatherNoticeLook(NotificationGlyph.FIRE, Color(0xFFFF7A3D), Color(0xFFC6281B))
         WeatherNoticeIcon.WARNING -> WeatherNoticeLook(NotificationGlyph.WARNING, Color(0xFFFFA63D), Color(0xFFDF541E))
+        WeatherNoticeIcon.CHAINS -> WeatherNoticeLook(NotificationGlyph.CHAINS, Color(0xFF8EA0B5), Color(0xFF47566C), Color(0xFFFFC857))
     }
 
 /**

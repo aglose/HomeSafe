@@ -12059,3 +12059,595 @@ class RainSoonTest(_ScratchDb):
         with self.assertRaises(Refused):
             relay.rain_soon_tick(self.T, fetch=fetch, push=self.push)
         self.assertEqual((None, None, None), self.told())
+
+
+class SkiSiteReadingTest(unittest.TestCase):
+    """The resorts' own sites as they really send them, the same cut-down pages as ResortPagesTest.kt."""
+
+    def inches(self, value):
+        return value * 2.54
+
+    def test_a_vail_page_reads_its_snow_and_its_date(self):
+        page = """<script>FR.snowReportData = {"OvernightSnowfall":{"Inches":"1"},"TwentyFourHourSnowfall":{"Inches":"8"},"LastUpdatedText":"Updated November 01, 2026 at 10:20 AM PST"};FR.unitsOfMeasurement = 1;</script>"""
+        reading = relay.ski_read_vail(page)
+        self.assertEqual(self.inches(8), reading["last24"])
+        self.assertEqual(self.inches(1), reading["last12"])
+        self.assertEqual(relay.calendar.timegm((2026, 11, 1, 18, 20, 0)), reading["updated"])
+
+    def test_akamais_challenge_is_no_reading_though_it_says_200(self):
+        self.assertIsNone(relay.ski_read_vail("<html><script>bm_challenge()</script></html>"))
+
+    def test_the_feed_reads_the_most_any_area_had_and_a_dash_is_nothing(self):
+        feed = {"Resorts": [{"OperatingStatus": "Closed", "SnowReport": {
+            "TotalOpenLifts": 0, "LastUpdate": "2026-11-01T07:15:35-0800",
+            "BaseArea": {"Last24HoursIn": "9"}, "MidMountainArea": {"Last24HoursIn": "12"}, "SummitArea": {"Last24HoursIn": "--"},
+        }}]}
+        reading = relay.ski_read_feed(feed)
+        self.assertEqual(self.inches(12), reading["last24"])
+        self.assertIs(False, reading["running"])
+        self.assertEqual(0, reading["lifts_open"])
+        self.assertEqual(relay.calendar.timegm((2026, 11, 1, 15, 15, 35)), reading["updated"])
+        self.assertIsNone(relay.ski_read_feed({"Resorts": []}))
+
+    def test_a_powdr_report(self):
+        reading = relay.ski_read_powdr([{"overnight_amount": 5, "updated": 1793567560, "computed": {"24_hour": 6}}])
+        self.assertEqual((self.inches(5), self.inches(6), 1793567560), (reading["last12"], reading["last24"], reading["updated"]))
+        self.assertIsNone(relay.ski_read_powdr([]))
+
+    def test_sugar_bowl_is_read_at_its_summit(self):
+        page = """<div>Last Updated: 04/05/2026 03:57 PM</div> <b>2</b> /11 Lifts Open Mountain Status Closed Summit 8,383' 40 &quot; Base Depth 1 &quot; Overnight Daytime 2 &quot; 24 Hour 3 &quot; 7-Day Base 6,887' 20 &quot; Base Depth 0 &quot; 24 Hour"""
+        reading = relay.ski_read_sugar_bowl(page)
+        self.assertEqual((self.inches(1), self.inches(2)), (reading["last12"], reading["last24"]))
+        self.assertIs(False, reading["running"])
+        self.assertEqual(2, reading["lifts_open"])
+        self.assertEqual(relay.calendar.timegm((2026, 4, 5, 22, 57, 0)), reading["updated"])
+
+    def test_sierra(self):
+        page = """Powered by OpenSnow 0″ 24 Hour Snowfall Summit Base 12 Hour 1″ 0″ 24 Hour 2″ 1″ 48 Hour 3″ 2″ Lifts Open 3 /14 Runs Open 7 /50 Fri Oct 16, 2026 7:45 AM Snow Reporter’s Message"""
+        reading = relay.ski_read_sierra(page)
+        self.assertEqual((self.inches(1), self.inches(2), 3), (reading["last12"], reading["last24"], reading["lifts_open"]))
+        self.assertEqual(relay.calendar.timegm((2026, 10, 16, 14, 45, 0)), reading["updated"])
+
+    def test_mt_roses_range_is_read_at_its_most_and_a_dash_is_nothing(self):
+        xml = """<Skirose><Updated_Time>October 13, 2026 8:12 am</Updated_Time><New_Snow>2-4"</New_Snow><Lift_Status><A>Open</A><B>Closed</B></Lift_Status></Skirose>"""
+        reading = relay.ski_read_rose(xml)
+        self.assertEqual((self.inches(4), 1), (reading["last24"], reading["lifts_open"]))
+        self.assertEqual(relay.calendar.timegm((2026, 10, 13, 15, 12, 0)), reading["updated"])
+        self.assertIsNone(relay.ski_read_rose("""<Skirose><Updated_Time>October 13, 2026 8:12 am</Updated_Time><New_Snow>-</New_Snow></Skirose>""")["last24"])
+
+    def test_homewood_at_its_summit(self):
+        reading = relay.ski_read_homewood("""Snow Report ❄ 12 hr ❄ 24 hr 📏 Current Depth 🏔 Season Total Base 0.5 in 1.0 in 11.0 in 2.0 in Summit 1.5 in 3.0 in 17.0 in 4.0 in Weather Forecast Snow Forecast: 4.7 in""")
+        self.assertEqual((self.inches(1.5), self.inches(3)), (reading["last12"], reading["last24"]))
+
+    def test_the_other_plain_pages(self):
+        ranch = relay.ski_read_donner_ranch("""Updated 11/01/2026 Chair 1: Open Chair 2: Closed Ski Moving Carpet: Closed 24-hour snow total: 3 in Season total: 4 in""")
+        self.assertEqual((self.inches(3), 1), (ranch["last24"], ranch["lifts_open"]))
+        self.assertEqual(self.inches(2), relay.ski_read_diamond_peak("""Storm Total Mountain Report New Snow Overnight 1 Inches New Snow 24H Total 2 Inches Base Depth 4 Inches""")["last24"])
+        self.assertEqual(self.inches(1), relay.ski_read_dodge_ridge("""DAILY Snow Report Snowfall Totals 24 hrs 1″ 72 hrs 2″ Season Total 3″""")["last24"])
+        china = relay.ski_read_china_peak("""Snow Totals: Last 24 Hours: 4" Last 7 Days: 5" Lift Status Chair 1: CLOSED Academy Chair 2: OPEN""")
+        self.assertEqual((self.inches(4), 1), (china["last24"], china["lifts_open"]))
+        for read in (relay.ski_read_donner_ranch, relay.ski_read_diamond_peak, relay.ski_read_dodge_ridge, relay.ski_read_china_peak, relay.ski_read_homewood, relay.ski_read_sierra, relay.ski_read_sugar_bowl):
+            self.assertIsNone(read("<html>Down for maintenance</html>"))
+
+    def test_tahoe_donners_date_has_no_year_so_it_is_the_latest_there_has_been(self):
+        page = """Snow Report 1 inches 24 HRS 2 inches 48 HRS 3 inches BASE Report updated: Fri Mar 13 | 8:00 am Current Weather"""
+        january = relay.calendar.timegm((2026, 1, 15, 0, 0, 0))
+        reading = relay.ski_read_tahoe_donner(page, january)
+        self.assertEqual(self.inches(1), reading["last24"])
+        self.assertEqual(relay.calendar.timegm((2025, 3, 13, 15, 0, 0)), reading["updated"])
+
+    def test_every_resort_the_app_reads_is_read_here_too(self):
+        """Two lists of the same thing, in two languages, that a new resort has to be added to."""
+        source = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "features", "weather", "src", "commonMain", "kotlin", "com", "meticulouscreations", "homesafe", "weather", "ski", "data", "ResortSites.kt")
+        if not os.path.exists(source):
+            self.skipTest("the app's source isn't here")
+        with open(source, encoding="utf-8") as f:
+            app = set(relay.re.findall(r'^\s+"([a-z0-9-]+)" to ', f.read(), relay.re.M))
+        self.assertEqual(app, set(relay.SKI_SITES))
+
+
+class SkiForecastTest(unittest.TestCase):
+    # Saturday 7 November 2026 at the mountain, as Open-Meteo stamps a day: its local midnight.
+    SAT = 20764
+    OFFSET = -28800
+
+    def raw(self, **fields):
+        times = [(self.SAT - 2 + i) * 86400 - self.OFFSET for i in range(4)]
+        return {"utc_offset_seconds": self.OFFSET, "daily": {"time": times, **fields}}
+
+    def test_a_days_snow_is_the_blends_and_each_models(self):
+        forecast = relay.ski_forecast_read(self.raw(snowfall_sum_best_match=[1, 2, 3, 4], snowfall_sum_gfs_seamless=[0, 0, 9, None]))
+        day = forecast["days"][self.SAT]
+        self.assertEqual(3.0, day["best"])
+        self.assertEqual({"snowfall_sum_best_match": 3, "snowfall_sum_gfs_seamless": 9}, day["models"])
+
+    def test_the_snow_by_a_day_is_the_three_days_up_to_it_with_the_models_own_totals(self):
+        forecast = relay.ski_forecast_read(self.raw(snowfall_sum_best_match=[10, 10, 10, 50], snowfall_sum_gfs_seamless=[0, 5, 10, 0], snowfall_sum_ecmwf_ifs025=[30, 30, 30, 0]))
+        self.assertEqual((30.0, 15.0, 90.0), relay.ski_snow_by(forecast, self.SAT))
+
+    def test_a_storm_a_model_times_differently_is_the_same_storm(self):
+        forecast = relay.ski_forecast_read(self.raw(snowfall_sum_best_match=[0, 30, 0, 0], snowfall_sum_gfs_seamless=[30, 0, 0, 0], snowfall_sum_ecmwf_ifs025=[0, 0, 30, 0]))
+        self.assertEqual((30.0, 30.0, 30.0), relay.ski_snow_by(forecast, self.SAT))
+
+    def test_a_model_with_no_answer_for_those_days_has_no_say(self):
+        forecast = relay.ski_forecast_read(self.raw(snowfall_sum_best_match=[10, 10, 10, 0], snowfall_sum_gfs_seamless=[None, 0, 0, 0]))
+        self.assertEqual((30.0, 30.0, 30.0), relay.ski_snow_by(forecast, self.SAT))
+
+    def test_the_next_saturday_is_the_apps(self):
+        self.assertEqual(self.SAT, relay.ski_next_saturday(self.SAT))
+        self.assertEqual(self.SAT, relay.ski_next_saturday(self.SAT - 1))
+        self.assertEqual(self.SAT + 7, relay.ski_next_saturday(self.SAT + 1))
+
+
+class SkiDecisionTest(unittest.TestCase):
+    # Tuesday 3 November 2026.
+    TODAY = 20760
+    SAT = 20764
+    NOW = 20760 * 86400 + 16 * 3600
+    OPEN = {"slug": "alpha", "name": "Alpha", "lat": 39.1, "lng": -120.2, "state": "OPEN", "as_of": NOW - 3600}
+    OTHER = {"slug": "beta", "name": "Beta", "lat": 39.2, "lng": -120.3, "state": "OPEN", "as_of": NOW - 3600}
+
+    def forecast(self, by_day):
+        return {"offset": 0, "days": {day: {"best": by_day.get(day, 0.0), "models": {"m": by_day.get(day, 0.0)}} for day in range(self.TODAY - 3, self.TODAY + 20)}}
+
+    def snow(self, forecasts, resorts=None, trip=None, told=None, readings=None, today=TODAY):
+        return relay.ski_big_snow({"resorts": resorts or [self.OPEN], "trip_day": trip}, forecasts, readings or {}, today, told or {})
+
+    def test_a_foot_by_saturday_is_big_snow(self):
+        news = self.snow({"alpha": self.forecast({self.SAT - 1: 15, self.SAT: 15})})
+        self.assertEqual(("ski:snow:20764", self.SAT), (news["key"], news["day"]))
+        self.assertEqual("Alpha", news["resorts"][0]["n"])
+
+    def test_less_than_a_foot_isnt(self):
+        self.assertIsNone(self.snow({"alpha": self.forecast({self.SAT: 29})}))
+
+    def test_a_model_that_sees_little_of_it_holds_it_back(self):
+        forecast = self.forecast({self.SAT: 40.0})
+        forecast["days"][self.SAT]["models"]["m"] = 14.0
+        self.assertIsNone(self.snow({"alpha": forecast}))
+        forecast["days"][self.SAT]["models"]["m"] = 15.0
+        self.assertEqual((15.0, 40.0), tuple(self.snow({"alpha": forecast})["resorts"][0][k] for k in ("lo", "hi")))
+
+    def test_only_sunday_having_it_says_sunday(self):
+        news = self.snow({"alpha": self.forecast({self.SAT + 1: 40})})
+        self.assertEqual((self.SAT + 1, "ski:snow:20764"), (news["day"], news["key"]))
+
+    def test_said_once_for_a_weekend_whatever_the_models_do_next(self):
+        self.assertIsNone(self.snow({"alpha": self.forecast({self.SAT: 90})}, told={"said": {"ski:snow:20764": 1}}))
+
+    def test_next_weekend_is_news_again(self):
+        news = self.snow({"alpha": self.forecast({self.SAT + 7: 40})}, told={"said": {"ski:snow:20764": 1}}, today=self.SAT + 1)
+        self.assertEqual("ski:snow:20771", news["key"])
+
+    def test_the_day_chosen_comes_first_and_on_its_own(self):
+        forecasts = {"alpha": self.forecast({self.TODAY + 2: 40, self.SAT: 40})}
+        self.assertEqual((self.TODAY + 2, "ski:snow:20762"), tuple(self.snow(forecasts, trip=self.TODAY + 2)[k] for k in ("day", "key")))
+        self.assertEqual("ski:snow:20764", self.snow(forecasts, trip=self.TODAY + 2, told={"said": {"ski:snow:20762": 1}})["key"])
+
+    def test_a_chosen_day_in_the_weekend_is_the_weekend(self):
+        news = self.snow({"alpha": self.forecast({self.SAT + 1: 40})}, trip=self.SAT + 1)
+        self.assertEqual("ski:snow:20764", news["key"])
+
+    def test_a_chosen_day_gone_by_or_too_far_off_says_nothing_of_itself(self):
+        self.assertIsNone(self.snow({"alpha": self.forecast({self.TODAY - 1: 90})}, trip=self.TODAY - 1))
+        self.assertIsNone(self.snow({"alpha": self.forecast({self.TODAY + 9: 90})}, trip=self.TODAY + 9))
+
+    def test_a_resort_that_wont_be_running_that_day_doesnt_count(self):
+        closed = {**self.OPEN, "state": "CLOSED", "opens": self.SAT + 10}
+        self.assertIsNone(self.snow({"alpha": self.forecast({self.SAT: 90})}, resorts=[closed]))
+        self.assertIsNotNone(self.snow({"alpha": self.forecast({self.SAT: 90})}, resorts=[{**closed, "opens": self.SAT}]))
+
+    def test_the_resorts_own_word_on_running_goes_over_what_the_phone_last_knew(self):
+        closed = {**self.OPEN, "state": "CLOSED"}
+        self.assertIsNotNone(self.snow({"alpha": self.forecast({self.SAT: 90})}, resorts=[closed], readings={"alpha": {"running": True}}))
+        self.assertIsNone(self.snow({"alpha": self.forecast({self.SAT: 90})}, readings={"alpha": {"running": False}}))
+
+    def test_an_open_from_an_old_report_says_nothing_about_now(self):
+        forecasts = {"alpha": self.forecast({self.SAT: 40.0})}
+        old = self.TODAY * 86400 - relay.SKI_REPORT_CURRENT_SECONDS - 1
+        self.assertIsNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": old}]))
+        self.assertIsNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": None}]))
+        self.assertIsNotNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": old + 1}]))
+
+    def test_an_old_report_keeps_the_dates_it_gave(self):
+        forecasts = {"alpha": self.forecast({self.SAT: 40.0})}
+        old = self.TODAY * 86400 - 30 * 86400
+        self.assertIsNotNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": old, "opens": self.SAT - 1}]))
+
+    def test_a_dated_page_saying_lifts_are_turning_has_to_be_recent_too(self):
+        forecasts = {"alpha": self.forecast({self.SAT: 40.0})}
+        closed = {**self.OPEN, "state": "CLOSED"}
+        old = self.TODAY * 86400 - relay.SKI_REPORT_CURRENT_SECONDS - 1
+        self.assertIsNone(self.snow(forecasts, resorts=[closed], readings={"alpha": {"running": True, "updated": old}}))
+        self.assertIsNotNone(self.snow(forecasts, resorts=[closed], readings={"alpha": {"running": True, "updated": None}}))
+
+    def test_several_come_as_one_the_most_first(self):
+        news = self.snow({"alpha": self.forecast({self.SAT: 40}), "beta": self.forecast({self.SAT: 60})}, resorts=[self.OPEN, self.OTHER])
+        self.assertEqual(["Beta", "Alpha"], [r["n"] for r in news["resorts"]])
+
+    def fresh(self, readings, hour=8, told=None, now=NOW, resorts=None, today=TODAY):
+        return relay.ski_fresh_snow({"resorts": resorts or [self.OPEN]}, readings, today, hour, now, told or {})
+
+    def test_six_inches_on_its_own_site_is_fresh_snow(self):
+        news = self.fresh({"alpha": {"last24": 15.24, "updated": self.NOW - 3600}})
+        self.assertEqual("Alpha", news["resorts"][0]["n"])
+        self.assertEqual("ski:fresh:20760:8", news["key"])
+        self.assertIsNone(self.fresh({"alpha": {"last24": 14.9, "updated": self.NOW - 3600}}))
+
+    def test_overnight_counts_when_it_is_more_than_the_day(self):
+        self.assertIsNotNone(self.fresh({"alpha": {"last12": 20.0, "last24": None, "updated": None}}))
+
+    def test_before_seven_it_waits_for_the_rest_to_report(self):
+        self.assertIsNone(self.fresh({"alpha": {"last24": 30.0, "updated": None}}, hour=6))
+
+    def test_an_old_report_isnt_about_last_night(self):
+        self.assertIsNone(self.fresh({"alpha": {"last24": 30.0, "updated": self.NOW - 37 * 3600}}))
+
+    def test_a_closed_resort_has_nothing_to_tell(self):
+        self.assertIsNone(self.fresh({"alpha": {"last24": 30.0, "updated": None}}, resorts=[{**self.OPEN, "state": "CLOSED"}]))
+
+    def test_a_resort_is_said_once_a_day(self):
+        told = {"fresh": {"alpha": {"day": self.TODAY, "cm": 30.0, "updated": self.NOW - 3600}}}
+        self.assertIsNone(self.fresh({"alpha": {"last24": 40.0, "updated": self.NOW - 60}}, told=told))
+
+    def test_a_new_day_with_a_new_report_is_new_snow(self):
+        told = {"fresh": {"alpha": {"day": self.TODAY - 1, "cm": 30.0, "updated": self.NOW - 86400}}}
+        self.assertIsNotNone(self.fresh({"alpha": {"last24": 30.0, "updated": self.NOW - 60}}, told=told))
+
+    def test_a_site_that_didnt_update_says_nothing_new(self):
+        told = {"fresh": {"alpha": {"day": self.TODAY - 1, "cm": 30.0, "updated": None}}}
+        self.assertIsNone(self.fresh({"alpha": {"last24": 30.0, "updated": None}}, told=told))
+
+    def test_a_second_resort_waits_its_turn_but_is_told(self):
+        told = {"fresh_at": self.NOW - 3600, "fresh": {"alpha": {"day": self.TODAY, "cm": 30.0, "updated": None}}}
+        readings = {"alpha": {"last24": 30.0, "updated": None}, "beta": {"last24": 20.0, "updated": None}}
+        self.assertIsNone(self.fresh(readings, told=told, resorts=[self.OPEN, self.OTHER]))
+        news = self.fresh(readings, told=told, resorts=[self.OPEN, self.OTHER], now=self.NOW + 6 * 3600, hour=14)
+        self.assertEqual(["Beta"], [r["n"] for r in news["resorts"]])
+
+    # A road that runs north along the -120 meridian from 39 to 40 degrees.
+    ROAD = [(39.0, -120.0), (40.0, -120.0)]
+
+    def controls(self, level=2, lat=39.5, lng=-120.0, route="I-80", place="Donner Summit"):
+        return [{"level": level, "route": route, "place": place, "lat": lat, "lng": lng}]
+
+    def ahead(self, controls, resorts=None):
+        return relay.ski_chains_ahead({"resorts": resorts or [self.OPEN]}, {"alpha": self.ROAD, "beta": self.ROAD}, controls)
+
+    def test_a_control_on_the_road_is_ahead_and_one_off_it_isnt(self):
+        self.assertEqual(["Alpha"], self.ahead(self.controls())["I-80"]["to"])
+        self.assertEqual({}, self.ahead(self.controls(lng=-120.1)))
+
+    def test_a_highways_worst_is_what_it_says_and_it_lists_each_resort_once(self):
+        road = self.ahead(self.controls(level=1, place="Colfax") + self.controls(level=3, lat=39.6) + self.controls(level=2, lat=39.7), resorts=[self.OPEN, self.OTHER])["I-80"]
+        self.assertEqual((3, "Donner Summit", ["Alpha", "Beta"]), (road["level"], road["place"], road["to"]))
+
+    def test_a_control_is_news_once_and_again_only_if_it_asks_more(self):
+        told = {}
+        news = relay.ski_chains_news(self.ahead(self.controls(level=1)), self.TODAY, told)
+        relay.ski_mark_told(told, news, self.NOW)
+        self.assertIsNone(relay.ski_chains_news(self.ahead(self.controls(level=1)), self.TODAY, told))
+        self.assertIsNone(relay.ski_chains_news(self.ahead(self.controls(level=1)), self.TODAY + 1, told), "a new day of the same control is the same control")
+        harder = relay.ski_chains_news(self.ahead(self.controls(level=2)), self.TODAY, told)
+        self.assertEqual(2, harder["roads"][0]["level"])
+        relay.ski_mark_told(told, harder, self.NOW)
+        self.assertIsNone(relay.ski_chains_news(self.ahead(self.controls(level=1)), self.TODAY, told), "easing asks nothing new")
+        self.assertIsNone(relay.ski_chains_news(self.ahead(self.controls(level=2)), self.TODAY, told), "nor does its going back up")
+
+    def test_gone_long_enough_it_is_another_storms(self):
+        told = {}
+        relay.ski_mark_told(told, relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told), self.NOW)
+        relay.ski_chains_seen({}, self.NOW + relay.SKI_CHAINS_CLEAR_SECONDS - 1, told)
+        self.assertIn("I-80", told["chains"], "overnight, with nobody looking, isn't long enough")
+        relay.ski_chains_seen(self.ahead(self.controls()), self.NOW + relay.SKI_CHAINS_CLEAR_SECONDS - 1, told)
+        relay.ski_chains_seen({}, self.NOW + 2 * relay.SKI_CHAINS_CLEAR_SECONDS - 2, told)
+        self.assertIn("I-80", told["chains"], "still there meanwhile keeps it the same storm's")
+        relay.ski_chains_seen({}, self.NOW + 2 * relay.SKI_CHAINS_CLEAR_SECONDS, told)
+        self.assertEqual({}, told["chains"])
+        self.assertIsNotNone(relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told))
+
+    def test_a_look_it_couldnt_finish_isnt_a_clear_road(self):
+        told = {}
+        relay.ski_mark_told(told, relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told), self.NOW)
+        relay.ski_chains_seen({}, self.NOW + relay.SKI_CHAINS_CLEAR_SECONDS, told, read_all=False)
+        self.assertIn("I-80", told["chains"], "no answer is no sign it has gone")
+        self.assertIsNone(relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told))
+        relay.ski_chains_seen({}, self.NOW + 2 * relay.SKI_CHAINS_CLEAR_SECONDS - 1, told)
+        self.assertIn("I-80", told["chains"], "the twelve hours run from the last look that couldn't say")
+        relay.ski_chains_seen({}, self.NOW + 2 * relay.SKI_CHAINS_CLEAR_SECONDS, told)
+        self.assertEqual({}, told["chains"])
+
+    def test_a_control_back_the_same_day_has_a_key_the_phone_hasnt_said(self):
+        told = {}
+        first = relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told)
+        self.assertEqual(first["key"], relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told)["key"], "a retry is the same notification")
+        relay.ski_mark_told(told, first, self.NOW)
+        relay.ski_chains_seen({}, self.NOW + relay.SKI_CHAINS_CLEAR_SECONDS, told)
+        again = relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told)
+        self.assertNotEqual(first["key"], again["key"])
+
+    def test_only_a_control_in_force_counts(self):
+        def point(status, in_service="true"):
+            return {"cc": {"inService": in_service, "statusData": {"status": status}, "location": {"route": "I-80", "locationName": "Donner Summit", "latitude": "39.33", "longitude": "-120.34"}}}
+
+        controls = relay.ski_chain_controls({"data": [point("R-2"), point("R1"), point("R-2", "false"), point("Not Active"), {"cc": {}}]})
+        self.assertEqual([2, 1], [c["level"] for c in controls])
+        self.assertEqual(("I-80", "Donner Summit", 39.33, -120.34), tuple(controls[0][k] for k in ("route", "place", "lat", "lng")))
+
+    def test_a_polyline_decodes_as_googles_documentation_has_it(self):
+        self.assertEqual([(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)], relay.ski_decode_polyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@"))
+
+
+class SkiPushShapeTest(unittest.TestCase):
+    NOW = 20760 * 86400 + 16 * 3600
+    ZONE = relay.ZoneInfo("America/Los_Angeles")
+    SNOW = {"kind": "snow", "key": "ski:snow:20764", "day": 20764, "resorts": [{"n": "Alpha", "s": "alpha", "cm": 45.7, "lo": 30.0, "hi": 60.0}]}
+    FRESH = {"kind": "fresh", "key": "ski:fresh:20760:8", "day": 20760, "resorts": [{"n": "Alpha", "s": "alpha", "cm": 25.4, "updated": 5}, {"n": "Beta", "s": "beta", "cm": 15.24, "updated": None}]}
+    CHAINS = {"kind": "chains", "key": "ski:chains:20760:I-80:2", "day": 20760, "roads": [{"route": "I-80", "level": 2, "place": "Donner Summit", "to": ["Alpha", "Beta"]}]}
+
+    def test_it_says_in_english_what_an_iphone_shows_first(self):
+        self.assertEqual(("Big snow by Saturday", "Alpha 18 in"), relay.ski_text(self.SNOW, True))
+        self.assertEqual(("Big snow by Saturday", "Alpha 46 cm"), relay.ski_text(self.SNOW, False))
+        self.assertEqual(("Fresh snow at 2 resorts", "Alpha 10 in, Beta 6 in in the last day"), relay.ski_text(self.FRESH, True))
+        self.assertEqual(("Chains required on I-80", "R-2 on I-80 at Donner Summit, on the way to Alpha, Beta"), relay.ski_text(self.CHAINS, True))
+
+    def test_a_roads_news_says_its_day_too(self):
+        data = relay.ski_data(self.CHAINS, self.NOW, self.ZONE)
+        self.assertEqual(20760, json.loads(data["ski_notice"])["d"])
+        self.assertEqual("20760", data["day"])
+
+    def test_past_three_resorts_it_says_how_many_more(self):
+        many = {**self.SNOW, "resorts": [{"n": f"R{i}", "s": f"r{i}", "cm": 30.0, "lo": 20.0, "hi": 40.0} for i in range(5)]}
+        self.assertTrue(relay.ski_text(many, False)[1].endswith(", and 2 more"))
+        payload = json.loads(relay.ski_data(many, self.NOW, self.ZONE)["ski_notice"])
+        self.assertEqual((3, 2), (len(payload["r"]), payload["m"]))
+
+    def test_a_tap_lands_on_the_ski_tab_on_that_day_and_on_the_resort_if_theres_one(self):
+        data = relay.ski_data(self.SNOW, self.NOW, self.ZONE)
+        self.assertEqual(("1", "ski", "20764", "alpha"), (data["homesafe_weather"], data["view"], data["day"], data["resort"]))
+        self.assertNotIn("resort", relay.ski_data(self.FRESH, self.NOW, self.ZONE))
+
+    def test_a_days_news_stops_with_the_day_and_a_roads_after_six_hours(self):
+        # Midnight after Saturday 7 November in California, after the clocks went back.
+        end = relay.calendar.timegm((2026, 11, 8, 8, 0, 0))
+        data = relay.ski_data(self.SNOW, self.NOW, self.ZONE)
+        self.assertEqual((str(end), str(end)), (data["push_until"], data["homesafe_weather_expires"]))
+        self.assertEqual(str(self.NOW + 6 * 3600), relay.ski_data(self.CHAINS, self.NOW, self.ZONE)["homesafe_weather_expires"])
+
+    def test_what_a_site_said_of_when_stays_here(self):
+        self.assertNotIn("updated", relay.ski_data(self.FRESH, self.NOW, self.ZONE)["ski_notice"])
+
+    def test_an_iphone_gets_the_weathers_stack_no_buttons_and_wakes_the_app(self):
+        headers, aps = relay.apns_parts("t", "b", relay.ski_data(self.CHAINS, self.NOW, self.ZONE), False)
+        self.assertEqual("weather", aps["thread-id"])
+        self.assertEqual(1, aps["content-available"])
+        self.assertNotIn("category", aps)
+        self.assertEqual("ski:chains:20760:I-80:2", headers["apns-collapse-id"])
+
+
+class SkiTickTest(_ScratchDb):
+    """Who is told, what is asked of whom, and that one thing is said once."""
+
+    # 8 AM on Tuesday 3 November 2026 in California.
+    NOW = 1793721600
+    SAT = 20764
+    ROAD = "_e`mF~nl{U_ibE?"
+
+    def setUp(self):
+        super().setUp()
+        relay._ski_held.clear()
+        self.addCleanup(relay._ski_held.clear)
+        self.pushed = []
+        self.answer = "sent"
+        self.asked = {"forecast": 0, "site": 0, "chains": 0, "road": 0}
+        self.snow = {self.SAT: 40.0}
+        self.reading = {"last24": 25.4, "updated": self.NOW - 3600}
+        self.in_force = [{"level": 2, "route": "I-80", "place": "Donner Summit", "lat": 39.5, "lng": -120.0}]
+        relay.state_set(relay.HOME_KEY, {"lat": 12.3456, "lng": -98.7654, "radius_m": 100.0})
+
+    def phone(self, device_id="pixel", token="fcm", tz="America/Los_Angeles", **wishes):
+        wish = {"snow": True, "fresh": True, "chains": True, "imperial": True, "trip_day": None, "resorts": [{"slug": "kirkwood", "name": "Kirkwood", "lat": 38.68, "lng": -120.06, "state": "OPEN", "as_of": self.NOW - 3600}], **wishes}
+        relay.with_db(lambda c: (c.execute(
+            "INSERT INTO devices (device_id, token, platform, name, created, last_seen, tz, ski) VALUES (?,?,?,?,?,?,?,?)",
+            (device_id, token, "android", device_id, self.NOW, self.NOW, tz, json.dumps(wish)),
+        ), c.commit()))
+
+    def forecast(self, resort):
+        self.asked["forecast"] += 1
+        return {"offset": 0, "days": {day: {"best": self.snow.get(day, 0.0), "models": {"m": self.snow.get(day, 0.0)}} for day in range(self.SAT - 10, self.SAT + 20)}}
+
+    def site(self, slug, now):
+        self.asked["site"] += 1
+        return self.reading
+
+    def chains(self, number):
+        self.asked["chains"] += 1
+        return self.in_force
+
+    def road(self, home, resort):
+        self.asked["road"] += 1
+        return self.ROAD
+
+    def push(self, token, title, body, data, away=False):
+        self.pushed.append((token, title, body, data))
+        return self.answer
+
+    def tick(self, now=None):
+        return relay.ski_tick(self.NOW if now is None else now, forecast=self.forecast, site=self.site, chains=self.chains, road=self.road, push=self.push)
+
+    def kinds(self):
+        return [json.loads(p[3]["ski_notice"])["k"] for p in self.pushed]
+
+    def test_a_phone_following_a_resort_hears_each_kind_once(self):
+        self.phone()
+        self.assertEqual({"sent": 3, "dropped": 0, "failed": 0}, self.tick())
+        self.assertEqual(["snow", "fresh", "chains"], self.kinds())
+        self.pushed.clear()
+        self.assertIsNone(self.tick(self.NOW + 900))
+        self.assertEqual([], self.pushed)
+
+    def test_each_switch_is_its_own(self):
+        self.phone(fresh=False, chains=False)
+        self.tick()
+        self.assertEqual(["snow"], self.kinds())
+        self.assertEqual(0, self.asked["road"] + self.asked["chains"])
+
+    def test_nobody_following_means_nothing_is_asked_of_anyone(self):
+        self.assertIsNone(self.tick())
+        self.assertEqual(0, sum(self.asked.values()))
+
+    def test_a_phone_with_no_token_hears_nothing(self):
+        self.phone(token=None)
+        self.assertIsNone(self.tick())
+        self.assertEqual(0, sum(self.asked.values()))
+
+    def test_nothing_in_the_night_on_the_phones_own_clock(self):
+        self.phone()
+        # 11 PM on the Monday in California.
+        self.assertIsNone(self.tick(self.NOW - 9 * 3600))
+        self.assertEqual(0, sum(self.asked.values()))
+
+    def test_a_failed_push_isnt_marked_so_the_next_tick_says_it(self):
+        self.phone()
+        self.answer = "failed"
+        self.assertEqual({"sent": 0, "dropped": 0, "failed": 3}, self.tick())
+        self.answer = "sent"
+        self.pushed.clear()
+        self.assertEqual({"sent": 3, "dropped": 0, "failed": 0}, self.tick(self.NOW + 900))
+
+    def test_firebase_out_of_reach_is_one_failed_push(self):
+        self.phone(fresh=False, chains=False)
+
+        def boom(*args, **kwargs):
+            raise OSError("no route")
+
+        self.assertEqual({"sent": 0, "dropped": 0, "failed": 1}, relay.ski_tick(self.NOW, forecast=self.forecast, site=self.site, chains=self.chains, road=self.road, push=boom))
+
+    def test_two_phones_each_hear_of_their_own_resorts(self):
+        self.phone("one", "t1")
+        self.phone("two", "t2", snow=False, fresh=True, chains=False, resorts=[{"slug": "vail", "name": "Vail", "lat": 39.6, "lng": -106.3, "state": "OPEN", "as_of": self.NOW - 3600}])
+        self.tick()
+        by_phone = {p[0]: [] for p in self.pushed}
+        for p in self.pushed:
+            by_phone[p[0]].append(p[2])
+        self.assertEqual(["Vail 10 in in the last day"], by_phone["t2"])
+        self.assertTrue(all("Vail" not in body for body in by_phone["t1"]))
+
+    def test_a_tick_asks_a_site_hourly_and_the_forecast_every_three_hours(self):
+        self.phone(fresh=True, snow=True, chains=False)
+        self.tick()
+        self.tick(self.NOW + 900)
+        self.assertEqual((1, 1), (self.asked["site"], self.asked["forecast"]))
+        self.tick(self.NOW + 3600)
+        self.assertEqual((2, 1), (self.asked["site"], self.asked["forecast"]))
+        self.tick(self.NOW + 3 * 3600)
+        self.assertEqual(2, self.asked["forecast"])
+
+    def test_a_resort_with_no_site_is_never_asked_after_and_has_no_fresh_snow(self):
+        self.phone(chains=False, resorts=[{"slug": "somewhere-else", "name": "Elsewhere", "lat": 39.6, "lng": -106.3, "state": "OPEN", "as_of": self.NOW - 3600}])
+        self.tick()
+        self.assertEqual(0, self.asked["site"])
+        self.assertEqual(["snow"], self.kinds())
+
+    def test_one_opening_later_isnt_asked_after_yet(self):
+        self.phone(chains=False, resorts=[{"slug": "kirkwood", "name": "Kirkwood", "lat": 38.68, "lng": -120.06, "state": "CLOSED", "opens": self.SAT + 20}])
+        self.tick()
+        self.assertEqual(0, self.asked["site"])
+
+    def test_one_site_not_answering_costs_only_its_own_news(self):
+        self.phone()
+
+        def site(slug, now):
+            raise OSError("down")
+
+        relay.ski_tick(self.NOW, forecast=self.forecast, site=site, chains=self.chains, road=self.road, push=self.push)
+        self.assertEqual(["snow", "chains"], self.kinds())
+
+    def test_told_to_slow_down_it_stops_and_says_why(self):
+        self.phone()
+
+        class Refused(Exception):
+            response = types.SimpleNamespace(status_code=429)
+
+        def forecast(resort):
+            raise Refused()
+
+        with self.assertRaises(Refused):
+            relay.ski_tick(self.NOW, forecast=forecast, site=self.site, chains=self.chains, road=self.road, push=self.push)
+
+    def test_with_no_home_there_is_no_road_and_nothing_goes_out_about_one(self):
+        relay.with_db(lambda c: (c.execute("DELETE FROM state WHERE key=?", (relay.HOME_KEY,)), c.commit()))
+        self.phone()
+        self.tick()
+        self.assertEqual(["snow", "fresh"], self.kinds())
+        self.assertEqual(0, self.asked["road"] + self.asked["chains"])
+
+    def test_the_road_is_asked_for_from_home_once_and_kept(self):
+        self.phone(snow=False, fresh=False)
+        seen = []
+
+        def road(home, resort):
+            seen.append(home)
+            return self.ROAD
+
+        relay.ski_tick(self.NOW, chains=self.chains, road=road, push=self.push)
+        relay.ski_tick(self.NOW + 900, chains=self.chains, road=road, push=self.push)
+        self.assertEqual(1, len(seen))
+        self.assertEqual(12.3456, seen[0]["lat"])
+
+    def test_caltrans_out_of_reach_doesnt_say_a_control_again_when_it_comes_back(self):
+        self.phone(snow=False, fresh=False)
+        self.tick()
+        self.assertEqual(["chains"], self.kinds())
+        self.pushed.clear()
+        working = self.in_force
+        self.chains = lambda number: (_ for _ in ()).throw(ConnectionError("no"))
+        for hours in (4, 8, 12):
+            self.tick(self.NOW + hours * 3600)
+        del self.chains
+        self.in_force = working
+        self.assertIsNone(self.tick(self.NOW + 13 * 3600))
+        self.assertEqual([], self.pushed)
+
+    def test_only_the_districts_a_road_runs_through_are_read(self):
+        self.phone(snow=False, fresh=False)
+        numbers = []
+
+        def chains(number):
+            numbers.append(number)
+            return []
+
+        relay.ski_tick(self.NOW, chains=chains, road=self.road, push=self.push)
+        self.assertEqual([2, 3, 10], sorted(numbers))
+
+    def test_a_phone_saying_what_it_wants_is_kept_and_nothing_wanted_forgets_it(self):
+        self.phone()
+        calls = {"authenticated": 0}
+        real = relay.authenticate
+        relay.authenticate = lambda request, device=None: calls.__setitem__("authenticated", calls["authenticated"] + 1)
+        self.addCleanup(setattr, relay, "authenticate", real)
+
+        def resort(slug="kirkwood"):
+            return types.SimpleNamespace(model_dump=lambda: {"slug": slug, "name": "Kirkwood", "lat": 38.68, "lng": -120.06, "state": "OPEN"})
+
+        def wishes(snow=True, resorts=None):
+            return types.SimpleNamespace(snow=snow, fresh=False, chains=False, resorts=[resort()] if resorts is None else resorts, model_dump=lambda exclude=None: {"snow": snow, "fresh": False, "chains": False, "imperial": True, "trip_day": 7})
+
+        def held():
+            return relay.with_db(lambda c: c.execute("SELECT ski FROM devices WHERE device_id='pixel'").fetchone()[0])
+
+        self.assertEqual({"ok": True, "resorts": 1}, relay.set_ski_wishes("pixel", wishes(), types.SimpleNamespace(headers={})))
+        self.assertEqual(7, json.loads(held())["trip_day"])
+        self.assertEqual("kirkwood", json.loads(held())["resorts"][0]["slug"])
+        relay.set_ski_wishes("pixel", wishes(snow=False), types.SimpleNamespace(headers={}))
+        self.assertIsNone(held())
+        relay.set_ski_wishes("pixel", wishes(resorts=[]), types.SimpleNamespace(headers={}))
+        self.assertIsNone(held())
+        self.assertEqual(3, calls["authenticated"])
+        with self.assertRaises(relay.HTTPException):
+            relay.set_ski_wishes("gone", wishes(), types.SimpleNamespace(headers={}))
+
+    def test_what_a_phone_says_holds_nothing_about_where_it_is(self):
+        """The fields a wish has: public facts about a resort, and the phone's own switches."""
+        self.assertEqual({"slug", "name", "lat", "lng", "summit_m", "state", "as_of", "opens", "closes"}, set(relay.SkiResortWish.__annotations__))
+        self.assertEqual({"snow", "fresh", "chains", "imperial", "trip_day", "resorts"}, set(relay.SkiWishes.__annotations__))

@@ -22,6 +22,7 @@ import com.meticulouscreations.homesafe.navigation.ParkingDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import com.meticulouscreations.homesafe.weather.data.WeatherBackgroundServices
 import com.meticulouscreations.homesafe.weather.data.WeatherSoonPush
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticePush
 import kotlinx.coroutines.runBlocking
 import java.util.Date
 
@@ -37,7 +38,8 @@ import java.util.Date
  * A door opening (`door=<id>`) is worded here and posted like an alert, with no picture to fetch.
  * So is a Nest camera Google stopped streaming, and its return (`system=nest`), and a household
  * car parked on the street that must move (`parking=1`), which goes on its own Parking channel.
- * Rain on the way (`weather_soon=<a small forecast>`) is the weather app's own to plan and post.
+ * Rain on the way (`weather_soon=<a small forecast>`) is the weather app's own to plan and post, and
+ * so is a skiing notification (`ski_notice=<what was decided>`).
  * With every notification muted (Settings → Notifications) nothing is shown at all.
  */
 class HomeSafeMessagingService : FirebaseMessagingService() {
@@ -55,6 +57,7 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         if (NestOutageAlert.isNestOutage { message.data[it] }) return showNestOutageAlert(message)
         if (ParkingAlert.isParking { message.data[it] }) return showParkingAlert(message)
         message.data[WeatherSoonPush.KEY]?.let { return showWeatherSoon(it, message) }
+        message.data[SkiNoticePush.KEY]?.let { return showSkiNotice(it, message) }
         val title = message.data["title"] ?: message.notification?.title ?: return
         val body = message.data["body"] ?: message.notification?.body ?: ""
         val target = MomentDeepLink.from { message.data[it] }
@@ -99,6 +102,13 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         val key = message.data[WeatherSoonPush.KEY_ID] ?: message.messageId ?: return
         val expires = message.data[WeatherSoonPush.KEY_EXPIRES]?.toLongOrNull()
         runBlocking { check.onRelayPush(payload, key, message.data["title"].orEmpty(), message.data["body"].orEmpty(), shown = false, fallbackExpiresEpochSeconds = expires) }
+    }
+
+    /** The relay has something to say about a resort this phone follows (see docs/weather.md): the weather app words and posts it. */
+    private fun showSkiNotice(payload: String, message: RemoteMessage) {
+        val check = (BackgroundGraph.get(applicationContext) as WeatherBackgroundServices).skiNoticeCheck
+        val key = message.data[WeatherSoonPush.KEY_ID] ?: message.messageId ?: return
+        runBlocking { check.onRelayPush(payload, key, message.data["title"].orEmpty(), message.data["body"].orEmpty(), shown = false) }
     }
 
     /**
