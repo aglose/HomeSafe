@@ -131,6 +131,12 @@ class SkiPlannerTest {
     }
 
     @Test
+    fun aForecastThatStopsShortLeavesTheRestToTheOutlook() {
+        val entry = SkiEntry(ref("a"), report = report("a", outlook = listOf(SkiSnowDay(saturday, 7.0))), forecast = forecast(day(saturday - 1, 3.0)))
+        assertEquals(10.0, view(entry).freshCm)
+    }
+
+    @Test
     fun theSnowiestWinsWhenAllElseIsEven() {
         val ranked = SkiPlanner.ranked(listOf(view(entry("dry", listOf(day(saturday)))), view(entry("deep", listOf(day(saturday, 30.0))))))
         assertEquals(listOf("deep", "dry"), ranked.map { it.entry.ref.slug })
@@ -272,6 +278,14 @@ class SkiPlannerTest {
         assertTrue(SkiPlanner.cost(plan, entry, saturday).startsAt)
         val windowOnly = entry.copy(prices = SkiResortPrices("https://a.example", tiers = listOf(starting.copy(price = SkiDayPrice(adultWindow = 189.0)))))
         assertFalse(SkiPlanner.cost(plan, windowOnly, saturday).startsAt, "a window price is the price")
+    }
+
+    @Test
+    fun aWindowTotalIsTheWholePartysOrNothing() {
+        val noChildWindow = SkiDayPrice(adultOnline = 100.0, adultWindow = 150.0, childOnline = 50.0)
+        val entry = SkiEntry(ref("a"), prices = SkiResortPrices("https://a.example", days = mapOf(saturday to noChildWindow)))
+        assertNull(SkiPlanner.cost(plan, entry, saturday).windowTotal)
+        assertEquals(300.0, SkiPlanner.cost(SkiPlan(adults = 2), entry, saturday).windowTotal, "no children to leave out")
     }
 
     @Test

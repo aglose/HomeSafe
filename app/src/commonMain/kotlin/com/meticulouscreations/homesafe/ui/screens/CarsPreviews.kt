@@ -1,6 +1,8 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.CarLive
@@ -153,6 +155,14 @@ private fun CarsPreviewFrame(state: CarsUiState, units: WeatherUnits = WeatherUn
 @Preview(name = "Cars map", widthDp = 412, heightDp = 892)
 @Composable
 private fun CarsMapPreview() = CarsPreviewFrame(CarsUiState(cars = listOf(curb, home, driving), streets = streets, loaded = true, nowEpochSeconds = NOW))
+
+@Preview(name = "Car in 3D", widthDp = 412, heightDp = 892)
+@Composable
+private fun CarModelPagePreview() = FrigateTheme { CarModelPage(curb, onClose = {}, Modifier.fillMaxSize()) }
+
+@Preview(name = "Car in 3D, wide", widthDp = 1200, heightDp = 760)
+@Composable
+private fun CarModelPageWidePreview() = FrigateTheme { CarModelPage(home, onClose = {}, Modifier.fillMaxSize()) }
 
 @Preview(name = "Cars map, parking rules", widthDp = 412, heightDp = 892)
 @Composable

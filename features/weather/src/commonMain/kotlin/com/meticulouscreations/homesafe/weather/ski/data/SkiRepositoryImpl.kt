@@ -12,7 +12,6 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherPlacesRepository
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiChainReport
-import com.meticulouscreations.homesafe.weather.ski.domain.SkiDayPrice
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOrigin
@@ -89,9 +88,9 @@ class SkiRepositoryImpl(
     /**
      * What's kept under [key] if it's younger than [maxAgeSeconds] (unless [force]d); otherwise the
      * service's answer, kept for next time. A service that fails gets the last answer stood in for
-     * it, however old: every one of these says when it's from.
+     * it, however old, as every one of these says when it's from, unless it [mustBeFresh].
      */
-    private suspend fun <T> cached(key: String, serializer: KSerializer<T>, maxAgeSeconds: Long, force: Boolean, fetch: suspend () -> Result<T>): Result<T> {
+    private suspend fun <T> cached(key: String, serializer: KSerializer<T>, maxAgeSeconds: Long, force: Boolean, mustBeFresh: Boolean = false, fetch: suspend () -> Result<T>): Result<T> {
         val lock = guard.withLock { locks.getOrPut(key) { Mutex() } }
         return lock.withLock {
             val row = suspendRunCatching { dao.kept(key) }.getOrNull()
@@ -104,7 +103,7 @@ class SkiRepositoryImpl(
                     dao.keep(SkiKeptEntity(key, json, now()))
                 }
             }
-            if (fetched.isFailure && held != null) Result.success(held) else fetched
+            if (fetched.isFailure && held != null && !mustBeFresh) Result.success(held) else fetched
         }
     }
 
@@ -129,7 +128,8 @@ class SkiRepositoryImpl(
         val trip = "${roundedKey(from)}>${roundedKey(to)}"
         val key = keys.current(HouseholdKeys.GOOGLE_MAPS)?.takeIf { !routesRefused }
         if (key != null) {
-            val traffic = cached("drive:$trip:${departEpochSeconds ?: "now"}", SkiDrive.serializer(), TRAFFIC_MAX_AGE, force = false) {
+            // Old traffic isn't traffic, and doesn't say how old it is: the empty road, labelled for what it is, is the better answer.
+            val traffic = cached("drive:$trip:${departEpochSeconds ?: "now"}", SkiDrive.serializer(), TRAFFIC_MAX_AGE, force = false, mustBeFresh = true) {
                 routes.withTraffic(from, to, departEpochSeconds, key)
             }
             if (traffic.isSuccess) return traffic
@@ -210,17 +210,23 @@ class SkiRepositoryImpl(
             }
             if (upToDate) return@withLock fresh
             val table = suspendRunCatching { sites.priceTable(slug) }.getOrDefault(emptyList())
-            val dated = datedPrices(site, epochDays)
-            // A Vail shop's refusals come back as nothing priced. A calendar's come back as no answer at all, so an empty one is a shop with no dates on sale.
-            val shopAnswered = dated != null && (dated.isNotEmpty() || site !is ResortSite.Vail)
-            if (table.isEmpty() && !shopAnswered) return@withLock held
+            val answer = shopAnswer(site, epochDays)
+            val dated = answer?.let { withContext(Dispatchers.Default) { ResortPages.datedPrices(it) } }.orEmpty()
+            // A Vail shop is asked a day at a time, and says which it got an answer for. A calendar answers all at once or not at all, and an empty one is a shop with no dates on sale.
+            val checked = when {
+                answer == null -> emptySet()
+                site is ResortSite.Vail -> ResortPages.checkedDays(answer)
+                else -> epochDays.toSet()
+            }
+            if (table.isEmpty() && checked.isEmpty()) return@withLock held
             val prices = SkiResortPrices(
                 pageUrl = site.ticketsUrl.orEmpty(),
-                days = fresh?.days.orEmpty() + dated.orEmpty(),
+                // A day the shop was asked about and now has no price for is off sale: its old price goes.
+                days = fresh?.days.orEmpty().filterKeys { it !in checked } + dated,
                 tiers = table.ifEmpty { fresh?.tiers.orEmpty() },
                 fetchedAtEpochSeconds = now(),
                 // Only if the shop answered at all: a browser that got nowhere has learned nothing about these days.
-                daysAsked = fresh?.daysAsked.orEmpty() + if (shopAnswered) epochDays else emptyList(),
+                daysAsked = fresh?.daysAsked.orEmpty() + epochDays.filter { it in checked },
             )
             suspendRunCatching { dao.keep(SkiKeptEntity(key, weatherJson.encodeToString(SkiResortPrices.serializer(), prices), now())) }
             prices
@@ -235,15 +241,14 @@ class SkiRepositoryImpl(
         }
 
     /** What its shop said, or null if nothing did. */
-    private suspend fun datedPrices(site: ResortSite, epochDays: List<Int>): Map<Int, SkiDayPrice>? {
+    private suspend fun shopAnswer(site: ResortSite, epochDays: List<Int>): String? {
         if (!browser.isSupported) return null
-        val answer = when (site) {
+        return when (site) {
             is ResortSite.Vail -> browser.read(site.ticketsUrl, ResortScripts.vail(epochDays.map { LocalDate.fromEpochDays(it).toString() }))
             is ResortSite.Feed -> site.shop?.let { browser.read(it.url, ResortScripts.shop(it.categorySlug, it.productPattern)) }
             is ResortSite.Powdr -> site.shop?.let { browser.read(it.url, ResortScripts.shop(it.categorySlug, it.productPattern)) }
             is ResortSite.Pages -> null
         }
-        return answer?.let { withContext(Dispatchers.Default) { ResortPages.datedPrices(it) } }
     }
 
     override suspend fun passResorts(pass: SkiPass): Result<Set<String>> =
@@ -289,6 +294,10 @@ class SkiStartingPointImpl(
     private val places: WeatherPlacesRepository,
 ) : SkiStartingPoint {
     override val canLocate: Boolean get() = locator.isSupported
+
+    override suspend fun requestAccess() {
+        if (locator.isSupported) suspendRunCatching { locator.requestAccess() }
+    }
 
     override suspend fun of(origin: SkiOrigin): SkiPoint? {
         if (origin == SkiOrigin.HERE) {

@@ -88,6 +88,7 @@ import homesafe.shared.generated.resources.ski_region_top_snow
 import homesafe.shared.generated.resources.ski_regions_title
 import homesafe.shared.generated.resources.ski_resorts_all_title
 import homesafe.shared.generated.resources.ski_resorts_title
+import homesafe.shared.generated.resources.ski_ticket_kids_left_out
 import org.jetbrains.compose.resources.stringResource
 
 /** How many days ahead the strip of days goes: as far as the forecast has any skill. */
@@ -154,7 +155,7 @@ internal fun SkiScreen(
                     item(key = "no_start") { Text(stringResource(Res.string.ski_no_start), style = WeatherTheme.type.label, color = colors.onSkyMuted, modifier = Modifier.cardWidth().padding(horizontal = 8.dp)) }
                 }
                 // Until a report is in, nobody can say what's open.
-                val heard = followed.any { it.latest != null }
+                val heard = followed.all { it.latest != null }
                 item(key = "best", contentType = "best") {
                     when {
                         best != null -> BestBet(best, strip, state.tripEpochDay, state.nowEpochSeconds, onOpenResort, Modifier.cardWidth())
@@ -274,22 +275,27 @@ private fun Stats(view: SkiDayView, now: Long) {
     val units = WeatherTheme.units
     val report = view.entry.latest
     val placeholder = stringResource(Res.string.ski_placeholder)
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        SkiStat(stringResource(Res.string.ski_new_label), report?.takeIf { it.isCurrent(now) }?.last24Cm?.let { WeatherFormat.snow(it, units).resolve() } ?: placeholder, Modifier.weight(1f))
-        SkiStat(stringResource(Res.string.ski_fresh_label), WeatherFormat.snow(view.freshCm, units).resolve(), Modifier.weight(1f))
-        SkiStat(stringResource(Res.string.ski_drive_label), view.entry.drive?.let { driveText(it.seconds).resolve() } ?: placeholder, Modifier.weight(1.1f))
-        val cost = view.cost
-        val money = when {
-            cost.coveredBy != null -> stringResource(Res.string.ski_cost_covered)
-            cost.total != null -> SkiPlanner.money(cost.total, view.entry.price?.currency ?: "US$")
-            else -> stringResource(Res.string.ski_no_price)
+    val cost = view.cost
+    Column {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SkiStat(stringResource(Res.string.ski_new_label), report?.takeIf { it.isCurrent(now) }?.last24Cm?.let { WeatherFormat.snow(it, units).resolve() } ?: placeholder, Modifier.weight(1f))
+            SkiStat(stringResource(Res.string.ski_fresh_label), WeatherFormat.snow(view.freshCm, units).resolve(), Modifier.weight(1f))
+            SkiStat(stringResource(Res.string.ski_drive_label), view.entry.drive?.let { driveText(it.seconds).resolve() } ?: placeholder, Modifier.weight(1.1f))
+            val money = when {
+                cost.coveredBy != null -> stringResource(Res.string.ski_cost_covered)
+                cost.total != null -> SkiPlanner.money(cost.total, view.entry.price?.currency ?: "US$")
+                else -> stringResource(Res.string.ski_no_price)
+            }
+            val costLabel = when {
+                cost.startsAt -> Res.string.ski_cost_label_from
+                cost.source == SkiCost.Source.LISTING -> Res.string.ski_cost_label_listed
+                else -> Res.string.ski_cost_label
+            }
+            SkiStat(stringResource(costLabel), money, Modifier.weight(0.9f), color = if (cost.coveredBy != null) WeatherTheme.colors.good else WeatherTheme.colors.onSky)
         }
-        val costLabel = when {
-            cost.startsAt -> Res.string.ski_cost_label_from
-            cost.source == SkiCost.Source.LISTING -> Res.string.ski_cost_label_listed
-            else -> Res.string.ski_cost_label
+        if (cost.childrenLeftOut && cost.coveredBy == null && cost.total != null) {
+            Text(stringResource(Res.string.ski_ticket_kids_left_out), style = WeatherTheme.type.label, color = WeatherTheme.colors.watch, modifier = Modifier.padding(top = 6.dp))
         }
-        SkiStat(stringResource(costLabel), money, Modifier.weight(0.9f), color = if (cost.coveredBy != null) WeatherTheme.colors.good else WeatherTheme.colors.onSky)
     }
 }
 

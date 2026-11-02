@@ -329,10 +329,6 @@ data class SkiForecast(
 
     fun day(epochDay: Int): SkiForecastDay? = days.firstOrNull { epochDayOf(it.epochSeconds) == epochDay }
 
-    /** Snow over the days from [fromEpochDay] to [toEpochDay], both included. */
-    fun snowBetween(fromEpochDay: Int, toEpochDay: Int): Double =
-        days.filter { epochDayOf(it.epochSeconds) in fromEpochDay..toEpochDay }.sumOf { it.snowCm }
-
     /** The hours of [epochDay] that a skier is out in. */
     fun skiingHours(epochDay: Int): List<SkiForecastHour> = hours.filter { hour ->
         epochDayOf(hour.epochSeconds) == epochDay && (hour.epochSeconds + utcOffsetSeconds).mod(DAY_SECONDS) / 3600 in 8L..16L

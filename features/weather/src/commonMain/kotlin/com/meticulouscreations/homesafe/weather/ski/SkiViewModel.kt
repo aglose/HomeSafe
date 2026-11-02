@@ -46,6 +46,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
 import org.jetbrains.compose.resources.StringResource
+import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -189,10 +190,19 @@ class SkiViewModel(
         // Nowhere to start from, or only a city to go by, can be better by the next look: a home set, a city added.
         if (startingFor == origin && startingPoint != null && startingPoint?.city == null) return startingPoint
         return start.of(origin).also {
+            // Drives from somewhere else aren't drives from here, whether or not new ones can be had.
+            if (it.rounded() != startingPoint.rounded()) {
+                _uiState.update { state ->
+                    state.copy(entries = state.entries.mapValues { (_, entry) -> entry.copy(drive = null, driveOut = null, driveBack = null, chains = emptyList(), chainsUnavailable = false) })
+                }
+            }
             startingPoint = it
             startingFor = origin
         }
     }
+
+    /** Where a drive starts, as near as it's ever told: a position moving a few yards isn't a new start. */
+    private fun SkiPoint?.rounded(): Pair<Int, Int>? = this?.let { (it.latitude * 100).roundToInt() to (it.longitude * 100).roundToInt() }
 
     /** One page a region answers for all its resorts at once, so there's one fetch however many are followed. */
     private suspend fun loadReports(refs: List<SkiResortRef>, force: Boolean) = coroutineScope {
@@ -244,6 +254,8 @@ class SkiViewModel(
         launch {
             repository.forecast(ref, facts, force).getOrNull()?.let { forecast -> change(ref) { it.copy(forecast = forecast) } }
             change(ref) { it.copy(loading = false) }
+            // An open page's drives go by the mountain's clock, so they follow its forecast, and needn't wait on anything slower.
+            if (includeCams) planDrives(ref, from)
         }
         launch {
             val alerts = repository.alerts(facts)
@@ -254,9 +266,10 @@ class SkiViewModel(
                 val to = SkiPoint(facts.latitude, facts.longitude)
                 val drive = repository.drive(from, to)
                 drive.getOrNull()?.let { road ->
-                    change(ref) { it.copy(drive = road) }
+                    // Published together: a drive shown before its chain check is in would read as "no chain controls".
                     val chains = repository.chainControls(road.path)
-                    change(ref) { it.copy(chains = chains.controls, chainsUnavailable = !chains.complete) }
+                    if (from.rounded() != startingPoint.rounded()) return@launch
+                    change(ref) { it.copy(drive = road, chains = chains.controls, chainsUnavailable = !chains.complete) }
                 }
                 drive.exceptionOrNull()?.let { e -> change(ref) { entry -> if (entry.drive == null) entry.copy(error = e.orFallback(Res.string.ski_error_drive)) else entry } }
             }
@@ -290,7 +303,6 @@ class SkiViewModel(
                 }
                 launch { loadResort(ref, from, force = false, includeCams = true) }
             }
-            planDrives(ref, from)
         }
     }
 
@@ -318,7 +330,7 @@ class SkiViewModel(
         val coming = if (back > now) repository.drive(to, from, back).getOrNull() else null
         // The day or the start changed while these were on their way: the answers for that are coming, and may already be here.
         val latest = _uiState.value
-        if (latest.tripEpochDay != day || latest.plan.origin != state.plan.origin) return
+        if (latest.tripEpochDay != day || latest.plan.origin != state.plan.origin || from.rounded() != startingPoint.rounded()) return
         change(ref) { it.copy(driveOut = going, driveBack = coming) }
     }
 
@@ -394,7 +406,12 @@ class SkiViewModel(
     }
 
     fun setOrigin(origin: SkiOrigin) {
-        viewModelScope.launch { repository.updatePlan { it.copy(origin = origin) } }
+        viewModelScope.launch {
+            // Choosing it is the moment to ask: nothing else will, and without it this would quietly go on starting from home.
+            if (origin == SkiOrigin.HERE) start.requestAccess()
+            startingFor = null
+            repository.updatePlan { it.copy(origin = origin) }
+        }
     }
 
     fun setAlerts(alerts: SkiAlerts) {
