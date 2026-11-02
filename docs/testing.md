@@ -164,7 +164,7 @@ cleared app, and the script fails unless every action of every journey gets a âœ
 
 To run them locally:
 
-1. Install the [Android CLI](https://developer.android.com/tools/agents/android-cli), then run `android init`.
+1. Install the [Android CLI](https://developer.android.com/tools/agents/android-cli). The script installs the skill it needs.
 2. Install Claude Code and sign in (`claude`).
 3. Start the fake Frigate with `--advertise 10.0.2.2` as above.
 4. Install the debug APK on an emulator.

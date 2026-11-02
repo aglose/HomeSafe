@@ -77,9 +77,6 @@ jobs:
           printf -- '--sdk=%s\n--no-metrics\n' "$ANDROID_HOME" > ~/.androidrc
           android --version
           npm install -g @anthropic-ai/claude-code
-          # Installs the android-cli skill (with its journeys reference) for the agents it finds.
-          android init
-          android skills add android-cli || true
 
       - name: Enable KVM
         if: steps.key.outputs.present == 'true'
@@ -98,6 +95,8 @@ jobs:
           api-level: ${{ env.API_LEVEL }}
           target: google_apis
           arch: x86_64
+          # A phone's screen: the runner's default is 320x640, where the keyboard hides the sign-in form.
+          profile: pixel_6
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
