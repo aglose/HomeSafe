@@ -56,3 +56,7 @@ androidApp/src/screenshotTest*/reference/
 
 # Google Nest credentials written by tools/nest-setup/nest_setup.py (see docs/nest-cameras.md).
 nest-secrets.env
+
+# tools/car-model: the base mesh and skies it fetches, and its work files
+tools/car-model/.cache/
+__pycache__/

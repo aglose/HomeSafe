@@ -47,9 +47,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +61,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.car3d.CarBackdrop
+import com.meticulouscreations.homesafe.car3d.CarMapMarker
+import com.meticulouscreations.homesafe.car3d.CarModel
+import com.meticulouscreations.homesafe.car3d.CarPoster
+import com.meticulouscreations.homesafe.car3d.CarViewer
+import com.meticulouscreations.homesafe.car3d.carModelFor
 import com.meticulouscreations.homesafe.charging.ui.ChargingLink
 import com.meticulouscreations.homesafe.domain.model.CarLive
 import com.meticulouscreations.homesafe.domain.model.HouseholdCar
@@ -65,7 +74,9 @@ import com.meticulouscreations.homesafe.maps.BaseMap
 import com.meticulouscreations.homesafe.navigation.ShellCommand
 import com.meticulouscreations.homesafe.navigation.ShellCommands
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.WithTooltip
 import com.meticulouscreations.homesafe.ui.handCursor
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.viewmodel.CarsUiState
 import com.meticulouscreations.homesafe.viewmodel.CarsViewModel
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
@@ -83,7 +94,12 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.car_model_blue_performance
+import homesafe.shared.generated.resources.car_model_credit
+import homesafe.shared.generated.resources.car_model_red_long_range
 import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.household_cars_3d_description
+import homesafe.shared.generated.resources.household_cars_3d_hint
 import homesafe.shared.generated.resources.household_cars_asleep
 import homesafe.shared.generated.resources.household_cars_battery
 import homesafe.shared.generated.resources.household_cars_battery_km
@@ -110,6 +126,7 @@ import homesafe.shared.generated.resources.household_cars_title
 import homesafe.shared.generated.resources.household_cars_trip
 import homesafe.shared.generated.resources.household_cars_trip_no_eta
 import homesafe.shared.generated.resources.household_cars_unlocked
+import homesafe.shared.generated.resources.household_cars_view_3d
 import homesafe.shared.generated.resources.parking_map_directions
 import homesafe.shared.generated.resources.parking_rules_toggle
 import homesafe.shared.generated.resources.settings_refresh
@@ -117,6 +134,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
@@ -189,87 +207,102 @@ fun CarsContent(
     val pins = remember(carPins, curbs, rules) { if (rules) curbPins(curbs) + carPins else carPins }
     val lines = if (rules) curbLines(curbs, state.nowEpochSeconds, focus) else emptyList()
     val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
-    Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        CarsHeader(onBack = onBack, onRefresh = onRefresh)
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            if (pins.isNotEmpty()) {
-                val description = stringResource(Res.string.household_cars_map_description)
-                PinMap(
-                    pins = pins,
-                    tiles = tiles,
-                    focus = focus?.takeIf { key -> pins.any { it.key == key } },
-                    animated = animated,
-                    lines = lines,
-                    modifier = Modifier.fillMaxSize().semantics { contentDescription = description }.testTag("cars_map"),
-                ) { pin ->
-                    val car = state.cars.firstOrNull { it.id == pin.key }
-                    if (car != null) {
-                        CarPin(car, selected = pin.key == focus, onClick = { focus = pin.key })
-                    } else {
-                        curbs.firstOrNull { it.key == pin.key }?.let { CurbLabel(it, state.nowEpochSeconds, selected = pin.key == focus, onClick = { focus = pin.key }) }
-                    }
-                }
-                if (curbs.isNotEmpty() && carPins.isNotEmpty()) {
-                    FilterChip(
-                        selected = showRules,
-                        onClick = { showRules = !showRules },
-                        label = { Text(stringResource(Res.string.parking_rules_toggle)) },
-                        leadingIcon = { Icon(Icons.Filled.LocalParking, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) },
-                        colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                        modifier = Modifier.align(Alignment.TopStart).padding(12.dp).testTag("cars_parking_rules"),
-                    )
-                }
-                if (focus != null) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        tonalElevation = 4.dp,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
-                    ) {
-                        TextButton(onClick = { focus = null }, modifier = Modifier.testTag("cars_show_all")) {
-                            Text(stringResource(Res.string.household_cars_show_all))
-                        }
-                    }
-                }
-            } else if (!state.loaded) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
-            } else {
-                // No cars, or cars the server has no place for yet (it hasn't heard from Tesla since it started).
-                Text(
-                    stringResource(if (state.cars.isEmpty()) Res.string.household_cars_empty else Res.string.household_cars_no_places),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.align(Alignment.Center).widthIn(max = 360.dp).padding(24.dp),
-                )
-            }
-        }
+    // The car being looked at in 3D, over the whole page; only a key, like focus.
+    var inThreeD by rememberSaveable { mutableStateOf<String?>(null) }
+    Box(modifier.fillMaxSize()) {
+        // Hidden from screen readers while the 3D page is over it, so they can't reach its controls.
+        val behindThreeD = state.cars.any { it.id == inThreeD }
         Column(
             Modifier
-                .fillMaxWidth()
-                // The cards end above the shell's floating nav: in a list this short, room to scroll
-                // clear of it would leave the second card half under it at rest.
-                .padding(bottom = bottomNavClearance())
-                .heightIn(max = 340.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .then(if (behindThreeD) Modifier.clearAndSetSemantics {} else Modifier),
         ) {
-            // Google's map credits itself on the map; OpenStreetMap's contributors are named here.
-            if (pins.isNotEmpty() && baseMap !is BaseMap.Google) {
-                Text(mapCredit(baseMap, null), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            CarsHeader(onBack = onBack, onRefresh = onRefresh)
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                if (pins.isNotEmpty()) {
+                    val description = stringResource(Res.string.household_cars_map_description)
+                    PinMap(
+                        pins = pins,
+                        tiles = tiles,
+                        focus = focus?.takeIf { key -> pins.any { it.key == key } },
+                        animated = animated,
+                        lines = lines,
+                        modifier = Modifier.fillMaxSize().semantics { contentDescription = description }.testTag("cars_map"),
+                    ) { pin ->
+                        val car = state.cars.firstOrNull { it.id == pin.key }
+                        if (car != null) {
+                            CarPin(car, selected = pin.key == focus, onClick = { focus = pin.key })
+                        } else {
+                            curbs.firstOrNull { it.key == pin.key }?.let { CurbLabel(it, state.nowEpochSeconds, selected = pin.key == focus, onClick = { focus = pin.key }) }
+                        }
+                    }
+                    if (curbs.isNotEmpty() && carPins.isNotEmpty()) {
+                        FilterChip(
+                            selected = showRules,
+                            onClick = { showRules = !showRules },
+                            label = { Text(stringResource(Res.string.parking_rules_toggle)) },
+                            leadingIcon = { Icon(Icons.Filled.LocalParking, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) },
+                            colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                            modifier = Modifier.align(Alignment.TopStart).padding(12.dp).testTag("cars_parking_rules"),
+                        )
+                    }
+                    if (focus != null) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 4.dp,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                        ) {
+                            TextButton(onClick = { focus = null }, modifier = Modifier.testTag("cars_show_all")) {
+                                Text(stringResource(Res.string.household_cars_show_all))
+                            }
+                        }
+                    }
+                } else if (!state.loaded) {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                } else {
+                    // No cars, or cars the server has no place for yet (it hasn't heard from Tesla since it started).
+                    Text(
+                        stringResource(if (state.cars.isEmpty()) Res.string.household_cars_empty else Res.string.household_cars_no_places),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.align(Alignment.Center).widthIn(max = 360.dp).padding(24.dp),
+                    )
+                }
             }
-            state.error?.let { Text(it.resolve(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            state.cars.forEach { car ->
-                CarCard(
-                    car = car,
-                    nowEpochSeconds = state.nowEpochSeconds,
-                    units = units,
-                    selected = car.id == focus,
-                    onClick = { focus = if (focus == car.id || car.latitude == null) null else car.id },
-                )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    // The cards end above the shell's floating nav: in a list this short, room to scroll
+                    // clear of it would leave the second card half under it at rest.
+                    .padding(bottom = bottomNavClearance())
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // Google's map credits itself on the map; OpenStreetMap's contributors are named here.
+                if (pins.isNotEmpty() && baseMap !is BaseMap.Google) {
+                    Text(mapCredit(baseMap, null), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                state.error?.let { Text(it.resolve(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                state.cars.forEach { car ->
+                    CarCard(
+                        car = car,
+                        nowEpochSeconds = state.nowEpochSeconds,
+                        units = units,
+                        selected = car.id == focus,
+                        onClick = { focus = if (focus == car.id || car.latitude == null) null else car.id },
+                        onShowModel = { inThreeD = car.id },
+                    )
+                }
+                if (rules) CurbSignsList(curbs, state.nowEpochSeconds, focus, onSelect = { key -> focus = if (focus == key) null else key })
             }
-            if (rules) CurbSignsList(curbs, state.nowEpochSeconds, focus, onSelect = { key -> focus = if (focus == key) null else key })
+        }
+        state.cars.firstOrNull { it.id == inThreeD }?.let { car ->
+            CarModelPage(car, onClose = { inThreeD = null }, Modifier.fillMaxSize())
         }
     }
 }
@@ -296,30 +329,32 @@ private fun CarsHeader(onBack: () -> Unit, onRefresh: () -> Unit) {
     }
 }
 
-/** A car on the map: a round badge on its spot, its name under it. One with somewhere to be gone by is drawn in the accent colour. */
+/**
+ * A car on the map: the car itself on its spot, facing the way it faces, its name under it. One
+ * with somewhere to be gone by stands on a ring in the accent colour, and a selected one on a filled one.
+ */
 @Composable
 private fun CarPin(car: HouseholdCar, selected: Boolean, onClick: () -> Unit) {
     val due = car.parked?.moveByEpochSeconds != null
-    val container = when {
+    val ring = when {
         selected -> MaterialTheme.colorScheme.primary
         due -> MaterialTheme.colorScheme.primaryContainer
-        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+        else -> null
     }
-    val content = when {
-        selected -> MaterialTheme.colorScheme.onPrimary
-        due -> MaterialTheme.colorScheme.onPrimaryContainer
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    // The badge is what's placed on the spot; the name hangs below it, outside its bounds.
+    val model = remember(car.id, car.name) { carModelFor(car.id, car.name) }
+    // The badge's place is what's put on the spot; the car and its name reach outside its bounds.
     Box(Modifier.size(PIN_SIZE)) {
-        Surface(
-            shape = CircleShape,
-            color = container,
-            contentColor = content,
-            shadowElevation = 4.dp,
-            modifier = Modifier
+        if (ring != null) {
+            Box(Modifier.align(Alignment.Center).size(PIN_SIZE + 12.dp).clip(CircleShape).background(ring.copy(alpha = 0.45f)).border(2.dp, ring, CircleShape))
+        }
+        CarMapMarker(
+            model,
+            headingDegrees = car.lastSeen?.headingDegrees,
+            modifier = Modifier.align(Alignment.Center).wrapContentSize(unbounded = true).size(CAR_MARKER_SIZE),
+        )
+        Box(
+            Modifier
                 .fillMaxSize()
-                .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
                 .clip(CircleShape)
                 .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.household_cars_select), onClick = onClick)
                 // The name under it is drawn beside the badge, not in it: a screen reader hears it here.
@@ -327,17 +362,74 @@ private fun CarPin(car: HouseholdCar, selected: Boolean, onClick: () -> Unit) {
                     contentDescription = car.name
                     this.selected = selected
                 },
-        ) {
-            Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.DirectionsCar, contentDescription = null, modifier = Modifier.size(20.dp)) }
-        }
+        )
         Surface(
             shape = RoundedCornerShape(8.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
-            modifier = Modifier.align(Alignment.TopCenter).wrapContentSize(unbounded = true).offset(y = PIN_SIZE + 4.dp),
+            modifier = Modifier.align(Alignment.TopCenter).wrapContentSize(unbounded = true).offset(y = PIN_SIZE + 20.dp),
         ) {
             Text(car.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
         }
     }
+}
+
+/** The whole page given over to one car in 3D, on a showroom floor. Back or the arrow leaves it. */
+@Composable
+internal fun CarModelPage(car: HouseholdCar, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val back = rememberPredictiveBack { onClose() }
+    val model = remember(car.id, car.name) { carModelFor(car.id, car.name) }
+    val description = stringResource(Res.string.household_cars_3d_description, car.name)
+    val uriHandler = LocalUriHandler.current
+    Box(
+        modifier
+            .graphicsLayer {
+                val scale = 1f - back.progress * 0.08f
+                scaleX = scale
+                scaleY = scale
+                alpha = 1f - back.progress * 0.25f
+            }
+            .background(CarBackdrop)
+            .testTag("cars_model_page"),
+    ) {
+        CarViewer(
+            model,
+            Modifier.fillMaxSize().semantics { contentDescription = description }.testTag("cars_model_viewer"),
+        )
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            WithTooltip(stringResource(Res.string.common_back)) {
+                IconButton(onClick = onClose, modifier = Modifier.handCursor().testTag("cars_model_back")) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.common_back), tint = Color.White)
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                Text(car.name, style = MaterialTheme.typography.titleLarge, color = Color.White)
+                Text(stringResource(model.descriptionKey()), style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.72f))
+            }
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = bottomNavClearance()).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(stringResource(Res.string.household_cars_3d_hint), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.72f), textAlign = TextAlign.Center)
+            // CC BY asks for the credit and a link back to where the mesh came from.
+            Text(
+                stringResource(Res.string.car_model_credit),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.5f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.handCursor().clickable { runCatching { uriHandler.openUri(CAR_MODEL_SOURCE) } },
+            )
+        }
+    }
+}
+
+private fun CarModel.descriptionKey(): StringResource = when (this) {
+    CarModel.BLUE_PERFORMANCE -> Res.string.car_model_blue_performance
+    CarModel.RED_LONG_RANGE -> Res.string.car_model_red_long_range
 }
 
 /**
@@ -346,7 +438,7 @@ private fun CarPin(car: HouseholdCar, selected: Boolean, onClick: () -> Unit) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CarCard(car: HouseholdCar, nowEpochSeconds: Long, units: WeatherUnits, selected: Boolean, onClick: () -> Unit) {
+private fun CarCard(car: HouseholdCar, nowEpochSeconds: Long, units: WeatherUnits, selected: Boolean, onClick: () -> Unit, onShowModel: () -> Unit) {
     val uriHandler = LocalUriHandler.current
     val shape = RoundedCornerShape(16.dp)
     val parked = car.parked
@@ -415,6 +507,19 @@ private fun CarCard(car: HouseholdCar, nowEpochSeconds: Long, units: WeatherUnit
         val longitude = car.longitude
         Spacer(Modifier.size(4.dp))
         Column(horizontalAlignment = Alignment.End) {
+            val model = remember(car.id, car.name) { carModelFor(car.id, car.name) }
+            val seeIt = stringResource(Res.string.household_cars_view_3d, car.name)
+            CarPoster(
+                model,
+                Modifier
+                    .padding(end = 8.dp)
+                    .size(width = 112.dp, height = 70.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .handCursor()
+                    .clickable(role = Role.Button, onClickLabel = seeIt, onClick = onShowModel)
+                    .semantics { contentDescription = seeIt }
+                    .testTag("cars_model_${car.id}"),
+            )
             if (latitude != null && longitude != null) {
                 TextButton(onClick = { runCatching { uriHandler.openUri("https://www.google.com/maps/search/?api=1&query=$latitude,$longitude") } }, modifier = Modifier.handCursor()) {
                     Text(stringResource(Res.string.parking_map_directions))
@@ -434,6 +539,8 @@ private fun CarCard(car: HouseholdCar, nowEpochSeconds: Long, units: WeatherUnit
 }
 
 private val PIN_SIZE = 36.dp
+private val CAR_MARKER_SIZE = 72.dp
+private const val CAR_MODEL_SOURCE = "https://sketchfab.com/3d-models/2021-tesla-model-y-59e2ead369984b1a85c800ff6cf6789d"
 
 /** "72% · 215 mi", in the weather app's distance; null when the car hasn't said its battery. */
 @Composable

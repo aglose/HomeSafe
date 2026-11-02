@@ -39,7 +39,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.AppTabContent(nav: com.m
     - visible: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CarCard(car: com.meticulouscreations.homesafe.domain.model.HouseholdCar, nowEpochSeconds: kotlin.Long, units: com.meticulouscreations.homesafe.weather.domain.WeatherUnits, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CarCard(car: com.meticulouscreations.homesafe.domain.model.HouseholdCar, nowEpochSeconds: kotlin.Long, units: com.meticulouscreations.homesafe.weather.domain.WeatherUnits, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>, onShowModel: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -48,6 +48,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.CarCard(car: com.meticul
     - units: STABLE (marked @Stable or @Immutable)
     - selected: STABLE (primitive type)
     - onClick: STABLE (function type)
+    - onShowModel: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.CarModelPage(car: com.meticulouscreations.homesafe.domain.model.HouseholdCar, onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - car: STABLE (class with no mutable properties)
+    - onClose: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CarPin(car: com.meticulouscreations.homesafe.domain.model.HouseholdCar, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
