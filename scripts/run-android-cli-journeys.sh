@@ -29,20 +29,24 @@ if [ ! -f "$SKILL" ]; then
   exit 1
 fi
 
+adb logcat -G 16M
 failed=0
 for journey in ${JOURNEYS[@]}; do
   name="$(basename "$journey" .journey.xml)"
   result="$OUT/$name.md"
   rm -f "$result"
 
-  # Every journey starts signed out, on the app's first screen.
+  # Every journey starts signed out, on the app's first screen. Its logcat goes beside the result,
+  # because an agent is told to report an app that dies, not to find out why.
   adb shell pm clear "$APP_ID" > /dev/null
+  adb logcat -c
   adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 > /dev/null
   sleep 5
 
   claude -p "Run the Android CLI journey in $journey on the connected device. The app $APP_ID is already open in the foreground: do not reinstall, clear or relaunch it. Read $SKILL first, and evaluate the journey exactly as its section on running journey tests describes, driving the device only with the android CLI (android layout, android screen capture and resolve) and adb shell input. The page moves when the keyboard opens, so read android layout again before each tap. It also lists what the keyboard covers, so if the keyboard is over something an action needs, hide it first with adb shell input keyevent KEYCODE_BACK; that is not a failure. Write the result to $result in the skill's markdown format: one '### Action:' heading per action in order, each marked ✅ if it succeeded or ❌ if it failed, and stop at the first failure." \
     --allowedTools "Bash(android *)" "Bash(adb *)" "Read" "Write" \
     > "$OUT/$name.log" 2>&1
+  adb logcat -d > "$OUT/$name.logcat"
 
   expected="$(grep -c '<action>' "$journey")"
   passed="$( { grep -E '^### Action' "$result" 2> /dev/null || true; } | grep -c '✅')"
