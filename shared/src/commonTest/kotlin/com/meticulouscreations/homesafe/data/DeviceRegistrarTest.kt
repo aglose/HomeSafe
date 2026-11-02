@@ -14,6 +14,8 @@ import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.network.PushRelayApi
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePreferences
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_name_generic
 import io.ktor.client.HttpClient
@@ -86,6 +88,17 @@ class DeviceRegistrarTest {
         override val appVersion = "1.0 (1)"
     }
 
+    /** The weather's notification switches, in memory. */
+    private class FakeWeatherNotices : WeatherNoticePreferences {
+        val settings = MutableStateFlow(WeatherNoticeSettings())
+
+        override fun observe(): Flow<WeatherNoticeSettings> = settings
+
+        override suspend fun update(change: (WeatherNoticeSettings) -> WeatherNoticeSettings) {
+            settings.value = change(settings.value)
+        }
+    }
+
     /** "Mute all notifications", in memory. */
     private class FakeMute : NotificationMute {
         override val muted = MutableStateFlow(false)
@@ -113,7 +126,8 @@ class DeviceRegistrarTest {
         val identity = DeviceIdentityStore(dao)
         val settings = FakeSettings()
         val mute = FakeMute()
-        val registrar = DeviceRegistrar(PushRelayApi(client), identity, FakeTokens(token), info, connection, settings, scope.backgroundScope, mute)
+        val weather = FakeWeatherNotices()
+        val registrar = DeviceRegistrar(PushRelayApi(client), identity, FakeTokens(token), info, connection, settings, scope.backgroundScope, mute, weather)
     }
 
     /**
@@ -234,6 +248,31 @@ class DeviceRegistrarTest {
         assertEquals(3, h.posts.size)
         assertTrue(""""token":"fcm-1"""" in h.posts[2], h.posts[2])
         assertTrue(h.registrar.pushRegistered.value)
+    }
+
+    @Test
+    fun theRelayIsToldWhetherRainOnTheWayIsWantedAndNotOfTheOtherWeatherSwitches() = runTest {
+        val h = Harness(this, FakeConnection(url = "http://192.168.68.55:8971"))
+        h.registrar.start()
+        settle()
+        assertTrue(""""rain_soon":true""" in h.posts.single(), h.posts.single())
+
+        h.weather.settings.value = WeatherNoticeSettings(dailyOutlook = false, severeAlerts = false)
+        settle()
+        assertEquals(1, h.posts.size, "nothing the relay goes by has changed")
+
+        h.weather.settings.value = WeatherNoticeSettings(precipitationSoon = false)
+        settle()
+        assertEquals(2, h.posts.size)
+        assertFalse(""""rain_soon":true""" in h.posts[1], h.posts[1])
+
+        h.weather.settings.value = WeatherNoticeSettings()
+        settle()
+        assertTrue(""""rain_soon":true""" in h.posts[2], h.posts[2])
+
+        h.weather.settings.value = WeatherNoticeSettings(enabled = false)
+        settle()
+        assertFalse(""""rain_soon":true""" in h.posts[3], h.posts[3])
     }
 
     @Test

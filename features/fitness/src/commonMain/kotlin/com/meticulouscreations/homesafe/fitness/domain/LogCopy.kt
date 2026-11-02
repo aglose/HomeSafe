@@ -63,12 +63,13 @@ data class LogMerge(
  * the log already has is set up the way the copy has it (its shelf, its rep band, its note).
  */
 object LogCopies {
-    fun merge(copy: LogCopy, into: LogCopy): LogMerge {
+    /** New ids go on from what the log holds, and from [idFloor] where that is higher: see [FitnessIdFloor]. */
+    fun merge(copy: LogCopy, into: LogCopy, idFloor: Long = 0): LogMerge {
         val here = into.exercises.associateBy { it.id }
         val exercises = copy.exercises.distinctBy { it.id }.filter { here[it.id] != it }
         val known = here.keys + copy.exercises.map { it.id }
 
-        var nextWorkout = (into.workouts.maxOfOrNull { it.id } ?: 0L) + 1
+        var nextWorkout = maxOf((into.workouts.maxOfOrNull { it.id } ?: 0L) + 1, idFloor)
         // By what makes a workout the same one, to its id here: the log's own, and each of the copy's as it is given one,
         // so that two of the copy's that are the same workout become one.
         val sameWorkout = into.workouts.associateTo(HashMap()) { WorkoutKey(it.focus, it.startedAtEpochSeconds) to it.id }
@@ -88,14 +89,14 @@ object LogCopies {
             }
         }
 
-        var nextSet = (into.sets.maxOfOrNull { it.id } ?: 0L) + 1
+        var nextSet = maxOf((into.sets.maxOfOrNull { it.id } ?: 0L) + 1, idFloor)
         val have = into.sets.mapTo(HashSet()) { SetKey(it.exerciseId, it.weight, it.reps, it.epochSeconds) }
         // A set of an exercise neither side knows has nothing to show under, and is left behind.
         val sets = copy.sets
             .filter { it.exerciseId in known && have.add(SetKey(it.exerciseId, it.weight, it.reps, it.epochSeconds)) }
             .map { it.copy(id = nextSet++, workoutId = it.workoutId?.let(workoutIds::get)) }
 
-        var nextPhase = (into.phases.maxOfOrNull { it.id } ?: 0L) + 1
+        var nextPhase = maxOf((into.phases.maxOfOrNull { it.id } ?: 0L) + 1, idFloor)
         val phasesHere = into.phases.mapTo(HashSet()) { it.kind to it.startedAtEpochSeconds }
         val phases = copy.phases.sortedWith(compareBy({ it.startedAtEpochSeconds }, { it.id }))
             .filter { phasesHere.add(it.kind to it.startedAtEpochSeconds) }

@@ -37,7 +37,7 @@ import kotlin.test.assertTrue
 class FitnessRepositoryImplTest {
 
     private val dao = InMemoryFitnessDao()
-    private val repository = FitnessRepositoryImpl(dao)
+    private val repository = FitnessRepositoryImpl(dao) { 0 }
 
     private fun draft(epochSeconds: Long = 1_000, exerciseId: String = "chest/bench-press", workoutId: Long? = null, reps: Int = 8, weight: Double = 135.0) =
         SetDraft(exerciseId, weight, reps, epochSeconds, workoutId = workoutId)
@@ -480,7 +480,7 @@ class FitnessRepositoryImplTest {
     @Test
     fun aCopyBroughtIntoAnEmptyLogMakesItTheSameLog() = runTest {
         val copy = usedLog()
-        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao()) { 0 }
         val merge = other.bringIn(copy)
         assertEquals(2, merge.newExercises)
         assertEquals(2, merge.sets.size)
@@ -490,7 +490,7 @@ class FitnessRepositoryImplTest {
     @Test
     fun bringingTheSameCopyInAgainWritesNothing() = runTest {
         val copy = usedLog()
-        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao()) { 0 }
         other.bringIn(copy)
         assertEquals(LogMerge(), other.bringIn(copy))
         assertEquals(copy, other.logCopy())
@@ -501,7 +501,7 @@ class FitnessRepositoryImplTest {
     @Test
     fun aCopyBroughtIntoALogInUseKeepsWhatWasThereAndGivesItsRowsNewIds() = runTest {
         val copy = usedLog()
-        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao()) { 0 }
         other.saveExercises(listOf(exercise()))
         val mine = other.startWorkout(WorkoutFocus.CHEST, 9_000)
         other.addSets(listOf(draft(epochSeconds = 9_100, workoutId = mine.id)))
@@ -546,7 +546,7 @@ class FitnessRepositoryImplTest {
     @Test
     fun aCopySetsAnExerciseUpItsOwnWayAndFillsInOnlyTheHeartSettingsThatAreMissing() = runTest {
         val copy = usedLog()
-        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao()) { 0 }
         other.saveExercises(listOf(exercise(bodyPart = BodyPart.SHOULDERS, repLow = 4, repHigh = 6)))
         other.saveHeartProfile(HeartProfile(maxBpm = 195, age = 40))
 

@@ -45,6 +45,7 @@
     <string name="fitness_run_badge_longest">Más larga</string>
     <string name="fitness_run_badge_fastest">Ritmo más rápido</string>
     <string name="fitness_run_open_run">Abrir %1$s, %2$s</string>
+    <string name="fitness_run_source_phone">Las carreras vienen de tu teléfono, que las lee de Health Connect o las registra con su GPS.</string>
     <string name="fitness_run_source">Las carreras las registra tu banda o la app Google Health, y se leen de Health Connect.</string>
 
     <string name="fitness_run_stat_distance">Distancia</string>

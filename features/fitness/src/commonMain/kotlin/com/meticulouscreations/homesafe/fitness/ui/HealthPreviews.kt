@@ -166,6 +166,9 @@ object HealthFixtures {
 
     val missing = HealthUiState(access = HealthAccess.MISSING)
 
+    /** A device with no store of its own, showing what the phone read forty minutes ago. */
+    fun fromPhone(): HealthUiState = connected().copy(fromPhoneAtEpochSeconds = NOW - 2_400)
+
     /**
      * A run being recorded with the phone's GPS: 2.14 miles in 19:40 of moving, most of the way
      * round the loop, [paused] or going at a 9:05 mile just now.
@@ -215,6 +218,13 @@ private fun FitnessTodayBodyWaitingPreview() {
 @Composable
 private fun FitnessTodayBodyConnectPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), health = HealthFixtures.off(refused = true)) }
+}
+
+// At a laptop's size: a computer is where this is seen.
+@Preview(widthDp = 1280, heightDp = 1000)
+@Composable
+private fun FitnessTodayBodyFromPhonePreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), health = HealthFixtures.fromPhone()) }
 }
 
 @Preview(widthDp = 412, heightDp = 1700)

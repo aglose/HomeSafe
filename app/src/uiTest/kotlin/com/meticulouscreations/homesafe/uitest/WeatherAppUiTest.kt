@@ -150,7 +150,9 @@ class WeatherAppUiTest {
         val current = state.selected!!.report!!.current
         val temperature = WeatherFormat.degrees(current.temperatureC, state.units)
         onNode(hasText(temperature) and hasAnyAncestor(hasTestTag("weather_hero"))).assertExists()
-        assertShown("weather_headline")
+        // This evening's shower: the tiles say so, in place of the day's one sentence.
+        assertShown("weather_outlook_today")
+        assertShown("weather_outlook_tomorrow")
     }
 
     // ---- Forecast -----------------------------------------------------------------------------

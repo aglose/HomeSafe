@@ -34,8 +34,8 @@ class WeatherNotificationBuildTest {
 
     private val rain = WeatherNotification(
         id = "soon:1",
-        title = "Rain starting in about 25 min",
-        body = "Around 3:30 PM in Portland, for about 30 min",
+        title = "Rain at 3:30 PM",
+        body = "For about 30 min, around 0.04 in",
         art = WeatherNoticeArt(
             icon = WeatherNoticeIcon.RAIN,
             headline = "3:30 PM",
@@ -75,8 +75,8 @@ class WeatherNotificationBuildTest {
         assertEquals(CHANNEL_ID, built.channelId)
         // Its own group, never Android's bundle of the app's notifications under the app icon.
         assertEquals("weather", built.group)
-        assertEquals("Rain starting in about 25 min", built.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
-        assertEquals("Around 3:30 PM in Portland, for about 30 min", built.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertEquals("Rain at 3:30 PM", built.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals("For about 30 min, around 0.04 in", built.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         assertEquals("Portland", built.extras.getCharSequence(Notification.EXTRA_SUB_TEXT).toString())
         assertEquals(Notification.VISIBILITY_PUBLIC, built.visibility)
         assertNotNull(built.getLargeIcon(), "the glyph on its tile")
@@ -107,6 +107,13 @@ class WeatherNotificationBuildTest {
     @Test
     fun itOffersTheRadar() {
         assertEquals(listOf("Radar"), build(rain).actions.map { it.title.toString() })
+    }
+
+    @Test
+    fun rainAboutToStartComesUpOverTheScreenAndCanBePutOff() {
+        val built = build(rain.copy(headsUp = true, reminderEpochSeconds = nowSeconds + 900, reminderLabel = "Remind me at 3:15 PM"))
+        assertEquals(SOON_CHANNEL_ID, built.channelId)
+        assertEquals(listOf("Radar", "Remind me at 3:15 PM"), built.actions.map { it.title.toString() })
     }
 
     @Test

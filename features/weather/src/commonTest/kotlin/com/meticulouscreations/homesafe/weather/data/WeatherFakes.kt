@@ -105,6 +105,12 @@ internal class FakeWeatherNotifier(override var isSupported: Boolean = true) : W
     override suspend fun sweep(nowEpochSeconds: Long) {
         swept += nowEpochSeconds
     }
+
+    var remindersCancelled = 0
+
+    override suspend fun cancelReminders() {
+        remindersCancelled++
+    }
 }
 
 internal class FakeWeatherCheckScheduler : WeatherCheckScheduler {

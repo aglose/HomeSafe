@@ -67,14 +67,15 @@ class FitnessViewModelTest {
 
     private class Harness(private val dispatcher: CoroutineDispatcher) {
         private val dao = InMemoryFitnessDao()
-        val repository = FitnessRepositoryImpl(dao)
+        val repository = FitnessRepositoryImpl(dao) { 0 }
         val preferences = FitnessPreferencesRepositoryImpl(dao)
         val clock = MutableClock(NOW)
+        val logSync = FakeFitnessLogSync()
 
         private val made = mutableListOf<FitnessViewModel>()
 
         fun viewModel(boards: CoroutineDispatcher = dispatcher) =
-            FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences, boardDispatcher = boards).also { made += it }
+            FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences, logSync, boardDispatcher = boards).also { made += it }
 
         /** Stops the view models' minute tick, which would otherwise keep a finished test's clock turning for ever. */
         fun stop() = made.forEach { it.setActive(false) }

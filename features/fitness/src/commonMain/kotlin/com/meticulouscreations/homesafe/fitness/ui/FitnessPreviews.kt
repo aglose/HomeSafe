@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Equipment
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
+import com.meticulouscreations.homesafe.fitness.domain.FitnessSyncStatus
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
@@ -446,6 +447,20 @@ private fun FitnessRecordPreview() {
 @Composable
 private fun FitnessLiftsPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialTab = FitnessTab.LIFTS) }
+}
+
+/** The whole Lifts tab, down to its foot: the note saying the log is saved on the server. */
+@Preview(widthDp = 412, heightDp = 2700)
+@Composable
+private fun FitnessLiftsSavedPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state().copy(copyable = true, syncStatus = FitnessSyncStatus.SAVED), FitnessActions(), initialTab = FitnessTab.LIFTS) }
+}
+
+/** The top of the Lifts tab holding back a log with changes from whoever was signed in before. */
+@Preview(widthDp = 412, heightDp = 600)
+@Composable
+private fun FitnessLiftsHeldBackPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state().copy(copyable = true, syncStatus = FitnessSyncStatus.HELD_BACK), FitnessActions(), initialTab = FitnessTab.LIFTS) }
 }
 
 /** An exercise whose name says no movement: its figure is the nearest for its shelf, and is marked so. */

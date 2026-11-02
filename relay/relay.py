@@ -446,6 +446,16 @@ def db() -> sqlite3.Connection:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS package_events_key ON package_events (key)")
     conn.execute("CREATE TABLE IF NOT EXISTS package_phones (device_id TEXT PRIMARY KEY, person TEXT NOT NULL)")
+    # The Fitness app's training logs (see "fitness"): a row of a log as the app wrote it, `data` NULL once it is deleted.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS fitness_rows (owner TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, data TEXT, updated REAL NOT NULL, PRIMARY KEY (owner, kind, id))"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS fitness_rows_by_rev ON fitness_rows (owner, rev)")
+    # What each login's phone last read from its health store, whole, and its runs' tracks (see "fitness").
+    conn.execute("CREATE TABLE IF NOT EXISTS fitness_health (owner TEXT PRIMARY KEY, device TEXT NOT NULL, snapshot TEXT NOT NULL, tracks TEXT NOT NULL, updated REAL NOT NULL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS fitness_health_tracks (owner TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, track TEXT NOT NULL, updated REAL NOT NULL, PRIMARY KEY (owner, id))"
+    )
     # Where each institution's transactions were read up to (Plaid's cursor), when they were last
     # asked for and last changed, and whether Plaid has finished fetching their history.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_items)")}
@@ -532,6 +542,11 @@ def db() -> sqlite3.Connection:
         ("role", "TEXT"),
         ("hardware_id", "TEXT"),
         ("emulator", "INTEGER NOT NULL DEFAULT 0"),
+        # See "rain soon": whether this phone wants it, and the last shower it was told of.
+        ("rain_soon", "INTEGER NOT NULL DEFAULT 0"),
+        ("rain_soon_key", "TEXT"),
+        ("rain_soon_at", "REAL"),
+        ("rain_soon_by", "TEXT"),
     ):
         if column not in columns:
             conn.execute(f"ALTER TABLE devices ADD COLUMN {column} {declaration}")
@@ -601,11 +616,15 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     alerting again, and iOS collapses it onto the same banner (`apns-collapse-id`), passively.
     """
     headers, aps = apns_parts(title, body, data, away)
+    android: dict[str, Any] = {"priority": "high"}
+    # News with a date on it (`push_until`): not worth delivering once that has passed.
+    if data.get("push_until"):
+        android["ttl"] = f"{max(0, int(float(data['push_until']) - time.time()))}s"
     return {
         "message": {
             "token": token,
             "data": {**data, "title": title, "body": body},
-            "android": {"priority": "high"},
+            "android": android,
             "apns": {"headers": headers, "payload": {"aps": aps}},
         }
     }
@@ -623,6 +642,14 @@ def apns_parts(title: str, body: str, data: dict[str, str], away: bool) -> tuple
     collapse_id = data.get("notif_id") or data.get("review_id")
     if collapse_id:
         headers["apns-collapse-id"] = collapse_id[:64]
+    if data.get("push_until"):
+        headers["apns-expiration"] = data["push_until"]
+    if data.get("weather_soon"):
+        # Dressed as the app's own weather notifications are (WeatherNotifier.ios.kt), with their
+        # buttons (IosWeatherActions), in their stack. `content-available` wakes the app, when iOS allows it, to
+        # draw its picture (see "rain soon").
+        aps.update({"thread-id": "weather", "category": "weather.soon" if data.get("homesafe_weather_remind_at") else "weather", "relevance-score": 0.8, "content-available": 1})
+        aps["alert"]["subtitle"] = data.get("weather_place", "")
     return headers, aps
 
 
@@ -846,7 +873,15 @@ _car_zone_polygons: dict[str, list[list[tuple[float, float]]]] = {}
 _car_zone_outlines: dict[str, dict[str, list[tuple[float, float]]]] = {}
 _live_streams: dict[str, list[str]] = {}
 _detect_sizes: dict[str, tuple[int, int]] = {}
+_property_cameras: set[str] = set()
 _config_loaded_at = 0.0
+
+# The zone that says where the household's own ground ends. On a camera with one, Away mode's "any
+# person" means any person inside it; a camera with none still hears about everyone. It wants
+# people only, so a review's `data.zones` naming it means a person set foot there, whoever else was
+# in the frame. Measured on the Front Yard, 2026-10-25 to 11-01: 226 of 301 pushes were Away mode
+# telling of people on the public sidewalk (docs/away-mode.md, "On the property").
+PROPERTY_ZONE = "property"
 
 
 def zones_wanting(cam: dict[str, Any], label: str) -> list[str]:
@@ -867,7 +902,7 @@ def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def refresh_config() -> None:
-    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _detect_sizes, _config_loaded_at
+    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _detect_sizes, _property_cameras, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
@@ -884,6 +919,7 @@ def refresh_config() -> None:
                 name: (int(d["width"]), int(d["height"])) for name, cam in cameras.items()
                 if (d := cam.get("detect") or {}).get("width") and d.get("height")
             }
+            _property_cameras = {name for name, cam in cameras.items() if PROPERTY_ZONE in (cam.get("zones") or {})}
             _config_loaded_at = time.time()
         except Exception as e:  # keep the last known maps
             log.warning("config refresh failed: %s", e)
@@ -893,6 +929,12 @@ def refresh_config() -> None:
 def required_zones() -> dict[str, list[str]]:
     refresh_config()
     return _required_zones
+
+
+def property_cameras() -> set[str]:
+    """The cameras with a `PROPERTY_ZONE` drawn."""
+    refresh_config()
+    return _property_cameras
 
 
 def car_zones() -> dict[str, list[str]]:
@@ -1158,11 +1200,17 @@ def promote_pending() -> None:
 
 
 def away_items(since: float) -> list[dict[str, Any]]:
-    """Every review item — alerts *and* detections — with a person in it that started after everyone left, oldest first."""
+    """
+    Every review item — alerts *and* detections — with a person in it that started after everyone
+    left, oldest first. On a camera with a `PROPERTY_ZONE`, the person has to have set foot in it;
+    one who hasn't yet is looked at again next poll.
+    """
     items = {item["id"]: item for severity in ("alert", "detection") for item in recent_review(severity)}
+    zoned = property_cameras()
     fresh = [
         item for item in items.values()
         if float(item.get("start_time") or 0) >= since and "person" in ((item.get("data") or {}).get("objects") or [])
+        and (item.get("camera") not in zoned or PROPERTY_ZONE in ((item.get("data") or {}).get("zones") or []))
     ]
     return sorted(fresh, key=lambda item: float(item.get("start_time") or 0))
 
@@ -4712,6 +4760,9 @@ class Device(BaseModel):
     # The phone's clock, for reading quiet hours: its IANA zone, and its UTC offset in minutes as a fallback.
     tz: str | None = None
     utc_offset: int | None = None
+    # Whether it wants to hear of rain on the way from here: the weather app's switches, on (see
+    # "rain soon"). Absent from apps before this, which wouldn't know what to do with the push.
+    rain_soon: bool = False
 
 
 class Presence(BaseModel):
@@ -4806,6 +4857,7 @@ def startup() -> None:
     threading.Thread(target=tesla_stream_forever, name="tesla-stream", daemon=True).start()
     threading.Thread(target=packages_forever, name="packages", daemon=True).start()
     threading.Thread(target=charging_forever, name="charging", daemon=True).start()
+    threading.Thread(target=rain_soon_forever, name="rain-soon", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -4954,16 +5006,17 @@ def register(device: Device, request: Request) -> dict[str, Any]:
             # Deliberately leaves `away`/`away_updated`/pending alone: re-registering (every connect,
             # every LAN/Tailscale flip) must not quietly mark a phone as back home.
             "INSERT INTO devices (device_id, token, platform, name, created, last_seen, quiet_familiar, build, secret,"
-            " quiet_start, quiet_end, only_away, tz, utc_offset, hardware_id, emulator)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            " quiet_start, quiet_end, only_away, tz, utc_offset, hardware_id, emulator, rain_soon)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(device_id) DO UPDATE SET token=excluded.token, platform=excluded.platform, name=excluded.name,"
             " last_seen=excluded.last_seen, quiet_familiar=excluded.quiet_familiar, build=excluded.build, secret=excluded.secret,"
             " quiet_start=excluded.quiet_start, quiet_end=excluded.quiet_end, only_away=excluded.only_away,"
-            " tz=excluded.tz, utc_offset=excluded.utc_offset, hardware_id=excluded.hardware_id, emulator=excluded.emulator",
+            " tz=excluded.tz, utc_offset=excluded.utc_offset, hardware_id=excluded.hardware_id, emulator=excluded.emulator,"
+            " rain_soon=excluded.rain_soon",
             (
                 device_id, device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build, secret,
                 device.quiet_start, device.quiet_end, int(device.only_away), device.tz, device.utc_offset,
-                device.hardware_id, int(device.emulator),
+                device.hardware_id, int(device.emulator), int(device.rain_soon),
             ),
         )
         c.commit()
@@ -5406,6 +5459,327 @@ def test_push(request: Request) -> dict[str, Any]:
     result = broadcast("Front Yard", "Test: Sarah's Tesla in the driveway", {"review_id": f"test-{int(time.time())}", "camera": "hikvision_1", "test": "1"}, test=True)
     log.info("test push by %s: %s", user, result)
     return {"ok": True, **result}
+
+
+# ---------------------------------------------------------------- rain soon
+
+# The weather app's "rain on the way" notification, sent from here. The phones plan it themselves
+# (WeatherNoticePlanner), but only when they get to run: every half hour or so on Android, whenever
+# iOS grants a background refresh on an iPhone. This doesn't wait for them (docs/weather.md, "Rain
+# soon, from the relay").
+#
+# Where: home, which the relay already holds for the geofences, and only for the phones it has at
+# home: the two tracked phones, away=0 and not on their way out. A phone's own position never comes
+# here; away from home its own check is all it has. Home goes to Open-Meteo rounded to a hundredth
+# of a degree, as the phones' positions do.
+#
+# How often: every RAIN_SOON_POLL_SECONDS, one call of nine variables, so one against the free
+# tier's 10,000 a day: at most 64 a day, since nothing is asked in the quiet hours, or while no
+# phone could be told. Open-Meteo's quarter-hours don't change faster than that.
+#
+# Once per shower: each phone's row says what it was last told, when, and by whom. Pushing takes
+# that first; the phone's own check takes it too before it posts (`claim_rain_soon`), so whichever
+# gets there first says it and the other stays quiet for RAIN_SOON_COOLDOWN_SECONDS. An Android
+# phone also checks its own ledger when the push lands.
+#
+# The push is a small forecast rather than a finished notification: an Android phone (and an
+# iPhone, when iOS wakes the app for it) runs the planner over it, so the wording, the picture, the
+# channel and the rules are the app's, in its language. iOS draws `aps.alert` first, in English
+# (as with every push from here), and that is all it shows when it won't wake the app.
+RAIN_SOON_POLL_SECONDS = 15 * 60
+# Told to slow down (HTTP 429): well under the hour a limit lasts would only be told again.
+RAIN_SOON_BACKOFF_SECONDS = 60 * 60
+# From here down, WeatherNoticePlanner's and WeatherStory.nearTerm's own rules: keep them the same.
+RAIN_SOON_LEAD_SECONDS = 75 * 60
+RAIN_SOON_COOLDOWN_SECONDS = 3 * 3600
+RAIN_SOON_LINGER_SECONDS = 2 * 3600
+RAIN_SOON_REMIND_BEFORE_SECONDS = 15 * 60
+RAIN_SOON_REMIND_FROM_LEAD_SECONDS = 30 * 60
+RAIN_SOON_QUIET_FROM_HOUR = 22
+RAIN_SOON_QUIET_UNTIL_HOUR = 6
+RAIN_SOON_SLICES = 9
+RAIN_SOON_WET_SLICE_MM = 0.1
+RAIN_SOON_HEAVY_MM_PER_HOUR = 7.6
+RAIN_SOON_SLICE_SECONDS = 900
+# WMO codes (WeatherKind.fromCode).
+RAIN_SOON_STORM_CODES = (95, 96, 99)
+RAIN_SOON_WET_CODES = (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99)
+RAIN_SOON_FAMILY_WORDS = {"rain": "Rain", "snow": "Snow", "storm": "Storms"}
+
+
+def rain_soon_coarse(degrees: float) -> str:
+    """A coordinate as the weather services are given it: to the hundredth of a degree, about a kilometre (`coarse` in WeatherApis.kt)."""
+    return f"{float(degrees):.2f}"
+
+
+def rain_soon_fetch(home: dict[str, Any]) -> dict[str, Any]:
+    """The forecast at [home] that the rules read, from Open-Meteo, which needs no key. Raises what `requests` raises."""
+    r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+        "latitude": rain_soon_coarse(home["lat"]), "longitude": rain_soon_coarse(home["lng"]),
+        "current": "precipitation,weather_code,is_day",
+        "minutely_15": "precipitation,snowfall", "past_minutely_15": 1, "forecast_minutely_15": 13,
+        "hourly": "precipitation,snowfall,precipitation_probability,weather_code", "past_hours": 1, "forecast_hours": 9,
+        "timezone": "auto", "timeformat": "unixtime",
+    }, timeout=15)
+    r.raise_for_status()
+    return rain_soon_forecast(r.json())
+
+
+def rain_soon_forecast(raw: dict[str, Any]) -> dict[str, Any]:
+    """
+    Open-Meteo's answer as the rules read it, and as the phone is sent it. What falls is stamped at
+    the end of the interval it fell in, so each quarter-hour and hour takes the amount one step on
+    (`MinutelyDto.toSlices`, `HourlyDto.toHours`).
+    """
+    current, quarters, hours = raw.get("current") or {}, raw.get("minutely_15") or {}, raw.get("hourly") or {}
+
+    def ahead(values: list[Any] | None, i: int) -> float:
+        value = (values or [])[i + 1:i + 2]
+        return float(value[0]) if value and value[0] is not None else 0.0
+
+    times = quarters.get("time") or []
+    hour_times = hours.get("time") or []
+    return {
+        "zone": raw.get("timezone") or "",
+        "offset": int(raw.get("utc_offset_seconds") or 0),
+        "day": int(current.get("is_day", 1) or 0),
+        "code": int(current.get("weather_code") if current.get("weather_code") is not None else 3),
+        "mm": float(current.get("precipitation") or 0.0),
+        "quarters": [(int(at), ahead(quarters.get("precipitation"), i), ahead(quarters.get("snowfall"), i)) for i, at in enumerate(times)],
+        "hours": [
+            (
+                int(at), ahead(hours.get("precipitation"), i), ahead(hours.get("snowfall"), i),
+                next(iter((hours.get("precipitation_probability") or [])[i + 1:i + 2]), None),
+                int(next(iter((hours.get("weather_code") or [])[i:i + 1]), 3) or 0),
+            )
+            for i, at in enumerate(hour_times)
+        ],
+    }
+
+
+def rain_soon_zone(forecast: dict[str, Any]) -> Any:
+    """The clock at the place the forecast is for: by its zone, or its UTC offset when this relay can't resolve that."""
+    try:
+        return ZoneInfo(forecast["zone"])
+    except Exception:
+        return timezone(timedelta(seconds=forecast["offset"]))
+
+
+def rain_soon_quiet(now: float, zone: Any) -> bool:
+    """Nothing but warnings between 10 PM and 6 AM (WeatherNoticePlanner)."""
+    hour = datetime.fromtimestamp(now, zone).hour
+    return hour < RAIN_SOON_QUIET_UNTIL_HOUR or hour >= RAIN_SOON_QUIET_FROM_HOUR
+
+
+def rain_soon_starting(forecast: dict[str, Any], now: float) -> dict[str, Any] | None:
+    """
+    The shower worth announcing at [now], or None: dry now, and within RAIN_SOON_LEAD_SECONDS two
+    wet quarter-hours in a row, or one of 1 mm/h or more. The same reading as `WeatherStory.nearTerm`
+    and the lead in `WeatherNoticePlanner.soon`; `key` is the planner's for the same shower.
+    """
+    quarters = forecast["quarters"]
+    i = max((n for n, q in enumerate(quarters) if q[0] <= now), default=-1)
+    if i < 0:
+        slices = [q for q in quarters if q[0] > now]
+    elif quarters[i][0] + RAIN_SOON_SLICE_SECONDS <= now:
+        slices = []
+    else:
+        slices = quarters[i:]
+    slices = slices[:RAIN_SOON_SLICES]
+    if not slices:
+        return None
+    wet = [q[1] >= RAIN_SOON_WET_SLICE_MM for q in slices]
+    if wet[0] or (forecast["mm"] >= RAIN_SOON_WET_SLICE_MM and forecast["code"] in RAIN_SOON_WET_CODES):
+        return None
+    start = next((n for n in range(1, len(slices)) if wet[n] and (slices[n][1] * 4 >= 1.0 or (n + 1 < len(slices) and wet[n + 1]))), None)
+    if start is None or slices[start][0] - now > RAIN_SOON_LEAD_SECONDS:
+        return None
+    # An end is two dry quarter-hours in a row; a dry one at the very edge of what the forecast shows isn't known to be one.
+    end = next((n for n in range(start + 1, len(slices) - 1) if not wet[n] and not wet[n + 1]), None)
+    hours = forecast["hours"]
+    h = max((n for n, hour in enumerate(hours) if hour[0] <= now), default=-1)
+    next_hours = hours if h < 0 else [] if hours[h][0] + 3600 <= now else hours[h:]
+    snowy = sum(1 for n, q in enumerate(slices) if wet[n] and q[2] > 0 and q[2] * 0.7 >= q[1] * 0.5)
+    if forecast["code"] in RAIN_SOON_STORM_CODES or any(hour[4] in RAIN_SOON_STORM_CODES for hour in next_hours[:2]):
+        family = "storm"
+    elif snowy * 2 > sum(wet):
+        family = "snow"
+    else:
+        family = "rain"
+    at = slices[start][0]
+    return {
+        "key": f"soon:{at // 3600}",
+        "start": at,
+        "end": slices[end][0] if end is not None else None,
+        "family": family,
+        "peak": max(q[1] * 4 for q in slices[start:]),
+    }
+
+
+def rain_soon_text(soon: dict[str, Any], zone: Any) -> tuple[str, str]:
+    """
+    What an iPhone shows until, and unless, iOS wakes the app; an Android phone words its own. In
+    English, as every push from here is. A time rather than "in 40 min", which nothing would count down.
+    """
+    moment = datetime.fromtimestamp(soon["start"], zone)
+    clock = moment.strftime("%I:%M %p").lstrip("0")
+    hour = moment.strftime("%I %p").lstrip("0") if moment.minute == 0 else clock
+    title = f"{RAIN_SOON_FAMILY_WORDS[soon['family']]} at {hour}"
+    body = f"Around {clock}"
+    if soon["end"] is not None:
+        minutes = max(5, 5 * round((soon["end"] - soon["start"]) / 60 / 5))
+        body += f", for about {minutes} min"
+    if soon["peak"] >= RAIN_SOON_HEAVY_MM_PER_HOUR:
+        body += " · Heavy at times"
+    return title, body
+
+
+def rain_soon_data(forecast: dict[str, Any], soon: dict[str, Any], now: float) -> dict[str, str]:
+    """
+    The push's data. `weather_soon` is the forecast, for the app to plan from (`WeatherSoonPush`);
+    `homesafe_weather`, `view` and `place` are `WeatherDeepLink.toMap`, so a tap on an iPhone's banner
+    lands where any weather notification's does, and `place` is the phone's own position (Place.CURRENT_ID)
+    since these phones are at home. It stops being news when the shower starts. With half an hour or
+    more to go, `homesafe_weather_remind_at` is what the "Remind me" button goes by, as on the app's own.
+    """
+    quarters, hours = forecast["quarters"], forecast["hours"]
+    payload = {
+        "zone": forecast["zone"], "offset": forecast["offset"], "day": forecast["day"], "code": forecast["code"], "mm": forecast["mm"],
+        "q0": quarters[0][0] if quarters else 0, "qmm": [q[1] for q in quarters], "qcm": [q[2] for q in quarters],
+        "h0": hours[0][0] if hours else 0, "hmm": [h[1] for h in hours], "hcm": [h[2] for h in hours], "hp": [h[3] for h in hours], "hc": [h[4] for h in hours],
+    }
+    remind = {"homesafe_weather_remind_at": str(soon["start"] - RAIN_SOON_REMIND_BEFORE_SECONDS)} if soon["start"] - now >= RAIN_SOON_REMIND_FROM_LEAD_SECONDS else {}
+    return {
+        **remind,
+        "weather_soon": json.dumps(payload, separators=(",", ":")),
+        "weather_place": "Home",
+        "notif_id": soon["key"],
+        "push_until": str(soon["start"]),
+        "homesafe_weather": "1",
+        "view": "today",
+        "place": "current",
+        "homesafe_weather_expires": str(soon["end"] if soon["end"] is not None else soon["start"] + RAIN_SOON_LINGER_SECONDS),
+    }
+
+
+def rain_soon_claim(device_id: str, key: str, now: float, by: str) -> dict[str, Any]:
+    """
+    Takes the telling of a shower for one phone, [by] "relay" or "phone", and answers whether it
+    was granted. A phone told of a shower hears of no other for RAIN_SOON_COOLDOWN_SECONDS. A phone
+    asking again for one it took itself is granted it: the OS refused it, and it is trying again.
+    """
+    def claim(c: sqlite3.Connection) -> dict[str, Any]:
+        row = c.execute("SELECT rain_soon_key, rain_soon_at, rain_soon_by FROM devices WHERE device_id=?", (device_id,)).fetchone()
+        if row is None:
+            return {"granted": True, "key": None, "at": None}
+        told_key, told_at, told_by = row
+        if told_at is not None and now - told_at < RAIN_SOON_COOLDOWN_SECONDS and not (by == "phone" and told_by == "phone" and told_key == key):
+            return {"granted": False, "key": told_key, "at": told_at}
+        c.execute("UPDATE devices SET rain_soon_key=?, rain_soon_at=?, rain_soon_by=? WHERE device_id=?", (key, now, by, device_id))
+        c.commit()
+        return {"granted": True, "key": key, "at": now}
+
+    return with_db(claim)
+
+
+def rain_soon_phones(now: float) -> list[tuple[str, str]]:
+    """The (device_id, token) of each phone to tell now: tracked, at home, wanting it, and not told of a shower lately."""
+    tracked = set(assign_tracked_phones(now).values())
+    rows = with_db(lambda c: c.execute(
+        "SELECT device_id, token, rain_soon_at FROM devices WHERE token IS NOT NULL AND rain_soon=1 AND away=0 AND away_pending_since IS NULL"
+    ).fetchall())
+    return [(device_id, token) for device_id, token, told_at in rows
+            if device_id in tracked and can_push(token) and (told_at is None or now - told_at >= RAIN_SOON_COOLDOWN_SECONDS)]
+
+
+def rain_soon_tick(now: float, fetch: Callable[[dict[str, Any]], dict[str, Any]] | None = None, push: Callable[..., str] | None = None) -> dict[str, int] | None:
+    """One look at the forecast, when there is anyone to tell; answers what was pushed. `fetch` and `push` stand in for Open-Meteo and `deliver` in tests."""
+    home = state_get(HOME_KEY)
+    if not home:
+        return None
+    zone = household_zone()
+    if zone is not None and rain_soon_quiet(now, zone):
+        return None
+    if not rain_soon_phones(now):
+        return None
+    forecast = (fetch or rain_soon_fetch)(home)
+    zone = rain_soon_zone(forecast)
+    soon = rain_soon_starting(forecast, now)
+    if soon is None or rain_soon_quiet(now, zone):
+        return None
+    title, body = rain_soon_text(soon, zone)
+    data = rain_soon_data(forecast, soon, now)
+    results = []
+    # Asked afresh, since the forecast took a moment: a phone's own check may have got there meanwhile.
+    for device_id, token in rain_soon_phones(now):
+        if not rain_soon_claim(device_id, soon["key"], now, "relay")["granted"]:
+            continue
+        # Firebase out of reach raises rather than answering: this phone's push failing, not the rest's.
+        try:
+            result = (push or deliver)(token, title, body, data)
+        except Exception as e:  # noqa: BLE001
+            log.warning("rain soon: push failed (%s)", type(e).__name__)
+            result = "failed"
+        results.append(result)
+        if result == "failed":
+            # Not told, so not held to it: the next look tries again, and its own check may get there first.
+            with_db(lambda c: (c.execute("UPDATE devices SET rain_soon_key=NULL, rain_soon_at=NULL, rain_soon_by=NULL WHERE device_id=? AND rain_soon_by='relay'", (device_id,)), c.commit()))
+    outcome = {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed")}
+    log.info("rain soon: %s starting in %d min -> push: %s", soon["family"], (soon["start"] - now) // 60, outcome)
+    return outcome
+
+
+def rain_soon_forever() -> None:
+    while True:
+        wait = RAIN_SOON_POLL_SECONDS
+        try:
+            rain_soon_tick(time.time())
+        except Exception as e:  # noqa: BLE001 - no forecast this time; the phones' own checks are still there
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 429:
+                wait = RAIN_SOON_BACKOFF_SECONDS
+            # The error's own words would have the coordinates in them, in the URL.
+            log.warning("rain soon: no forecast (%s %s)", type(e).__name__, status or "")
+        time.sleep(wait)
+
+
+def rain_soon_test(now: float | None = None) -> dict[str, int]:
+    """
+    A made-up shower, half an hour off, pushed to every phone that wants these, at home or not and
+    however lately told: there is no summoning rain to try it. `python relay.py rain-soon-test`.
+    A phone still plans from it, so its own cooldown and quiet hours can hold it back.
+    """
+    now = time.time() if now is None else now
+    q0 = int(now // RAIN_SOON_SLICE_SECONDS * RAIN_SOON_SLICE_SECONDS)
+    forecast = {
+        "zone": getattr(household_zone(), "key", "") or "", "offset": 0, "day": 1, "code": 3, "mm": 0.0,
+        "quarters": [(q0 + n * RAIN_SOON_SLICE_SECONDS, 0.6 if 2 <= n <= 5 else 0.0, 0.0) for n in range(14)],
+        "hours": [(int(now // 3600 * 3600) + n * 3600, 0.8 if n == 1 else 0.0, 0.0, 70 if n == 1 else 10, 61 if n == 1 else 3) for n in range(10)],
+    }
+    soon = rain_soon_starting(forecast, now)
+    title, body = rain_soon_text(soon, rain_soon_zone(forecast))
+    data = rain_soon_data(forecast, soon, now)
+    tokens = with_db(lambda c: [row[0] for row in c.execute("SELECT token FROM devices WHERE token IS NOT NULL AND rain_soon=1").fetchall()])
+    results = [deliver(token, title, body, data) for token in tokens]
+    return {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed")}
+
+
+class RainSoonClaim(BaseModel):
+    key: str
+
+
+@app.post("/devices/{ident}/rain-soon")
+def claim_rain_soon(ident: str, claim: RainSoonClaim, request: Request) -> dict[str, Any]:
+    """
+    A phone's own check, about to announce a shower, asks whether it may: `granted` false says this
+    phone has already been told of one (`key`, `at`), and it stays quiet. Proves itself with its
+    device secret, as presence does: this runs from a background job with no session.
+    """
+    authenticate(request, ident)
+    row = find_device(ident)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    return rain_soon_claim(row[0], claim.key, time.time(), "phone")
 
 
 # ---------------------------------------------------------------- doors
@@ -14697,6 +15071,245 @@ class ChargingPlanChoice(BaseModel):
     plan: str
 
 
+# ---------------------------------------------------------------- fitness
+#
+# The training log of each Frigate login, so that every device signed in with it has the same one
+# (docs/fitness.md, "On the server"). The app keeps its own copy to work from, in the gym with no
+# connection as much as at home, and sends what changed: this only holds rows and says what has
+# changed since a device last asked. What a row means is the app's, so it is kept as it came, and
+# the last device to send a row wins. A deleted row stays as a tombstone (`data` NULL), so a device
+# that was away hears of it.
+#
+# `owner` is whose log it is, and is opaque to everything but `fitness_owner`: that is all that
+# would change for profiles under one login.
+
+# What a log is made of. Anything else is refused, rather than kept for ever on a typo.
+FITNESS_KINDS = {"exercise", "set", "workout", "phase", "weigh_in", "heart_profile", "heart_summary", "run"}
+# A device is told about this much of a log at a time, and goes on from where the answer stopped.
+FITNESS_PAGE_BYTES = 1_000_000
+# A recorded run is the largest row: its GPS positions, once a second, come to about 300 KB an hour.
+FITNESS_MAX_ROW_BYTES = 8_000_000
+FITNESS_MAX_CHANGES = 5_000
+
+
+def fitness_owner(request: Request) -> str:
+    """Whose log a request is about: the Frigate login it is signed in with, or a 401. A session Frigate can't name gets no log at all, not a shared one."""
+    owner = require_frigate_session(request)
+    if owner == "?":
+        raise HTTPException(status_code=502, detail="Frigate didn't say who is signed in")
+    return owner
+
+
+def fitness_changes(body: dict[str, Any]) -> list[tuple[str, str, str | None]]:
+    """The changes a device sent, each as (kind, id, the row as text, or None for deleted). 400 for anything that can't be one."""
+    changes = body.get("changes", [])
+    if not isinstance(changes, list) or len(changes) > FITNESS_MAX_CHANGES:
+        raise HTTPException(status_code=400, detail="Not a list of changes, or too long a one")
+    read = []
+    for change in changes:
+        if not isinstance(change, dict) or change.get("kind") not in FITNESS_KINDS:
+            raise HTTPException(status_code=400, detail="Not a kind of row")
+        row_id, data = change.get("id"), change.get("data")
+        if not isinstance(row_id, str) or not row_id or len(row_id) > 200:
+            raise HTTPException(status_code=400, detail="Not a row's id")
+        if data is not None and not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Not a row")
+        text = None if data is None else json.dumps(data, sort_keys=True, separators=(",", ":"))
+        if text is not None and len(text) > FITNESS_MAX_ROW_BYTES:
+            raise HTTPException(status_code=413, detail="Too large a row")
+        read.append((change["kind"], row_id, text))
+    return read
+
+
+def fitness_sync(owner: str, since: int, changes: list[tuple[str, str, str | None]], now: float, expected_owner: str | None = None) -> dict[str, Any]:
+    """
+    Saves `changes` to `owner`'s log and answers with what else has changed since `since`, oldest
+    first and a page at a time. `rev` is where the device goes on from; `more` says it should, with
+    no need to wait. All under the one lock, so nothing lands between the reading and the writing.
+
+    `expected_owner` is whose log the device believes it is sending. If that isn't who is signed in
+    nothing is saved and nothing is told: the answer's `owner` says who it is, and the device decides.
+
+    `reset` says the device has heard of more of this log than there is, so this database isn't the
+    one it was talking to (restored, or begun again). Nothing is saved: it is to send its log anew.
+    It says the same to a device sending rows from a place of 0 when there is a log here by now.
+    That device heard an empty log and hasn't heard this one, whose ids may be the same as its own
+    for other rows, so it is to fit in around it first. Two first syncs at once can't overwrite each other.
+    """
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        if expected_owner is not None and expected_owner != owner:
+            return {"owner": owner, "reset": False, "rev": 0, "more": False, "rows": []}
+        head = c.execute("SELECT COALESCE(MAX(rev), 0) FROM fitness_rows WHERE owner=?", (owner,)).fetchone()[0]
+        if since > head or (since == 0 and head > 0 and changes):
+            return {"owner": owner, "reset": True, "rev": 0, "more": False, "rows": []}
+        # Read before this device's own changes are written, so they aren't handed back to it.
+        rows: list[dict[str, Any]] = []
+        size, reached, more = 0, since, False
+        for kind, row_id, rev, data in c.execute("SELECT kind, id, rev, data FROM fitness_rows WHERE owner=? AND rev>? ORDER BY rev", (owner, since)):
+            # A row's kind and id take room as well, and they are all a deleted row is.
+            row_size = len(data or "") + len(kind) + len(row_id) + 32
+            if rows and size + row_size > FITNESS_PAGE_BYTES:
+                more = True
+                break
+            rows.append({"kind": kind, "id": row_id, "data": json.loads(data) if data is not None else None})
+            size += row_size
+            reached = rev
+        for kind, row_id, data in changes:
+            held = c.execute("SELECT data FROM fitness_rows WHERE owner=? AND kind=? AND id=?", (owner, kind, row_id)).fetchone()
+            # The same row sent again (the answer to the last send never arrived) is no news to anyone, and neither is deleting what was never here.
+            if (held is not None and held[0] == data) or (held is None and data is None):
+                continue
+            head += 1
+            c.execute("INSERT OR REPLACE INTO fitness_rows (owner, kind, id, rev, data, updated) VALUES (?,?,?,?,?,?)", (owner, kind, row_id, head, data, now))
+        c.commit()
+        # Part-way through what there was to hear, this device's own changes will come back to it further on, which does no harm.
+        return {"owner": owner, "reset": False, "rev": reached if more else head, "more": more, "rows": rows}
+
+    return with_db(work)
+
+
+@app.post("/fitness/sync")
+def post_fitness_sync(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Saves what changed in this device's training log, and says what changed on the others (see "fitness")."""
+    owner = fitness_owner(request)
+    since = body.get("since", 0)
+    if not isinstance(since, int) or isinstance(since, bool) or since < 0:
+        raise HTTPException(status_code=400, detail="Not a place in the log")
+    expected = body.get("owner")
+    if expected is not None and not isinstance(expected, str):
+        raise HTTPException(status_code=400, detail="Not a login")
+    return fitness_sync(owner, since, fitness_changes(body), time.time(), expected)
+
+
+# What a login's phone last read from its health store (Health Connect), for that login's devices
+# with no store of their own (docs/fitness.md, "The body, and runs"). Unlike the log this is a copy
+# and not a record: the phone sends the whole of it each time, so a kind switched off over there is
+# gone from here with the next send. A run's track is only held while the snapshot lists it under
+# the fingerprint it was sent with, so one read under what is no longer shared goes with the
+# snapshot that says so, whether or not its replacement ever arrives.
+FITNESS_HEALTH_MAX_BYTES = 4_000_000
+FITNESS_HEALTH_MAX_TRACKS = 2_000
+
+
+def fitness_health_save(owner: str, device: str, snapshot: dict[str, Any], tracks: dict[str, str], now: float) -> dict[str, Any]:
+    """Replaces `owner`'s snapshot, lets go of every track it doesn't list by that track's fingerprint, and says which it has of the rest, so the phone sends only what is missing or has changed."""
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        c.execute(
+            "INSERT OR REPLACE INTO fitness_health (owner, device, snapshot, tracks, updated) VALUES (?,?,?,?,?)",
+            (owner, device, json.dumps(snapshot, separators=(",", ":")), json.dumps(tracks), now),
+        )
+        held: dict[str, str] = {}
+        for track_id, fingerprint in c.execute("SELECT id, fingerprint FROM fitness_health_tracks WHERE owner=?", (owner,)).fetchall():
+            if tracks.get(track_id) == fingerprint:
+                held[track_id] = fingerprint
+            else:
+                c.execute("DELETE FROM fitness_health_tracks WHERE owner=? AND id=?", (owner, track_id))
+        c.commit()
+        return {"tracks": held}
+
+    return with_db(work)
+
+
+def fitness_health_clear(owner: str, device: str) -> bool:
+    """Takes `owner`'s copy off the server, if `device` is the one that sent it: another install that was never let into the store has no say over what this one sent."""
+
+    def work(c: sqlite3.Connection) -> bool:
+        held = c.execute("SELECT device FROM fitness_health WHERE owner=?", (owner,)).fetchone()
+        if held is None or held[0] != device:
+            return False
+        c.execute("DELETE FROM fitness_health WHERE owner=?", (owner,))
+        c.execute("DELETE FROM fitness_health_tracks WHERE owner=?", (owner,))
+        c.commit()
+        return True
+
+    return with_db(work)
+
+
+def fitness_health_save_track(owner: str, track_id: str, fingerprint: str, track: dict[str, Any], now: float) -> bool:
+    """Keeps one run's track, if the snapshot lists it by this fingerprint: one on its way as the run was deleted, or its kind switched off, is not kept."""
+
+    def work(c: sqlite3.Connection) -> bool:
+        held = c.execute("SELECT tracks FROM fitness_health WHERE owner=?", (owner,)).fetchone()
+        if held is None or json.loads(held[0]).get(track_id) != fingerprint:
+            return False
+        c.execute(
+            "INSERT OR REPLACE INTO fitness_health_tracks (owner, id, fingerprint, track, updated) VALUES (?,?,?,?,?)",
+            (owner, track_id, fingerprint, json.dumps(track, separators=(",", ":")), now),
+        )
+        c.commit()
+        return True
+
+    return with_db(work)
+
+
+@app.put("/fitness/health")
+def put_fitness_health(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """The phone's latest reading of its health store, whole (see above)."""
+    owner = fitness_owner(request)
+    device, snapshot, tracks = body.get("device"), body.get("snapshot"), body.get("tracks", {})
+    if not isinstance(device, str) or not device or len(device) > 200:
+        raise HTTPException(status_code=400, detail="Not a device")
+    if not isinstance(snapshot, dict):
+        raise HTTPException(status_code=400, detail="Not a snapshot")
+    if (
+        not isinstance(tracks, dict)
+        or len(tracks) > FITNESS_HEALTH_MAX_TRACKS
+        or any(not track_id or len(track_id) > 200 or not isinstance(fingerprint, str) or len(fingerprint) > 200 for track_id, fingerprint in tracks.items())
+    ):
+        raise HTTPException(status_code=400, detail="Not a list of tracks")
+    if len(json.dumps(snapshot, separators=(",", ":"))) > FITNESS_HEALTH_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Too large a snapshot")
+    return fitness_health_save(owner, device, snapshot, tracks, time.time())
+
+
+@app.get("/fitness/health")
+def get_fitness_health(request: Request) -> dict[str, Any]:
+    """What this login's phone last read, for a device with no store of its own. `snapshot` is null where there is none."""
+    owner = fitness_owner(request)
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        row = c.execute("SELECT snapshot FROM fitness_health WHERE owner=?", (owner,)).fetchone()
+        return {"snapshot": json.loads(row[0]) if row else None}
+
+    return with_db(work)
+
+
+@app.delete("/fitness/health")
+def delete_fitness_health(device: str, request: Request) -> dict[str, Any]:
+    """The phone's store no longer shares anything with the app, so neither does this."""
+    return {"cleared": fitness_health_clear(fitness_owner(request), device)}
+
+
+@app.put("/fitness/health/track")
+def put_fitness_health_track(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """One run moment by moment: its heart, its stretches of distance and its route."""
+    owner = fitness_owner(request)
+    track_id, fingerprint, track = body.get("id"), body.get("fingerprint"), body.get("track")
+    if not isinstance(track_id, str) or not track_id or len(track_id) > 200:
+        raise HTTPException(status_code=400, detail="Not a track's id")
+    if not isinstance(fingerprint, str) or len(fingerprint) > 200:
+        raise HTTPException(status_code=400, detail="Not a fingerprint")
+    if not isinstance(track, dict):
+        raise HTTPException(status_code=400, detail="Not a track")
+    if len(json.dumps(track, separators=(",", ":"))) > FITNESS_MAX_ROW_BYTES:
+        raise HTTPException(status_code=413, detail="Too large a track")
+    return {"kept": fitness_health_save_track(owner, track_id, fingerprint, track, time.time())}
+
+
+@app.get("/fitness/health/track")
+def get_fitness_health_track(id: str, request: Request) -> dict[str, Any]:
+    """One run's track for this login, or null where there isn't one."""
+    owner = fitness_owner(request)
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        row = c.execute("SELECT track FROM fitness_health_tracks WHERE owner=? AND id=?", (owner, id)).fetchone()
+        return {"track": json.loads(row[0]) if row else None}
+
+    return with_db(work)
+
+
 class ChargingSessionPatch(BaseModel):
     # A price typed in, or null to take it away; a note likewise.
     cost: float | None = None
@@ -17574,6 +18187,10 @@ if __name__ == "__main__":
         # The export already read, read again: after a change to how it is read.
         print(json.dumps({"read": timeline_pull(again=True), "named": timeline_name_places()}, indent=2))
         sys.exit(0)
+    if command == "rain-soon-test":
+        # A made-up shower to every phone that wants these (see `rain_soon_test`).
+        print(json.dumps(rain_soon_test()))
+        sys.exit(0)
     if not tesla_on():
         sys.exit("Set TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL first (tesla.env).")
     if command == "tesla-register":
@@ -17611,4 +18228,4 @@ if __name__ == "__main__":
         print(json.dumps(report, indent=2, default=str))
     else:
         sys.exit("usage: python relay.py tesla-register | tesla-link | tesla-telemetry-config | tesla-telemetry-send | tesla-telemetry-status"
-                 " | parking-check | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")
+                 " | parking-check | rain-soon-test | timeline-import FILE | timeline-pull | timeline-refine | timeline-reread")

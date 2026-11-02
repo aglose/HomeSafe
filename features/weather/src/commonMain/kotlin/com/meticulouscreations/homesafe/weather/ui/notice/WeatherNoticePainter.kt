@@ -134,6 +134,7 @@ private const val TILE_DP = 44f
 private val Night = Color(0xFF0A111E)
 private val RainBlue = Color(0xFF5EB6FF)
 private val SnowWhite = Color(0xFFEAF2FF)
+private val StormViolet = Color(0xFFC08BFF)
 private val Ink = Color.White
 private val InkMuted = Color(0xC7FFFFFF)
 private val InkFaint = Color(0x99FFFFFF)
@@ -203,7 +204,7 @@ internal fun DrawScope.drawNoticeCard(art: WeatherNoticeArt, measurer: TextMeasu
     val area = Rect(pad, top, size.width - pad, bottom)
     if (area.height < 16.dp.toPx()) return
     when (chart) {
-        is WeatherNoticeChart.Soon -> drawSoon(chart, area, ticks)
+        is WeatherNoticeChart.Soon -> drawSoon(chart, area, ticks, if (art.icon == WeatherNoticeIcon.STORM) StormViolet else RainBlue)
         is WeatherNoticeChart.Day -> drawDay(chart, area, ticks)
     }
 }
@@ -233,7 +234,7 @@ private fun DrawScope.drawFacts(facts: List<WeatherNoticeArt.Fact>, measurer: Te
  * falls on a square-root scale (so a drizzle is still a bar beside a downpour), two faint lines
  * where moderate and heavy begin, and a mark where the shower starts.
  */
-private fun DrawScope.drawSoon(chart: WeatherNoticeChart.Soon, area: Rect, ticks: List<TextLayoutResult>) {
+private fun DrawScope.drawSoon(chart: WeatherNoticeChart.Soon, area: Rect, ticks: List<TextLayoutResult>, falling: Color) {
     val slices = chart.slices
     if (slices.isEmpty()) return
     val gap = 5.dp.toPx()
@@ -250,7 +251,7 @@ private fun DrawScope.drawSoon(chart: WeatherNoticeChart.Soon, area: Rect, ticks
         val color = when {
             !slice.isWet -> Hairline
             slice.isSnow -> SnowWhite
-            else -> RainBlue
+            else -> falling
         }
         drawRoundRect(color, Offset(left(i), area.bottom - h), Size(bar, h), CornerRadius(4.dp.toPx()))
     }

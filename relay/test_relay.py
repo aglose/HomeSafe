@@ -325,7 +325,7 @@ class Devices(unittest.TestCase):
     def register(self, device_id, hardware_id, platform="android", build="release", emulator=False):
         device = types.SimpleNamespace(
             device_id=device_id, token=None, platform=platform, name="Phone", quiet_familiar=False, build=build, quiet_start=None,
-            quiet_end=None, only_away=False, tz=None, utc_offset=None, hardware_id=hardware_id, emulator=emulator,
+            quiet_end=None, only_away=False, tz=None, utc_offset=None, hardware_id=hardware_id, emulator=emulator, rain_soon=False,
         )
         return relay.register(device, types.SimpleNamespace(headers={}))
 
@@ -498,6 +498,49 @@ def review(rid, start, objects, sub_labels=(), end=None, camera="hikvision_1", z
         "id": rid, "camera": camera, "start_time": start, "end_time": end,
         "data": {"objects": list(objects), "sub_labels": list(sub_labels), "zones": list(zones), "detections": [rid + "-e"]},
     }
+
+
+class AwayOnThePropertyTest(unittest.TestCase):
+    """With everyone away, a camera that has a property zone only tells of people who set foot in it."""
+
+    def setUp(self):
+        self.recent_review, self.zoned = relay.recent_review, relay.property_cameras
+        self.items = {"alert": [], "detection": []}
+        relay.recent_review = lambda severity: self.items[severity]
+        relay.property_cameras = lambda: {"hikvision_1"}
+
+    def tearDown(self):
+        relay.recent_review, relay.property_cameras = self.recent_review, self.zoned
+
+    def ids(self, since=100.0):
+        return [item["id"] for item in relay.away_items(since)]
+
+    def test_a_person_on_the_sidewalk_is_not_news_and_one_on_the_property_is(self):
+        self.items["detection"] = [
+            review("walker", 200.0, ["person", "car"], zones=()),
+            review("visitor", 201.0, ["person"], zones=("property",)),
+        ]
+        self.assertEqual(["visitor"], self.ids())
+
+    def test_another_zone_is_not_the_property(self):
+        """A car in the driveway while someone walks past: the review names the driveway, and the person isn't on our ground."""
+        self.items["alert"] = [review("walker", 200.0, ["person", "car"], zones=("driveway",))]
+        self.assertEqual([], self.ids())
+
+    def test_someone_who_steps_off_the_sidewalk_is_found_on_a_later_poll(self):
+        walking = review("r", 200.0, ["person"], zones=())
+        self.items["detection"] = [walking]
+        self.assertEqual([], self.ids())
+        walking["data"]["zones"] = ["property"]
+        self.assertEqual(["r"], self.ids())
+
+    def test_a_camera_without_the_zone_still_tells_of_everyone(self):
+        self.items["detection"] = [review("door", 200.0, ["person"], camera="amcrest_1", zones=())]
+        self.assertEqual(["door"], self.ids())
+
+    def test_what_began_before_everyone_left_stays_history(self):
+        self.items["detection"] = [review("old", 50.0, ["person"], zones=("property",))]
+        self.assertEqual([], self.ids())
 
 
 class SubjectTest(unittest.TestCase):
@@ -7011,7 +7054,7 @@ class DeviceOwnerTest(_ScratchDb):
     def register(self, **headers):
         device = types.SimpleNamespace(device_id="d1", token="token-1", platform="android", name="Pixel", quiet_familiar=False, build="release",
                                        quiet_start=None, quiet_end=None, only_away=False, tz="America/Los_Angeles", utc_offset=-420,
-                                       hardware_id="hw-1", emulator=False)
+                                       hardware_id="hw-1", emulator=False, rain_soon=False)
         return relay.register(device, types.SimpleNamespace(headers=headers))
 
     def owner(self):
@@ -11283,3 +11326,736 @@ class ChargingTest(unittest.TestCase):
     def test_someone_elses_car_is_ignored(self):
         relay.charging_receive("tesla/VIN_X/v/DetailedChargeState", b'"DetailedChargeStateCharging"', self.MONDAY)
         self.assertEqual([], self.sessions())
+
+
+class FitnessHealthTest(unittest.TestCase):
+    """What a phone read from its health store, kept for the same login's other devices."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {name: getattr(relay, name) for name in ("DB_PATH", "CONN", "FITNESS_HEALTH_MAX_BYTES", "require_frigate_session")}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        self.login("andrew")
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        self._dir.cleanup()
+
+    @staticmethod
+    def login(owner):
+        relay.require_frigate_session = lambda request: owner
+
+    @staticmethod
+    def send(steps=1000, tracks=(), device="phone", fingerprint="a"):
+        return relay.put_fitness_health({"device": device, "snapshot": {"at": 5, "steps": {"100": steps}}, "tracks": dict.fromkeys(tracks, fingerprint)}, object())
+
+    @staticmethod
+    def send_track(track_id="r1", fingerprint="a"):
+        return relay.put_fitness_health_track({"id": track_id, "fingerprint": fingerprint, "track": {"heart": [{"t": 1, "v": 150.0}]}}, object())
+
+    def test_a_snapshot_is_read_back_as_it_was_sent(self):
+        self.assertIsNone(relay.get_fitness_health(object())["snapshot"])
+        self.send()
+        self.assertEqual({"at": 5, "steps": {"100": 1000}}, relay.get_fitness_health(object())["snapshot"])
+
+    def test_the_next_snapshot_replaces_the_last_whole(self):
+        relay.put_fitness_health({"device": "phone", "snapshot": {"sleep": [1]}, "tracks": {}}, object())
+        relay.put_fitness_health({"device": "phone", "snapshot": {"steps": {}}, "tracks": {}}, object())
+        self.assertEqual({"steps": {}}, relay.get_fitness_health(object())["snapshot"], "a kind switched off on the phone is gone from here")
+
+    def test_each_login_has_its_own(self):
+        self.send(steps=1000)
+        self.login("sarah")
+        self.assertIsNone(relay.get_fitness_health(object())["snapshot"])
+        self.send(steps=2000)
+        self.assertEqual({"100": 2000}, relay.get_fitness_health(object())["snapshot"]["steps"])
+        self.login("andrew")
+        self.assertEqual({"100": 1000}, relay.get_fitness_health(object())["snapshot"]["steps"])
+
+    def test_a_login_can_only_read_its_own_track(self):
+        self.send(tracks=["r1"])
+        self.send_track()
+        self.login("sarah")
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_session_frigate_cant_name_gets_nothing(self):
+        self.login("?")
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.get_fitness_health(object())
+        self.assertEqual(502, refused.exception.status_code)
+
+    def test_a_track_is_kept_and_its_fingerprint_told(self):
+        self.send(tracks=["r1"])
+        self.assertEqual({}, self.send(tracks=["r1"])["tracks"], "not sent yet, so it is still wanted")
+        self.assertTrue(self.send_track(fingerprint="a")["kept"])
+        self.assertEqual({"r1": "a"}, self.send(tracks=["r1"])["tracks"])
+        self.assertEqual({"heart": [{"t": 1, "v": 150.0}]}, relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_track_the_snapshot_stops_listing_is_let_go(self):
+        self.send(tracks=["r1", "r2"])
+        self.send_track("r1")
+        self.send_track("r2")
+        self.assertEqual({"r2": "a"}, self.send(tracks=["r2"])["tracks"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_track_read_under_what_is_no_longer_shared_goes_with_the_snapshot_that_says_so(self):
+        self.send(tracks=["r1", "r2"], fingerprint="heart shared")
+        self.send_track("r1", "heart shared")
+        self.send_track("r2", "heart shared")
+        self.assertEqual({}, self.send(tracks=["r1", "r2"], fingerprint="heart not shared")["tracks"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"], "gone at once, however few the phone sends again")
+        self.assertIsNone(relay.get_fitness_health_track("r2", object())["track"])
+
+    def test_a_track_on_its_way_from_before_a_change_isnt_kept(self):
+        self.send(tracks=["r1"], fingerprint="heart not shared")
+        self.assertFalse(self.send_track("r1", "heart shared")["kept"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_a_track_on_its_way_as_its_run_went_isnt_kept(self):
+        self.send(tracks=[])
+        self.assertFalse(self.send_track("r1")["kept"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_the_phone_that_sent_it_can_take_it_away(self):
+        self.send(tracks=["r1"])
+        self.send_track()
+        self.assertTrue(relay.delete_fitness_health("phone", object())["cleared"])
+        self.assertIsNone(relay.get_fitness_health(object())["snapshot"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
+    def test_another_install_with_nothing_shared_doesnt_wipe_it(self):
+        self.send(device="phone")
+        self.assertFalse(relay.delete_fitness_health("debug-build", object())["cleared"])
+        self.assertIsNotNone(relay.get_fitness_health(object())["snapshot"])
+
+    def test_what_cant_be_a_snapshot_is_refused(self):
+        for body in ({}, {"device": "phone"}, {"device": "", "snapshot": {}}, {"device": "phone", "snapshot": []}, {"device": "phone", "snapshot": {}, "tracks": ["r1"]}, {"device": "phone", "snapshot": {}, "tracks": {"r1": 1}}):
+            with self.assertRaises(relay.HTTPException) as refused:
+                relay.put_fitness_health(body, object())
+            self.assertEqual(400, refused.exception.status_code)
+
+    def test_too_large_a_snapshot_is_refused(self):
+        relay.FITNESS_HEALTH_MAX_BYTES = 10
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.send()
+        self.assertEqual(413, refused.exception.status_code)
+
+
+class FitnessSyncTest(unittest.TestCase):
+    """Each device's training log against the one kept here: what it is told, and what it can't do."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {name: getattr(relay, name) for name in ("DB_PATH", "CONN", "FITNESS_PAGE_BYTES", "require_frigate_session")}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        relay.require_frigate_session = lambda request: "andrew"
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        self._dir.cleanup()
+
+    def sync(self, since=0, changes=(), owner="andrew"):
+        relay.require_frigate_session = lambda request: owner
+        return relay.post_fitness_sync({"since": since, "changes": list(changes)}, object())
+
+    def test_rows_sent_from_the_start_dont_land_on_a_log_that_has_grown_since(self):
+        self.sync(changes=[self.weigh_in(1, 180.0)])
+        answer = self.sync(changes=[self.weigh_in(1, 200.0)])
+        self.assertTrue(answer["reset"])
+        self.assertEqual({"pounds": 180.0}, self.sync()["rows"][0]["data"], "the first to send keeps its row")
+
+    def test_tombstones_take_up_room_in_a_page(self):
+        changes = [self.weigh_in(day) for day in range(100)]
+        rev = self.sync(changes=changes)["rev"]
+        self.sync(since=rev, changes=[self.gone(day) for day in range(100)])
+        relay.FITNESS_PAGE_BYTES = 500
+        answer = self.sync(since=rev)
+        self.assertTrue(answer["more"])
+        self.assertLess(len(answer["rows"]), 100)
+
+    @staticmethod
+    def weigh_in(day, pounds=180.0):
+        return {"kind": "weigh_in", "id": str(day), "data": {"pounds": pounds}}
+
+    @staticmethod
+    def gone(day):
+        return {"kind": "weigh_in", "id": str(day), "data": None}
+
+    def test_a_row_saved_on_one_device_reaches_the_other_and_not_itself_again(self):
+        phone = self.sync(changes=[self.weigh_in(1)])
+        self.assertEqual([], phone["rows"], "its own change isn't handed back")
+        self.assertEqual(1, phone["rev"])
+        self.assertEqual([self.weigh_in(1)], self.sync()["rows"], "another device, starting from nothing")
+        self.assertEqual([], self.sync(since=phone["rev"])["rows"], "the phone asking again hears nothing new")
+
+    def test_the_answer_comes_from_before_the_changes_sent_with_it(self):
+        phone = self.sync(changes=[self.weigh_in(1)])
+        tablet = self.sync(since=phone["rev"], changes=[self.weigh_in(2)])
+        answer = self.sync(since=phone["rev"], changes=[self.weigh_in(3)])
+        self.assertEqual([self.weigh_in(2)], answer["rows"])
+        self.assertEqual(3, answer["rev"], "and goes on from past what it just sent")
+        self.assertEqual(1, tablet["rev"] - phone["rev"])
+
+    def test_the_last_device_to_send_a_row_wins(self):
+        first = self.sync(changes=[self.weigh_in(1, 180.0)])
+        self.sync(since=first["rev"], changes=[self.weigh_in(1, 175.0)])
+        self.assertEqual([self.weigh_in(1, 175.0)], self.sync()["rows"])
+
+    def test_a_deleted_row_is_told_to_a_device_that_was_away(self):
+        first = self.sync(changes=[self.weigh_in(1), self.weigh_in(2)])
+        self.sync(since=first["rev"], changes=[self.gone(1)])
+        self.assertEqual([self.gone(1)], self.sync(since=first["rev"])["rows"])
+        self.assertEqual([self.weigh_in(2), self.gone(1)], self.sync()["rows"], "and so is one starting from nothing, so it can drop its own")
+
+    def test_sending_the_same_thing_again_is_no_news(self):
+        first = self.sync(changes=[self.weigh_in(1, 180.5), self.gone(9)])
+        again = self.sync(since=first["rev"], changes=[self.weigh_in(1, 180.5), self.gone(9)])
+        self.assertEqual(first["rev"], again["rev"], "the send whose answer never arrived, and a deletion of what was never here")
+        self.assertEqual([self.weigh_in(1, 180.5)], self.sync()["rows"])
+
+    def test_a_row_says_the_same_whatever_order_its_fields_came_in(self):
+        first = self.sync(changes=[{"kind": "set", "id": "1", "data": {"a": 1, "b": 2}}])
+        again = self.sync(since=first["rev"], changes=[{"kind": "set", "id": "1", "data": {"b": 2, "a": 1}}])
+        self.assertEqual(first["rev"], again["rev"])
+
+    def test_a_long_log_comes_a_page_at_a_time_and_all_of_it_arrives(self):
+        relay.FITNESS_PAGE_BYTES = 40
+        self.sync(changes=[self.weigh_in(day) for day in range(10)])
+        heard, since, pages = [], 0, 0
+        while True:
+            answer = self.sync(since=since)
+            heard += [row["id"] for row in answer["rows"]]
+            since, pages = answer["rev"], pages + 1
+            if not answer["more"]:
+                break
+        self.assertEqual([str(day) for day in range(10)], heard)
+        self.assertGreater(pages, 1)
+
+    def test_one_row_larger_than_a_page_still_arrives(self):
+        relay.FITNESS_PAGE_BYTES = 10
+        self.sync(changes=[{"kind": "run", "id": "r1", "data": {"e": list(range(100))}}, self.weigh_in(1)])
+        answer = self.sync()
+        self.assertEqual(["r1"], [row["id"] for row in answer["rows"]])
+        self.assertTrue(answer["more"])
+
+    def test_changes_sent_mid_way_through_a_long_log_are_not_skipped(self):
+        relay.FITNESS_PAGE_BYTES = 10
+        first = self.sync(changes=[self.weigh_in(1)])
+        self.sync(since=first["rev"], changes=[self.weigh_in(2), self.weigh_in(3)])
+        answer = self.sync(since=first["rev"], changes=[self.weigh_in(4)])
+        self.assertTrue(answer["more"])
+        self.assertEqual(2, answer["rev"], "goes on from where the page stopped, not from past what it just sent")
+        second = self.sync(since=answer["rev"])
+        third = self.sync(since=second["rev"])
+        self.assertEqual(["3", "4"], [row["id"] for row in second["rows"] + third["rows"]])
+        self.assertFalse(third["more"])
+
+    def test_each_login_has_a_log_of_its_own(self):
+        self.sync(changes=[self.weigh_in(1, 180.0)], owner="andrew")
+        answer = self.sync(owner="sarah")
+        self.assertEqual("sarah", answer["owner"])
+        self.assertEqual([], answer["rows"])
+        self.assertEqual(0, answer["rev"])
+        self.sync(changes=[self.weigh_in(1, 130.0)], owner="sarah")
+        self.assertEqual([self.weigh_in(1, 180.0)], self.sync(owner="andrew")["rows"])
+
+    def test_a_log_sent_for_someone_else_than_is_signed_in_is_not_saved(self):
+        self.sync(changes=[self.weigh_in(1, 130.0)], owner="sarah")
+        relay.require_frigate_session = lambda request: "sarah"
+        answer = relay.post_fitness_sync({"owner": "andrew", "since": 0, "changes": [self.weigh_in(2, 180.0)]}, object())
+        self.assertEqual("sarah", answer["owner"])
+        self.assertEqual([], answer["rows"], "and told nothing of hers")
+        self.assertEqual([self.weigh_in(1, 130.0)], self.sync(owner="sarah")["rows"])
+        self.assertEqual([], self.sync(owner="andrew")["rows"])
+
+    def test_a_device_that_has_heard_of_more_than_there_is_is_told_to_send_it_all_again(self):
+        answer = self.sync(since=99, changes=[self.weigh_in(1)])
+        self.assertTrue(answer["reset"])
+        self.assertEqual(0, answer["rev"])
+        self.assertEqual([], self.sync()["rows"], "and nothing it sent with that is kept")
+
+    def test_a_session_frigate_cant_name_gets_no_log(self):
+        with self.assertRaises(relay.HTTPException) as caught:
+            self.sync(owner="?")
+        self.assertEqual(502, caught.exception.status_code)
+
+    def test_what_cant_be_a_change_is_refused_and_nothing_of_it_is_kept(self):
+        for bad in (
+            {"changes": "x"},
+            {"changes": [{"kind": "secrets", "id": "1", "data": {}}]},
+            {"changes": [{"kind": "set", "id": "", "data": {}}]},
+            {"changes": [{"kind": "set", "id": 1, "data": {}}]},
+            {"changes": [{"kind": "set", "id": "x" * 201, "data": {}}]},
+            {"changes": [{"kind": "set", "id": "1", "data": "row"}]},
+            {"changes": ["set"]},
+            {"since": "soon"},
+            {"since": -1},
+            {"since": True},
+        ):
+            with self.assertRaises(relay.HTTPException, msg=str(bad)):
+                relay.post_fitness_sync(bad, object())
+        self.assertEqual([], self.sync()["rows"])
+
+    def test_a_row_too_large_to_keep_is_refused(self):
+        saved, relay.FITNESS_MAX_ROW_BYTES = relay.FITNESS_MAX_ROW_BYTES, 10
+        try:
+            with self.assertRaises(relay.HTTPException) as caught:
+                self.sync(changes=[{"kind": "run", "id": "r1", "data": {"e": list(range(100))}}])
+            self.assertEqual(413, caught.exception.status_code)
+        finally:
+            relay.FITNESS_MAX_ROW_BYTES = saved
+
+    def test_a_change_sent_and_saved_survives_the_relay_starting_again(self):
+        self.sync(changes=[self.weigh_in(1)])
+        relay.CONN.close()
+        relay.CONN = relay.db()
+        self.assertEqual([self.weigh_in(1)], self.sync()["rows"])
+
+
+class RainSoonForecastTest(unittest.TestCase):
+    """What's worth announcing: the same cases as WeatherNoticePlannerTest, since the phone runs that planner over what it is sent."""
+
+    # 3 PM in Los Angeles, on a quarter hour.
+    T = 1760047200
+
+    def forecast(self, *mm, snow=(), code=3, current_mm=0.0, hour_codes=()):
+        quarters = [(self.T + 900 * i, m, snow[i] if i < len(snow) else 0.0) for i, m in enumerate(mm)]
+        hours = [(self.T + 3600 * i, 0.0, 0.0, None, hour_codes[i] if i < len(hour_codes) else 3) for i in range(9)]
+        return {"zone": "America/Los_Angeles", "offset": -25200, "day": 1, "code": code, "mm": current_mm, "quarters": quarters, "hours": hours}
+
+    def starting(self, *mm, at=None, **kw):
+        return relay.rain_soon_starting(self.forecast(*mm, **kw), self.T if at is None else at)
+
+    def test_open_meteos_answer_takes_each_amount_from_the_stamp_one_step_on(self):
+        forecast = relay.rain_soon_forecast({
+            "timezone": "America/Los_Angeles", "utc_offset_seconds": -25200,
+            "current": {"precipitation": 0.0, "weather_code": 2, "is_day": 1},
+            "minutely_15": {"time": [100, 1000, 1900], "precipitation": [9.0, 0.2, 0.4], "snowfall": [0.0, 0.0, 0.1]},
+            "hourly": {"time": [0, 3600], "precipitation": [7.0, 0.5], "snowfall": [0.0, 0.0], "precipitation_probability": [10, 60], "weather_code": [3, 61]},
+        })
+        self.assertEqual([(100, 0.2, 0.0), (1000, 0.4, 0.1), (1900, 0.0, 0.0)], forecast["quarters"])
+        self.assertEqual([(0, 0.5, 0.0, 60, 3), (3600, 0.0, 0.0, None, 61)], forecast["hours"])
+        self.assertEqual((2, 0.0, 1), (forecast["code"], forecast["mm"], forecast["day"]))
+
+    def test_two_wet_quarter_hours_in_a_row_start_a_shower_with_the_planners_key(self):
+        soon = self.starting(0.0, 0.0, 0.1, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0)
+        self.assertEqual(self.T + 1800, soon["start"])
+        self.assertEqual(self.T + 3600, soon["end"])
+        self.assertEqual(f"soon:{(self.T + 1800) // 3600}", soon["key"])
+        self.assertEqual("rain", soon["family"])
+        self.assertAlmostEqual(0.8, soon["peak"])
+
+    def test_one_light_quarter_hour_is_nothing_and_one_of_a_millimetre_an_hour_is_a_shower(self):
+        self.assertIsNone(self.starting(0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(self.T + 1800, self.starting(0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)["start"])
+
+    def test_it_is_already_wet_so_nothing_is_starting(self):
+        self.assertIsNone(self.starting(0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2))
+        self.assertIsNone(self.starting(0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, code=61, current_mm=0.3))
+
+    def test_a_wet_reading_under_a_dry_sky_doesnt_count_as_wet_now(self):
+        self.assertIsNotNone(self.starting(0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, code=3, current_mm=0.3))
+
+    def test_further_off_than_seventy_five_minutes_waits(self):
+        self.assertIsNone(self.starting(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5))
+        self.assertIsNotNone(self.starting(0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5))
+
+    def test_a_shower_still_going_at_the_edge_of_the_forecast_has_no_end(self):
+        self.assertIsNone(self.starting(0.0, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.0)["end"])
+
+    def test_a_storm_in_the_air_or_due_within_the_hour_makes_it_stormy(self):
+        wet = (0.0, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        self.assertEqual("storm", self.starting(*wet, code=95)["family"])
+        self.assertEqual("storm", self.starting(*wet, hour_codes=(3, 96))["family"])
+        self.assertEqual("rain", self.starting(*wet, hour_codes=(3, 3, 96))["family"])
+
+    def test_mostly_snow_is_snow(self):
+        soon = self.starting(0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, snow=(0.0, 0.3, 0.3, 0.0))
+        self.assertEqual("snow", soon["family"])
+
+    def test_the_quarter_hour_in_progress_counts_from_where_the_clock_is(self):
+        soon = self.starting(0.0, 0.0, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, at=self.T + 600)
+        self.assertEqual(self.T + 1800, soon["start"])
+
+    def test_a_forecast_that_has_run_out_says_nothing(self):
+        self.assertIsNone(self.starting(0.0, 0.2, 0.2, at=self.T + 86400))
+        self.assertIsNone(self.starting())
+
+    def test_nothing_is_said_from_ten_at_night_until_six_in_the_morning(self):
+        zone = relay.ZoneInfo("America/Los_Angeles")
+        hour = lambda h: self.T + (h - 15) * 3600
+        self.assertTrue(relay.rain_soon_quiet(hour(22), zone))
+        self.assertFalse(relay.rain_soon_quiet(hour(21), zone))
+        self.assertTrue(relay.rain_soon_quiet(hour(5), zone))
+        self.assertFalse(relay.rain_soon_quiet(hour(6), zone))
+
+    def test_the_banner_gives_the_time_rather_than_counting_down(self):
+        zone = relay.ZoneInfo("America/Los_Angeles")
+        soon = {"start": self.T + 1800, "end": self.T + 1800 + 2700, "family": "rain", "peak": 1.0}
+        self.assertEqual(("Rain at 3:30 PM", "Around 3:30 PM, for about 45 min"), relay.rain_soon_text(soon, zone))
+        soon = {"start": self.T + 3600, "end": None, "family": "storm", "peak": 9.0}
+        self.assertEqual(("Storms at 4 PM", "Around 4:00 PM · Heavy at times"), relay.rain_soon_text(soon, zone))
+
+    def test_the_forecast_is_asked_for_to_the_hundredth_of_a_degree_and_no_finer(self):
+        asked = {}
+
+        def get(url, params=None, timeout=None):
+            asked.update(params)
+            return _Response(200, {"timezone": "UTC", "current": {}, "minutely_15": {}, "hourly": {}})
+
+        saved = relay.requests.get
+        relay.requests.get = get
+        try:
+            relay.rain_soon_fetch({"lat": 12.345678, "lng": -98.7654321})
+        finally:
+            relay.requests.get = saved
+        self.assertEqual(("12.35", "-98.77"), (asked["latitude"], asked["longitude"]))
+        # Over ten variables a call counts as more than one against the free tier.
+        count = sum(len(asked[name].split(",")) for name in ("current", "minutely_15", "hourly"))
+        self.assertLessEqual(count, 10)
+
+    def test_the_most_it_can_ask_in_a_day_is_well_inside_the_free_tier(self):
+        waking_hours = relay.RAIN_SOON_QUIET_FROM_HOUR - relay.RAIN_SOON_QUIET_UNTIL_HOUR
+        self.assertLessEqual(waking_hours * 3600 / relay.RAIN_SOON_POLL_SECONDS, 64)
+
+    def test_the_payload_is_what_the_apps_parser_is_tested_against(self):
+        forecast = self.forecast(0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0)
+        forecast["quarters"], forecast["hours"] = forecast["quarters"][:3], forecast["hours"][:2]
+        data = relay.rain_soon_data(forecast, {"key": "soon:1", "start": self.T + 1800, "end": None, "family": "rain", "peak": 2.0}, self.T)
+        # The same text is in WeatherAlertCheckTest.
+        self.assertEqual(
+            '{"zone":"America/Los_Angeles","offset":-25200,"day":1,"code":3,"mm":0.0,"q0":1760047200,"qmm":[0.0,0.0,0.5],"qcm":[0.0,0.0,0.0],'
+            '"h0":1760047200,"hmm":[0.0,0.0],"hcm":[0.0,0.0],"hp":[null,null],"hc":[3,3]}',
+            data["weather_soon"],
+        )
+
+    def test_a_whole_push_fits_in_the_four_kilobytes_both_services_allow(self):
+        forecast = relay.rain_soon_forecast({
+            "timezone": "America/Argentina/ComodRivadavia", "utc_offset_seconds": -10800, "current": {"precipitation": 12.34, "weather_code": 99, "is_day": 1},
+            "minutely_15": {"time": [1760047200 + 900 * i for i in range(14)], "precipitation": [12.34] * 14, "snowfall": [12.34] * 14},
+            "hourly": {"time": [1760047200 + 3600 * i for i in range(10)], "precipitation": [12.34] * 10, "snowfall": [12.34] * 10, "precipitation_probability": [100] * 10, "weather_code": [99] * 10},
+        })
+        soon = {"key": "soon:1760047", "start": 1760047200, "end": 1760050800, "family": "storm", "peak": 49.4}
+        data = relay.rain_soon_data(forecast, soon, 1760045400)
+        title, body = relay.rain_soon_text(soon, relay.timezone.utc)
+        self.assertLess(len(json.dumps(relay.push_message("t" * 200, title, body, data))), 4000)
+
+
+class RainSoonPushShapeTest(unittest.TestCase):
+    T = 1760047200
+    FORECAST = {"zone": "America/Los_Angeles", "offset": -25200, "day": 1, "code": 3, "mm": 0.0, "quarters": [(T, 0.0, 0.0)], "hours": [(T, 0.0, 0.0, None, 3)]}
+    SOON = {"key": "soon:488902", "start": T + 1800, "end": T + 4500, "family": "rain", "peak": 2.0}
+
+    def data(self):
+        return relay.rain_soon_data(self.FORECAST, self.SOON, self.T)
+
+    def test_an_iphones_banner_taps_through_as_a_weather_notification_does(self):
+        data = self.data()
+        self.assertEqual(("1", "today", "current"), (data["homesafe_weather"], data["view"], data["place"]))
+        self.assertEqual(str(self.T + 4500), data["homesafe_weather_expires"])
+
+    def test_one_with_no_end_in_sight_comes_down_after_the_planners_two_hours(self):
+        data = relay.rain_soon_data(self.FORECAST, {**self.SOON, "end": None}, self.T)
+        self.assertEqual(str(self.T + 1800 + 7200), data["homesafe_weather_expires"])
+
+    def test_an_iphone_gets_the_stack_and_button_of_the_apps_own_and_the_shower_as_its_identifier(self):
+        headers, aps = relay.apns_parts("Rain at 3:30 PM", "Around 3:30 PM", self.data(), False)
+        self.assertEqual("weather", aps["thread-id"])
+        self.assertEqual("weather.soon", aps["category"])
+        self.assertEqual(1, aps["content-available"])
+        self.assertEqual("Home", aps["alert"]["subtitle"])
+        self.assertEqual("soon:488902", headers["apns-collapse-id"])
+        self.assertNotIn("sound", aps)
+
+    def test_its_remind_me_button_goes_off_fifteen_minutes_before_with_half_an_hour_or_more_to_go(self):
+        self.assertEqual(str(self.T + 900), self.data()["homesafe_weather_remind_at"])
+        close = relay.rain_soon_data(self.FORECAST, self.SOON, self.T + 1)
+        self.assertNotIn("homesafe_weather_remind_at", close)
+        _, aps = relay.apns_parts("t", "b", close, False)
+        self.assertEqual("weather", aps["category"])
+
+    def test_neither_service_delivers_it_after_the_shower_has_started(self):
+        headers, _ = relay.apns_parts("t", "b", self.data(), False)
+        self.assertEqual(str(self.T + 1800), headers["apns-expiration"])
+        relay_time, relay.time.time = relay.time.time, lambda: self.T
+        try:
+            message = relay.push_message("token", "t", "b", self.data())
+        finally:
+            relay.time.time = relay_time
+        self.assertEqual("1800s", message["message"]["android"]["ttl"])
+        self.assertEqual("high", message["message"]["android"]["priority"])
+
+    def test_every_other_push_is_as_it_was(self):
+        headers, aps = relay.apns_parts("t", "b", {"camera": "c1", "notif_id": "n"}, False)
+        self.assertEqual({"apns-priority": "10", "apns-collapse-id": "n"}, headers)
+        self.assertEqual({"alert": {"title": "t", "body": "b"}, "thread-id": "c1"}, aps)
+        self.assertEqual({"priority": "high"}, relay.push_message("token", "t", "b", {})["message"]["android"])
+
+
+class RainSoonTest(_ScratchDb):
+    """Who is told, when the forecast is asked for, and that one shower is said once."""
+
+    WET = (0.0, 0.0, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+    def setUp(self):
+        super().setUp()
+        # 3 PM in Los Angeles.
+        self.T = 1760047200
+        self.fetched = 0
+        self.pushed = []
+        self.answer = "sent"
+        relay.state_set(relay.HOME_KEY, {"lat": 12.3456, "lng": -98.7654, "radius_m": 100.0})
+
+    def phone(self, device_id="pixel", platform="android", token="fcm", build="release", wants=1, away=0, pending=None, told=None, by=None):
+        relay.with_db(lambda c: (c.execute(
+            "INSERT INTO devices (device_id, token, platform, name, created, last_seen, build, hardware_id, tz, rain_soon, rain_soon_key, rain_soon_at, rain_soon_by)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (device_id, token, platform, device_id, self.T, self.T, build, "hw-" + device_id, "America/Los_Angeles", wants, "soon:1" if told else None, told, by),
+        ), c.commit()))
+        # A phone taking a tracked place starts at home, so where it is comes after.
+        relay.assign_tracked_phones(self.T)
+        relay.with_db(lambda c: (c.execute("UPDATE devices SET away=?, away_pending_since=? WHERE device_id=?", (away, pending, device_id)), c.commit()))
+
+    def fetch(self, mm=WET):
+        def fetch(home):
+            self.fetched += 1
+            return {
+                "zone": "America/Los_Angeles", "offset": -25200, "day": 1, "code": 3, "mm": 0.0,
+                "quarters": [(self.T + 900 * i, m, 0.0) for i, m in enumerate(mm)],
+                "hours": [(self.T + 3600 * i, 0.0, 0.0, None, 3) for i in range(9)],
+            }
+
+        return fetch
+
+    def push(self, token, title, body, data, away=False):
+        self.pushed.append((token, title, body, data))
+        return self.answer
+
+    def tick(self, now=None, mm=WET):
+        return relay.rain_soon_tick(self.T if now is None else now, fetch=self.fetch(mm), push=self.push)
+
+    def told(self, device_id="pixel"):
+        return relay.with_db(lambda c: c.execute("SELECT rain_soon_key, rain_soon_at, rain_soon_by FROM devices WHERE device_id=?", (device_id,)).fetchone())
+
+    def test_a_phone_at_home_is_told_of_the_shower(self):
+        self.phone()
+        self.assertEqual(1, self.tick()["sent"])
+        (token, title, body, data), = self.pushed
+        self.assertEqual("fcm", token)
+        self.assertEqual("Rain at 3:30 PM", title)
+        self.assertEqual("Around 3:30 PM, for about 45 min", body)
+        key = f"soon:{(self.T + 1800) // 3600}"
+        self.assertEqual(key, data["notif_id"])
+        self.assertEqual((key, self.T, "relay"), self.told())
+
+    def test_with_home_not_set_nothing_is_asked(self):
+        self.phone()
+        relay.state_set(relay.HOME_KEY, None)
+        self.assertIsNone(self.tick())
+        self.assertEqual(0, self.fetched)
+
+    def test_a_phone_that_has_left_or_is_leaving_or_doesnt_want_it_is_not_told_and_nothing_is_asked(self):
+        for kw in ({"away": 1}, {"pending": self.T - 60}, {"wants": 0}, {"token": None}):
+            with self.subTest(kw):
+                self.phone(**kw)
+                self.assertEqual([], relay.rain_soon_phones(self.T))
+                self.assertIsNone(self.tick())
+                self.assertEqual(0, self.fetched)
+                relay.with_db(lambda c: (c.execute("DELETE FROM devices"), c.execute("DELETE FROM state WHERE key LIKE 'tracked_%'"), c.commit()))
+
+    def test_a_debug_build_cant_be_told_since_nothing_says_where_it_is(self):
+        self.phone(build="debug")
+        self.assertEqual([], relay.rain_soon_phones(self.T))
+
+    def test_an_iphone_is_only_told_once_apple_can_be_reached(self):
+        token = "a" * 64
+        self.phone("iphone", "ios", token)
+        relay_on, relay.apns_on = relay.apns_on, lambda: False
+        try:
+            self.assertEqual([], relay.rain_soon_phones(self.T))
+            relay.apns_on = lambda: True
+            self.assertEqual([("iphone", token)], relay.rain_soon_phones(self.T))
+        finally:
+            relay.apns_on = relay_on
+
+    def test_each_phone_at_home_is_told_and_the_one_out_isnt(self):
+        self.phone("pixel")
+        relay_on, relay.apns_on = relay.apns_on, lambda: True
+        try:
+            self.phone("iphone", "ios", "b" * 64, away=1)
+            self.assertEqual(1, self.tick()["sent"])
+        finally:
+            relay.apns_on = relay_on
+        self.assertEqual(["fcm"], [p[0] for p in self.pushed])
+
+    def test_nothing_is_asked_at_night(self):
+        self.phone()
+        self.assertIsNone(self.tick(self.T + 7 * 3600))
+        self.assertEqual(0, self.fetched)
+
+    def test_a_dry_forecast_tells_nobody_and_holds_nothing(self):
+        self.phone()
+        self.assertIsNone(self.tick(mm=(0.0,) * 10))
+        self.assertEqual(1, self.fetched)
+        self.assertEqual([], self.pushed)
+        self.assertEqual((None, None, None), self.told())
+
+    def test_told_once_the_next_looks_ask_nothing_until_the_cooldown_is_over(self):
+        self.phone()
+        self.tick()
+        self.assertEqual(1, self.fetched)
+        self.assertIsNone(self.tick(self.T + 900))
+        self.assertIsNone(self.tick(self.T + 2 * 3600))
+        self.assertEqual(1, self.fetched)
+        self.assertEqual(1, len(self.pushed))
+        later = self.T + relay.RAIN_SOON_COOLDOWN_SECONDS
+        forecast = (0.0, 0.0, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0)
+        relay.rain_soon_tick(later, fetch=lambda home: {**self.fetch(forecast)(home), "quarters": [(later + 900 * i, m, 0.0) for i, m in enumerate(forecast)]}, push=self.push)
+        self.assertEqual(2, len(self.pushed))
+
+    def test_a_push_that_failed_holds_nothing_so_the_next_look_tries_again(self):
+        self.phone()
+        self.answer = "failed"
+        self.assertEqual(1, self.tick()["failed"])
+        self.assertEqual((None, None, None), self.told())
+        self.answer = "sent"
+        self.assertEqual(1, self.tick(self.T + 900)["sent"])
+
+    def test_a_push_that_raises_holds_nothing_and_the_next_phone_is_still_told(self):
+        self.phone("pixel")
+        relay_on, relay.apns_on = relay.apns_on, lambda: True
+        try:
+            self.phone("iphone", "ios", "b" * 64)
+
+            def push(token, title, body, data, away=False):
+                if token == "fcm":
+                    raise TimeoutError("Firebase out of reach")
+                return self.push(token, title, body, data)
+
+            outcome = relay.rain_soon_tick(self.T, fetch=self.fetch(), push=push)
+        finally:
+            relay.apns_on = relay_on
+        self.assertEqual({"sent": 1, "dropped": 0, "failed": 1}, outcome)
+        self.assertEqual((None, None, None), self.told("pixel"))
+        self.assertEqual("relay", self.told("iphone")[2])
+
+    def test_a_dead_token_goes_with_its_row(self):
+        self.phone()
+        self.answer = "dropped"
+        self.assertEqual(1, self.tick()["dropped"])
+
+    def test_a_phone_that_got_there_first_stops_the_push(self):
+        self.phone()
+        key = f"soon:{(self.T + 1800) // 3600}"
+        self.assertTrue(relay.rain_soon_claim("pixel", key, self.T - 60, "phone")["granted"])
+        self.assertIsNone(self.tick())
+        self.assertEqual([], self.pushed)
+
+    def test_a_phone_getting_there_while_the_forecast_is_fetched_stops_the_push_too(self):
+        self.phone()
+        key = f"soon:{(self.T + 1800) // 3600}"
+
+        def fetch(home):
+            relay.rain_soon_claim("pixel", key, self.T, "phone")
+            return self.fetch()(home)
+
+        outcome = relay.rain_soon_tick(self.T, fetch=fetch, push=self.push)
+        self.assertEqual({"sent": 0, "dropped": 0, "failed": 0}, outcome)
+        self.assertEqual([], self.pushed)
+
+    def test_a_push_that_got_there_first_stops_the_phones_own(self):
+        self.phone()
+        self.tick()
+        key = f"soon:{(self.T + 1800) // 3600}"
+        claim = relay.rain_soon_claim("pixel", key, self.T + 600, "phone")
+        self.assertEqual({"granted": False, "key": key, "at": self.T}, claim)
+
+    def test_the_cooldown_holds_for_a_shower_the_forecast_has_moved(self):
+        self.phone()
+        self.tick()
+        self.assertFalse(relay.rain_soon_claim("pixel", "soon:2", self.T + 600, "phone")["granted"])
+
+    def test_a_phone_may_try_again_at_one_it_took_itself_but_not_at_another(self):
+        self.phone()
+        self.assertTrue(relay.rain_soon_claim("pixel", "soon:1", self.T, "phone")["granted"])
+        self.assertTrue(relay.rain_soon_claim("pixel", "soon:1", self.T + 900, "phone")["granted"])
+        self.assertFalse(relay.rain_soon_claim("pixel", "soon:2", self.T + 900, "phone")["granted"])
+
+    def test_after_the_cooldown_a_phone_may_say_it(self):
+        self.phone(told=self.T, by="relay")
+        self.assertTrue(relay.rain_soon_claim("pixel", "soon:9", self.T + relay.RAIN_SOON_COOLDOWN_SECONDS, "phone")["granted"])
+
+    def test_an_install_the_relay_has_forgotten_isnt_held_back(self):
+        self.assertTrue(relay.rain_soon_claim("gone", "soon:1", self.T, "phone")["granted"])
+
+    def test_the_route_answers_for_the_phone_that_asked(self):
+        self.phone(told=time.time(), by="relay")
+        saved = relay.authenticate
+        relay.authenticate = lambda request, device=None: "device:pixel"
+        try:
+            answer = relay.claim_rain_soon("pixel", types.SimpleNamespace(key="soon:2"), types.SimpleNamespace(headers={}))
+            self.assertFalse(answer["granted"])
+            with self.assertRaises(relay.HTTPException):
+                relay.claim_rain_soon("gone", types.SimpleNamespace(key="soon:2"), types.SimpleNamespace(headers={}))
+        finally:
+            relay.authenticate = saved
+
+    def test_registering_says_whether_it_wants_it_and_leaves_what_it_was_told(self):
+        def register(wants):
+            relay.register(types.SimpleNamespace(
+                device_id="pixel", token="fcm", platform="android", name="Pixel", quiet_familiar=False, build="release", quiet_start=None,
+                quiet_end=None, only_away=False, tz="America/Los_Angeles", utc_offset=-420, hardware_id="hw", emulator=False, rain_soon=wants,
+            ), types.SimpleNamespace(headers={}))
+
+        saved = relay.authenticate, relay.frigate_profile
+        relay.authenticate, relay.frigate_profile = (lambda request, device=None: "andrew"), (lambda request: None)
+        try:
+            register(True)
+            self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT rain_soon FROM devices").fetchone()[0]))
+            relay.rain_soon_claim("pixel", "soon:1", self.T, "relay")
+            register(False)
+            self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT rain_soon FROM devices").fetchone()[0]))
+            self.assertEqual(("soon:1", self.T, "relay"), self.told())
+        finally:
+            relay.authenticate, relay.frigate_profile = saved
+
+    def test_a_database_from_before_this_gains_the_columns(self):
+        columns = relay.with_db(lambda c: {row[1] for row in c.execute("PRAGMA table_info(devices)")})
+        self.assertLessEqual({"rain_soon", "rain_soon_key", "rain_soon_at", "rain_soon_by"}, columns)
+
+    def test_the_trial_push_reaches_every_phone_that_wants_it_at_home_or_not_and_plans_as_a_real_one(self):
+        self.phone("pixel", away=1, told=self.T, by="relay")
+        self.phone("debug", build="debug", token="fcm2")
+        self.phone("off", wants=0, token="fcm3")
+        saved = relay.deliver
+        sent = []
+        relay.deliver = lambda token, title, body, data, away=False: (sent.append((token, data)), "sent")[1]
+        try:
+            self.assertEqual(2, relay.rain_soon_test(self.T)["sent"])
+        finally:
+            relay.deliver = saved
+        self.assertEqual({"fcm", "fcm2"}, {token for token, _ in sent})
+        self.assertEqual(f"soon:{(self.T + 1800) // 3600}", sent[0][1]["notif_id"])
+
+    def test_a_forecast_that_wont_come_is_tried_again_next_time(self):
+        self.phone()
+
+        class Refused(Exception):
+            response = types.SimpleNamespace(status_code=429)
+
+        def fetch(home):
+            raise Refused()
+
+        with self.assertRaises(Refused):
+            relay.rain_soon_tick(self.T, fetch=fetch, push=self.push)
+        self.assertEqual((None, None, None), self.told())
