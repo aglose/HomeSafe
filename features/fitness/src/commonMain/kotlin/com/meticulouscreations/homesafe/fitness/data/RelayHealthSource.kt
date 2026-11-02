@@ -62,7 +62,13 @@ class RelayHealthSource(private val api: HealthRelayApi, private val connection:
         .filter { it.startEpochSeconds in fromEpochSeconds..toEpochSeconds }
         .map { if (it.route == RouteAccess.ASK) it.copy(route = RouteAccess.NONE) else it }
 
-    override suspend fun track(run: RunRecord): RunTrack = serverUrl()?.let { api.readTrack(it, run.id)?.toTrack() } ?: RunTrack()
+    override suspend fun track(run: RunRecord): RunTrack {
+        val url = serverUrl() ?: return RunTrack()
+        val track = api.readTrack(url, run.id)?.toTrack() ?: RunTrack()
+        val handedOver = held?.runs?.firstOrNull { it.id == run.id }?.route == RouteAccess.ASK
+        if (!handedOver) return track
+        return track.copy(route = api.readTrack(url, routeTrackId(run.id))?.toTrack()?.route.orEmpty())
+    }
 
     /** The heart through a run recorded in the app: what the phone sent for exactly that run's minutes. */
     override suspend fun heartRate(fromEpochSeconds: Long, toEpochSeconds: Long): List<HealthSample> =
@@ -72,6 +78,9 @@ class RelayHealthSource(private val api: HealthRelayApi, private val connection:
 
     private fun serverUrl(): String? = connection.currentServerUrl.value.takeIf { connection.activeConnection.value != null }
 }
+
+/** Where the server keeps a route the store only handed over when asked: beside its run's track, which is sent again without it. */
+internal fun routeTrackId(runId: String) = "route-$runId"
 
 /** Where the server keeps the heart through a run recorded in the app, which is read by the run's minutes and not by a run in the store. */
 internal fun recordedHeartId(startEpochSeconds: Long, endEpochSeconds: Long) = "heart-$startEpochSeconds-$endEpochSeconds"

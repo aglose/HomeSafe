@@ -183,10 +183,10 @@ interface HealthUpload {
     /** Replaces the server's copy with [readings], and the tracks of its runs and of the runs [recorded] in the app. */
     suspend fun send(readings: HealthReadings, recorded: List<Run>)
 
-    /** One run's track again, with the route the user has just handed over for it. */
-    suspend fun sendTrack(run: RunRecord, granted: Set<HealthKind>, track: RunTrack)
+    /** The route the user has just handed over for [run], which the store won't give up unasked. Held and tried again with each [send] until the server has it. */
+    suspend fun sendRoute(run: RunRecord, route: List<RoutePoint>)
 
-    /** The store shares nothing with the app any more, so the server's copy goes, if this install sent it. */
+    /** The store shares nothing with the app any more, so the server's copy goes, if this install sent it. Throws where it couldn't be told, signed out included: it is still to be done. */
     suspend fun clear()
 }
 

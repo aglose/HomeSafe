@@ -91,7 +91,7 @@ class HealthUploaderTest {
     fun aRunGoneFromTheStoreGoesFromTheServer() = runTest {
         uploader.send(readings, emptyList())
         uploader.send(readings.copy(runs = emptyList()), emptyList())
-        assertEquals(emptyList(), relay.listed)
+        assertEquals(emptyMap(), relay.listed)
         assertTrue(relay.tracks.isEmpty())
     }
 
@@ -157,7 +157,7 @@ class HealthUploaderTest {
     @Test
     fun noHeartSharedMeansNoHeartSentForARecordedRun() = runTest {
         uploader.send(readings.copy(granted = everything - HealthKind.HEART_RATE), listOf(recorded(NOW - 600, NOW - 100)))
-        assertEquals(listOf("r1"), relay.listed)
+        assertEquals(setOf("r1"), relay.listed.keys)
     }
 
     @Test
@@ -179,8 +179,14 @@ class HealthUploaderTest {
     fun signedOutNothingGoes() = runTest {
         val away = HealthUploader(relay, FakeServerConnection(null), DeviceIdentityStore(InMemorySettingsDao()), store)
         away.send(readings, emptyList())
-        away.clear()
         assertEquals(0, relay.sends)
+    }
+
+    @Test
+    fun aClearThatCantBeSentIsThrownSoItIsStillToBeDone() = runTest {
+        val identity = DeviceIdentityStore(InMemorySettingsDao())
+        assertFailsWith<IllegalStateException> { HealthUploader(relay, FakeServerConnection(URL, unreachable = true), identity, store).clear() }
+        assertFailsWith<IllegalStateException> { HealthUploader(relay, FakeServerConnection(null), identity, store).clear() }
     }
 
     @Test
@@ -199,13 +205,94 @@ class HealthUploaderTest {
         assertEquals(1, relay.sends)
     }
 
+    private val asked = run.copy(route = RouteAccess.ASK)
+    private val askedReadings = readings.copy(runs = listOf(asked))
+
     @Test
     fun aRouteHandedOverIsKeptWithItsRun() = runTest {
-        uploader.send(readings, emptyList())
-        uploader.sendTrack(run, everything, track)
-        assertEquals(track.route, fromThePhone.track(run).route)
-        uploader.send(readings.copy(steps = emptyMap()), emptyList())
-        assertEquals(track.route, fromThePhone.track(run).route, "the next reading doesn't send over it")
+        store.tracks = mapOf("r1" to track.copy(route = emptyList()))
+        uploader.send(askedReadings, emptyList())
+        uploader.sendRoute(asked, track.route)
+        fromThePhone.granted()
+        assertEquals(track.route, fromThePhone.track(asked).route)
+        uploader.send(askedReadings.copy(steps = emptyMap()), emptyList())
+        assertEquals(track.route, fromThePhone.track(asked).route, "the next reading doesn't send over it")
+    }
+
+    @Test
+    fun aRouteHandedOverOutlivesItsTrackBeingSentAgain() = runTest {
+        store.tracks = mapOf("r1" to track.copy(route = emptyList()))
+        uploader.send(askedReadings, emptyList())
+        uploader.sendRoute(asked, track.route)
+        store.allowed = everything - HealthKind.HEART_RATE
+        uploader.send(askedReadings.copy(granted = store.allowed), emptyList())
+        fromThePhone.granted()
+        val read = fromThePhone.track(asked)
+        assertEquals(emptyList(), read.heart, "the heart went with its permission")
+        assertEquals(track.route, read.route, "and the route has nothing to do with that")
+    }
+
+    @Test
+    fun aRouteHandedOverOfflineGoesWithTheNextSend() = runTest {
+        uploader.send(askedReadings, emptyList())
+        relay.failing = true
+        assertFailsWith<IllegalStateException> { uploader.sendRoute(asked, track.route) }
+        relay.failing = false
+        uploader.send(askedReadings.copy(readAtEpochSeconds = NOW + 60), emptyList())
+        fromThePhone.granted()
+        assertEquals(track.route, fromThePhone.track(asked).route, "even with the readings otherwise unchanged")
+    }
+
+    @Test
+    fun aRouteHandedOverSignedOutGoesOnceSignedIn() = runTest {
+        val connection = FakeServerConnection(null)
+        val phone = HealthUploader(relay, connection, DeviceIdentityStore(InMemorySettingsDao()), store)
+        phone.sendRoute(asked, track.route)
+        connection.signIn(URL)
+        phone.send(askedReadings, emptyList())
+        fromThePhone.granted()
+        assertEquals(track.route, fromThePhone.track(asked).route)
+    }
+
+    @Test
+    fun aRouteTheServerHasIsntSentAgain() = runTest {
+        uploader.send(askedReadings, emptyList())
+        uploader.sendRoute(asked, track.route)
+        relay.sentTracks.clear()
+        uploader.send(askedReadings.copy(steps = emptyMap()), emptyList())
+        assertEquals(emptyList(), relay.sentTracks)
+    }
+
+    @Test
+    fun aRouteWaitingForARunThatHasGoneIsLetGo() = runTest {
+        relay.failing = true
+        assertFailsWith<IllegalStateException> { uploader.sendRoute(asked, track.route) }
+        relay.failing = false
+        uploader.send(readings.copy(runs = emptyList()), emptyList())
+        assertEquals(emptyList(), relay.sentTracks)
+    }
+
+    @Test
+    fun aRouteHandedOverGoesWhenItsRunStopsBeingShared() = runTest {
+        uploader.send(askedReadings, emptyList())
+        uploader.sendRoute(asked, track.route)
+        uploader.send(askedReadings.copy(granted = everything - HealthKind.EXERCISE, runs = emptyList()), emptyList())
+        assertTrue(relay.tracks.isEmpty())
+    }
+
+    @Test
+    fun aHeartSwitchedOffGoesFromEveryTrackAtOnceHoweverFewAreSentAgain() = runTest {
+        val many = (0 until 13).map { run.copy(id = "r$it", startEpochSeconds = NOW - 100_000 + it * 1_000, endEpochSeconds = NOW - 99_000 + it * 1_000) }
+        store.tracks = many.associate { it.id to track }
+        uploader.send(readings.copy(runs = many), emptyList())
+        uploader.send(readings.copy(runs = many, steps = emptyMap()), emptyList())
+        assertEquals(13, relay.tracks.size)
+
+        store.allowed = everything - HealthKind.HEART_RATE
+        uploader.send(readings.copy(runs = many, granted = store.allowed), emptyList())
+
+        assertEquals(10, relay.tracks.size, "the three left to go next time aren't held meanwhile")
+        assertTrue(relay.tracks.values.all { it.second.heart.isEmpty() })
     }
 
     @Test

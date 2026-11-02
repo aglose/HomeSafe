@@ -37,7 +37,7 @@ class HealthRelayApiImplTest {
 
     @Test
     fun aSnapshotIsPutOnTheRelaysPort() = runTest {
-        val answer = api(answer = """{"tracks":{"r1":"print"}}""").send(URL, HealthSendRequest("phone", HealthSnapshot(at = 5, granted = listOf("STEPS"), steps = mapOf(100L to 2L)), listOf("r1")))
+        val answer = api(answer = """{"tracks":{"r1":"print"}}""").send(URL, HealthSendRequest("phone", HealthSnapshot(at = 5, granted = listOf("STEPS"), steps = mapOf(100L to 2L)), mapOf("r1" to "print")))
         assertEquals(mapOf("r1" to "print"), answer.tracks)
         val request = seen!!
         assertEquals(HttpMethod.Put, request.method)
@@ -50,7 +50,7 @@ class HealthRelayApiImplTest {
 
     @Test
     fun aTrackIsPutByItsId() = runTest {
-        api(answer = """{"kept":true}""").sendTrack(URL, HealthTrackRequest("r1", "print", HealthTrackRows(route = listOf(RoutePointRow(1.0, 2.0)))))
+        assertTrue(api(answer = """{"kept":true}""").sendTrack(URL, HealthTrackRequest("r1", "print", HealthTrackRows(route = listOf(RoutePointRow(1.0, 2.0))))))
         assertEquals("/fitness/health/track", seen!!.url.encodedPath)
         assertEquals(HttpMethod.Put, seen!!.method)
     }

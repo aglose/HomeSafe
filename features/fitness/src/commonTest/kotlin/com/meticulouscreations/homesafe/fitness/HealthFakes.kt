@@ -116,7 +116,7 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
 /** A [HealthUpload] for tests: it keeps what it was given, and fails when told to. */
 internal class FakeHealthUpload : HealthUpload {
     val sent = mutableListOf<Pair<HealthReadings, List<Run>>>()
-    val tracks = mutableListOf<Pair<String, RunTrack>>()
+    val routes = mutableListOf<Pair<String, List<RoutePoint>>>()
     var clears = 0
     var failing = false
 
@@ -125,9 +125,9 @@ internal class FakeHealthUpload : HealthUpload {
         sent += readings to recorded
     }
 
-    override suspend fun sendTrack(run: RunRecord, granted: Set<HealthKind>, track: RunTrack) {
+    override suspend fun sendRoute(run: RunRecord, route: List<RoutePoint>) {
         check(!failing) { "the server is away" }
-        tracks += run.id to track
+        routes += run.id to route
     }
 
     override suspend fun clear() {
@@ -140,7 +140,7 @@ internal class FakeHealthUpload : HealthUpload {
 internal class FakeHealthRelay : HealthRelayApi {
     var snapshot: HealthSnapshot? = null
     var device: String? = null
-    var listed: List<String> = emptyList()
+    var listed: Map<String, String> = emptyMap()
     val tracks = mutableMapOf<String, Pair<String, HealthTrackRows>>()
     val sentTracks = mutableListOf<String>()
     var sends = 0
@@ -154,14 +154,16 @@ internal class FakeHealthRelay : HealthRelayApi {
         snapshot = request.snapshot
         device = request.device
         listed = request.tracks
-        tracks.keys.retainAll(request.tracks.toSet())
+        tracks.entries.removeAll { (id, held) -> request.tracks[id] != held.first }
         return HealthSendAnswer(tracks.mapValues { it.value.first })
     }
 
-    override suspend fun sendTrack(url: String, request: HealthTrackRequest) {
+    override suspend fun sendTrack(url: String, request: HealthTrackRequest): Boolean {
         answer()
         sentTracks += request.id
-        if (request.id in listed) tracks[request.id] = request.fingerprint to request.track
+        if (listed[request.id] != request.fingerprint) return false
+        tracks[request.id] = request.fingerprint to request.track
+        return true
     }
 
     override suspend fun clear(url: String, device: String) {

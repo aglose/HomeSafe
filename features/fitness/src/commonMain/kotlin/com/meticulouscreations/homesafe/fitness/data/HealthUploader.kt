@@ -6,6 +6,8 @@ import com.meticulouscreations.homesafe.fitness.domain.HealthKind
 import com.meticulouscreations.homesafe.fitness.domain.HealthReadings
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
 import com.meticulouscreations.homesafe.fitness.domain.HealthUpload
+import com.meticulouscreations.homesafe.fitness.domain.RouteAccess
+import com.meticulouscreations.homesafe.fitness.domain.RoutePoint
 import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
@@ -17,10 +19,15 @@ import dev.zacsweers.metro.SingleIn
 
 /**
  * [HealthUpload] over the relay. A snapshot replaces the one before it whole, so what stopped being
- * shared on the phone stops being on the server. The server says which tracks it already has, each
- * by a fingerprint of what the track depends on, and only those missing or out of date are read
- * and sent. Reading a track takes several calls to the store, so a pass sends a few and the next
- * goes on from there, newest first. Anything that fails is thrown, and the next read tries again.
+ * shared on the phone stops being on the server. It lists each track by a fingerprint of what the
+ * track depends on: the server lets go of any it holds under another, at once, and says which it
+ * still has, and only the rest are read and sent. Reading a track takes several calls to the
+ * store, so a pass sends a few and the next goes on from there, newest first. Anything that fails
+ * is thrown, and the next read tries again.
+ *
+ * A route the store only hands over when asked can't be read again, so it isn't part of its run's
+ * track, which is read afresh whenever it changes. It is kept beside it on the server under an id
+ * of its own, and is held here until the server has said it has it.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -38,13 +45,20 @@ class HealthUploader(
     /** Which tracks went with [settled]: a run recorded here changes what is wanted without changing what was read. */
     private var settledTracks: Set<String> = emptySet()
 
+    /** Routes handed over and not yet on the server, by run. Only while the app runs: nothing read is stored on the phone. */
+    private val routesOnTheirWay = mutableMapOf<String, List<RoutePoint>>()
+
     override suspend fun send(readings: HealthReadings, recorded: List<Run>) {
         val url = serverUrl() ?: return
         val at = readings.readAtEpochSeconds
         val unstamped = readings.copy(readAtEpochSeconds = 0)
         val tracks = bandTracks(readings) + recordedHearts(readings, recorded)
-        if (unstamped == settled && at - settledAt < RESEND_SECONDS && settledTracks == tracks.keys) return
-        val held = api.send(url, HealthSendRequest(identity.deviceId(), readings.toSnapshot(), tracks.keys.toList())).tracks
+        if (unstamped == settled && at - settledAt < RESEND_SECONDS && settledTracks == tracks.keys && routesOnTheirWay.isEmpty()) return
+        val askedFor = if (HealthKind.EXERCISE in readings.granted) readings.runs.filter { it.route == RouteAccess.ASK }.map { it.id } else emptyList()
+        val listed = tracks.mapValues { it.value.fingerprint } + askedFor.associate { routeTrackId(it) to ROUTE_FINGERPRINT }
+        val held = api.send(url, HealthSendRequest(identity.deviceId(), readings.toSnapshot(), listed)).tracks
+        routesOnTheirWay.keys.retainAll(askedFor.toSet())
+        sendRoutes(url)
         val due = tracks.filter { (id, track) -> held[id] != track.fingerprint }
         due.entries.take(TRACKS_A_PASS).forEach { (id, track) ->
             api.sendTrack(url, HealthTrackRequest(id, track.fingerprint, track.read().toRows()))
@@ -58,15 +72,23 @@ class HealthUploader(
         }
     }
 
-    override suspend fun sendTrack(run: RunRecord, granted: Set<HealthKind>, track: RunTrack) {
-        val url = serverUrl() ?: return
-        api.sendTrack(url, HealthTrackRequest(run.id, fingerprint(run, granted), track.toRows()))
+    override suspend fun sendRoute(run: RunRecord, route: List<RoutePoint>) {
+        if (run.route != RouteAccess.ASK || route.isEmpty()) return
+        routesOnTheirWay[run.id] = route
+        sendRoutes(serverUrl() ?: return)
+    }
+
+    private suspend fun sendRoutes(url: String) {
+        routesOnTheirWay.toMap().forEach { (runId, route) ->
+            val request = HealthTrackRequest(routeTrackId(runId), ROUTE_FINGERPRINT, RunTrack(route = route).toRows())
+            if (api.sendTrack(url, request)) routesOnTheirWay.remove(runId)
+        }
     }
 
     override suspend fun clear() {
         settled = null
-        val url = serverUrl() ?: return
-        api.clear(url, identity.deviceId())
+        routesOnTheirWay.clear()
+        api.clear(checkNotNull(serverUrl()) { "No server to tell" }, identity.deviceId())
     }
 
     /** The store's runs, newest first, while it shares them. */
@@ -106,6 +128,7 @@ class HealthUploader(
 
     private companion object {
         const val TRACKS_A_PASS = 10
+        const val ROUTE_FINGERPRINT = "route"
         const val RESEND_SECONDS = 15 * 60L
         const val SECONDS_PER_HOUR = 3_600L
         const val HEART_SETTLES_SECONDS = 2 * SECONDS_PER_DAY

@@ -11351,8 +11351,8 @@ class FitnessHealthTest(unittest.TestCase):
         relay.require_frigate_session = lambda request: owner
 
     @staticmethod
-    def send(steps=1000, tracks=(), device="phone"):
-        return relay.put_fitness_health({"device": device, "snapshot": {"at": 5, "steps": {"100": steps}}, "tracks": list(tracks)}, object())
+    def send(steps=1000, tracks=(), device="phone", fingerprint="a"):
+        return relay.put_fitness_health({"device": device, "snapshot": {"at": 5, "steps": {"100": steps}}, "tracks": dict.fromkeys(tracks, fingerprint)}, object())
 
     @staticmethod
     def send_track(track_id="r1", fingerprint="a"):
@@ -11364,8 +11364,8 @@ class FitnessHealthTest(unittest.TestCase):
         self.assertEqual({"at": 5, "steps": {"100": 1000}}, relay.get_fitness_health(object())["snapshot"])
 
     def test_the_next_snapshot_replaces_the_last_whole(self):
-        relay.put_fitness_health({"device": "phone", "snapshot": {"sleep": [1]}, "tracks": []}, object())
-        relay.put_fitness_health({"device": "phone", "snapshot": {"steps": {}}, "tracks": []}, object())
+        relay.put_fitness_health({"device": "phone", "snapshot": {"sleep": [1]}, "tracks": {}}, object())
+        relay.put_fitness_health({"device": "phone", "snapshot": {"steps": {}}, "tracks": {}}, object())
         self.assertEqual({"steps": {}}, relay.get_fitness_health(object())["snapshot"], "a kind switched off on the phone is gone from here")
 
     def test_each_login_has_its_own(self):
@@ -11403,6 +11403,19 @@ class FitnessHealthTest(unittest.TestCase):
         self.assertEqual({"r2": "a"}, self.send(tracks=["r2"])["tracks"])
         self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
 
+    def test_a_track_read_under_what_is_no_longer_shared_goes_with_the_snapshot_that_says_so(self):
+        self.send(tracks=["r1", "r2"], fingerprint="heart shared")
+        self.send_track("r1", "heart shared")
+        self.send_track("r2", "heart shared")
+        self.assertEqual({}, self.send(tracks=["r1", "r2"], fingerprint="heart not shared")["tracks"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"], "gone at once, however few the phone sends again")
+        self.assertIsNone(relay.get_fitness_health_track("r2", object())["track"])
+
+    def test_a_track_on_its_way_from_before_a_change_isnt_kept(self):
+        self.send(tracks=["r1"], fingerprint="heart not shared")
+        self.assertFalse(self.send_track("r1", "heart shared")["kept"])
+        self.assertIsNone(relay.get_fitness_health_track("r1", object())["track"])
+
     def test_a_track_on_its_way_as_its_run_went_isnt_kept(self):
         self.send(tracks=[])
         self.assertFalse(self.send_track("r1")["kept"])
@@ -11421,7 +11434,7 @@ class FitnessHealthTest(unittest.TestCase):
         self.assertIsNotNone(relay.get_fitness_health(object())["snapshot"])
 
     def test_what_cant_be_a_snapshot_is_refused(self):
-        for body in ({}, {"device": "phone"}, {"device": "", "snapshot": {}}, {"device": "phone", "snapshot": []}, {"device": "phone", "snapshot": {}, "tracks": [1]}):
+        for body in ({}, {"device": "phone"}, {"device": "", "snapshot": {}}, {"device": "phone", "snapshot": []}, {"device": "phone", "snapshot": {}, "tracks": ["r1"]}, {"device": "phone", "snapshot": {}, "tracks": {"r1": 1}}):
             with self.assertRaises(relay.HTTPException) as refused:
                 relay.put_fitness_health(body, object())
             self.assertEqual(400, refused.exception.status_code)

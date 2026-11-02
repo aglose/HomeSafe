@@ -770,10 +770,7 @@ class HealthViewModelTest {
         runCurrent()
         h.vm.askForRoute()
         runCurrent()
-        val (id, sent) = h.upload.tracks.single()
-        assertEquals("r1", id)
-        assertEquals(route, sent.route)
-        assertEquals(track.heart, sent.heart, "the rest of the track stays with it")
+        assertEquals(listOf("r1" to route), h.upload.routes)
     }
 
     @Test

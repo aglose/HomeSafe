@@ -285,11 +285,10 @@ class HealthViewModel(
             // As it stands now: the track may have been read again while the sheet was up.
             val open = openTrack?.takeIf { it.id == id } ?: return@launch
             if (route.isEmpty()) return@launch
-            val withRoute = open.track.copy(route = route)
-            openTrack = open.copy(track = withRoute)
+            openTrack = open.copy(track = open.track.copy(route = route))
             redrawDetail()
             // The store won't give this up unasked, so this is the one chance to send it along.
-            records[id]?.let { record -> attempt { upload.sendTrack(record, open.granted, withRoute) } }
+            records[id]?.let { record -> attempt { upload.sendRoute(record, route) } }
         }
     }
 

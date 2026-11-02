@@ -165,7 +165,7 @@ private fun HealthSample.toRow() = SampleRow(epochSeconds, value)
 private fun SampleRow.toSample() = HealthSample(t, v)
 
 @Serializable
-data class HealthSendRequest(val device: String, val snapshot: HealthSnapshot, val tracks: List<String>)
+data class HealthSendRequest(val device: String, val snapshot: HealthSnapshot, val tracks: Map<String, String>)
 
 @Serializable
 data class HealthSendAnswer(val tracks: Map<String, String> = emptyMap())
@@ -179,12 +179,16 @@ data class HealthTrackRequest(val id: String, val fingerprint: String, val track
 @Serializable
 data class HealthTrackAnswer(@SerialName("track") val track: HealthTrackRows? = null)
 
+@Serializable
+data class HealthTrackKept(val kept: Boolean = false)
+
 /** The server's copy of what a phone read from its health store. Every call throws what it can't get an answer past. */
 interface HealthRelayApi {
-    /** Replaces the login's snapshot. The answer is the tracks held of the ones [HealthSendRequest.tracks] lists, each by its fingerprint. */
+    /** Replaces the login's snapshot, and lets go of every track not listed in [HealthSendRequest.tracks] by the fingerprint it was sent with. The answer is the tracks still held. */
     suspend fun send(url: String, request: HealthSendRequest): HealthSendAnswer
 
-    suspend fun sendTrack(url: String, request: HealthTrackRequest)
+    /** Whether the server kept it: it won't, if the snapshot doesn't list it by this fingerprint. */
+    suspend fun sendTrack(url: String, request: HealthTrackRequest): Boolean
 
     /** Takes the login's copy away, if it was [device] that sent it. */
     suspend fun clear(url: String, device: String)
@@ -205,13 +209,11 @@ class HealthRelayApiImpl(private val httpClient: HttpClient) : HealthRelayApi {
         timeout { requestTimeoutMillis = TIMEOUT_MS }
     }.answered().body()
 
-    override suspend fun sendTrack(url: String, request: HealthTrackRequest) {
-        httpClient.put(PushRelayApi.relayUrl(url, "/fitness/health/track")) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-            timeout { requestTimeoutMillis = TIMEOUT_MS }
-        }.answered()
-    }
+    override suspend fun sendTrack(url: String, request: HealthTrackRequest): Boolean = httpClient.put(PushRelayApi.relayUrl(url, "/fitness/health/track")) {
+        contentType(ContentType.Application.Json)
+        setBody(request)
+        timeout { requestTimeoutMillis = TIMEOUT_MS }
+    }.answered().body<HealthTrackKept>().kept
 
     override suspend fun clear(url: String, device: String) {
         httpClient.delete(PushRelayApi.relayUrl(url, "/fitness/health")) {

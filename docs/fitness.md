@@ -307,8 +307,10 @@ as on the phone, and the card says when it was read: *Read on your phone: Today,
 - **What the server holds is a copy, and only that.** A snapshot replaces the last one whole
   (`fitness_health` in `relay/relay.py`), so a kind switched off in Health Connect is gone from the
   server with the next read. A run's track (`fitness_health_tracks`) is held only while the snapshot
-  lists it, so one that has aged out or been deleted goes too. It is in `relay.db` as plain JSON, as
-  the log and the finance tables are, and so in the nightly copy of that database.
+  lists it, by the fingerprint it was sent with: a track read under what is no longer shared goes
+  with the snapshot that says so, whether or not its replacement ever arrives, and one that has aged
+  out or been deleted goes too. It is in `relay.db` as plain JSON, as the log and the finance tables
+  are, and so in the nightly copy of that database.
 - **Taking it away**: all of it goes when Health Connect shares nothing with the app any more, the
   next time Fitness is opened on that phone. Uninstalling the app doesn't reach the server: that
   takes a query against `relay.db`. Only the install that sent a copy can clear it this way (by its
@@ -324,7 +326,13 @@ means it stopped being shared. The same readings again aren't sent for fifteen m
 says which tracks the server has, each by a fingerprint of what it depends on (the run's end,
 distance and average heart rate, its route access, whether heart rate and distance are shared), and
 the phone reads and sends those missing or changed (`PUT /fitness/health/track`), ten a pass, newest
-first, since each takes several calls to Health Connect. The heart through a run
+first, since each takes several calls to Health Connect. The server refuses a track the snapshot
+doesn't list by that fingerprint, so one on its way from before a change isn't kept. A run whose
+track has changed has none on the other devices until it is sent again, which is the safe way round.
+A route handed over when asked can't be read again, so it isn't in its run's track: it is kept beside
+it under an id of its own, and stays until the run stops being shared or its route access changes.
+It is held in memory until the server says it has it, and tried again with each send, so one asked
+for offline goes once the phone is back in touch, unless the app is closed first. The heart through a run
 [recorded in the app](#recording-a-run) goes the same way, read again each hour for two days since
 the band may yet sync it, under an id made of the run's minutes.
 

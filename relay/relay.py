@@ -15185,23 +15185,24 @@ def post_fitness_sync(body: dict[str, Any], request: Request) -> dict[str, Any]:
 # What a login's phone last read from its health store (Health Connect), for that login's devices
 # with no store of their own (docs/fitness.md, "The body, and runs"). Unlike the log this is a copy
 # and not a record: the phone sends the whole of it each time, so a kind switched off over there is
-# gone from here with the next send, and a run's track is only held while the snapshot lists it.
+# gone from here with the next send. A run's track is only held while the snapshot lists it under
+# the fingerprint it was sent with, so one read under what is no longer shared goes with the
+# snapshot that says so, whether or not its replacement ever arrives.
 FITNESS_HEALTH_MAX_BYTES = 4_000_000
 FITNESS_HEALTH_MAX_TRACKS = 2_000
 
 
-def fitness_health_save(owner: str, device: str, snapshot: dict[str, Any], tracks: list[str], now: float) -> dict[str, Any]:
-    """Replaces `owner`'s snapshot, lets go of the tracks it no longer lists, and says which it has of the rest, so the phone sends only what is missing or has changed."""
+def fitness_health_save(owner: str, device: str, snapshot: dict[str, Any], tracks: dict[str, str], now: float) -> dict[str, Any]:
+    """Replaces `owner`'s snapshot, lets go of every track it doesn't list by that track's fingerprint, and says which it has of the rest, so the phone sends only what is missing or has changed."""
 
     def work(c: sqlite3.Connection) -> dict[str, Any]:
         c.execute(
             "INSERT OR REPLACE INTO fitness_health (owner, device, snapshot, tracks, updated) VALUES (?,?,?,?,?)",
             (owner, device, json.dumps(snapshot, separators=(",", ":")), json.dumps(tracks), now),
         )
-        listed = set(tracks)
         held: dict[str, str] = {}
         for track_id, fingerprint in c.execute("SELECT id, fingerprint FROM fitness_health_tracks WHERE owner=?", (owner,)).fetchall():
-            if track_id in listed:
+            if tracks.get(track_id) == fingerprint:
                 held[track_id] = fingerprint
             else:
                 c.execute("DELETE FROM fitness_health_tracks WHERE owner=? AND id=?", (owner, track_id))
@@ -15227,11 +15228,11 @@ def fitness_health_clear(owner: str, device: str) -> bool:
 
 
 def fitness_health_save_track(owner: str, track_id: str, fingerprint: str, track: dict[str, Any], now: float) -> bool:
-    """Keeps one run's track, if the snapshot still lists it: one on its way as the run was deleted, or its kind switched off, is not kept."""
+    """Keeps one run's track, if the snapshot lists it by this fingerprint: one on its way as the run was deleted, or its kind switched off, is not kept."""
 
     def work(c: sqlite3.Connection) -> bool:
         held = c.execute("SELECT tracks FROM fitness_health WHERE owner=?", (owner,)).fetchone()
-        if held is None or track_id not in json.loads(held[0]):
+        if held is None or json.loads(held[0]).get(track_id) != fingerprint:
             return False
         c.execute(
             "INSERT OR REPLACE INTO fitness_health_tracks (owner, id, fingerprint, track, updated) VALUES (?,?,?,?,?)",
@@ -15247,12 +15248,16 @@ def fitness_health_save_track(owner: str, track_id: str, fingerprint: str, track
 def put_fitness_health(body: dict[str, Any], request: Request) -> dict[str, Any]:
     """The phone's latest reading of its health store, whole (see above)."""
     owner = fitness_owner(request)
-    device, snapshot, tracks = body.get("device"), body.get("snapshot"), body.get("tracks", [])
+    device, snapshot, tracks = body.get("device"), body.get("snapshot"), body.get("tracks", {})
     if not isinstance(device, str) or not device or len(device) > 200:
         raise HTTPException(status_code=400, detail="Not a device")
     if not isinstance(snapshot, dict):
         raise HTTPException(status_code=400, detail="Not a snapshot")
-    if not isinstance(tracks, list) or len(tracks) > FITNESS_HEALTH_MAX_TRACKS or any(not isinstance(t, str) or not t or len(t) > 200 for t in tracks):
+    if (
+        not isinstance(tracks, dict)
+        or len(tracks) > FITNESS_HEALTH_MAX_TRACKS
+        or any(not track_id or len(track_id) > 200 or not isinstance(fingerprint, str) or len(fingerprint) > 200 for track_id, fingerprint in tracks.items())
+    ):
         raise HTTPException(status_code=400, detail="Not a list of tracks")
     if len(json.dumps(snapshot, separators=(",", ":"))) > FITNESS_HEALTH_MAX_BYTES:
         raise HTTPException(status_code=413, detail="Too large a snapshot")
