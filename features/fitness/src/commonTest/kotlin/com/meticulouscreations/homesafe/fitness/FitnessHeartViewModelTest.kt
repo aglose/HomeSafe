@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
 import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
+import com.meticulouscreations.homesafe.fitness.domain.NoFitnessLogSync
 import com.meticulouscreations.homesafe.fitness.domain.SetDraft
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.domain.ZoneTracker
@@ -54,7 +55,7 @@ class FitnessHeartViewModelTest {
         val repository = FitnessRepositoryImpl(dao)
         val monitor = FakeHeartRateMonitor(supported)
         val clock = MutableClock(NOW)
-        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao), boardDispatcher = dispatcher)
+        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao), NoFitnessLogSync, boardDispatcher = dispatcher)
 
         /** The time of the last reading, moved on by each one. */
         var at = NOW * 1000

@@ -235,6 +235,10 @@
     <string name="fitness_import_done_more">Pega otra nota o vuelve y empieza un entrenamiento.</string>
     <string name="fitness_import_done_button">Listo</string>
 
+    <string name="fitness_sync_saved">Guardado en tu servidor, así que está en todos los dispositivos donde inicies sesión.</string>
+    <string name="fitness_sync_waiting">Guardado en este dispositivo. Irá a tu servidor en cuanto se pueda conectar con él.</string>
+    <string name="fitness_sync_signed_out">Guardado solo en este dispositivo. Inicia sesión y irá a tu servidor.</string>
+    <string name="fitness_sync_held_back">Este registro tiene cambios de quien había iniciado sesión antes que tú. Se queda en este dispositivo y no se envía a tu cuenta.</string>
     <string name="fitness_lifts_send_copy">Enviar una copia de tu registro</string>
     <string name="fitness_copy_unsent">No se pudo enviar este registro. Puede que sea demasiado largo para pasarlo a otra app de una sola vez.</string>
     <string name="fitness_copy_share_title">Registro de entrenamiento</string>

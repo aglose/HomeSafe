@@ -21,3 +21,5 @@ private val fitnessRunsDatabase: FitnessRunsDatabase by lazy {
 }
 
 actual fun createFitnessRunDao(context: PlatformContext): FitnessRunDao = fitnessRunsDatabase.fitnessRunDao()
+
+actual fun createFitnessSyncDao(context: PlatformContext): FitnessSyncDao = fitnessRunsDatabase.fitnessSyncDao()
