@@ -50,16 +50,19 @@ for journey in ${JOURNEYS[@]}; do
     echo "$name: no app process after launch $attempt"
   done
 
-  claude -p "Run the Android CLI journey in $journey on the connected device. The app $APP_ID is already open in the foreground: do not reinstall, clear or relaunch it. Read $SKILL first, and evaluate the journey exactly as its section on running journey tests describes, driving the device only with the android CLI (android layout, android screen capture and resolve) and adb shell input. The page moves when the keyboard opens, so read android layout again before each tap. It also lists what the keyboard covers, so if the keyboard is over something an action needs, hide it first with adb shell input keyevent KEYCODE_BACK; that is not a failure. Write the result to $result in the skill's markdown format: one '### Action:' heading per action in order, each marked ✅ if it succeeded or ❌ if it failed, and stop at the first failure." \
+  claude -p "Run the Android CLI journey in $journey on the connected device. The app $APP_ID is already open in the foreground: do not reinstall, clear or relaunch it. Read $SKILL first, and evaluate the journey exactly as its section on running journey tests describes, driving the device only with the android CLI (android layout, android screen capture and resolve) and adb shell input. The page moves when the keyboard opens, so read android layout again before each tap. It also lists what the keyboard covers, so if the keyboard is over something an action needs, hide it first with adb shell input keyevent KEYCODE_BACK; that is not a failure. Write the result to $result in the skill's markdown format: one '### Action:' heading per <action> in order, holding that action's text word for word followed by ✅ if it succeeded or ❌ if it failed, and stop at the first failure. An action that lists several things is still one heading: report its steps in the bullets under it." \
     --allowedTools "Bash(android *)" "Bash(adb *)" "Read" "Write" \
     > "$OUT/$name.log" 2>&1
+  agent=$?
   adb logcat -d > "$OUT/$name.logcat"
 
   expected="$(grep -c '<action>' "$journey")"
   passed="$( { grep -E '^### Action' "$result" 2> /dev/null || true; } | grep -c '✅')"
-  # At least, because the skill has an agent split an action that lists several things into one
-  # heading each.
-  if [ -f "$result" ] && ! grep -q '❌' "$result" && [ "$passed" -ge "$expected" ]; then
+  # The passed headings must be the journey's actions, in order. A count isn't enough: a split
+  # action adds headings, which could make up for one that never ran.
+  actions="$(sed -n 's:.*<action>\(.*\)</action>.*:\1:p' "$journey")"
+  reported="$( { grep -E '^### Action:.*✅' "$result" 2> /dev/null || true; } | sed -E 's/^### Action: *//; s/ *✅ *//')"
+  if [ "$agent" -eq 0 ] && [ -f "$result" ] && ! grep -q '❌' "$result" && [ "$reported" = "$actions" ]; then
     echo "PASS  $name ($passed/$expected actions)"
   else
     echo "FAIL  $name ($passed/$expected actions) — see $result and $OUT/$name.log"
