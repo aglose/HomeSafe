@@ -12184,8 +12184,8 @@ class SkiDecisionTest(unittest.TestCase):
     TODAY = 20760
     SAT = 20764
     NOW = 20760 * 86400 + 16 * 3600
-    OPEN = {"slug": "alpha", "name": "Alpha", "lat": 39.1, "lng": -120.2, "state": "OPEN"}
-    OTHER = {"slug": "beta", "name": "Beta", "lat": 39.2, "lng": -120.3, "state": "OPEN"}
+    OPEN = {"slug": "alpha", "name": "Alpha", "lat": 39.1, "lng": -120.2, "state": "OPEN", "as_of": NOW - 3600}
+    OTHER = {"slug": "beta", "name": "Beta", "lat": 39.2, "lng": -120.3, "state": "OPEN", "as_of": NOW - 3600}
 
     def forecast(self, by_day):
         return {"offset": 0, "days": {day: {"best": by_day.get(day, 0.0), "models": {"m": by_day.get(day, 0.0)}} for day in range(self.TODAY - 3, self.TODAY + 20)}}
@@ -12241,6 +12241,25 @@ class SkiDecisionTest(unittest.TestCase):
         closed = {**self.OPEN, "state": "CLOSED"}
         self.assertIsNotNone(self.snow({"alpha": self.forecast({self.SAT: 90})}, resorts=[closed], readings={"alpha": {"running": True}}))
         self.assertIsNone(self.snow({"alpha": self.forecast({self.SAT: 90})}, readings={"alpha": {"running": False}}))
+
+    def test_an_open_from_an_old_report_says_nothing_about_now(self):
+        forecasts = {"alpha": self.forecast({self.SAT: 40.0})}
+        old = self.TODAY * 86400 - relay.SKI_REPORT_CURRENT_SECONDS - 1
+        self.assertIsNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": old}]))
+        self.assertIsNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": None}]))
+        self.assertIsNotNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": old + 1}]))
+
+    def test_an_old_report_keeps_the_dates_it_gave(self):
+        forecasts = {"alpha": self.forecast({self.SAT: 40.0})}
+        old = self.TODAY * 86400 - 30 * 86400
+        self.assertIsNotNone(self.snow(forecasts, resorts=[{**self.OPEN, "as_of": old, "opens": self.SAT - 1}]))
+
+    def test_a_dated_page_saying_lifts_are_turning_has_to_be_recent_too(self):
+        forecasts = {"alpha": self.forecast({self.SAT: 40.0})}
+        closed = {**self.OPEN, "state": "CLOSED"}
+        old = self.TODAY * 86400 - relay.SKI_REPORT_CURRENT_SECONDS - 1
+        self.assertIsNone(self.snow(forecasts, resorts=[closed], readings={"alpha": {"running": True, "updated": old}}))
+        self.assertIsNotNone(self.snow(forecasts, resorts=[closed], readings={"alpha": {"running": True, "updated": None}}))
 
     def test_several_come_as_one_the_most_first(self):
         news = self.snow({"alpha": self.forecast({self.SAT: 40}), "beta": self.forecast({self.SAT: 60})}, resorts=[self.OPEN, self.OTHER])
@@ -12327,6 +12346,26 @@ class SkiDecisionTest(unittest.TestCase):
         self.assertEqual({}, told["chains"])
         self.assertIsNotNone(relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told))
 
+    def test_a_look_it_couldnt_finish_isnt_a_clear_road(self):
+        told = {}
+        relay.ski_mark_told(told, relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told), self.NOW)
+        relay.ski_chains_seen({}, self.NOW + relay.SKI_CHAINS_CLEAR_SECONDS, told, read_all=False)
+        self.assertIn("I-80", told["chains"], "no answer is no sign it has gone")
+        self.assertIsNone(relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told))
+        relay.ski_chains_seen({}, self.NOW + 2 * relay.SKI_CHAINS_CLEAR_SECONDS - 1, told)
+        self.assertIn("I-80", told["chains"], "the twelve hours run from the last look that couldn't say")
+        relay.ski_chains_seen({}, self.NOW + 2 * relay.SKI_CHAINS_CLEAR_SECONDS, told)
+        self.assertEqual({}, told["chains"])
+
+    def test_a_control_back_the_same_day_has_a_key_the_phone_hasnt_said(self):
+        told = {}
+        first = relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told)
+        self.assertEqual(first["key"], relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told)["key"], "a retry is the same notification")
+        relay.ski_mark_told(told, first, self.NOW)
+        relay.ski_chains_seen({}, self.NOW + relay.SKI_CHAINS_CLEAR_SECONDS, told)
+        again = relay.ski_chains_news(self.ahead(self.controls()), self.TODAY, told)
+        self.assertNotEqual(first["key"], again["key"])
+
     def test_only_a_control_in_force_counts(self):
         def point(status, in_service="true"):
             return {"cc": {"inService": in_service, "statusData": {"status": status}, "location": {"route": "I-80", "locationName": "Donner Summit", "latitude": "39.33", "longitude": "-120.34"}}}
@@ -12351,6 +12390,11 @@ class SkiPushShapeTest(unittest.TestCase):
         self.assertEqual(("Big snow by Saturday", "Alpha 46 cm"), relay.ski_text(self.SNOW, False))
         self.assertEqual(("Fresh snow at 2 resorts", "Alpha 10 in, Beta 6 in in the last day"), relay.ski_text(self.FRESH, True))
         self.assertEqual(("Chains required on I-80", "R-2 on I-80 at Donner Summit, on the way to Alpha, Beta"), relay.ski_text(self.CHAINS, True))
+
+    def test_a_roads_news_says_its_day_too(self):
+        data = relay.ski_data(self.CHAINS, self.NOW, self.ZONE)
+        self.assertEqual(20760, json.loads(data["ski_notice"])["d"])
+        self.assertEqual("20760", data["day"])
 
     def test_past_three_resorts_it_says_how_many_more(self):
         many = {**self.SNOW, "resorts": [{"n": f"R{i}", "s": f"r{i}", "cm": 30.0, "lo": 20.0, "hi": 40.0} for i in range(5)]}
@@ -12402,7 +12446,7 @@ class SkiTickTest(_ScratchDb):
         relay.state_set(relay.HOME_KEY, {"lat": 12.3456, "lng": -98.7654, "radius_m": 100.0})
 
     def phone(self, device_id="pixel", token="fcm", tz="America/Los_Angeles", **wishes):
-        wish = {"snow": True, "fresh": True, "chains": True, "imperial": True, "trip_day": None, "resorts": [{"slug": "kirkwood", "name": "Kirkwood", "lat": 38.68, "lng": -120.06, "state": "OPEN"}], **wishes}
+        wish = {"snow": True, "fresh": True, "chains": True, "imperial": True, "trip_day": None, "resorts": [{"slug": "kirkwood", "name": "Kirkwood", "lat": 38.68, "lng": -120.06, "state": "OPEN", "as_of": self.NOW - 3600}], **wishes}
         relay.with_db(lambda c: (c.execute(
             "INSERT INTO devices (device_id, token, platform, name, created, last_seen, tz, ski) VALUES (?,?,?,?,?,?,?,?)",
             (device_id, token, "android", device_id, self.NOW, self.NOW, tz, json.dumps(wish)),
@@ -12481,7 +12525,7 @@ class SkiTickTest(_ScratchDb):
 
     def test_two_phones_each_hear_of_their_own_resorts(self):
         self.phone("one", "t1")
-        self.phone("two", "t2", snow=False, fresh=True, chains=False, resorts=[{"slug": "vail", "name": "Vail", "lat": 39.6, "lng": -106.3, "state": "OPEN"}])
+        self.phone("two", "t2", snow=False, fresh=True, chains=False, resorts=[{"slug": "vail", "name": "Vail", "lat": 39.6, "lng": -106.3, "state": "OPEN", "as_of": self.NOW - 3600}])
         self.tick()
         by_phone = {p[0]: [] for p in self.pushed}
         for p in self.pushed:
@@ -12500,7 +12544,7 @@ class SkiTickTest(_ScratchDb):
         self.assertEqual(2, self.asked["forecast"])
 
     def test_a_resort_with_no_site_is_never_asked_after_and_has_no_fresh_snow(self):
-        self.phone(chains=False, resorts=[{"slug": "somewhere-else", "name": "Elsewhere", "lat": 39.6, "lng": -106.3, "state": "OPEN"}])
+        self.phone(chains=False, resorts=[{"slug": "somewhere-else", "name": "Elsewhere", "lat": 39.6, "lng": -106.3, "state": "OPEN", "as_of": self.NOW - 3600}])
         self.tick()
         self.assertEqual(0, self.asked["site"])
         self.assertEqual(["snow"], self.kinds())
@@ -12551,6 +12595,20 @@ class SkiTickTest(_ScratchDb):
         self.assertEqual(1, len(seen))
         self.assertEqual(12.3456, seen[0]["lat"])
 
+    def test_caltrans_out_of_reach_doesnt_say_a_control_again_when_it_comes_back(self):
+        self.phone(snow=False, fresh=False)
+        self.tick()
+        self.assertEqual(["chains"], self.kinds())
+        self.pushed.clear()
+        working = self.in_force
+        self.chains = lambda number: (_ for _ in ()).throw(ConnectionError("no"))
+        for hours in (4, 8, 12):
+            self.tick(self.NOW + hours * 3600)
+        del self.chains
+        self.in_force = working
+        self.assertIsNone(self.tick(self.NOW + 13 * 3600))
+        self.assertEqual([], self.pushed)
+
     def test_only_the_districts_a_road_runs_through_are_read(self):
         self.phone(snow=False, fresh=False)
         numbers = []
@@ -12591,5 +12649,5 @@ class SkiTickTest(_ScratchDb):
 
     def test_what_a_phone_says_holds_nothing_about_where_it_is(self):
         """The fields a wish has: public facts about a resort, and the phone's own switches."""
-        self.assertEqual({"slug", "name", "lat", "lng", "summit_m", "state", "opens", "closes"}, set(relay.SkiResortWish.__annotations__))
+        self.assertEqual({"slug", "name", "lat", "lng", "summit_m", "state", "as_of", "opens", "closes"}, set(relay.SkiResortWish.__annotations__))
         self.assertEqual({"snow", "fresh", "chains", "imperial", "trip_day", "resorts"}, set(relay.SkiWishes.__annotations__))

@@ -5810,8 +5810,8 @@ def claim_rain_soon(ident: str, claim: RainSoonClaim, request: Request) -> dict[
 # on, the phones' reading of it included; the forecast every three hours, one call a resort.
 #
 # Once each (`ski_told` on the phone's row): the first forecast of a weekend's big snow, a resort's
-# snow once a day, a road's controls once until they've been gone SKI_CHAINS_CLEAR_SECONDS or ask
-# for more. A failed push isn't marked, so the next tick tries again.
+# snow once a day, a road's controls once until Caltrans has shown them gone for
+# SKI_CHAINS_CLEAR_SECONDS or they ask for more. A failed push isn't marked, so the next tick tries again.
 #
 # The push is what was decided, not its words: an Android phone (and an iPhone, when iOS wakes the
 # app) writes it from `ski_notice` in the reader's language and units (`SkiNoticePlanner`). iOS
@@ -5839,6 +5839,8 @@ SKI_FRESH_CM = 15.0
 SKI_FRESH_MAX_AGE_SECONDS = 36 * 3600
 SKI_FRESH_COOLDOWN_SECONDS = 6 * 3600
 SKI_CHAINS_CLEAR_SECONDS = 12 * 3600
+# `REPORT_CURRENT_SECONDS`: how long a report's word on a resort running holds.
+SKI_REPORT_CURRENT_SECONDS = 7 * 86400
 SKI_CHAINS_EXPIRE_SECONDS = 6 * 3600
 SKI_CHAIN_MATCH_METERS = 1500.0
 SKI_ROAD_MAX_AGE_SECONDS = 14 * 86400
@@ -6213,11 +6215,23 @@ def ski_next_saturday(today: int) -> int:
     return today + (5 - (today + 3) % 7) % 7
 
 
+def ski_said_lately(moment: int | None, today: int) -> bool:
+    """`SkiReport.isCurrent`, to the day, which is all a tick's `today` knows."""
+    return moment is not None and today * 86400 - moment <= SKI_REPORT_CURRENT_SECONDS
+
+
 def ski_runs_on(resort: dict[str, Any], reading: dict[str, Any] | None, day: int, today: int) -> bool:
-    """`SkiReport.runsOn` with the resort's own word over what the phone last knew (`SkiReport.merged`)."""
+    """
+    `SkiReport.runsOn` with the resort's own word over what the phone last knew (`SkiReport.merged`).
+    An "open" from an old report says nothing about now, the phone's or a dated page's; the dates
+    a resort gave still stand.
+    """
     state = resort.get("state") or "CLOSED"
+    if state in ("OPEN", "LIMITED") and not ski_said_lately(resort.get("as_of"), today):
+        state = "CLOSED"
     if reading:
-        if reading.get("running") is True or (reading.get("lifts_open") or 0) > 0:
+        lifts_turning = reading.get("running") is True or (reading.get("lifts_open") or 0) > 0
+        if lifts_turning and (reading.get("updated") is None or ski_said_lately(reading["updated"], today)):
             state = state if state == "LIMITED" else "OPEN"
         elif reading.get("running") is False:
             state = "CLOSED"
@@ -6411,17 +6425,25 @@ def ski_chains_news(ahead: dict[str, dict[str, Any]], today: int, told: dict[str
         return None
     roads.sort(key=lambda r: (-r["level"], r["route"]))
     names = ",".join(f"{r['route']}:{r['level']}" for r in sorted(roads, key=lambda r: r["route"]))
-    return {"kind": "chains", "key": f"ski:chains:{today}:{names}"[:64], "day": today, "roads": roads}
+    # The storm's number keeps a control back the same day from looking, to the phone's ledger, like the one it has said; a retry of this one has the same.
+    return {"kind": "chains", "key": f"ski:chains:{today}:{told.get('chains_storm', 0)}:{names}"[:64], "day": today, "roads": roads}
 
 
-def ski_chains_seen(ahead: dict[str, dict[str, Any]], now: float, told: dict[str, Any]) -> None:
-    """Keeps a road's controls in mind while they last, and forgets them once they've been gone long enough to be another storm's."""
+def ski_chains_seen(ahead: dict[str, dict[str, Any]], now: float, told: dict[str, Any], read_all: bool = True) -> None:
+    """
+    Keeps a road's controls in mind while they last, and forgets them once they've been gone long
+    enough to be another storm's. A look with a file that couldn't be read ([read_all] false) can't
+    say they've gone, so it counts as seeing them: only looks that came back clear add up.
+    """
     chains = told.setdefault("chains", {})
-    for name in ahead:
-        if name in chains:
-            chains[name]["seen"] = now
-    for name in [n for n, road in chains.items() if now - road.get("seen", 0) >= SKI_CHAINS_CLEAR_SECONDS]:
+    for name, road in chains.items():
+        if name in ahead or not read_all:
+            road["seen"] = now
+    gone = [n for n, road in chains.items() if now - road.get("seen", 0) >= SKI_CHAINS_CLEAR_SECONDS]
+    for name in gone:
         del chains[name]
+    if gone:
+        told["chains_storm"] = told.get("chains_storm", 0) + 1
 
 
 def ski_amount(cm: float, imperial: bool) -> str:
@@ -6464,7 +6486,7 @@ def ski_data(news: dict[str, Any], now: float, zone: Any) -> dict[str, str]:
     the resort's page if there's only the one.
     """
     if news["kind"] == "chains":
-        payload: dict[str, Any] = {"k": "chains", "c": [{"n": r["route"], "p": r["place"], "l": r["level"], "t": r["to"][:SKI_SHOWN_RESORTS]} for r in news["roads"][:SKI_SHOWN_RESORTS]]}
+        payload: dict[str, Any] = {"k": "chains", "d": news["day"], "c": [{"n": r["route"], "p": r["place"], "l": r["level"], "t": r["to"][:SKI_SHOWN_RESORTS]} for r in news["roads"][:SKI_SHOWN_RESORTS]]}
         expires = int(now) + SKI_CHAINS_EXPIRE_SECONDS
         resort = None
     else:
@@ -6570,6 +6592,7 @@ def ski_tick(
     home = state_get(HOME_KEY)
     roads: dict[str, list[tuple[float, float]]] = {}
     controls: list[dict[str, Any]] = []
+    read_all = True
     if home and any(p["wish"].get("chains") for p in phones):
         for phone in phones:
             if phone["wish"].get("chains"):
@@ -6582,7 +6605,11 @@ def ski_tick(
             west, east = min(p[1] for p in points), max(p[1] for p in points)
             for number, (s, n, w, e) in SKI_CHAIN_DISTRICTS.items():
                 if s <= north and n >= south and w <= east and e >= west:
-                    controls += _ski_fresh("chains", str(number), now, SKI_TICK_SECONDS - 60, lambda number=number: chains(number)) or []
+                    district = _ski_fresh("chains", str(number), now, SKI_TICK_SECONDS - 60, lambda number=number: chains(number))
+                    if district is None:
+                        read_all = False
+                    else:
+                        controls += district
 
     results = []
     for phone in phones:
@@ -6603,7 +6630,7 @@ def ski_tick(
             road_news = ski_chains_news(ahead, phone["today"], told)
             if road_news:
                 news.append(road_news)
-        ski_chains_seen(ahead, now, told)
+        ski_chains_seen(ahead, now, told, read_all)
         for item in news:
             title, body = ski_text(item, imperial)
             # Firebase out of reach raises rather than answering: this push failing, not the rest's.
@@ -6689,8 +6716,9 @@ class SkiResortWish(BaseModel):
     lat: float
     lng: float
     summit_m: float | None = None
-    # SkiOpenState's name, as the phone last knew it, and the dates it gave as calendar days.
+    # SkiOpenState's name, as the phone last knew it, when the report saying so is from, and the dates it gave as calendar days.
     state: str = "CLOSED"
+    as_of: int | None = None
     opens: int | None = None
     closes: int | None = None
 

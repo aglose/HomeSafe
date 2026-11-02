@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherPreferencesReposit
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiNotice
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticePlanner
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticePush
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticeSync
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiRepository
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
@@ -34,12 +35,14 @@ class SkiNoticeCheck(
     private val textLoader: TextLoader,
     private val clock: Clock,
     private val mute: NotificationMute,
+    private val sync: SkiNoticeSync,
 ) {
     /**
      * [shown] says the platform has drawn the push's own banner already (iOS, which only sometimes
      * wakes the app to get here): what is posted takes its place, without alerting again. What this
      * build can't read goes out as the relay worded it, [fallbackTitle] and [fallbackBody], unless
-     * that's already up. Never throws.
+     * that's already up. A push with notifications off means the relay missed hearing so, and this
+     * is a moment to tell it, with no resort's page to wait on. Never throws.
      */
     suspend fun onRelayPush(payload: String, key: String, fallbackTitle: String, fallbackBody: String, shown: Boolean): Boolean = runCatching {
         if (!notifier.isSupported) return@runCatching false
@@ -47,7 +50,11 @@ class SkiNoticeCheck(
         val sent = ledger.sent(now)
         if (shown) ledger.record(key, now)
         val prefs = preferences.observe().first()
-        if (!prefs.notices.enabled || mute.muted.value || !notifier.isAllowed()) return@runCatching false
+        if (!prefs.notices.enabled) {
+            sync.sync()
+            return@runCatching false
+        }
+        if (mute.muted.value || !notifier.isAllowed()) return@runCatching false
         val push = SkiNoticePush.read(payload)
         val notification = if (push != null) {
             val plan = repository.plan().first()

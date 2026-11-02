@@ -88,7 +88,10 @@ data class SkiReport(
      * resort's own page with no date on it is taken at its word for as long as it was read lately:
      * a site that has stopped answering leaves its last reading behind.
      */
-    fun isCurrent(nowEpochSeconds: Long): Boolean = (updatedAtEpochSeconds ?: fetchedAtEpochSeconds)?.let { nowEpochSeconds - it <= REPORT_CURRENT_SECONDS } ?: false
+    fun isCurrent(nowEpochSeconds: Long): Boolean = asOfEpochSeconds?.let { nowEpochSeconds - it <= REPORT_CURRENT_SECONDS } ?: false
+
+    /** When this is from: the date it gives, or failing that when it was read. */
+    val asOfEpochSeconds: Long? get() = updatedAtEpochSeconds ?: fetchedAtEpochSeconds
 
     /** Running today, by a report recent enough to say so. */
     fun runningNow(nowEpochSeconds: Long): Boolean = (state == SkiOpenState.OPEN || state == SkiOpenState.LIMITED) && isCurrent(nowEpochSeconds)

@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -96,9 +97,11 @@ class WeatherAlertCheck(
     }
 
     /** Checks now; returns how many notifications were posted. Never throws: a failed check is tried again next time. */
-    suspend fun run(): Int = running.withLock {
-        runCatching { skiSync.sync() }
-        runCatching { check() }.getOrDefault(0)
+    suspend fun run(): Int {
+        val posted = running.withLock { runCatching { check() }.getOrDefault(0) }
+        // Last and briefly, since iOS gives a check little time and this reads resorts' pages one by one. What it reads is kept, so the next one gets further.
+        runCatching { withTimeoutOrNull(SKI_SYNC_BUDGET_MS) { skiSync.sync() } }
+        return posted
     }
 
     /**
@@ -278,6 +281,8 @@ class WeatherAlertCheck(
 
         /** The forecast's own quarter-hour step: a check never reasons from anything older. */
         const val MAX_AGE_SECONDS = 300L
+
+        const val SKI_SYNC_BUDGET_MS = 15_000L
 
         /** A sample is of how a notification looks, not of the last quarter hour: the forecast on screen will do. */
         const val SAMPLE_MAX_AGE_SECONDS = 1_800L

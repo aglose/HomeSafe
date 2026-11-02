@@ -33,6 +33,7 @@ import homesafe.shared.generated.resources.weather_now
 import homesafe.shared.generated.resources.weather_time_pm
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,7 +77,7 @@ class WeatherAlertCheckTest {
         }
     }
 
-    private class Harness(scope: CoroutineScope, now: Long) {
+    private class Harness(scope: CoroutineScope, now: Long, skiSync: SkiNoticeSync = SkiNoticeSync.Never) {
         val dao = InMemoryWeatherDao()
         val repository = FakeWeatherRepository().apply { onName = { _, _ -> "Portland" to "OR" } }
         val fence = FakeGeofence()
@@ -97,7 +98,7 @@ class WeatherAlertCheckTest {
             }
         }
         val claims = FakeClaims()
-        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope, mute, claims, SkiNoticeSync.Never)
+        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope, mute, claims, skiSync)
     }
 
     private fun TestScope.harness(report: WeatherReport? = stormyReport()) = Harness(backgroundScope, now).apply {
@@ -161,6 +162,28 @@ class WeatherAlertCheckTest {
         val posted = h.notifier.posted.single()
         assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_amount, WeatherFormat.precipitation(0.5, WeatherUnits()))), posted.body)
         assertEquals(at(0, 15, 30), posted.eventEpochSeconds)
+    }
+
+    @Test
+    fun aSkiSyncThatHangsCostsTheCheckNothing() = runTest {
+        var postedBeforeSync = -1
+        lateinit var h: Harness
+        h = Harness(
+            backgroundScope,
+            now,
+            object : SkiNoticeSync {
+                override fun watch() = Unit
+
+                override suspend fun sync() {
+                    postedBeforeSync = h.notifier.posted.size
+                    awaitCancellation()
+                }
+            },
+        )
+        h.repository.onReport = { Result.success(stormyReport()) }
+        val posted = h.check.run()
+        assertTrue(posted > 0)
+        assertEquals(posted, postedBeforeSync, "the weather's own check has gone first")
     }
 
     @Test

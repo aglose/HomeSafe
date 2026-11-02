@@ -85,21 +85,33 @@ class SkiNoticeSyncImpl(
                 .collectLatest {
                     // Picking through the days on the strip is one change, not ten.
                     delay(SETTLE_MS)
-                    suspendRunCatching { sync() }
+                    // Notifications off ends the background check too, so nothing else would ask again. The next launch does, if this doesn't live to.
+                    var wait = RETRY_FIRST_MS
+                    while (!tell() && !preferences.observe().first().notices.enabled) {
+                        delay(wait)
+                        wait = (wait * 2).coerceAtMost(RETRY_MOST_MS)
+                    }
                 }
         }
     }
 
-    override suspend fun sync(): Unit = telling.withLock {
+    override suspend fun sync() {
+        tell()
+    }
+
+    /** Whether the relay has heard what there is for it to hear. */
+    private suspend fun tell(): Boolean = suspendRunCatching { telling.withLock { tellLocked() } }.getOrDefault(false)
+
+    private suspend fun tellLocked(): Boolean {
         val prefs = preferences.observe().first()
         val plan = repository.plan().first()
-        if (!plan.tabOpened) return@withLock
+        if (!plan.tabOpened) return true
         val enabled = prefs.notices.enabled
         val imperial = prefs.units.measures == MeasureSystem.IMPERIAL
         val told = dao.kept(TOLD_KEY)
         val now = clock.now().epochSeconds
         val what = what(plan, enabled, imperial)
-        if (told != null && told.json == what && now - told.savedAtEpochSeconds < TELL_AGAIN_SECONDS) return@withLock
+        if (told != null && told.json == what && now - told.savedAtEpochSeconds < TELL_AGAIN_SECONDS) return true
         val wanted = enabled && plan.alerts.any
         val today = (now / SkiForecast.DAY_SECONDS).toInt()
         val wishes = SkiWishes(
@@ -112,7 +124,9 @@ class SkiNoticeSyncImpl(
         )
         // A page that wouldn't answer just now leaves a resort out, so it's asked again soon rather than tomorrow.
         val complete = !wanted || wishes.resorts.size == plan.resorts.size
-        if (relay.tell(wishes) && complete) dao.keep(SkiKeptEntity(TOLD_KEY, what, now))
+        val heard = relay.tell(wishes)
+        if (heard && complete) dao.keep(SkiKeptEntity(TOLD_KEY, what, now))
+        return heard
     }
 
     /** Everything that would change what the relay is told, short of a resort's season, which [TELL_AGAIN_SECONDS] looks after. */
@@ -131,6 +145,7 @@ class SkiNoticeSyncImpl(
             lng = page.facts.longitude,
             summitM = page.facts.summitElevationM,
             state = report?.state?.name ?: "CLOSED",
+            asOf = report?.asOfEpochSeconds,
             opens = report?.openingEpochDay,
             closes = report?.closingEpochDay,
         )
@@ -139,6 +154,8 @@ class SkiNoticeSyncImpl(
     private companion object {
         const val TOLD_KEY = "relay-told"
         const val SETTLE_MS = 2_000L
+        const val RETRY_FIRST_MS = 60_000L
+        const val RETRY_MOST_MS = 30 * 60_000L
         const val TELL_AGAIN_SECONDS = 86_400L
     }
 }

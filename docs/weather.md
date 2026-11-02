@@ -338,9 +338,9 @@ told about the six mountains it follows by default.
 
 | Notification | When | Says it again |
 |---|---|---|
-| **Big snow by Saturday** | A foot or more (30 cm) at a followed resort's summit by the coming Saturday, or Sunday if it's only there by then, or by a day picked on the strip up to a week off. Added up as the tab's card does: the blend over that day and the two before. The least hopeful model has to reach half that (15 cm), since a wider gap isn't a forecast yet, and the resort has to be running that day | Never for that weekend or day, whatever the models do afterwards |
+| **Big snow by Saturday** | A foot or more (30 cm) at a followed resort's summit by the coming Saturday, or Sunday if it's only there by then, or by a day picked on the strip up to a week off. Added up as the tab's card does: the blend over that day and the two before. The least hopeful model has to reach half that (15 cm), since a wider gap isn't a forecast yet, and the resort has to be running that day, by a report from the last week or the dates it gave | Never for that weekend or day, whatever the models do afterwards |
 | **Fresh snow at Sugar Bowl** | Six inches (15 cm) or more in a day, or overnight, on a resort's own site, from 7 AM so most have reported. The resort has to be running today, and a dated report no more than 36 hours old | A resort once a day, and never the same reading twice, which is all a site with no date can show of being out of date. One push every six hours at most, so a resort that reports late has its own |
-| **Chains required on I-80** | A Caltrans control in force within 1.5 km of the road from home to a followed resort. California only, and only with a home set | Only if it asks for more (R-1 to R-2). Easing, and a storm's flicker between levels, say nothing. A road's slate is wiped when its controls have been gone for 12 hours |
+| **Chains required on I-80** | A Caltrans control in force within 1.5 km of the road from home to a followed resort. California only, and only with a home set | Only if it asks for more (R-1 to R-2). Easing, and a storm's flicker between levels, say nothing. A road's slate is wiped when Caltrans has shown its controls gone for 12 hours; a file that can't be read doesn't count towards that |
 
 Several resorts or roads at once come as one notification. Nothing goes out between 10 PM and 6 AM
 on the phone's clock. Each carries the Ski tab as its tap, on the day it's about, or the resort's page
@@ -357,8 +357,10 @@ a Mac, which has no way to receive a push and doesn't offer the switches.
 
 **What the relay is told** (`PUT /devices/{id}/ski`, `SkiNoticeSync`): each phone's own list, since
 the plan is per device, with each resort's slug, name, coordinates and summit height off its public
-page, what's known of its season, the switches, the units and the day picked. When any of that changes, and
-at least daily from the background check. It is **not** told where the phone is or where its drives
+page, what's known of its season and how old that is (an "open" over a week old doesn't count), the switches, the units and the day picked. When any of that changes, and
+at least daily from the background check, after the weather's own check and for at most 15 seconds. Turning
+notifications off ends that check, so a relay out of reach just then is asked again for as long as the app
+runs, at the next launch, and whenever a push arrives that shouldn't have. It is **not** told where the phone is or where its drives
 start: `SkiPlan.origin` stays home, and a phone's route, which may start where the phone is, is
 never sent. The relay asks OSRM for the road itself, from home, which it already holds for the
 geofences, to the hundredth of a degree, and keeps it on the box for a fortnight. That can differ

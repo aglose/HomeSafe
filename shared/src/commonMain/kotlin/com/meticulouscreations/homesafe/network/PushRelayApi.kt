@@ -603,6 +603,8 @@ data class SkiResortWish(
     val lng: Double,
     @SerialName("summit_m") val summitM: Double? = null,
     val state: String = "CLOSED",
+    /** When the report behind [state] is from: an old "open" says nothing about now. */
+    @SerialName("as_of") val asOf: Long? = null,
     val opens: Int? = null,
     val closes: Int? = null,
 )

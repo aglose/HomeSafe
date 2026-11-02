@@ -41,6 +41,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -59,12 +61,13 @@ class SkiNoticeCheckTest {
         var pageAnswers = true
         var pagesAsked = 0
         var state = SkiOpenState.OPEN
+        var reportedAt: Long? = 1_793_700_000L
 
         override fun plan(): Flow<SkiPlan> = planFlow
 
         override suspend fun updatePlan(change: (SkiPlan) -> SkiPlan) = planFlow.update(change)
 
-        override suspend fun reports(regionSlug: String, force: Boolean) = Result.success(listOf(SkiReport("alpha", regionSlug, "Alpha", state = state, openingEpochDay = 20700, closingEpochDay = 20900)))
+        override suspend fun reports(regionSlug: String, force: Boolean) = Result.success(listOf(SkiReport("alpha", regionSlug, "Alpha", state = state, openingEpochDay = 20700, closingEpochDay = 20900, updatedAtEpochSeconds = reportedAt)))
 
         override suspend fun prices(regionSlug: String) = Result.success(emptyMap<String, SkiTicketPrice>())
 
@@ -130,8 +133,8 @@ class SkiNoticeCheckTest {
                 this@Harness.muted.value = muted
             }
         }
-        val check = SkiNoticeCheck(ski, preferences, ledger, notifier, KeyedTextLoader, clock, mute)
         val sync = SkiNoticeSyncImpl(ski, preferences, relay, dao, clock, scope)
+        val check = SkiNoticeCheck(ski, preferences, ledger, notifier, KeyedTextLoader, clock, mute, sync)
     }
 
     // ---- a push landing ---------------------------------------------------------------------
@@ -230,6 +233,17 @@ class SkiNoticeCheckTest {
         assertEquals(Triple(39.2, -120.2, 2750.0), Triple(resort.lat, resort.lng, resort.summitM))
         assertEquals("OPEN", resort.state)
         assertEquals(20700 to 20900, resort.opens to resort.closes)
+        assertEquals(1_793_700_000L, resort.asOf)
+    }
+
+    @Test
+    fun anOldReportSaysHowOldItIs() = runTest {
+        val h = Harness(backgroundScope)
+        h.ski.reportedAt = now - 200 * 86_400
+        h.sync.sync()
+        val resort = h.relay.told.single().resorts.single()
+        assertEquals("OPEN" to now - 200 * 86_400, resort.state to resort.asOf)
+        assertEquals(20700 to 20900, resort.opens to resort.closes)
     }
 
     @Test
@@ -296,6 +310,50 @@ class SkiNoticeCheckTest {
         assertEquals(2, h.relay.told.size)
         h.sync.sync()
         assertEquals(2, h.relay.told.size)
+    }
+
+    @Test
+    fun notificationsOffKeepsTellingARelayOutOfReachUntilItHears() = runTest {
+        val h = Harness(backgroundScope)
+        h.sync.sync()
+        h.relay.answer = false
+        h.preferences.update { it.copy(notices = it.notices.copy(enabled = false)) }
+        h.sync.watch()
+        advanceTimeBy(3_000)
+        runCurrent()
+        val first = h.relay.told.size
+        assertTrue(h.relay.told.last().resorts.isEmpty())
+        advanceTimeBy(70_000)
+        runCurrent()
+        assertTrue(h.relay.told.size > first, "asked again, with no background check to do it")
+        h.relay.answer = true
+        advanceTimeBy(30 * 60_000L)
+        runCurrent()
+        val heard = h.relay.told.size
+        advanceTimeBy(6 * 3_600_000L)
+        runCurrent()
+        assertEquals(heard, h.relay.told.size, "it heard, so that's the end of it")
+    }
+
+    @Test
+    fun notificationsOnLeavesARelayOutOfReachToTheBackgroundCheck() = runTest {
+        val h = Harness(backgroundScope)
+        h.relay.answer = false
+        h.sync.watch()
+        advanceTimeBy(6 * 3_600_000L)
+        runCurrent()
+        assertEquals(1, h.relay.told.size)
+    }
+
+    @Test
+    fun aPushWithNotificationsOffTellsTheRelayItMissedThat() = runTest {
+        val h = Harness(backgroundScope)
+        h.sync.sync()
+        h.preferences.update { it.copy(notices = it.notices.copy(enabled = false)) }
+        assertFalse(h.check.onRelayPush(snow, "k", "", "", shown = true))
+        assertTrue(h.notifier.posted.isEmpty())
+        assertEquals(2, h.relay.told.size)
+        assertFalse(h.relay.told.last().snow)
     }
 
     @Test
