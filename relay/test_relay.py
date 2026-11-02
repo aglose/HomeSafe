@@ -543,6 +543,43 @@ class AwayOnThePropertyTest(unittest.TestCase):
         self.assertEqual([], self.ids())
 
 
+class ZoneSubjectTest(unittest.TestCase):
+    """A sentence about a zone only says what that zone counts as inside; a review lists the whole frame."""
+
+    def setUp(self):
+        self.labels = relay._zone_labels
+        self.cars = relay.HOUSEHOLD_CARS
+        relay._zone_labels = {"hikvision_1": {"property": ["person"], "front_lawn": ["person", "dog"], "driveway": ["person", "car", "dog"]}}
+        relay.HOUSEHOLD_CARS = {"andrews_tesla": "x"}
+
+    def tearDown(self):
+        relay._zone_labels = self.labels
+        relay.HOUSEHOLD_CARS = self.cars
+
+    def told(self, zone, objects, sub_labels=(), camera="hikvision_1"):
+        return relay.sentence(review("r", 1.0, objects, sub_labels, camera=camera, zones=(zone,)), [zone])[1]
+
+    def test_what_is_only_passing_in_the_frame_is_not_on_the_property(self):
+        self.assertEqual("Person on the property", self.told("property", ["person", "bicycle", "car", "dog"]))
+
+    def test_a_car_name_goes_with_the_car_and_a_face_stays(self):
+        self.assertEqual("Person on the property", self.told("property", ["person", "car"], ["andrews_tesla"]))
+        self.assertEqual("Sarah on the property", self.told("property", ["person", "car"], ["andrews_tesla", "sarah"]))
+
+    def test_a_zone_keeps_all_it_counts(self):
+        self.assertEqual("Person and dog on the front lawn", self.told("front_lawn", ["person", "car", "dog"]))
+        self.assertEqual("Person and Andrew's Tesla in the driveway", self.told("driveway", ["person", "car", "bicycle"], ["andrews_tesla"]))
+
+    def test_a_zone_with_no_list_or_a_camera_unknown_tells_the_whole_review(self):
+        self.assertEqual("Person and car in the patio", self.told("patio", ["person", "car"]))
+        self.assertEqual("Person and car on the property", self.told("property", ["person", "car"], camera="amcrest_1"))
+
+    def test_a_visit_says_the_same(self):
+        visit = relay.Visit(review("a", 1.0, ["person", "car"], ["andrews_tesla"], zones=("property",)))
+        visit.add(review("a", 1.0, ["person", "car"], ["andrews_tesla"], zones=("property",)), 1.0)
+        self.assertEqual(("Front Yard", "Person on the property"), visit.sentence(["property"]))
+
+
 class SubjectTest(unittest.TestCase):
     def setUp(self):
         self.cars, relay.HOUSEHOLD_CARS = relay.HOUSEHOLD_CARS, {"andrews_tesla": {}, "sarahs_car": {}}
