@@ -99,12 +99,15 @@ class SkiViewModelTest {
 
         override suspend fun alerts(facts: SkiResortFacts): List<WeatherAlert> = listOf(WeatherAlert("1", event = "Winter Storm Warning"))
 
+        var driveFailing = false
+
         /** Holds up the drives leaving at these times for as long as it isn't completed. */
         val heldDrives = mutableMapOf<Long, CompletableDeferred<Unit>>()
 
         override suspend fun drive(from: SkiPoint, to: SkiPoint, departEpochSeconds: Long?): Result<SkiDrive> {
             driveCalls += departEpochSeconds
             departEpochSeconds?.let { heldDrives[it]?.await() }
+            if (driveFailing) return Result.failure(IllegalStateException("down"))
             return Result.success(drive.copy(departEpochSeconds = departEpochSeconds))
         }
 
@@ -472,6 +475,43 @@ class SkiViewModelTest {
         val entry = assertNotNull(vm.uiState.value.entries["palisades-tahoe"])
         assertNotNull(entry.drive)
         assertEquals("I-80", entry.chains.single().route)
+    }
+
+    @Test
+    fun drivesFromTheOldStartGoWhenItChangesEvenIfNoNewOnesCome() = skiTest { vm, ski, start ->
+        vm.setActive(true)
+        runCurrent()
+        assertNotNull(vm.uiState.value.entries["palisades-tahoe"]?.drive)
+        start.point = SkiPoint(39.5, -119.8)
+        ski.driveFailing = true
+        vm.setOrigin(SkiOrigin.HERE)
+        runCurrent()
+        val entry = assertNotNull(vm.uiState.value.entries["palisades-tahoe"])
+        assertNull(entry.drive)
+        assertTrue(entry.chains.isEmpty())
+    }
+
+    @Test
+    fun aHomeSetLaterClearsDrivesFromTheCityItWentByBefore() = skiTest(start = FakeStart(point = SkiPoint(39.5, -119.8, "Reno"))) { vm, ski, start ->
+        vm.setActive(true)
+        runCurrent()
+        assertNotNull(vm.uiState.value.entries["palisades-tahoe"]?.drive)
+        start.point = SkiPoint(37.8, -122.3)
+        ski.driveFailing = true
+        advanceTimeBy(5 * 60_000L + 1)
+        runCurrent()
+        assertNull(vm.uiState.value.entries["palisades-tahoe"]?.drive, "the origin setting never changed, but the start did")
+    }
+
+    @Test
+    fun aPositionMovingALittleKeepsTheDrives() = skiTest { vm, ski, start ->
+        vm.setActive(true)
+        runCurrent()
+        start.point = SkiPoint(37.8001, -122.3001)
+        ski.driveFailing = true
+        vm.refresh()
+        runCurrent()
+        assertNotNull(vm.uiState.value.entries["palisades-tahoe"]?.drive)
     }
 
     @Test

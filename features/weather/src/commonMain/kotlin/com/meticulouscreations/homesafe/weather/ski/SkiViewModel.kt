@@ -45,6 +45,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
 import org.jetbrains.compose.resources.StringResource
+import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -106,9 +107,6 @@ class SkiViewModel(
     private var startingPoint: SkiPoint? = null
     private var startingFor: SkiOrigin? = null
 
-    /** The start the drives and chain checks on the entries were worked out from. */
-    private var drivenFrom: SkiOrigin? = null
-
     private fun now(): Long = clock.now().epochSeconds
 
     /** The clock moved on, and with it the day: a trip day that has gone by moves up to the next Saturday. */
@@ -168,17 +166,7 @@ class SkiViewModel(
         loadJob = viewModelScope.launch {
             val plan = _uiState.value.plan
             val from = startingPoint(plan.origin)
-            // Drives from another start aren't this one's: they go, so a failed lookup shows nothing rather than the old road.
-            val startChanged = drivenFrom != null && drivenFrom != plan.origin
-            drivenFrom = plan.origin
-            _uiState.update { state ->
-                val entries = if (startChanged) {
-                    state.entries.mapValues { (_, e) -> e.copy(drive = null, driveOut = null, driveBack = null, chains = emptyList(), chainsUnavailable = false) }
-                } else {
-                    state.entries
-                }
-                state.copy(entries = entries, hasStart = from != null, startCity = from?.city)
-            }
+            _uiState.update { it.copy(hasStart = from != null, startCity = from?.city) }
             coroutineScope {
                 launch { loadReports(plan.resorts, force) }
                 launch { loadPasses(plan.passes) }
@@ -192,10 +180,19 @@ class SkiViewModel(
         // Nowhere to start from, or only a city to go by, can be better by the next look: a home set, a city added.
         if (startingFor == origin && startingPoint != null && startingPoint?.city == null) return startingPoint
         return start.of(origin).also {
+            // Drives from somewhere else aren't drives from here, whether or not new ones can be had.
+            if (it.rounded() != startingPoint.rounded()) {
+                _uiState.update { state ->
+                    state.copy(entries = state.entries.mapValues { (_, entry) -> entry.copy(drive = null, driveOut = null, driveBack = null, chains = emptyList(), chainsUnavailable = false) })
+                }
+            }
             startingPoint = it
             startingFor = origin
         }
     }
+
+    /** Where a drive starts, as near as it's ever told: a position moving a few yards isn't a new start. */
+    private fun SkiPoint?.rounded(): Pair<Int, Int>? = this?.let { (it.latitude * 100).roundToInt() to (it.longitude * 100).roundToInt() }
 
     /** One page a region answers for all its resorts at once, so there's one fetch however many are followed. */
     private suspend fun loadReports(refs: List<SkiResortRef>, force: Boolean) = coroutineScope {
@@ -261,6 +258,7 @@ class SkiViewModel(
                 drive.getOrNull()?.let { road ->
                     // Published together: a drive shown before its chain check is in would read as "no chain controls".
                     val chains = repository.chainControls(road.path)
+                    if (from.rounded() != startingPoint.rounded()) return@launch
                     change(ref) { it.copy(drive = road, chains = chains.controls, chainsUnavailable = !chains.complete) }
                 }
                 drive.exceptionOrNull()?.let { e -> change(ref) { entry -> if (entry.drive == null) entry.copy(error = e.orFallback(Res.string.ski_error_drive)) else entry } }
@@ -322,7 +320,7 @@ class SkiViewModel(
         val coming = if (back > now) repository.drive(to, from, back).getOrNull() else null
         // The day or the start changed while these were on their way: the answers for that are coming, and may already be here.
         val latest = _uiState.value
-        if (latest.tripEpochDay != day || latest.plan.origin != state.plan.origin) return
+        if (latest.tripEpochDay != day || latest.plan.origin != state.plan.origin || from.rounded() != startingPoint.rounded()) return
         change(ref) { it.copy(driveOut = going, driveBack = coming) }
     }
 

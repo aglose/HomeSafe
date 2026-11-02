@@ -127,12 +127,12 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.RegionGroup(title: k
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ski.ui.RegionRow(report: com.meticulouscreations.homesafe.weather.ski.domain.SkiReport, adultPrice: kotlin.Double?, state: com.meticulouscreations.homesafe.weather.ski.SkiUiState, actions: com.meticulouscreations.homesafe.weather.ski.ui.SkiActions, onOpenResort: kotlin.Function1<com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ski.ui.RegionRow(report: com.meticulouscreations.homesafe.weather.ski.domain.SkiReport, listed: com.meticulouscreations.homesafe.weather.ski.domain.SkiTicketPrice?, state: com.meticulouscreations.homesafe.weather.ski.SkiUiState, actions: com.meticulouscreations.homesafe.weather.ski.ui.SkiActions, onOpenResort: kotlin.Function1<com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - report: STABLE (marked @Stable or @Immutable)
-    - adultPrice: STABLE (class with no mutable properties)
+    - listed: STABLE (marked @Stable or @Immutable)
     - state: STABLE (marked @Stable or @Immutable)
     - actions: STABLE (marked @Stable or @Immutable)
     - onOpenResort: STABLE (function type)

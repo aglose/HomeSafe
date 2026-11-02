@@ -335,6 +335,27 @@ class SkiRepositoryImplTest {
     }
 
     @Test
+    fun aDayThatAnswersWithNothingOnSaleLosesItsOldPrice() = runTest {
+        val web = Web { Answer(status = HttpStatusCode.NotFound) }
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":[]}"""
+        web.repository.resortPrices("northstar-california", listOf(20_813))
+        web.browser.answer = """{"checked":["2026-12-26"]}"""
+        val prices = web.repository.resortPrices("northstar-california", listOf(20_813))
+        assertEquals(null, prices?.days?.get(20_813))
+    }
+
+    @Test
+    fun aDayThatFailedAgainKeepsItsLastPrice() = runTest {
+        val web = Web { Answer(status = HttpStatusCode.NotFound) }
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"2026-12-27":[200,280,140,190],"checked":["2026-12-27"]}"""
+        web.repository.resortPrices("northstar-california", listOf(20_813, 20_814))
+        web.browser.answer = """{"checked":["2026-12-27"]}"""
+        val prices = web.repository.resortPrices("northstar-california", listOf(20_813, 20_814))
+        assertEquals(205.0, prices?.days?.get(20_813)?.adultOnline)
+        assertEquals(null, prices?.days?.get(20_814))
+    }
+
+    @Test
     fun aNewDayAddsToTheOnesAlreadyInHand() = runTest {
         val web = Web { Answer(status = HttpStatusCode.NotFound) }
         web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":["2026-12-26"]}"""
