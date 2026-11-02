@@ -59,6 +59,21 @@ fun onWeatherPush(payload: String, key: String, done: () -> Unit) {
 }
 
 /**
+ * The relay's skiing notification, when iOS wakes the app for it (`AppDelegate.swift`): [done] tells
+ * iOS the app has finished. Its banner is already up, in English; this puts the app's own words in its place.
+ */
+@Suppress("unused")
+fun onSkiPush(payload: String, key: String, done: () -> Unit) {
+    MainScope().launch {
+        try {
+            IosApp.graph.skiNoticeCheck.onRelayPush(payload, key, fallbackTitle = "", fallbackBody = "", shown = true)
+        } finally {
+            done()
+        }
+    }
+}
+
+/**
  * Called from Swift with the APNs device token iOS handed the app delegate, as hex: kept for
  * every later registration ([IosPushToken]), and the relay told at once, as Android's
  * `PushRegistrar` does when Firebase rotates its token. The same token at every launch

@@ -41,7 +41,17 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
+import com.meticulouscreations.homesafe.weather.ski.data.SKI_NOTICES_ARRIVE
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.ski_settings_notices_chains
+import homesafe.shared.generated.resources.ski_settings_notices_chains_body
+import homesafe.shared.generated.resources.ski_settings_notices_fresh
+import homesafe.shared.generated.resources.ski_settings_notices_fresh_body
+import homesafe.shared.generated.resources.ski_settings_notices_note
+import homesafe.shared.generated.resources.ski_settings_notices_snow
+import homesafe.shared.generated.resources.ski_settings_notices_snow_body
+import homesafe.shared.generated.resources.ski_settings_notices_title
 import homesafe.shared.generated.resources.weather_alert_from
 import homesafe.shared.generated.resources.weather_alert_issued_by
 import homesafe.shared.generated.resources.weather_alert_until
@@ -91,6 +101,8 @@ internal fun WeatherSettingsScreen(
     onStillSkyChange: (Boolean) -> Unit,
     onAllowNotifications: () -> Unit,
     onSendSample: () -> Unit,
+    skiAlerts: SkiAlerts,
+    onSkiAlertsChange: (SkiAlerts) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = WeatherTheme.colors
@@ -151,6 +163,23 @@ internal fun WeatherSettingsScreen(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(stringResource(Res.string.weather_settings_notices_place), style = type.label, color = colors.onSkyFaint)
+                        // Sent by the relay as a push, which a computer has no way to receive.
+                        if (SKI_NOTICES_ARRIVE) {
+                            Spacer(Modifier.height(14.dp))
+                            CardLabel(stringResource(Res.string.ski_settings_notices_title))
+                            Spacer(Modifier.height(6.dp))
+                            SwitchRow(stringResource(Res.string.ski_settings_notices_snow), stringResource(Res.string.ski_settings_notices_snow_body), skiAlerts.bigSnow, "ski_notices_snow", notices.enabled) {
+                                onSkiAlertsChange(skiAlerts.copy(bigSnow = it))
+                            }
+                            SwitchRow(stringResource(Res.string.ski_settings_notices_fresh), stringResource(Res.string.ski_settings_notices_fresh_body), skiAlerts.freshSnow, "ski_notices_fresh", notices.enabled) {
+                                onSkiAlertsChange(skiAlerts.copy(freshSnow = it))
+                            }
+                            SwitchRow(stringResource(Res.string.ski_settings_notices_chains), stringResource(Res.string.ski_settings_notices_chains_body), skiAlerts.chains, "ski_notices_chains", notices.enabled) {
+                                onSkiAlertsChange(skiAlerts.copy(chains = it))
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(Res.string.ski_settings_notices_note), style = type.label, color = colors.onSkyFaint)
+                        }
                     }
                     // Only where one could arrive: the OS lets them through.
                     if (state.notificationPermission == NotificationPermission.GRANTED) {

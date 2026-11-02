@@ -520,6 +520,24 @@ class SkiRepositoryImplTest {
         assertTrue(web.asked.isNotEmpty())
     }
 
+    @Test
+    fun aRoundCutShortCarriesOnWhereItStopped() = runTest {
+        val web = Web { request -> if ("snow-and-weather" in request.url.encodedPath) Answer(vailPage) else Answer(status = HttpStatusCode.NotFound) }
+        val background = SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock)
+        web.repository.updatePlan { it.copy(resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"), SkiResortRef("heavenly-mountain-resort", "california", "Heavenly"))) }
+        web.repository.resortNews("northstar-california")
+        web.clock.seconds += 1_800
+
+        kotlinx.coroutines.withTimeoutOrNull(7_000) { background.refresh() }
+        assertTrue(web.asked.any { "northstarcalifornia" in it.url.host })
+
+        web.asked.clear()
+        web.clock.seconds += 1_800
+        background.refresh()
+        assertTrue(web.asked.any { "skiheavenly" in it.url.host }, "the one it didn't reach")
+        assertFalse(web.asked.any { "northstarcalifornia" in it.url.host }, "and not the one it did")
+    }
+
     // ---- Which sites have stopped being readable -----------------------------------------------------
 
     @Test

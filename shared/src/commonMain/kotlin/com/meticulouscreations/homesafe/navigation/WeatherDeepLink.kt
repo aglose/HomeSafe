@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Where a weather notification's tap lands: the weather app, opened over whatever was up, on
  * the part of it the notification was about. Rain on the way opens Today, tomorrow's outlook
- * the Forecast, the "Radar" button the radar, and a government warning the warning itself.
+ * the Forecast, the "Radar" button the radar, a government warning the warning itself, and a
+ * skiing one the Ski tab on its day, or the resort if it was about only one.
  *
  * `homesafe://weather?view=radar&place=current&alert=KPQR.TO.W.0012`, which the Android manifest
  * routes to the app as it does a moment's link (see [MomentDeepLink]). Every part is optional:
@@ -21,9 +22,13 @@ data class WeatherDeepLink(
     val placeId: String? = null,
     /** A government warning's key (`WeatherAlert.key`), to open in full if it is still in force. */
     val alertKey: String? = null,
+    /** On the Ski tab, the day it was about (a day counted from 1970), to plan for. */
+    val day: Int? = null,
+    /** On the Ski tab, the one resort it was about (its slug), to open. */
+    val resort: String? = null,
 ) {
     /** The weather app's tabs, by name: this side of the hand-off knows nothing of its screens. */
-    enum class View { TODAY, FORECAST, RADAR }
+    enum class View { TODAY, FORECAST, RADAR, SKI }
 
     /** As string pairs, for iOS `userInfo`; [KEY] marks them as a weather notification's. */
     fun toMap(): Map<String, String> = buildMap {
@@ -31,6 +36,8 @@ data class WeatherDeepLink(
         put(KEY_VIEW, view.name.lowercase())
         placeId?.let { put(KEY_PLACE, it) }
         alertKey?.let { put(KEY_ALERT, it) }
+        day?.let { put(KEY_DAY, it.toString()) }
+        resort?.let { put(KEY_RESORT, it) }
     }
 
     fun toUri(): String = "$URI?" + (toMap() - KEY).entries.joinToString("&") { (k, v) -> "$k=${v.encodeURLParameter()}" }
@@ -44,12 +51,16 @@ data class WeatherDeepLink(
         const val KEY_VIEW = "view"
         const val KEY_PLACE = "place"
         const val KEY_ALERT = "alert"
+        const val KEY_DAY = "day"
+        const val KEY_RESORT = "resort"
 
         /** From string pairs; a view this build doesn't know opens Today. */
         fun from(values: (String) -> String?): WeatherDeepLink = WeatherDeepLink(
             view = View.entries.firstOrNull { it.name.equals(values(KEY_VIEW), ignoreCase = true) } ?: View.TODAY,
             placeId = values(KEY_PLACE)?.takeIf { it.isNotBlank() },
             alertKey = values(KEY_ALERT)?.takeIf { it.isNotBlank() },
+            day = values(KEY_DAY)?.toIntOrNull(),
+            resort = values(KEY_RESORT)?.takeIf { it.isNotBlank() },
         )
 
         /** From a `homesafe://weather…` URI; null for anything else. */

@@ -29,6 +29,7 @@ val NotificationGlyph.drawableRes: Int
         NotificationGlyph.HURRICANE -> R.drawable.ic_notification_weather_hurricane
         NotificationGlyph.FIRE -> R.drawable.ic_notification_weather_fire
         NotificationGlyph.WARNING -> R.drawable.ic_notification_weather_warning
+        NotificationGlyph.CHAINS -> R.drawable.ic_notification_weather_chains
         NotificationGlyph.CAMERA -> R.drawable.ic_notification_detection
         NotificationGlyph.PERSON -> R.drawable.ic_notification_person
         NotificationGlyph.CAR -> R.drawable.ic_notification_car

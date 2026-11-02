@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.weather.data
 
+import com.meticulouscreations.homesafe.weather.ski.data.SkiNoticeCheck
+
 /**
  * What the weather's background job (Android's worker) needs from the app graph, which is in
  * :app where this module can't reach it. AppGraph implements it; the worker gets the graph from
@@ -7,4 +9,5 @@ package com.meticulouscreations.homesafe.weather.data
  */
 interface WeatherBackgroundServices {
     val weatherAlertCheck: WeatherAlertCheck
+    val skiNoticeCheck: SkiNoticeCheck
 }

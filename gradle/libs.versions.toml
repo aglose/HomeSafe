@@ -1,7 +1,7 @@
 [versions]
 # 9.5 is still an alpha: it's what runs Compose Preview Screenshot Testing as an AGP test suite
 # (androidApp/build.gradle.kts), which replaced the deprecated standalone screenshot plugin.
-agp = "9.5.0-rc01"
+agp = "9.6.0-alpha01"
 android-compileSdk = "37"
 android-minSdk = "33"
 android-targetSdk = "37"
@@ -26,7 +26,7 @@ material-icons-extended = "1.7.3"
 # Drag to reorder in lazy lists and grids (Calvin Liang), for the Home page's Arrange mode.
 reorderable = "3.1.0"
 metro = "1.5.0"
-navigation3 = "1.1.2"
+navigation3 = "1.2.0"
 # Back as a gesture to animate with (NavigationBackHandler); the same dispatcher Navigation 3 feeds.
 navigationevent = "1.1.0"
 ksp = "2.3.12"
@@ -34,7 +34,7 @@ room = "3.0.3"
 sqlite = "2.7.0"
 ktor = "3.6.0"
 cryptography = "0.6.0"
-kotlinx-serialization = "1.11.0"
+kotlinx-serialization = "1.12.0"
 kotlinx-datetime = "0.8.0"
 media3 = "1.11.0"
 # libwebrtc for Android, Stream's build of the upstream org.webrtc API (live view over WebRTC).
@@ -44,9 +44,9 @@ coil = "3.6.3"
 # recordings (DesktopVideoEngine.kt). The two move together: javacv x.y.z wants ffmpeg *-x.y.z.
 javacv = "1.5.14"
 # OpenGL for the car on the Mac (features/car3d): no window, an offscreen CGL context. The JVM has no GL of its own.
-lwjgl = "3.3.6"
+lwjgl = "3.4.3"
 # The Mac app calls its notifications library (desktopApp/macos/Notifications.swift) through it.
-jna = "5.17.0"
+jna = "5.19.1"
 ffmpeg = "8.1.2-1.5.14"
 
 benchmark = "1.6.0-alpha01"
@@ -65,7 +65,7 @@ screenshot = "0.0.1-alpha16"
 
 googleServices = "4.5.0"
 playServicesLocation = "21.4.0"
-firebaseBom = "34.18.0"
+firebaseBom = "35.1.0"
 # The push path's picture and clip outlive the messaging service's callback; see HomeSafeMessagingService.
 androidx-work = "2.12.0"
 # Health Connect, where Google Health puts what a Fitbit band records (HealthSource.android.kt).

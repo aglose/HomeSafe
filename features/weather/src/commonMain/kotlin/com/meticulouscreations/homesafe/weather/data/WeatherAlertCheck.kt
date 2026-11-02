@@ -21,6 +21,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherPreferencesReposit
 import com.meticulouscreations.homesafe.weather.domain.WeatherRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiBackgroundRefresh
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticeSync
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -70,6 +72,8 @@ class WeatherAlertCheck(
     /** Settings → Notifications' "Mute all notifications": while it's on, a check posts nothing. */
     private val mute: NotificationMute,
     private val claims: WeatherSoonClaims,
+    /** Keeps the relay told what the Ski tab follows, which is all its notifications need from here. */
+    private val skiSync: SkiNoticeSync,
     /** The Ski tab's data rides along with this check, which is what the OS wakes for. */
     private val skiRefresh: SkiBackgroundRefresh = SkiBackgroundRefresh {},
 ) {
@@ -79,6 +83,7 @@ class WeatherAlertCheck(
     /** Called once at launch: makes the background job match the notification switch, and calls off reminders the switches turn off. */
     fun start() {
         appScope.launch { runCatching { syncSchedule() } }
+        skiSync.watch()
         // Called from each root that comes up (the iOS sign-in, the native shell): one collector will do.
         if (watching) return
         watching = true
@@ -98,7 +103,10 @@ class WeatherAlertCheck(
     /** Checks now; returns how many notifications were posted. Never throws: a failed check is tried again next time. */
     suspend fun run(): Int {
         val posted = running.withLock { runCatching { check() }.getOrDefault(0) }
-        suspendRunCatching { skiRefresh.refresh() }
+        // Last and briefly, since iOS gives a check little time and this reads resorts' pages one by one. What it reads is kept, so the next one gets further.
+        runCatching { withTimeoutOrNull(SKI_SYNC_BUDGET_MS) { skiSync.sync() } }
+        // After that, and to the same budget: it's a convenience, and what it reads is kept for the next one to build on.
+        suspendRunCatching { withTimeoutOrNull(SKI_SYNC_BUDGET_MS) { skiRefresh.refresh() } }
         return posted
     }
 
@@ -279,6 +287,8 @@ class WeatherAlertCheck(
 
         /** The forecast's own quarter-hour step: a check never reasons from anything older. */
         const val MAX_AGE_SECONDS = 300L
+
+        const val SKI_SYNC_BUDGET_MS = 15_000L
 
         /** A sample is of how a notification looks, not of the last quarter hour: the forecast on screen will do. */
         const val SAMPLE_MAX_AGE_SECONDS = 1_800L

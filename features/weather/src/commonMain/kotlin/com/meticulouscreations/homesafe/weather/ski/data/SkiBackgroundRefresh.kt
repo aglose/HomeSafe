@@ -31,20 +31,23 @@ class SkiBackgroundRefreshImpl(
     override suspend fun refresh() {
         // Nobody has opened the tab yet, so nobody's waiting on it.
         if (dao.kept(SITE_HEALTH_KEY) == null) return
-        val now = clock.now().epochSeconds
-        val last = dao.kept(LAST_KEY)?.savedAtEpochSeconds
-        if (last != null && now - last < REFRESH_EVERY_SECONDS) return
-        dao.keep(SkiKeptEntity(LAST_KEY, "{}", now))
+        // The check gives this only a little time, so a round may take a few of them: it says which resort is next.
+        val kept = dao.kept(LAST_KEY)
+        val next = kept?.json?.toIntOrNull() ?: 0
+        if (kept != null && next == 0 && clock.now().epochSeconds - kept.savedAtEpochSeconds < REFRESH_EVERY_SECONDS) return
 
         val plan = repository.plan().first()
         val from = start.of(plan.origin)
-        plan.resorts.map { it.regionSlug }.distinct().forEach { repository.reports(it) }
-        plan.resorts.forEach { ref ->
+        if (next == 0) plan.resorts.map { it.regionSlug }.distinct().forEach { repository.reports(it) }
+        plan.resorts.withIndex().drop(next).forEach { (index, ref) ->
             delay(BETWEEN_RESORTS_MS)
             repository.resortNews(ref.slug)
-            val facts = repository.resortPage(ref).getOrNull()?.facts ?: return@forEach
-            repository.forecast(ref, facts)
-            if (from != null) repository.drive(from, SkiPoint(facts.latitude, facts.longitude))
+            repository.resortPage(ref).getOrNull()?.facts?.let { facts ->
+                repository.forecast(ref, facts)
+                if (from != null) repository.drive(from, SkiPoint(facts.latitude, facts.longitude))
+            }
+            val following = index + 1
+            dao.keep(SkiKeptEntity(LAST_KEY, if (following < plan.resorts.size) following.toString() else "0", clock.now().epochSeconds))
         }
     }
 

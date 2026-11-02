@@ -93,6 +93,7 @@ import com.meticulouscreations.homesafe.weather.data.createWeatherNotifier
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import com.meticulouscreations.homesafe.weather.ski.data.SkiBrowser
+import com.meticulouscreations.homesafe.weather.ski.data.SkiNoticeCheck
 import com.meticulouscreations.homesafe.weather.ski.data.createSkiBrowser
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Named
@@ -183,6 +184,7 @@ interface AppGraph :
      * (Android's worker, iOS's background refresh), from a graph with no UI.
      */
     override val weatherAlertCheck: WeatherAlertCheck
+    override val skiNoticeCheck: SkiNoticeCheck
 
     @Provides
     fun providePlatform(): Platform = getPlatform()

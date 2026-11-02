@@ -92,6 +92,9 @@ enum class WeatherNoticeIcon {
 
     /** A government warning of a kind with no picture of its own. */
     WARNING,
+
+    /** Chain controls on a road. */
+    CHAINS,
     ;
 
     companion object {

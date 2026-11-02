@@ -53,6 +53,7 @@ import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiNote
@@ -110,6 +111,7 @@ class SkiActions(
     val onOwnPrice: (String, Int?) -> Unit = { _, _ -> },
     val onTrip: (Int, Int, Int) -> Unit = { _, _, _ -> },
     val onOwnParking: (String, Int?) -> Unit = { _, _ -> },
+    val onAlerts: (SkiAlerts) -> Unit = {},
 )
 
 /** A calendar day (counted from 1970) as an instant the weather's date formats can read, on their zero-offset clock. */

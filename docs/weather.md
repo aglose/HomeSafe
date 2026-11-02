@@ -126,6 +126,9 @@ have by then, the drive and the cost; then the regions being watched. A resort t
 that day goes to the bottom, the first to open first. Pull to refresh, or on a wide window use the
 refresh button in the title bar, as a mouse can't pull.
 
+The day picked is kept, and the relay watches it for big snow as it does the coming weekend, until it
+has gone by. See [Ski notifications](#ski-notifications).
+
 The search icon looks through regions and passes, so a resort anywhere can be starred onto the tab
 and a whole region watched. The sliders hold who's going, how many days, what a night and a mile cost, which passes they hold and
 where drives start. A resort's own page has the report, the hours of the chosen day and the ten days ahead, the
@@ -228,6 +231,7 @@ doesn't offer "Where I am now".
 
 On by default; each kind has its own switch in Weather's Settings, and they arrive on channels of
 their own (**Weather**, **Rain on the way**, **Severe weather**) so Android can silence them apart from the cameras'.
+The Ski tab has three of its own: see [Ski notifications](#ski-notifications).
 
 ### What one looks like
 
@@ -347,6 +351,69 @@ docker exec homesafe-relay python relay.py rain-soon-test
 That pushes a made-up shower to every phone that wants these, at home or not; the phone still plans
 from it, so a real shower in the last three hours or the quiet hours will hold it back on Android.
 
+### Ski notifications
+
+Three, each with its own switch under **Skiing** in Weather's Settings, on to begin with like the
+others, and under the weather's master switch. They're about the resorts on the Ski tab, so they
+start only once that tab has been opened on the device: a phone that has never looked at it isn't
+told about the six mountains it follows by default.
+
+| Notification | When | Says it again |
+|---|---|---|
+| **Big snow by Saturday** | A foot or more (30 cm) at a followed resort's summit by the coming Saturday, or Sunday if it's only there by then, or by a day picked on the strip up to a week off. Added up as the tab's card does: the blend over that day and the two before. The least hopeful model has to reach half that (15 cm), since a wider gap isn't a forecast yet, and the resort has to be running that day, by a report from the last week or the dates it gave | Never for that weekend or day, whatever the models do afterwards |
+| **Fresh snow at Sugar Bowl** | Six inches (15 cm) or more in a day, or overnight, on a resort's own site, from 7 AM so most have reported. The resort has to be running today, and a dated report no more than 36 hours old | A resort once a day, and never the same reading twice, which is all a site with no date can show of being out of date. One push every six hours at most, so a resort that reports late has its own |
+| **Chains required on I-80** | A Caltrans control in force within 1.5 km of the road from home to a followed resort. California only, and only with a home set | Only if it asks for more (R-1 to R-2). Easing, and a storm's flicker between levels, say nothing. A road's slate is wiped when Caltrans has shown its controls gone for 12 hours; a file that can't be read doesn't count towards that |
+
+Several resorts or roads at once come as one notification. Nothing goes out between 10 PM and 6 AM
+on the phone's clock. Each carries the Ski tab as its tap, on the day it's about, or the resort's page
+if it's about one resort, and has no **Radar** button. They're on the **Weather** channel, not coming up
+over the screen. A big-snow notification comes down when its day ends, a fresh-snow one when today does,
+and a road's after six hours. Chains wear a glyph of their own (`NotificationGlyph.CHAINS`).
+
+**Where it runs.** On the relay (`relay.py`, "ski notices"), for the reason rain is: a storm is only
+worth hearing of in time, and a phone can't be counted on to wake. Unlike rain there's no second
+check on the phone. None of this depends on where the phone is, so the relay can tell a phone
+wherever it is, and one place deciding means no claiming between two. So a device that doesn't hear
+from the relay gets none: signed out, cameras' switch off (it registers no token, as with rain), or
+a Mac, which has no way to receive a push and doesn't offer the switches.
+
+**What the relay is told** (`PUT /devices/{id}/ski`, `SkiNoticeSync`): each phone's own list, since
+the plan is per device, with each resort's slug, name, coordinates and summit height off its public
+page, what's known of its season and how old that is (an "open" over a week old doesn't count), the switches, the units and the day picked. When any of that changes, and
+at least daily from the background check, after the weather's own check and for at most 15 seconds. Turning
+notifications off ends that check, so a relay out of reach just then is asked again for as long as the app
+runs, at the next launch, and whenever a push arrives that shouldn't have. It is **not** told where the phone is or where its drives
+start: `SkiPlan.origin` stays home, and a phone's route, which may start where the phone is, is
+never sent. The relay asks OSRM for the road itself, from home, which it already holds for the
+geofences, to the hundredth of a degree, and keeps it on the box for a fortnight. That can differ
+from the Google route the tab shows.
+
+**What it reads.** The resorts' own sites for the 32 in `ResortSite.ALL`, read a second time
+in Python since the relay can't run the app's readers (`SKI_SITES`, `ski_read_*`): only the snow and
+whether it's running, not the prices or the terrain page. A test holds the two lists of resorts
+to each other, and `SkiSiteReadingTest` reads the same cut-down pages as `ResortPagesTest`, so **a site
+that changes shape needs both readers changing**. A resort not on that list has no fresh-snow
+notification: OnTheSnow's listing is only ever a listing.
+
+**How often.** A tick every 15 minutes while any phone is awake and following something. Caltrans's
+files of the districts the roads run through, on each. A resort's site hourly, not for one opening
+more than a day off, one page and a couple of seconds apart: the relay shares the household's address with
+its phones, Vail's Akamai stops answering an address that leans on it (it did so to a few requests in
+quick succession on 1 November 2026), and it answers a challenge page with a 200, which reads as no report. Open-Meteo every three hours, one call
+a resort. Told to slow down (HTTP 429), it waits an hour.
+
+**What it looks like.** As with rain, the push (`ski_notice`, read by `SkiNoticePush`) is what was decided
+and not its words. `SkiNoticePlanner` words it in the reader's language and units, and the switches and
+the phone's own ledger have the last say; it's the relay's rules (`ski_big_snow`, `ski_fresh_snow`, `ski_chains_news`)
+that decide. Android does that at once. iOS draws the push's own English first, then the app's words in its
+place if iOS wakes the app.
+
+To see one, on the box (`snow`, `fresh` or `chains`, about the first resort each phone follows):
+
+```sh
+docker exec homesafe-relay python relay.py ski-notice-test snow
+```
+
 ## Tests
 
 - `weather/domain`: the astronomy against known sunrises and lunations, the forecast's sentences,
@@ -365,6 +432,10 @@ from it, so a real shower in the last three hours or the quiet hours will hold i
   (`SkiPlannerTest`), caching, fallback and what's told to whom (`SkiRepositoryImplTest`), where
   drives start (`SkiStartingPointTest`), the tab's state (`SkiViewModelTest`), and the Mac's browser
   against a stand-in for its program (`MacSkiBrowserTest`, desktop only).
+  What the relay's decisions read as (`SkiNoticePlannerTest`), a push landing and the phone telling the
+  relay what it wants (`SkiNoticeCheckTest`).
 - `relay/test_relay.py` (stdlib only): the relay's reading of a forecast against the same cases as
   the planner's, who is told, when the forecast is asked for, and one shower being said once
   from either end. `WeatherAlertCheckTest` has the other side of that, and reads the same payload.
+  For skiing: each site's page, the forecast's totals, the three decisions, the push's shape, and who is
+  told what and how often (`SkiSiteReadingTest`, `SkiForecastTest`, `SkiDecisionTest`, `SkiPushShapeTest`, `SkiTickTest`).

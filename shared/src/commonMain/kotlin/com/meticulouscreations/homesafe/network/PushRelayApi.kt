@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.network
 
+import androidx.compose.runtime.Immutable
 import com.meticulouscreations.homesafe.domain.model.CarCheck
 import com.meticulouscreations.homesafe.domain.model.CarFix
 import com.meticulouscreations.homesafe.domain.model.CarLive
@@ -132,6 +133,16 @@ class PushRelayApi(private val httpClient: HttpClient) {
         }
         if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RainSoonClaim>()
+    }
+
+    /** Tells the relay what this phone wants to hear of skiing, in full. By this install's own secret, as a background check has no session. */
+    suspend fun putSkiWishes(serverUrl: String, deviceId: String, secret: String, wishes: SkiWishes): Result<Unit> = runCatching {
+        val response = httpClient.put(relayUrl(serverUrl, "/devices/$deviceId/ski")) {
+            contentType(ContentType.Application.Json)
+            bearer(secret)
+            setBody(wishes)
+        }
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
     }
 
     /** Asks the relay to push a sample alert to every registered phone. */
@@ -566,6 +577,37 @@ data class DeviceRegistration(
 
 @Serializable
 internal data class RainSoonClaimRequest(val key: String)
+
+/**
+ * What a phone wants to hear of skiing (`PUT /devices/{id}/ski`, "ski notices" in relay/relay.py):
+ * which notifications, the day picked, and the resorts. Nothing here says where the phone is.
+ */
+@Immutable
+@Serializable
+data class SkiWishes(
+    val snow: Boolean = false,
+    val fresh: Boolean = false,
+    val chains: Boolean = false,
+    val imperial: Boolean = true,
+    @SerialName("trip_day") val tripDay: Int? = null,
+    val resorts: List<SkiResortWish> = emptyList(),
+)
+
+/** What the relay needs to know of a resort, all of it off the resort's public page. [state] and the days are what's known of its season, which it reads over with the resort's own word. */
+@Immutable
+@Serializable
+data class SkiResortWish(
+    val slug: String,
+    val name: String,
+    val lat: Double,
+    val lng: Double,
+    @SerialName("summit_m") val summitM: Double? = null,
+    val state: String = "CLOSED",
+    /** When the report behind [state] is from: an old "open" says nothing about now. */
+    @SerialName("as_of") val asOf: Long? = null,
+    val opens: Int? = null,
+    val closes: Int? = null,
+)
 
 /** The relay's answer to [PushRelayApi.claimRainSoon]: not [granted], this phone was told of a shower at [at] (epoch seconds). */
 @Serializable

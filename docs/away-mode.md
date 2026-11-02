@@ -25,6 +25,7 @@ Registration answers with the id and a **device secret**:
 | `PUT /devices/{id}/presence` | cookie, or bearer | `{"away": bool, "source": "manual"\|"geofence"\|"lan", "dwell_seconds": n}` | presence snapshot |
 | `GET /presence?device={id}` | cookie, or bearer | — | presence snapshot |
 | `POST /devices/{id}/rain-soon` | cookie, or bearer | `{"key"}` | `{"granted", "key", "at"}` ([weather.md](weather.md#rain-soon-from-the-relay)) |
+| `PUT /devices/{id}/ski` | cookie, or bearer | `{"snow","fresh","chains","imperial","trip_day"?,"resorts":[…]}` | `{"ok", "resorts"}` ([weather.md](weather.md#ski-notifications)) |
 | `PUT /home` / `DELETE /home` | cookie | `{"lat","lng","radius_m"}` | presence snapshot |
 
 **Two ways in** (`authenticate`). A signed-in user's Frigate session cookie may do anything. An
