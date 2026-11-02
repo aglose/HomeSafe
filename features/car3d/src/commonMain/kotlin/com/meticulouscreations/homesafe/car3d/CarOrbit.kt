@@ -72,7 +72,11 @@ internal fun Modifier.carOrbitGestures(state: CarOrbitState): Modifier = pointer
             while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
-                if (pressed.isEmpty()) break
+                if (pressed.isEmpty()) {
+                    // The lift counts as a sample, so a pause before it leaves no speed to coast on.
+                    event.changes.firstOrNull()?.let { tracker.addPosition(it.uptimeMillis, it.position) }
+                    break
+                }
                 val pan = event.calculatePan()
                 val zoom = event.calculateZoom()
                 if (zoom != 1f) state.zoomBy(zoom)
