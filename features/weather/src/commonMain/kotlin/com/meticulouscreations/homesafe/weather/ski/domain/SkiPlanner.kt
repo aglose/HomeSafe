@@ -140,8 +140,10 @@ object SkiPlanner {
         val day = forecast?.day(epochDay)
         val report = entry.latest
         val runs = report?.runsOn(epochDay, todayEpochDay, nowEpochSeconds) ?: false
-        val fresh = forecast?.snowBetween(epochDay - (FRESH_DAYS - 1), epochDay)
-            ?: report?.outlook.orEmpty().filter { it.epochDay in (epochDay - (FRESH_DAYS - 1))..epochDay }.sumOf { it.cm }
+        // Day by day: a forecast kept from a while back may not reach them all, and the report's outlook can.
+        val fresh = ((epochDay - (FRESH_DAYS - 1))..epochDay).sumOf { each ->
+            forecast?.day(each)?.snowCm ?: report?.outlook?.firstOrNull { it.epochDay == each }?.cm ?: 0.0
+        }
         val cost = cost(plan, entry, epochDay)
         return SkiDayView(
             entry = entry,
@@ -232,7 +234,8 @@ object SkiPlanner {
             childrenLeftOut = plan.children > 0 && child == null,
             source = source,
             onEpochDay = onEpochDay,
-            windowTotal = total(price.adultWindow, price.childWindow).takeIf { price.adultOnline != null },
+            // Only if it's the whole party's: a window total that left a child out would read as less than it is.
+            windowTotal = total(price.adultWindow, price.childWindow).takeIf { price.adultOnline != null && (plan.children == 0 || price.childWindow != null) },
         )
     }
 

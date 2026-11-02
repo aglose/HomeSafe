@@ -59,5 +59,8 @@ interface SkiStartingPoint {
     /** Whether this device can tell where it is. A computer can't, so "where I am now" isn't offered there. */
     val canLocate: Boolean get() = true
 
+    /** Asks the person for their location, if the device hasn't got leave to tell. */
+    suspend fun requestAccess() = Unit
+
     suspend fun of(origin: SkiOrigin): SkiPoint?
 }

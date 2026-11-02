@@ -219,6 +219,25 @@ class SkiRepositoryImplTest {
         assertEquals(2, web.asked.count { "googleapis" in it.url.host })
     }
 
+    @Test
+    fun oldTrafficDoesntStandInWhenGoogleStopsAnswering() = runTest {
+        var refused = false
+        val web = Web(InMemoryHouseholdKeys(HouseholdKeys.GOOGLE_MAPS to "secret")) { request ->
+            when {
+                "googleapis" !in request.url.host -> Answer(osrm)
+                refused -> Answer(status = HttpStatusCode.Forbidden)
+                else -> Answer(google)
+            }
+        }
+        assertEquals(SkiDriveSource.TRAFFIC, web.repository.drive(home, mountain).getOrThrow().source)
+        refused = true
+        web.clock.seconds += 3_600
+        assertEquals(SkiDriveSource.FREE_FLOW, web.repository.drive(home, mountain).getOrThrow().source)
+        web.clock.seconds += 3_600
+        web.repository.drive(home, mountain)
+        assertEquals(2, web.asked.count { "googleapis" in it.url.host }, "a refusal is still noticed, and not asked about again")
+    }
+
     // ---- The resort's own site -----------------------------------------------------------------------
 
     private val vailPage = """<script>FR.snowReportData = {"OverallSnowConditions":"Early Season","TwentyFourHourSnowfall":{"Inches":"8","Centimeters":"20"},"BaseDepth":{"Inches":"0","Centimeters":"0"},"CurrentSeason":{"Inches":"8","Centimeters":"20"},"LastUpdatedText":"Updated November 01, 2026 at 10:20 AM PST"};</script>"""
@@ -266,7 +285,7 @@ class SkiRepositoryImplTest {
     @Test
     fun aVailShopIsAskedThroughTheBrowserForTheDaysWanted() = runTest {
         val web = Web { Answer(status = HttpStatusCode.NotFound) }
-        web.browser.answer = """{"2026-12-26":[205,284,144,199]}"""
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":["2026-12-26"]}"""
         val day = 20_813 // 26 December 2026.
         val prices = web.repository.resortPrices("northstar-california", listOf(day))
         assertEquals(205.0, prices?.days?.get(day)?.adultOnline)
@@ -278,7 +297,7 @@ class SkiRepositoryImplTest {
     @Test
     fun aDayAlreadyInHandDoesntOpenTheBrowserAgain() = runTest {
         val web = Web { Answer(status = HttpStatusCode.NotFound) }
-        web.browser.answer = """{"2026-12-26":[205,284,144,199]}"""
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":["2026-12-26"]}"""
         val day = 20_813
         web.repository.resortPrices("northstar-california", listOf(day))
         web.repository.resortPrices("northstar-california", listOf(day))
@@ -289,7 +308,7 @@ class SkiRepositoryImplTest {
     fun aDayNotOnSaleIsntAskedAboutAgain() = runTest {
         val web = Web { Answer(status = HttpStatusCode.NotFound) }
         // Before the season the shop only has its first day on sale.
-        web.browser.answer = """{"2026-11-20":[131,164,92,115]}"""
+        web.browser.answer = """{"2026-11-20":[131,164,92,115],"checked":["2026-11-02","2026-11-03","2026-11-20"]}"""
         web.repository.resortPrices("northstar-california", listOf(20_759, 20_760))
         web.repository.resortPrices("northstar-california", listOf(20_759, 20_760))
         assertEquals(1, web.browser.asked.size)
@@ -300,16 +319,27 @@ class SkiRepositoryImplTest {
         val web = Web { request -> if ("sugarbowl" in request.url.host) Answer(status = HttpStatusCode.NotFound) else Answer(status = HttpStatusCode.NotFound) }
         web.browser.answer = "{}"
         assertEquals(null, web.repository.resortPrices("northstar-california", listOf(20_813)))
-        web.browser.answer = """{"2026-12-26":[205,284,144,199]}"""
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":["2026-12-26"]}"""
         assertEquals(205.0, web.repository.resortPrices("northstar-california", listOf(20_813))?.days?.get(20_813)?.adultOnline)
+    }
+
+    @Test
+    fun aDayThatFailedInABatchIsAskedAboutAgain() = runTest {
+        val web = Web { Answer(status = HttpStatusCode.NotFound) }
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":["2026-12-26"]}"""
+        web.repository.resortPrices("northstar-california", listOf(20_813, 20_814))
+        web.browser.answer = """{"2026-12-27":[200,280,140,190],"checked":["2026-12-27"]}"""
+        val prices = web.repository.resortPrices("northstar-california", listOf(20_813, 20_814))
+        assertEquals(200.0, prices?.days?.get(20_814)?.adultOnline)
+        assertEquals(2, web.browser.asked.size)
     }
 
     @Test
     fun aNewDayAddsToTheOnesAlreadyInHand() = runTest {
         val web = Web { Answer(status = HttpStatusCode.NotFound) }
-        web.browser.answer = """{"2026-12-26":[205,284,144,199]}"""
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":["2026-12-26"]}"""
         web.repository.resortPrices("northstar-california", listOf(20_813))
-        web.browser.answer = """{"2026-12-27":[200,280,140,190]}"""
+        web.browser.answer = """{"2026-12-27":[200,280,140,190],"checked":["2026-12-27"]}"""
         val prices = web.repository.resortPrices("northstar-california", listOf(20_814))
         assertEquals(setOf(20_813, 20_814), prices?.days?.keys)
         assertEquals(2, web.browser.asked.size)
@@ -318,7 +348,7 @@ class SkiRepositoryImplTest {
     @Test
     fun aShopThatRefusesLeavesWhatWasKept() = runTest {
         val web = Web { Answer(status = HttpStatusCode.NotFound) }
-        web.browser.answer = """{"2026-12-26":[205,284,144,199]}"""
+        web.browser.answer = """{"2026-12-26":[205,284,144,199],"checked":["2026-12-26"]}"""
         web.repository.resortPrices("northstar-california", listOf(20_813))
         web.browser.answer = null
         web.clock.seconds += 2 * 86_400

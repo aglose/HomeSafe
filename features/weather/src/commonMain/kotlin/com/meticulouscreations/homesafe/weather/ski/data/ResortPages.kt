@@ -413,6 +413,14 @@ internal object ResortPages {
         }.toMap()
     }
 
+    /** The days a Vail shop's script got an answer for, whatever the answer was. */
+    fun checkedDays(answer: String): Set<Int> {
+        val root = runCatching { json.parseToJsonElement(answer) }.getOrNull() as? JsonObject ?: return emptySet()
+        return (root["checked"] as? JsonArray).orEmpty().mapNotNullTo(HashSet()) { date ->
+            (date as? JsonPrimitive)?.contentOrNull?.let { runCatching { LocalDate.parse(it).toEpochDays().toInt() }.getOrNull() }
+        }
+    }
+
     // ---- Small things ---------------------------------------------------------------------------------
 
     /** "Updated November 01, 2026 at 10:20 AM PST". The zone named is the resort's, which is the one given. */
@@ -483,11 +491,18 @@ internal object ResortScripts {
           var dates = ${dates.joinToString(",", "[", "]") { "'$it'" }};
           if (first && dates.indexOf(first) < 0) dates.push(first);
           var out = {};
+          var checked = [];
           var next = function (i) {
-            if (i >= dates.length) { window.__ski = JSON.stringify(out); return; }
+            if (i >= dates.length) {
+              out.checked = checked;
+              window.__ski = JSON.stringify(out);
+              return;
+            }
             fetch('/api/LiftAccessApi/GetLiftTickets/' + dates[i] + '/true/All/' + model.LiftTicketComponentId, {
               headers: { __RequestVerificationToken: token.value, Accept: 'application/json' }
             }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+              // A day that answered, priced or not: one that failed gets asked about again.
+              if (j && j.LiftTickets) checked.push(dates[i]);
               var one = ((j && j.LiftTickets) || []).filter(function (t) { return t.NumberOfDays === 1 && t.IsProductAvailable; });
               var of = function (age) { return one.filter(function (t) { return t.AgeCategoryDisplay === age; })[0] || {}; };
               var a = of('Adult'), c = of('Child');

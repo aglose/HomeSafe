@@ -234,6 +234,8 @@ class SkiViewModel(
         launch {
             repository.forecast(ref, facts, force).getOrNull()?.let { forecast -> change(ref) { it.copy(forecast = forecast) } }
             change(ref) { it.copy(loading = false) }
+            // An open page's drives go by the mountain's clock, so they follow its forecast, and needn't wait on anything slower.
+            if (includeCams) planDrives(ref, from)
         }
         launch {
             val alerts = repository.alerts(facts)
@@ -244,9 +246,9 @@ class SkiViewModel(
                 val to = SkiPoint(facts.latitude, facts.longitude)
                 val drive = repository.drive(from, to)
                 drive.getOrNull()?.let { road ->
-                    change(ref) { it.copy(drive = road) }
+                    // Published together: a drive shown before its chain check is in would read as "no chain controls".
                     val chains = repository.chainControls(road.path)
-                    change(ref) { it.copy(chains = chains.controls, chainsUnavailable = !chains.complete) }
+                    change(ref) { it.copy(drive = road, chains = chains.controls, chainsUnavailable = !chains.complete) }
                 }
                 drive.exceptionOrNull()?.let { e -> change(ref) { entry -> if (entry.drive == null) entry.copy(error = e.orFallback(Res.string.ski_error_drive)) else entry } }
             }
@@ -280,7 +282,6 @@ class SkiViewModel(
                 }
                 launch { loadResort(ref, from, force = false, includeCams = true) }
             }
-            planDrives(ref, from)
         }
     }
 
@@ -384,7 +385,12 @@ class SkiViewModel(
     }
 
     fun setOrigin(origin: SkiOrigin) {
-        viewModelScope.launch { repository.updatePlan { it.copy(origin = origin) } }
+        viewModelScope.launch {
+            // Choosing it is the moment to ask: nothing else will, and without it this would quietly go on starting from home.
+            if (origin == SkiOrigin.HERE) start.requestAccess()
+            startingFor = null
+            repository.updatePlan { it.copy(origin = origin) }
+        }
     }
 
     /** What the household pays a day at a resort; null goes back to the listed price. */
