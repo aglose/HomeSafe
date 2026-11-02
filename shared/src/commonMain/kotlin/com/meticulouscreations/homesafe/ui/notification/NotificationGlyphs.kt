@@ -113,6 +113,10 @@ enum class NotificationGlyph(val resourceName: String, val layers: List<GlyphLay
         "ic_notification_weather_warning",
         listOf(line("M12,3.5L21.5,20H2.5z"), line("M12,10v4.5", accent = true), fill(dot(12f, 17.2f, 1.1f), accent = true)),
     ),
+    CHAINS(
+        "ic_notification_weather_chains",
+        listOf(line("M10,13.5a4.5,4.5 0 0,0 6.4,0l3,-3a4.5,4.5 0 0,0 -6.4,-6.4l-1.2,1.2"), line("M14,10.5a4.5,4.5 0 0,0 -6.4,0l-3,3a4.5,4.5 0 0,0 6.4,6.4l1.2,-1.2", accent = true)),
+    ),
 
     // ---- The cameras, and the rest --------------------------------------------------------------
     CAMERA("ic_notification_detection", listOf(fill("M17,10.5V7c0,-0.55 -0.45,-1 -1,-1H4c-0.55,0 -1,0.45 -1,1v10c0,0.55 0.45,1 1,1h12c0.55,0 1,-0.45 1,-1v-3.5l4,4v-11l-4,4z"))),

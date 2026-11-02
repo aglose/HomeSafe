@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.weather.data.MutableClock
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDriveSource
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
@@ -249,6 +250,41 @@ class SkiViewModelTest {
         val picked = vm.uiState.value.todayEpochDay + 2
         vm.pickDay(picked)
         assertEquals(picked, vm.uiState.value.tripEpochDay)
+    }
+
+    @Test
+    fun aDayPickedIsKeptForTheRelayAndForNextTime() = skiTest { vm, ski, _ ->
+        val picked = vm.uiState.value.todayEpochDay + 2
+        vm.pickDay(picked)
+        runCurrent()
+        assertEquals(picked, ski.planFlow.value.tripEpochDay)
+    }
+
+    @Test
+    fun aDayPickedLastTimeComesBackUnlessItHasGoneBy() = skiTest { vm, ski, _ ->
+        val today = vm.uiState.value.todayEpochDay
+        val saturday = vm.uiState.value.tripEpochDay
+        ski.planFlow.value = ski.planFlow.value.copy(tripEpochDay = today - 1)
+        runCurrent()
+        assertEquals(saturday, vm.uiState.value.tripEpochDay)
+        ski.planFlow.value = ski.planFlow.value.copy(tripEpochDay = today + 3)
+        runCurrent()
+        assertEquals(today + 3, vm.uiState.value.tripEpochDay)
+    }
+
+    @Test
+    fun theTabComingUpIsWhatLetsItsNotificationsStart() = skiTest { vm, ski, _ ->
+        assertFalse(ski.planFlow.value.tabOpened)
+        vm.setActive(true)
+        runCurrent()
+        assertTrue(ski.planFlow.value.tabOpened)
+    }
+
+    @Test
+    fun theSwitchesAreKept() = skiTest { vm, ski, _ ->
+        vm.setAlerts(SkiAlerts(bigSnow = false))
+        runCurrent()
+        assertEquals(SkiAlerts(bigSnow = false), ski.planFlow.value.alerts)
     }
 
     @Test

@@ -19,6 +19,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherPlacesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherPreferencesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticeSync
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -68,6 +69,8 @@ class WeatherAlertCheck(
     /** Settings → Notifications' "Mute all notifications": while it's on, a check posts nothing. */
     private val mute: NotificationMute,
     private val claims: WeatherSoonClaims,
+    /** Keeps the relay told what the Ski tab follows, which is all its notifications need from here. */
+    private val skiSync: SkiNoticeSync,
 ) {
     private val running = Mutex()
     private var watching = false
@@ -75,6 +78,7 @@ class WeatherAlertCheck(
     /** Called once at launch: makes the background job match the notification switch, and calls off reminders the switches turn off. */
     fun start() {
         appScope.launch { runCatching { syncSchedule() } }
+        skiSync.watch()
         // Called from each root that comes up (the iOS sign-in, the native shell): one collector will do.
         if (watching) return
         watching = true
@@ -93,6 +97,7 @@ class WeatherAlertCheck(
 
     /** Checks now; returns how many notifications were posted. Never throws: a failed check is tried again next time. */
     suspend fun run(): Int = running.withLock {
+        runCatching { skiSync.sync() }
         runCatching { check() }.getOrDefault(0)
     }
 

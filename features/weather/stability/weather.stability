@@ -995,7 +995,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.WeatherNav(selected: com
     - vertical: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUnitsChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherUnits, kotlin.Unit>, onNoticesChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onStillSkyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAllowNotifications: kotlin.Function0<kotlin.Unit>, onSendSample: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUnitsChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherUnits, kotlin.Unit>, onNoticesChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onStillSkyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAllowNotifications: kotlin.Function0<kotlin.Unit>, onSendSample: kotlin.Function0<kotlin.Unit>, skiAlerts: com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts, onSkiAlertsChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1006,6 +1006,8 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(s
     - onStillSkyChange: STABLE (function type)
     - onAllowNotifications: STABLE (function type)
     - onSendSample: STABLE (function type)
+    - skiAlerts: STABLE (marked @Stable or @Immutable)
+    - onSkiAlertsChange: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable

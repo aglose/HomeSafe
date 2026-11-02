@@ -381,6 +381,20 @@ enum class SkiOrigin {
     HERE,
 }
 
+/** Which of the Ski tab's notifications are wanted. All on to begin with, as the weather's others are. */
+@Immutable
+@Serializable
+data class SkiAlerts(
+    /** A big snowfall forecast for the coming weekend, or the day picked. */
+    val bigSnow: Boolean = true,
+    /** A resort's own site reporting fresh snow. */
+    val freshSnow: Boolean = true,
+    /** Chain controls on the road to a resort. */
+    val chains: Boolean = true,
+) {
+    val any: Boolean get() = bigSnow || freshSnow || chains
+}
+
 /** Who's going and from where: what the household has set up on the Ski tab, kept between runs. */
 @Immutable
 @Serializable
@@ -393,6 +407,11 @@ data class SkiPlan(
     val origin: SkiOrigin = SkiOrigin.HOME,
     /** What the household actually pays a day at a resort, by its slug, where that isn't the listed price (or none is listed). */
     val ownPrices: Map<String, Int> = emptyMap(),
+    /** The day last picked on the strip. Once it's past, it means nothing and the coming Saturday stands in. */
+    val tripEpochDay: Int? = null,
+    /** The tab has been opened on this device: a resort it's only following by default says nothing until then. */
+    val tabOpened: Boolean = false,
+    val alerts: SkiAlerts = SkiAlerts(),
 ) {
     fun follows(slug: String): Boolean = resorts.any { it.slug == slug }
 

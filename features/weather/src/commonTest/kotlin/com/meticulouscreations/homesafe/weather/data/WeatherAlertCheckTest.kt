@@ -22,6 +22,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
 import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
 import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticeSync
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_minutes_short
 import homesafe.shared.generated.resources.weather_notice_place_home
@@ -96,7 +97,7 @@ class WeatherAlertCheckTest {
             }
         }
         val claims = FakeClaims()
-        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope, mute, claims)
+        val check = WeatherAlertCheck(repository, locator, places, preferences, ledger, notifier, scheduler, KeyedTextLoader, clock, scope, mute, claims, SkiNoticeSync.Never)
     }
 
     private fun TestScope.harness(report: WeatherReport? = stormyReport()) = Harness(backgroundScope, now).apply {

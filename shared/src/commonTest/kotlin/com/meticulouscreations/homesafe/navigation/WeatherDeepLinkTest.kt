@@ -56,4 +56,23 @@ class WeatherDeepLinkTest {
         WeatherDeepLinks.consume(second)
         assertNull(WeatherDeepLinks.pending.value)
     }
+
+    @Test
+    fun aSkiLinkKeepsItsDayAndItsResort() {
+        val link = WeatherDeepLink(view = WeatherDeepLink.View.SKI, day = 20764, resort = "palisades-tahoe")
+        assertEquals(link, WeatherDeepLink.fromUri(link.toUri()))
+        assertEquals(link, WeatherDeepLink.from { link.toMap()[it] })
+    }
+
+    /** What a tap on an iPhone's banner reads, in the words `ski_data` in relay/relay.py sends it. */
+    @Test
+    fun theRelaysPushReadsAsASkiLink() {
+        val data = mapOf("homesafe_weather" to "1", "view" to "ski", "day" to "20764", "resort" to "kirkwood")
+        assertEquals(WeatherDeepLink(view = WeatherDeepLink.View.SKI, day = 20764, resort = "kirkwood"), WeatherDeepLink.from { data[it] })
+    }
+
+    @Test
+    fun aDayThatIsntOneIsNoDay() {
+        assertEquals(null, WeatherDeepLink.from { if (it == "day") "soon" else null }.day)
+    }
 }

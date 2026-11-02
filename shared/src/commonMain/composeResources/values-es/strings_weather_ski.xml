@@ -186,4 +186,31 @@
     <string name="ski_tier_weekend">Sábados y festivos</string>
     <string name="ski_tier_non_peak">Días de temporada baja</string>
     <string name="ski_tier_peak">Días de temporada alta</string>
+    <string name="ski_notice_snow_title">Mucha nieve para el %1$s</string>
+    <string name="ski_notice_snow_range">%1$s: %2$s; los modelos dicen de %3$s a %4$s</string>
+    <string name="ski_notice_resort_amount">%1$s %2$s</string>
+    <plurals name="ski_notice_and_more">
+        <item quantity="one">y %1$d más</item>
+        <item quantity="other">y %1$d más</item>
+    </plurals>
+    <string name="ski_notice_fresh_title_one">Nieve nueva en %1$s</string>
+    <plurals name="ski_notice_fresh_title_many">
+        <item quantity="one">Nieve nueva en %1$d estación</item>
+        <item quantity="other">Nieve nueva en %1$d estaciones</item>
+    </plurals>
+    <string name="ski_notice_fresh_body_one">%1$s en el último día, según su propio parte</string>
+    <string name="ski_notice_fresh_body_many">%1$s en el último día, según sus propios partes</string>
+    <string name="ski_notice_chains_title_r1">Control de cadenas en la %1$s</string>
+    <string name="ski_notice_chains_title_r2">Cadenas obligatorias en la %1$s</string>
+    <string name="ski_notice_chains_title_r3">Cadenas para todos los vehículos en la %1$s</string>
+    <string name="ski_notice_chains_road">%1$s en la %2$s, en %3$s, de camino a %4$s</string>
+    <string name="ski_notice_list_separator">, </string>
+    <string name="ski_settings_notices_title">Esquí</string>
+    <string name="ski_settings_notices_snow">Mucha nieve en camino</string>
+    <string name="ski_settings_notices_snow_body">Unos 30 cm o más previstos en una estación que sigues, para el próximo fin de semana o el día que elegiste. Una vez por cada uno</string>
+    <string name="ski_settings_notices_fresh">Nieve nueva</string>
+    <string name="ski_settings_notices_fresh_body">15 cm o más en un día, según lo publica en su propia web una estación que sigues</string>
+    <string name="ski_settings_notices_chains">Control de cadenas</string>
+    <string name="ski_settings_notices_chains_body">En la carretera de casa a una estación que sigues. Solo en California y con tu casa configurada</string>
+    <string name="ski_settings_notices_note">Para las estaciones de tu pestaña Esquí, estés donde estés. Tu servidor de casa las vigila; se le dicen las estaciones, no dónde estás.</string>
 </resources>

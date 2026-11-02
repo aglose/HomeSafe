@@ -18,14 +18,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         IosAppKt.onApnsToken(token: deviceToken.map { String(format: "%02x", $0) }.joined())
     }
 
-    /// A push that asks to wake the app. Only the relay's "rain on the way" does (`content-available`,
-    /// see "rain soon" in relay/relay.py): iOS has drawn its banner already, and the shared code gives
-    /// it the picture the app's own notifications wear. iOS decides whether this runs at all.
+    /// A push that asks to wake the app. Only the relay's "rain on the way" and its skiing ones do
+    /// (`content-available`, see "rain soon" and "ski notices" in relay/relay.py): iOS has drawn the
+    /// banner already, and the shared code gives it the words and picture the app's own notifications
+    /// wear. iOS decides whether this runs at all.
     func application(
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        if let payload = userInfo["ski_notice"] as? String, let key = userInfo["notif_id"] as? String {
+            IosAppKt.onSkiPush(payload: payload, key: key) { completionHandler(.newData) }
+            return
+        }
         guard let payload = userInfo["weather_soon"] as? String, let key = userInfo["notif_id"] as? String else {
             completionHandler(.noData)
             return

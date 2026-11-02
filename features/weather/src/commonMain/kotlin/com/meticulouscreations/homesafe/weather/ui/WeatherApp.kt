@@ -280,6 +280,7 @@ fun WeatherApp(
             onPass = skiViewModel::setPass,
             onOrigin = skiViewModel::setOrigin,
             onOwnPrice = skiViewModel::setOwnPrice,
+            onAlerts = skiViewModel::setAlerts,
         )
     }
     // The mountain cameras come through the weather's own client, so Frigate's cookies stay home.
@@ -316,6 +317,7 @@ fun WeatherAppContent(
     // its warning wait in [wanted] for the forecast that holds them, which on a cold start is
     // still on its way.
     var wanted by remember { mutableStateOf<WeatherDeepLink?>(null) }
+    var wantedResort by remember { mutableStateOf<String?>(null) }
     val shown by rememberUpdatedState(onShowLink)
     LaunchedEffect(link) {
         val asked = link ?: return@LaunchedEffect
@@ -324,9 +326,18 @@ fun WeatherAppContent(
             WeatherDeepLink.View.TODAY -> WeatherTab.TODAY
             WeatherDeepLink.View.FORECAST -> WeatherTab.FORECAST
             WeatherDeepLink.View.RADAR -> WeatherTab.RADAR
+            WeatherDeepLink.View.SKI -> WeatherTab.SKI
         }
         wanted = asked
+        asked.day?.let(skiActions.onPickDay)
+        wantedResort = asked.resort
         shown()
+    }
+    // A resort a notification was about. It waits for the plan, which on a cold start is still being read.
+    LaunchedEffect(wantedResort, ski.plan.resorts) {
+        val ref = ski.plan.resorts.firstOrNull { it.slug == wantedResort } ?: return@LaunchedEffect
+        wantedResort = null
+        pages += WeatherPage.SkiResort(ref)
     }
     // Read here, not inside the effect: a launch acts on the link it was launched for, once.
     val waiting = wanted
@@ -560,6 +571,8 @@ fun WeatherAppContent(
                         onStillSkyChange = actions.onStillSkyChange,
                         onAllowNotifications = actions.onAllowNotifications,
                         onSendSample = actions.onSendSample,
+                        skiAlerts = ski.plan.alerts,
+                        onSkiAlertsChange = skiActions.onAlerts,
                     )
 
                     is WeatherPage.Alert -> {

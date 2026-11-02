@@ -98,6 +98,32 @@ private fun NoticeRainSoonPreview() {
 
 @Preview
 @Composable
+private fun NoticeSkiBigSnowPreview() {
+    NoticeCard(
+        WeatherNoticeArt(
+            icon = WeatherNoticeIcon.SNOW,
+            caption = "Palisades Tahoe 18 in",
+            headline = "Saturday",
+        ),
+        heightDp = WeatherNoticePainter.STRIP_HEIGHT_DP,
+    )
+}
+
+@Preview
+@Composable
+private fun NoticeSkiChainsPreview() {
+    NoticeCard(
+        WeatherNoticeArt(
+            icon = WeatherNoticeIcon.CHAINS,
+            caption = "Donner Summit",
+            headline = "I-80",
+        ),
+        heightDp = WeatherNoticePainter.STRIP_HEIGHT_DP,
+    )
+}
+
+@Preview
+@Composable
 private fun NoticeSnowSoonNightPreview() {
     NoticeCard(
         WeatherNoticeArt(

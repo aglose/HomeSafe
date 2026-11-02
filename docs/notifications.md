@@ -234,3 +234,8 @@ the push token like every other, so with the cameras' switch off, or everything 
 has nowhere to send it, and the phone's own check is all there is. The push is `weather_soon=<a
 small forecast>`, `notif_id=soon:<hour>`; Android posts it through the weather's notifier, and
 iOS draws its text and then, if it wakes the app, the weather's card.
+
+So do the Ski tab's three, wherever the phone is ([weather.md](weather.md#ski-notifications)), and
+on the same terms: the weather's and the Ski tab's switches govern them, and without a push token
+the relay has nowhere to send them. There's no check on the phone behind them. The push is
+`ski_notice=<what was decided>`, `notif_id=ski:<kind>:…`.
