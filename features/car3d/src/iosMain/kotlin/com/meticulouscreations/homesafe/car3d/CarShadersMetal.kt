@@ -174,7 +174,7 @@ fragment float4 carSurface(
         float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
         float3 r = reflect(-v, n);
         float horizon = clamp(1.0 + 1.3 * dot(r, normalize(in.normal)), 0.0, 1.0);
-        float3 coat = sky(r, u.coatRoughness.x, environment, s, u) * specularOcclusion(nv, occlusion, u.coatRoughness.x) * horizon * horizon;
+        float3 coat = sky(r, u.coatRoughness.x, environment, s, u) * smoothstep(0.15, 0.65, in.occlusion) * horizon * horizon;
         color = mix(color, color * (1.0 - fresnel) * (1.0 - fresnel) + coat * fresnel, u.coat.x);
     }
     return float4(toScreen(color + u.emissive.xyz, u), 1.0);
@@ -217,8 +217,8 @@ fragment float4 carShadow(
     sampler s [[sampler(0)]]
 ) {
     float reach = length(in.uv - 0.5) * 2.0;
-    float dark = clamp((1.0 - shadow.sample(s, in.uv).r - 0.06) / 0.94, 0.0, 1.0) * u.strength.x * smoothstep(0.92, 0.5, reach);
-    float pool = u.floorAmount.x * smoothstep(1.0, 0.25, reach);
+    float dark = clamp((1.0 - shadow.sample(s, in.uv).r - 0.06) / 0.94, 0.0, 1.0) * u.strength.x * (1.0 - smoothstep(0.5, 0.92, reach));
+    float pool = u.floorAmount.x * (1.0 - smoothstep(0.25, 1.0, reach));
     float3 floorColor = float3(0.235, 0.245, 0.26) * pool * (1.0 - dark);
     return float4(floorColor, max(pool, dark));
 }

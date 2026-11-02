@@ -52,13 +52,19 @@ internal actual fun CarSurface(model: CarModel, orbit: CarOrbitState, onFirstFra
         val assets = loadCarAssets(model)
         val executor = Executors.newSingleThreadExecutor { Thread(it, "car-gl").apply { isDaemon = true } }
         val gpu = executor.asCoroutineDispatcher()
-        val (offscreen, scene) = withContext(gpu) {
-            val context = MacOffscreen(carTier.samples, supersample = 2)
-            context to CarScene(DesktopGl(), model.look, assets, carTier)
-        }
+        // Kept here as they are made, on the GPU thread, so a cancellation that discards the
+        // result of the block below still leaves them for the cleanup to find.
+        var made: MacOffscreen? = null
+        var madeScene: CarScene? = null
         var pixels: ByteBuffer? = null
         var bytes = ByteArray(0)
         try {
+            withContext(gpu) {
+                made = MacOffscreen(carTier.samples, supersample = 2)
+                madeScene = CarScene(DesktopGl(), model.look, assets, carTier)
+            }
+            val offscreen = checkNotNull(made)
+            val scene = checkNotNull(madeScene)
             // Drawn on the GL thread, shown from this one. Conflated, not cancelled: while a drag
             // outruns the GPU it shows each frame that finishes, and skips to the newest camera.
             snapshotFlow { size to orbit.camera }.conflate().collect { (shown, camera) ->
@@ -82,8 +88,8 @@ internal actual fun CarSurface(model: CarModel, orbit: CarOrbitState, onFirstFra
             }
         } finally {
             withContext(NonCancellable + gpu) {
-                scene.release()
-                offscreen.close()
+                madeScene?.release()
+                made?.close()
             }
             executor.shutdown()
         }

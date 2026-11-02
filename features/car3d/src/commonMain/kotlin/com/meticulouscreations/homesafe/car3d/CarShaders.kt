@@ -218,9 +218,9 @@ void main() {
     float reach = length(vUv - 0.5) * 2.0;
     // The bake's far edge is a faint haze that would show as a square round a car on a map: only
     // the shadow near the car is kept.
-    float dark = clamp((1.0 - texture(uShadow, vUv).r - 0.06) / 0.94, 0.0, 1.0) * uStrength * smoothstep(0.92, 0.5, reach);
+    float dark = clamp((1.0 - texture(uShadow, vUv).r - 0.06) / 0.94, 0.0, 1.0) * uStrength * (1.0 - smoothstep(0.5, 0.92, reach));
     // A pool of light on a showroom floor, fading out into whatever the view sits on. Premultiplied.
-    float pool = uFloor * smoothstep(1.0, 0.25, reach);
+    float pool = uFloor * (1.0 - smoothstep(0.25, 1.0, reach));
     vec3 floorColor = vec3(0.235, 0.245, 0.26) * pool * (1.0 - dark);
     fragColor = vec4(floorColor, max(pool, dark));
 }

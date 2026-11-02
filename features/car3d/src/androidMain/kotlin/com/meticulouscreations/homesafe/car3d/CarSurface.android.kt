@@ -138,11 +138,12 @@ private class CarTextureView(context: Context, private val firstFrame: () -> Uni
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
         // Waits for the GL thread: after this returns the surface is gone.
         val done = java.util.concurrent.CountDownLatch(1)
-        handler.post {
+        // A rejected post means the thread already quit (close() released the GL first): nothing to wait for.
+        val posted = handler.post {
             releaseGl()
             done.countDown()
         }
-        done.await()
+        if (posted) done.await()
         return true
     }
 
