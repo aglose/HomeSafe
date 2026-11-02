@@ -221,7 +221,8 @@ class SkiRepositoryImpl(
             if (table.isEmpty() && checked.isEmpty()) return@withLock held
             val prices = SkiResortPrices(
                 pageUrl = site.ticketsUrl.orEmpty(),
-                days = fresh?.days.orEmpty() + dated,
+                // A day the shop was asked about and now has no price for is off sale: its old price goes.
+                days = fresh?.days.orEmpty().filterKeys { it !in checked } + dated,
                 tiers = table.ifEmpty { fresh?.tiers.orEmpty() },
                 fetchedAtEpochSeconds = now(),
                 // Only if the shop answered at all: a browser that got nowhere has learned nothing about these days.

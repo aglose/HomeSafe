@@ -106,6 +106,9 @@ class SkiViewModel(
     private var startingPoint: SkiPoint? = null
     private var startingFor: SkiOrigin? = null
 
+    /** The start the drives and chain checks on the entries were worked out from. */
+    private var drivenFrom: SkiOrigin? = null
+
     private fun now(): Long = clock.now().epochSeconds
 
     /** The clock moved on, and with it the day: a trip day that has gone by moves up to the next Saturday. */
@@ -165,7 +168,17 @@ class SkiViewModel(
         loadJob = viewModelScope.launch {
             val plan = _uiState.value.plan
             val from = startingPoint(plan.origin)
-            _uiState.update { it.copy(hasStart = from != null, startCity = from?.city) }
+            // Drives from another start aren't this one's: they go, so a failed lookup shows nothing rather than the old road.
+            val startChanged = drivenFrom != null && drivenFrom != plan.origin
+            drivenFrom = plan.origin
+            _uiState.update { state ->
+                val entries = if (startChanged) {
+                    state.entries.mapValues { (_, e) -> e.copy(drive = null, driveOut = null, driveBack = null, chains = emptyList(), chainsUnavailable = false) }
+                } else {
+                    state.entries
+                }
+                state.copy(entries = entries, hasStart = from != null, startCity = from?.city)
+            }
             coroutineScope {
                 launch { loadReports(plan.resorts, force) }
                 launch { loadPasses(plan.passes) }

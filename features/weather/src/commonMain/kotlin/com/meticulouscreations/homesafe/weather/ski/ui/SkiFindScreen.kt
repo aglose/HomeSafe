@@ -61,6 +61,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlanner
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiRegion
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiTicketPrice
 import com.meticulouscreations.homesafe.weather.ui.PillButton
 import com.meticulouscreations.homesafe.weather.ui.WeatherCard
 import com.meticulouscreations.homesafe.weather.ui.WeatherCardShape
@@ -244,13 +245,13 @@ internal fun SkiRegionScreen(
             }
         }
         items(reports, key = { it.slug }, contentType = { "row" }) { report ->
-            RegionRow(report, load?.prices?.get(report.slug)?.adultDay, state, actions, onOpenResort, Modifier.cardWidth())
+            RegionRow(report, load?.prices?.get(report.slug), state, actions, onOpenResort, Modifier.cardWidth())
         }
     }
 }
 
 @Composable
-private fun RegionRow(report: SkiReport, adultPrice: Double?, state: SkiUiState, actions: SkiActions, onOpenResort: (SkiResortRef) -> Unit, modifier: Modifier = Modifier) {
+private fun RegionRow(report: SkiReport, listed: SkiTicketPrice?, state: SkiUiState, actions: SkiActions, onOpenResort: (SkiResortRef) -> Unit, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
     val units = WeatherTheme.units
     val ref = report.ref
@@ -272,7 +273,7 @@ private fun RegionRow(report: SkiReport, adultPrice: Double?, state: SkiUiState,
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SkiPill(report.stateText(state.todayEpochDay, state.nowEpochSeconds).resolve(), report.stateColor(state.nowEpochSeconds))
-                    adultPrice?.let { Text(SkiPlanner.money(it), style = WeatherTheme.type.label, color = colors.onSkyMuted) }
+                    listed?.adultDay?.let { Text(SkiPlanner.money(it, listed.currency), style = WeatherTheme.type.label, color = colors.onSkyMuted) }
                 }
             }
             val label = stringResource(if (followed) Res.string.ski_following_resort else Res.string.ski_follow_resort, report.name)
