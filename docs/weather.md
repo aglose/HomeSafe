@@ -10,6 +10,7 @@ that tell you rain is coming.
 | **Today** | The temperature and what the day is doing, written straight on the sky. Then cards: any government warning in force, today and tomorrow as two tiles (only when either has weather worth planning around), the next wet day after that, the next two hours by the quarter hour (only when rain is near), the next day hour by hour, the best time to be outside, a still of the radar, and the details: UV, wind, sun, moon, humidity, pressure, precipitation, air quality, visibility |
 | **Forecast** | The ten days as a strip to scroll along, a column a day: its date and sky, its high and low as figures on the week's two curves, what falls and how hard it blows, with a wet day lit from top to bottom. Then the list: each day's sky and range against the week's, and for a wet day a lane of its hours showing when it falls, with how much and how likely. A day opens in place into its own sky, its hours and its numbers; tapping one in the strip opens it in the list and sets it in a blob of clear jelly that slides, stretches and wobbles from day to day |
 | **Radar** | A map the height of the screen with the radar loop on it: the past two hours, and over the US the next two as a model's forecast. Play, scrub, pinch, double-tap |
+| **Ski** | Planning a day on the mountain: the resorts you follow compared for the day you pick, by their own snow reports, the weather, the drive and what tickets cost that day. See [The Ski tab](#the-ski-tab) |
 
 Swipe sideways on Today or Forecast to move between places. The top bar's name opens **Places**
 (search, your cities under their own skies, a tap to add a popular one); the sliders open
@@ -114,6 +115,92 @@ The last position is kept on the phone (so there is somewhere to forecast for wh
 had) and goes nowhere but, rounded as above, to Open-Meteo and the National Weather Service. The
 permission prompts on iOS say so. That includes the relay: it forecasts for home, which it already
 holds for the geofences, and is never told where a phone is.
+
+## The Ski tab
+
+Pick a day from the strip (it starts on the coming Saturday; each day's column is the most snow any
+followed resort expects then) and the followed resorts are compared for it. The best-looking comes
+first with the reasons; under it the rest, each with the last three days' snow, what the day will
+have by then, the drive and the cost; then the regions being watched. A resort that won't be running
+that day goes to the bottom, the first to open first. Pull to refresh, or on a wide window use the
+refresh button in the title bar, as a mouse can't pull.
+
+The search icon looks through regions and passes, so a resort anywhere can be starred onto the tab
+and a whole region watched. The sliders hold who's going, which passes they hold and where drives
+start. A resort's own page has the report, the hours of the chosen day and the ten days ahead, the
+road, the tickets, the cameras and the mountain's numbers.
+
+`SkiPlanner` is the comparison, and pure: snow in centimetres over the three days up to the trip
+(capped at 50), less for rain at the base, gusts that close lifts, hours on the road, chain controls
+and ticket price. It's a sort order and nothing more; the numbers behind it are all on the card.
+
+### Where its data comes from
+
+| What | From | Notes |
+|---|---|---|
+| **Snow totals, depths, lifts and runs open** | **The resort's own website**, for the 32 in `ResortSite.ALL` | Each family of sites is read its own way (`ResortPages`): Vail's write theirs into the page as `FR.snowReportData`; Alterra's come from the feed their pages draw on (`v4.mtnfeed.com` for the token, fetched each time, then `mtnpowder.com`); POWDR's from a small API; the rest from their plain pages. Kept 15 minutes. The card says which site it's from |
+| **Ticket prices** | **The resort's own shop or rate table** | See below. Kept a day |
+| Everything else about a resort, and any resort not in that list | [OnTheSnow](https://www.onthesnow.com) | Opening dates, cameras, elevations, coordinates, and for other resorts its report and listed prices, read from its pages (`OnTheSnowPages`, `NextFlightRows`), since it has no API. The card says when a figure is only a listing |
+| Mountain forecast | [Open-Meteo](https://open-meteo.com) | Asked at the summit's and the base's own heights, from the blend and from ECMWF and GFS, whose spread is the range shown. Rain at the base and the freezing level come from here too. Kept an hour |
+| Drive times | [OSRM](https://project-osrm.org) over OpenStreetMap, or [Google Routes](https://developers.google.com/maps/documentation/routes) with the household's Google key (see [key-vault.md](key-vault.md)) | OSRM knows no traffic and runs long over mountain roads, so its time is labelled a rough estimate. Google is used when the key is in the vault and the Routes API is enabled for it, and is what makes the 7 AM out and 4 PM back figures possible, by the resort's own clock on that date. A key refused falls back for the session; any other failure falls back for that drive only. Both are told the start to the hundredth of a degree |
+| Chain controls | [Caltrans](https://cwwp2.dot.ca.gov/documentation/cc/cc.htm) | California only, one file per district; only those a route runs through are read, and a checkpoint counts if the route passes within 1.5 km of it. A file that can't be read is never an all-clear: the last one read stays, and the card says it may be out of date. Outside California the card says it doesn't know |
+| Warnings at the resort | National Weather Service | As for any place |
+
+### Ticket prices
+
+Most big mountains price by the date, so what a ticket costs depends on the day being planned for.
+The cost on a card is, in order: nothing if a pass held covers it; what the household set for that
+resort; **the resort's price for that date**; **its own rate table**; and only then OnTheSnow's
+listing, which can be a season old and is labelled as listed.
+
+| Sites | How | Gives |
+|---|---|---|
+| Vail's (Heavenly, Northstar, Kirkwood, and so on) | `SkiBrowser`, `ResortScripts.vail` | Online and window prices, adult and child, for each day asked about (the ten that can be chosen, and the first on sale) |
+| The shop platform of Alterra's and POWDR's mountains (Palisades, Winter Park, Boreal) | `SkiBrowser`, `ResortScripts.shop` | The season's calendar at once, adult and child, online and base price |
+| Sugar Bowl, Sierra-at-Tahoe, China Peak, Donner Ski Ranch, Boreal's starting price | A plain page | Rates by kind of day. Sierra doesn't say which dates are peak, so a weekend is taken as one; Sugar Bowl's table has Sunday with its cheaper days. Sugar Bowl's, China Peak's and Boreal's online figures are where prices *start*, so a cost from them reads "From" |
+
+Those shops turn away anything but a page of their own: Vail's sit behind Akamai and a Queue-it
+waiting room, and the others behind a web application firewall. So **`SkiBrowser`** opens the shop in
+a real browser engine out of sight (a `WebView` on Android, a `WKWebView` on iOS and on the Mac),
+under the engine's own identity, and runs the same requests the page itself makes. It never pretends
+to be anything else: if a site says no, there's no price from it and the card says so. One page at a
+time, and what comes back is kept a day. Anywhere it can't run, or can't finish, the resort's other
+prices stand in, and the card links to the shop.
+
+On a Mac the engine is a small program of its own, `desktopApp/macos/SkiBrowser.swift`, which the app
+carries in its resources as `HomeSafeBrowser` and runs once a page (`SkiBrowser.desktop.kt`): the JVM
+has no web engine, and this one is under 100 KB where bundling one is far more (JavaFX's WebKit is a
+33 MB download before its other modules, and Chromium through JCEF is larger again, with helper apps
+of its own to sign). Being a process apart, anything that goes wrong in it is only a missing price.
+
+The page's window matters. WebKit stops a page's timers while its window can't be seen, and the
+firewall's check in front of Palisades' and Winter Park's shops never finishes without them, though
+Vail's shops don't mind. So the Mac's page is in a real window of a couple of points in the corner
+of the screen, all but transparent, that the mouse goes through, as the iPhone's is. With the Mac's
+screen off or locked it can't be seen either, those shops give nothing, and they're asked again later.
+
+Mammoth, June, Homewood, Diamond Peak, Dodge Ridge, Bear Valley, Tahoe Donner, Mt. Rose and Mt. Shasta
+hadn't published day prices the app can read as of 1 November 2026 (many say "TBD" or "mid-November");
+they show OnTheSnow's listing where it has one and always link to their own page.
+
+### What it can't see
+
+Bear Valley's site disagrees with itself (0" in one place, 227" in another) and Badger Pass publishes
+no snow figures at all; Mt. Shasta's published sheet is empty until its season. Those show OnTheSnow's
+listing. A site that changes shape falls back the same way, and says so.
+
+A report older than a week counts as no report: out of season the numbers on a resort's page are
+last spring's. A site that puts no date on its report goes by when it was last read, so one that has
+stopped answering ages out too. An "open" from an old report doesn't count as running, and the card
+says there's no recent report rather than open or closed. Its opening date is kept, and a date already past says nothing about a closed resort.
+
+Everything is kept in `ski.db` (`SkiDatabase`, one table of JSON by key), including the plan. A
+service that stops answering leaves its last answer on screen; every one of them shows its date.
+
+Drives start from home if the household has one, otherwise from where the device is or last was. A
+device that has known neither, like a Mac nobody has signed in on, goes by the first city added to the
+weather, and says so on the drive and in the setup. A computer can't tell where it is, so its setup
+doesn't offer "Where I am now".
 
 ## Notifications
 
@@ -251,6 +338,11 @@ from it, so a real shower in the last three hours or the quiet hours will hold i
 - `WeatherShadersCompileTest` (JVM) compiles every shader with Skia; `WeatherShadersTest` (Android
   device) compiles them as AGSL on a real Android, where AGSL's own compiler gets the final say.
 - `WeatherAppUiTest` drives the whole app from fixtures.
+- `weather/ski`: the resorts' own sites as they really send them (`ResortPagesTest`), OnTheSnow's
+  page stream, the models' fields and the chain files (`SkiPagesTest`), the comparison and the costs
+  (`SkiPlannerTest`), caching, fallback and what's told to whom (`SkiRepositoryImplTest`), where
+  drives start (`SkiStartingPointTest`), the tab's state (`SkiViewModelTest`), and the Mac's browser
+  against a stand-in for its program (`MacSkiBrowserTest`, desktop only).
 - `relay/test_relay.py` (stdlib only): the relay's reading of a forecast against the same cases as
   the planner's, who is told, when the forecast is asked for, and one shower being said once
   from either end. `WeatherAlertCheckTest` has the other side of that, and reads the same payload.

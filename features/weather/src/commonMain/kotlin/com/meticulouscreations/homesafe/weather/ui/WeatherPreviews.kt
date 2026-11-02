@@ -27,6 +27,7 @@ import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.PrecipSlice
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiFixtures
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_forecast_trend_title
 import kotlinx.coroutines.CoroutineScope
@@ -275,6 +276,13 @@ private fun WeatherDayTimelinePreview() {
 @Composable
 private fun WeatherRadarPreview() {
     WeatherAppContent(WeatherFixtures.state(), NoTiles, WeatherActions(), initialTab = WeatherTab.RADAR)
+}
+
+// The tab as it sits in the app: the nav with all four, the bar over it, the mountain's sky behind.
+@Preview
+@Composable
+private fun WeatherSkiPreview() {
+    WeatherAppContent(WeatherFixtures.state(), NoTiles, WeatherActions(), initialTab = WeatherTab.SKI, ski = SkiFixtures.state())
 }
 
 @Preview

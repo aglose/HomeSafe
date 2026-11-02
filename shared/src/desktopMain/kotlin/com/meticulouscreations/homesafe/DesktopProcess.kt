@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 /** What a finished command gave back. */
-internal class ProcessOutcome(val exitCode: Int, val output: ByteArray, val error: ByteArray)
+class ProcessOutcome(val exitCode: Int, val output: ByteArray, val error: ByteArray)
 
 /**
  * Runs [command] with [input] on its stdin and waits at most [timeoutSeconds] for it, reading its
@@ -16,7 +16,7 @@ internal class ProcessOutcome(val exitCode: Int, val output: ByteArray, val erro
  * Null if it couldn't start or didn't finish in time; either way nothing of it is left running.
  * An interrupt (a cancelled `runInterruptible`) ends it too, and is passed on.
  */
-internal fun runProcess(command: List<String>, input: ByteArray? = null, timeoutSeconds: Long): ProcessOutcome? {
+fun runProcess(command: List<String>, input: ByteArray? = null, timeoutSeconds: Long): ProcessOutcome? {
     val process = try {
         ProcessBuilder(command).start()
     } catch (_: IOException) {
