@@ -40,8 +40,15 @@ for journey in ${JOURNEYS[@]}; do
   # because an agent is told to report an app that dies, not to find out why.
   adb shell pm clear "$APP_ID" > /dev/null
   adb logcat -c
-  adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 > /dev/null
-  sleep 5
+  # `pm clear` tears the old task down in the background, and that can kill the process of a launch
+  # that comes too soon, which leaves the splash icon up with no app behind it. A launch after that
+  # stays up. An app that never does is the app's failure, for the agent to report.
+  for attempt in 1 2 3; do
+    adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 > /dev/null
+    sleep 5
+    adb shell pidof "$APP_ID" > /dev/null && break
+    echo "$name: no app process after launch $attempt"
+  done
 
   claude -p "Run the Android CLI journey in $journey on the connected device. The app $APP_ID is already open in the foreground: do not reinstall, clear or relaunch it. Read $SKILL first, and evaluate the journey exactly as its section on running journey tests describes, driving the device only with the android CLI (android layout, android screen capture and resolve) and adb shell input. The page moves when the keyboard opens, so read android layout again before each tap. It also lists what the keyboard covers, so if the keyboard is over something an action needs, hide it first with adb shell input keyevent KEYCODE_BACK; that is not a failure. Write the result to $result in the skill's markdown format: one '### Action:' heading per action in order, each marked ✅ if it succeeded or ❌ if it failed, and stop at the first failure." \
     --allowedTools "Bash(android *)" "Bash(adb *)" "Read" "Write" \
