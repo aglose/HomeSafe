@@ -270,7 +270,7 @@ private fun RegionRow(report: SkiReport, adultPrice: Double?, state: SkiUiState,
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SkiPill(report.stateText(state.todayEpochDay).resolve(), report.stateColor())
+                    SkiPill(report.stateText(state.todayEpochDay, state.nowEpochSeconds).resolve(), report.stateColor(state.nowEpochSeconds))
                     adultPrice?.let { Text(SkiPlanner.money(it), style = WeatherTheme.type.label, color = colors.onSkyMuted) }
                 }
             }

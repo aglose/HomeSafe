@@ -186,7 +186,8 @@ class SkiViewModel(
     }
 
     private suspend fun startingPoint(origin: SkiOrigin): SkiPoint? {
-        if (startingFor == origin) return startingPoint
+        // Nowhere to start from, or only a city to go by, can be better by the next look: a home set, a city added.
+        if (startingFor == origin && startingPoint != null && startingPoint?.city == null) return startingPoint
         return start.of(origin).also {
             startingPoint = it
             startingFor = origin
@@ -225,8 +226,13 @@ class SkiViewModel(
     /** A resort's page first, as it says where the resort is; then what hangs off that, each in its own time. */
     private suspend fun loadResort(ref: SkiResortRef, from: SkiPoint?, force: Boolean, includeCams: Boolean = false) = coroutineScope {
         change(ref) { it.copy(loading = true) }
-        // The resort's own word on its snow doesn't wait for anything else, and needs nothing else.
+        // The resort's own word on its snow and its prices don't wait for anything else, and need nothing else.
         launch { repository.resortNews(ref.slug, force)?.let { news -> change(ref) { it.copy(news = news) } } }
+        launch {
+            val days = (0 until DAYS_PRICED).map { _uiState.value.todayEpochDay + it }
+            val trip = _uiState.value.tripEpochDay
+            repository.resortPrices(ref.slug, (days + trip).distinct())?.let { prices -> change(ref) { it.copy(prices = prices) } }
+        }
         val page = repository.resortPage(ref, force = force || includeCams)
         page.getOrNull()?.let { loaded -> change(ref) { it.copy(page = loaded, report = it.report ?: loaded.report, error = null) } }
         page.exceptionOrNull()?.let { e -> change(ref) { it.copy(error = e.orFallback(Res.string.ski_error_report)) } }
@@ -240,11 +246,6 @@ class SkiViewModel(
             change(ref) { it.copy(loading = false) }
         }
         launch {
-            val days = (0 until DAYS_PRICED).map { _uiState.value.todayEpochDay + it }
-            val trip = _uiState.value.tripEpochDay
-            repository.resortPrices(ref.slug, (days + trip).distinct())?.let { prices -> change(ref) { it.copy(prices = prices) } }
-        }
-        launch {
             val alerts = repository.alerts(facts)
             change(ref) { it.copy(alerts = alerts) }
         }
@@ -255,7 +256,7 @@ class SkiViewModel(
                 drive.getOrNull()?.let { road ->
                     change(ref) { it.copy(drive = road) }
                     val chains = repository.chainControls(road.path)
-                    change(ref) { it.copy(chains = chains) }
+                    change(ref) { it.copy(chains = chains.controls, chainsUnavailable = !chains.complete) }
                 }
                 drive.exceptionOrNull()?.let { e -> change(ref) { entry -> if (entry.drive == null) entry.copy(error = e.orFallback(Res.string.ski_error_drive)) else entry } }
             }
@@ -305,14 +306,19 @@ class SkiViewModel(
         val facts = entry.page?.facts ?: return
         val forecast = entry.forecast ?: return
         if (from == null) return
-        val midnight = state.tripEpochDay * SkiForecast.DAY_SECONDS - forecast.utcOffsetSeconds
-        val out = midnight + DEPART_HOUR * 3_600L
-        val back = midnight + RETURN_HOUR * 3_600L
+        val day = state.tripEpochDay
+        val out = forecast.epochSecondsAt(day, DEPART_HOUR)
+        val back = forecast.epochSecondsAt(day, RETURN_HOUR)
         val now = now()
         val to = SkiPoint(facts.latitude, facts.longitude)
+        // Another day's times aren't this day's, while these are on their way.
+        change(ref) { it.copy(driveOut = it.driveOut?.takeIf { drive -> drive.departEpochSeconds == out }, driveBack = it.driveBack?.takeIf { drive -> drive.departEpochSeconds == back }) }
         // A departure in the past can't be asked about.
         val going = if (out > now) repository.drive(from, to, out).getOrNull() else null
         val coming = if (back > now) repository.drive(to, from, back).getOrNull() else null
+        // The day or the start changed while these were on their way: the answers for that are coming, and may already be here.
+        val latest = _uiState.value
+        if (latest.tripEpochDay != day || latest.plan.origin != state.plan.origin) return
         change(ref) { it.copy(driveOut = going, driveBack = coming) }
     }
 

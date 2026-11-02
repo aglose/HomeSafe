@@ -69,6 +69,7 @@ import homesafe.shared.generated.resources.ski_pass_mountain_collective
 import homesafe.shared.generated.resources.ski_pass_powder_alliance
 import homesafe.shared.generated.resources.ski_state_closed
 import homesafe.shared.generated.resources.ski_state_limited
+import homesafe.shared.generated.resources.ski_state_no_recent_report
 import homesafe.shared.generated.resources.ski_state_not_operating
 import homesafe.shared.generated.resources.ski_state_open
 import homesafe.shared.generated.resources.ski_state_opens
@@ -126,18 +127,23 @@ internal fun ChainLevel.labelRes(): StringResource = when (this) {
 
 internal fun SkiPriceTier.Kind.labelRes(): StringResource = when (this) {
     SkiPriceTier.Kind.ANY_DAY -> Res.string.ski_tier_any_day
-    SkiPriceTier.Kind.WEEKDAY -> Res.string.ski_tier_weekday
-    SkiPriceTier.Kind.WEEKEND -> Res.string.ski_tier_weekend
+    SkiPriceTier.Kind.SUNDAY_TO_FRIDAY -> Res.string.ski_tier_weekday
+    SkiPriceTier.Kind.SATURDAY -> Res.string.ski_tier_weekend
     SkiPriceTier.Kind.NON_PEAK -> Res.string.ski_tier_non_peak
     SkiPriceTier.Kind.PEAK -> Res.string.ski_tier_peak
 }
 
 /** How a resort is doing today, as a word or two. */
-internal fun SkiReport.stateText(todayEpochDay: Int): UiText = when {
-    state == SkiOpenState.OPEN -> UiText.of(Res.string.ski_state_open)
-    state == SkiOpenState.LIMITED -> UiText.of(Res.string.ski_state_limited)
+internal fun SkiReport.stateText(todayEpochDay: Int, nowEpochSeconds: Long): UiText = when {
     state == SkiOpenState.NOT_OPERATING -> UiText.of(Res.string.ski_state_not_operating)
+
+    runningNow(nowEpochSeconds) -> UiText.of(if (state == SkiOpenState.LIMITED) Res.string.ski_state_limited else Res.string.ski_state_open)
+
     (openingEpochDay ?: 0) > todayEpochDay -> UiText.of(Res.string.ski_state_opens, WeatherFormat.date(openingEpochDay!!.asInstant(), 0))
+
+    // It last said it was open, too long ago to say so now, and that doesn't make it closed.
+    state != SkiOpenState.CLOSED -> UiText.of(Res.string.ski_state_no_recent_report)
+
     else -> UiText.of(Res.string.ski_state_closed)
 }
 
@@ -150,10 +156,10 @@ internal fun SkiPill(text: String, color: Color, modifier: Modifier = Modifier) 
 }
 
 @Composable
-internal fun SkiReport.stateColor(): Color = when (state) {
-    SkiOpenState.OPEN -> WeatherTheme.colors.good
-    SkiOpenState.LIMITED -> WeatherTheme.colors.watch
-    else -> WeatherTheme.colors.onSkyFaint
+internal fun SkiReport.stateColor(nowEpochSeconds: Long): Color = when {
+    !runningNow(nowEpochSeconds) -> WeatherTheme.colors.onSkyFaint
+    state == SkiOpenState.LIMITED -> WeatherTheme.colors.watch
+    else -> WeatherTheme.colors.good
 }
 
 @Composable

@@ -35,8 +35,8 @@ interface SkiRepository {
     /** The drive between two places: leaving now, or at [departEpochSeconds]. */
     suspend fun drive(from: SkiPoint, to: SkiPoint, departEpochSeconds: Long? = null): Result<SkiDrive>
 
-    /** The chain controls in force along a road (a [SkiDrive.path]). Empty where no one publishes them. */
-    suspend fun chainControls(path: String): List<ChainControl>
+    /** The chain controls in force along a road (a [SkiDrive.path]). Empty where no one publishes them; says so where a file that should have them couldn't be read. */
+    suspend fun chainControls(path: String): SkiChainReport
 
     /** What the resort's own site says about its snow, or null where the app can't read one, or it said nothing. */
     suspend fun resortNews(slug: String, force: Boolean = false): SkiResortNews?

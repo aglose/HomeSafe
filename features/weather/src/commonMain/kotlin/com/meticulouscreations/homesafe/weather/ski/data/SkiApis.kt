@@ -22,6 +22,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiTicketPrice
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.ski_chains_unavailable
 import homesafe.shared.generated.resources.ski_error_drive
 import homesafe.shared.generated.resources.ski_error_forecast
 import homesafe.shared.generated.resources.ski_error_report
@@ -34,6 +35,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
@@ -251,8 +253,11 @@ private suspend inline fun <reified T> HttpResponse.decode(): T {
  */
 @Inject
 class SkiRoutesApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
-    /** Google's answer, or null if it refused or has none: the caller falls back on the free one. */
-    suspend fun withTraffic(from: SkiPoint, to: SkiPoint, departEpochSeconds: Long?, key: String): SkiDrive? = suspendRunCatching {
+    /**
+     * Google's answer. A failure is [RoutesRefused] if the key isn't allowed routes; any other is this
+     * drive's or this moment's, and says nothing about the next one.
+     */
+    suspend fun withTraffic(from: SkiPoint, to: SkiPoint, departEpochSeconds: Long?, key: String): Result<SkiDrive> = suspendRunCatching {
         val response = httpClient.post(GOOGLE) {
             contentType(ContentType.Application.Json)
             header("X-Goog-Api-Key", key)
@@ -267,11 +272,18 @@ class SkiRoutesApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
                 }.toString(),
             )
         }
-        if (!response.status.isSuccess()) return@suspendRunCatching null
-        val route = response.decode<GoogleRoutesDto>().routes.firstOrNull() ?: return@suspendRunCatching null
-        val seconds = route.duration?.removeSuffix("s")?.toLongOrNull() ?: return@suspendRunCatching null
+        if (!response.status.isSuccess()) {
+            val status = response.status
+            // A key Google doesn't recognize at all comes back as a bad request.
+            if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden || (status == HttpStatusCode.BadRequest && "API_KEY_INVALID" in response.bodyAsText())) throw RoutesRefused
+            throw noDrive(status.value)
+        }
+        val route = response.decode<GoogleRoutesDto>().routes.firstOrNull() ?: throw noDrive(response.status.value)
+        val seconds = route.duration?.removeSuffix("s")?.toLongOrNull() ?: throw noDrive(response.status.value)
         SkiDrive(seconds, route.distanceMeters ?: 0.0, SkiDriveSource.TRAFFIC, route.polyline?.encodedPolyline.orEmpty(), departEpochSeconds)
-    }.getOrNull()
+    }
+
+    private fun noDrive(status: Int) = WeatherServiceException(UiText.of(Res.string.ski_error_drive), status)
 
     private fun latLng(point: SkiPoint) = buildJsonObject {
         putJsonObject("latLng") {
@@ -285,8 +297,8 @@ class SkiRoutesApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
             parameter("overview", "full")
             parameter("geometries", "polyline")
         }
-        if (!response.status.isSuccess()) throw WeatherServiceException(UiText.of(Res.string.ski_error_drive), response.status.value)
-        val route = response.decode<OsrmDto>().routes.firstOrNull() ?: throw WeatherServiceException(UiText.of(Res.string.ski_error_drive), response.status.value)
+        if (!response.status.isSuccess()) throw noDrive(response.status.value)
+        val route = response.decode<OsrmDto>().routes.firstOrNull() ?: throw noDrive(response.status.value)
         SkiDrive(route.duration.roundToInt().toLong(), route.distance, SkiDriveSource.FREE_FLOW, route.geometry)
     }
 
@@ -295,6 +307,9 @@ class SkiRoutesApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
         const val OSRM = "https://router.project-osrm.org/route/v1/driving"
     }
 }
+
+/** The key isn't allowed routes (it may only be allowed map tiles): no use asking with it again. */
+internal object RoutesRefused : RuntimeException("Routes refused")
 
 @Serializable
 internal class GoogleRoutesDto(val routes: List<GoogleRouteDto> = emptyList())
@@ -321,11 +336,11 @@ class CaltransChainApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient
     /** The districts a road inside [box] could run through. */
     fun districtsAround(box: GeoBox): List<Int> = DISTRICTS.filter { it.box.overlaps(box) }.map { it.number }
 
-    /** What's in force in one district. */
+    /** What's in force in one district. It throws if the file can't be read: that isn't the same as nothing in force. */
     suspend fun district(number: Int): List<ChainControl> {
         val padded = number.toString().padStart(2, '0')
         val response = httpClient.get("https://cwwp2.dot.ca.gov/data/d$number/cc/ccStatusD$padded.json")
-        if (!response.status.isSuccess()) return emptyList()
+        if (!response.status.isSuccess()) throw WeatherServiceException(UiText.of(Res.string.ski_chains_unavailable), response.status.value)
         return response.decode<ChainFileDto>().data.mapNotNull { it.cc?.toControl() }
     }
 

@@ -51,10 +51,12 @@
     <string name="ski_chains_on_road">%1$s on %2$s</string>
     <string name="ski_chain_at">%1$s on %2$s at %3$s</string>
     <string name="ski_chains_none">No chain controls on the way right now.</string>
+    <string name="ski_chains_unavailable">Caltrans isn't answering, so chain controls may be missing or out of date.</string>
     <string name="ski_chains_unknown">Chain controls are only known for California. Check the local road service.</string>
     <string name="ski_state_open">Open</string>
     <string name="ski_state_limited">Partly open</string>
     <string name="ski_state_closed">Closed</string>
+    <string name="ski_state_no_recent_report">No recent report</string>
     <string name="ski_state_not_operating">Not running</string>
     <string name="ski_state_opens">Opens %1$s</string>
     <string name="ski_follow">Follow</string>
@@ -164,6 +166,7 @@
     <string name="ski_pass_mountain_collective">Mountain Collective</string>
     <string name="ski_pass_powder_alliance">Powder Alliance</string>
     <string name="ski_cost_label_listed">Listed</string>
+    <string name="ski_cost_label_from">From</string>
     <string name="ski_last7">Last 7 days</string>
     <string name="ski_season_total">Season total</string>
     <string name="ski_conditions">Surface: %1$s</string>
@@ -173,6 +176,7 @@
     <string name="ski_ticket_party_dated">For your party on %1$s, online, from the resort</string>
     <string name="ski_ticket_party_first_day">For your party on %1$s, its first day on sale</string>
     <string name="ski_ticket_party_table">For your party, a day, from the resort's rates</string>
+    <string name="ski_ticket_party_from">The least your party could pay for a day, from the resort's rates</string>
     <string name="ski_ticket_party_window">%1$s at the window</string>
     <string name="ski_ticket_adult_online">Adult, online</string>
     <string name="ski_ticket_adult_window">Adult, window</string>

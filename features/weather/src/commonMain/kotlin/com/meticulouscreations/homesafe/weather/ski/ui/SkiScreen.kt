@@ -66,6 +66,7 @@ import homesafe.shared.generated.resources.ski_best_bet_title
 import homesafe.shared.generated.resources.ski_chains_on_road
 import homesafe.shared.generated.resources.ski_cost_covered
 import homesafe.shared.generated.resources.ski_cost_label
+import homesafe.shared.generated.resources.ski_cost_label_from
 import homesafe.shared.generated.resources.ski_cost_label_listed
 import homesafe.shared.generated.resources.ski_day_prompt
 import homesafe.shared.generated.resources.ski_drive_label
@@ -112,8 +113,8 @@ internal fun SkiScreen(
     val colors = WeatherTheme.colors
     val units = WeatherTheme.units
     val followed = state.followed
-    val views = remember(followed, state.plan, state.tripEpochDay, state.todayEpochDay, units) {
-        SkiPlanner.ranked(followed.map { SkiPlanner.view(it, state.plan, state.tripEpochDay, state.todayEpochDay, units) })
+    val views = remember(followed, state.plan, state.tripEpochDay, state.todayEpochDay, state.nowEpochSeconds, units) {
+        SkiPlanner.ranked(followed.map { SkiPlanner.view(it, state.plan, state.tripEpochDay, state.todayEpochDay, state.nowEpochSeconds, units) })
     }
     val strip = remember(followed, state.todayEpochDay) { SkiPlanner.dayStrip(followed, state.todayEpochDay, SKI_DAYS_AHEAD) }
     val best = views.firstOrNull()?.takeIf { it.runs }
@@ -240,7 +241,7 @@ private fun ResortCard(view: SkiDayView, strip: List<SkiStripDay>, selected: Int
             Text(view.entry.ref.name, style = WeatherTheme.type.headline, color = WeatherTheme.colors.onSky, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (report != null) {
                 Spacer(Modifier.width(8.dp))
-                SkiPill(report.stateText(today).resolve(), report.stateColor())
+                SkiPill(report.stateText(today, now).resolve(), report.stateColor(now))
             }
         }
         if (sayIfShut && !view.runs && report != null) {
@@ -283,7 +284,12 @@ private fun Stats(view: SkiDayView, now: Long) {
             cost.total != null -> SkiPlanner.money(cost.total, view.entry.price?.currency ?: "US$")
             else -> stringResource(Res.string.ski_no_price)
         }
-        SkiStat(stringResource(if (cost.source == SkiCost.Source.LISTING) Res.string.ski_cost_label_listed else Res.string.ski_cost_label), money, Modifier.weight(0.9f), color = if (cost.coveredBy != null) WeatherTheme.colors.good else WeatherTheme.colors.onSky)
+        val costLabel = when {
+            cost.startsAt -> Res.string.ski_cost_label_from
+            cost.source == SkiCost.Source.LISTING -> Res.string.ski_cost_label_listed
+            else -> Res.string.ski_cost_label
+        }
+        SkiStat(stringResource(costLabel), money, Modifier.weight(0.9f), color = if (cost.coveredBy != null) WeatherTheme.colors.good else WeatherTheme.colors.onSky)
     }
 }
 
@@ -319,7 +325,7 @@ private fun RegionsCard(regions: List<String>, loads: Map<String, SkiRegionLoad>
                     Text(region?.let { stringResource(it.name) } ?: slug, style = WeatherTheme.type.bodyStrong, color = colors.onSky, maxLines = 1)
                     val reports = load?.reports.orEmpty().map { report -> load?.news?.get(report.slug)?.let(report::merged) ?: report }
                     if (reports.isNotEmpty()) {
-                        val open = reports.count { it.state == SkiOpenState.OPEN || it.state == SkiOpenState.LIMITED }
+                        val open = reports.count { it.runningNow(now) }
                         val top = reports.filter { it.isCurrent(now) && (it.last24Cm ?: 0.0) >= 0.5 }.maxByOrNull { it.last24Cm ?: 0.0 }
                         Text(
                             if (top != null) {

@@ -18,8 +18,8 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
 import com.meticulouscreations.homesafe.weather.ski.data.SkiNoticeCheck
 import com.meticulouscreations.homesafe.weather.ski.data.SkiNoticeSyncImpl
 import com.meticulouscreations.homesafe.weather.ski.data.SkiWishesRelay
-import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiChainReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOpenState
@@ -80,7 +80,7 @@ class SkiNoticeCheckTest {
 
         override suspend fun drive(from: SkiPoint, to: SkiPoint, departEpochSeconds: Long?) = Result.failure<SkiDrive>(IllegalStateException("not here"))
 
-        override suspend fun chainControls(path: String) = emptyList<ChainControl>()
+        override suspend fun chainControls(path: String) = SkiChainReport()
 
         override suspend fun resortNews(slug: String, force: Boolean): SkiResortNews? = null
 

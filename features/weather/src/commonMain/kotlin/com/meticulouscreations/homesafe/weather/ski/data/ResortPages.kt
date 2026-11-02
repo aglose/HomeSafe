@@ -221,8 +221,8 @@ internal object ResortPages {
         val adult = prices("Adult") ?: return emptyList()
         val child = prices("Child")
         return listOf(
-            SkiPriceTier(SkiPriceTier.Kind.WEEKDAY, SkiDayPrice(adultOnline = adult[0], adultWindow = adult[1], childOnline = child?.get(0), childWindow = child?.get(1)), onlineIsLowest = true),
-            SkiPriceTier(SkiPriceTier.Kind.WEEKEND, SkiDayPrice(adultOnline = adult[2], adultWindow = adult[3], childOnline = child?.get(2), childWindow = child?.get(3)), onlineIsLowest = true),
+            SkiPriceTier(SkiPriceTier.Kind.SUNDAY_TO_FRIDAY, SkiDayPrice(adultOnline = adult[0], adultWindow = adult[1], childOnline = child?.get(0), childWindow = child?.get(1)), onlineIsLowest = true),
+            SkiPriceTier(SkiPriceTier.Kind.SATURDAY, SkiDayPrice(adultOnline = adult[2], adultWindow = adult[3], childOnline = child?.get(2), childWindow = child?.get(3)), onlineIsLowest = true),
         )
     }
 
@@ -531,7 +531,7 @@ internal object ResortScripts {
             if (!ageOf) return finish({});
             var ages = ageOf.ProductAttributeValues;
             var named = function (pattern) { return ages.filter(function (v) { return pattern.test(v.Name.trim()); })[0]; };
-            var adult = named(/^(18|19|23) to (64|69|79)$/) || named(/^adult/i);
+            var adult = named(/^(18|19|23) to (64|69|79)$/) || named(/^adult/i) || named(/^1\d and over$/i);
             var child = named(/^\d+ to 12$/) || named(/^child/i);
             if (!adult) return finish({});
             var rest = lists.filter(function (a) { return a !== ageOf; }).map(function (a) {

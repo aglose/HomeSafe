@@ -85,6 +85,7 @@ import homesafe.shared.generated.resources.ski_attribution
 import homesafe.shared.generated.resources.ski_cams_title
 import homesafe.shared.generated.resources.ski_chain_at
 import homesafe.shared.generated.resources.ski_chains_none
+import homesafe.shared.generated.resources.ski_chains_unavailable
 import homesafe.shared.generated.resources.ski_chains_unknown
 import homesafe.shared.generated.resources.ski_conditions
 import homesafe.shared.generated.resources.ski_day_title
@@ -150,6 +151,7 @@ import homesafe.shared.generated.resources.ski_ticket_note
 import homesafe.shared.generated.resources.ski_ticket_party
 import homesafe.shared.generated.resources.ski_ticket_party_dated
 import homesafe.shared.generated.resources.ski_ticket_party_first_day
+import homesafe.shared.generated.resources.ski_ticket_party_from
 import homesafe.shared.generated.resources.ski_ticket_party_own
 import homesafe.shared.generated.resources.ski_ticket_party_table
 import homesafe.shared.generated.resources.ski_ticket_party_window
@@ -184,7 +186,7 @@ internal fun SkiResortScreen(
     val entry = state.entries[ref.slug] ?: SkiEntry(ref)
     val report = entry.latest
     val following = state.plan.follows(ref.slug)
-    val view = remember(entry, state.plan, state.tripEpochDay, state.todayEpochDay, units) { SkiPlanner.view(entry, state.plan, state.tripEpochDay, state.todayEpochDay, units) }
+    val view = remember(entry, state.plan, state.tripEpochDay, state.todayEpochDay, state.nowEpochSeconds, units) { SkiPlanner.view(entry, state.plan, state.tripEpochDay, state.todayEpochDay, state.nowEpochSeconds, units) }
     val strip = remember(entry, state.todayEpochDay) { SkiPlanner.dayStrip(listOf(entry), state.todayEpochDay, SKI_DAYS_AHEAD) }
     LazyColumn(
         modifier.fillMaxSize().background(colors.surface).testTag("ski_resort_page"),
@@ -198,7 +200,7 @@ internal fun SkiResortScreen(
                 entry.page?.facts?.city?.let { Text(it, style = WeatherTheme.type.label, color = colors.onSkyMuted) }
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (report != null) SkiPill(report.stateText(state.todayEpochDay).resolve(), report.stateColor())
+                    if (report != null) SkiPill(report.stateText(state.todayEpochDay, state.nowEpochSeconds).resolve(), report.stateColor(state.nowEpochSeconds))
                     Spacer(Modifier.weight(1f))
                     PillButton(
                         stringResource(if (following) Res.string.ski_following else Res.string.ski_follow),
@@ -520,10 +522,13 @@ private fun DriveCard(entry: SkiEntry, hasStart: Boolean, startCity: String?, mo
                         }
                     }
 
+                    entry.chainsUnavailable -> Unit
+
                     inCalifornia(entry.page?.facts) -> Text(stringResource(Res.string.ski_chains_none), style = WeatherTheme.type.label, color = colors.good)
 
                     else -> Text(stringResource(Res.string.ski_chains_unknown), style = WeatherTheme.type.label, color = colors.onSkyFaint)
                 }
+                if (entry.chainsUnavailable) Text(stringResource(Res.string.ski_chains_unavailable), style = WeatherTheme.type.label, color = colors.watch, modifier = Modifier.testTag("ski_chains_unavailable"))
                 entry.page?.facts?.let { facts ->
                     Spacer(Modifier.height(12.dp))
                     PillButton(
@@ -560,6 +565,7 @@ private fun TicketsCard(entry: SkiEntry, cost: SkiCost, actions: SkiActions, own
             Text(
                 when {
                     cost.own -> stringResource(Res.string.ski_ticket_party_own)
+                    cost.startsAt -> stringResource(Res.string.ski_ticket_party_from)
                     on != null && on != epochDay -> stringResource(Res.string.ski_ticket_party_first_day, WeatherFormat.date(on.asInstant(), 0).resolve())
                     on != null -> stringResource(Res.string.ski_ticket_party_dated, WeatherFormat.date(on.asInstant(), 0).resolve())
                     cost.source == SkiCost.Source.RESORT_TABLE -> stringResource(Res.string.ski_ticket_party_table)
@@ -574,7 +580,7 @@ private fun TicketsCard(entry: SkiEntry, cost: SkiCost, actions: SkiActions, own
             if (cost.childrenLeftOut) Text(stringResource(Res.string.ski_ticket_kids_left_out), style = WeatherTheme.type.label, color = colors.watch)
             Spacer(Modifier.height(10.dp))
         }
-        val dated = prices?.onOrAfter(epochDay)?.second
+        val dated = prices?.priceFor(epochDay)?.second
         when {
             dated != null -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

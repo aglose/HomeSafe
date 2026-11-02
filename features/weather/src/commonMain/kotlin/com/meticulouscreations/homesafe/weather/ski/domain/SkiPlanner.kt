@@ -35,6 +35,8 @@ data class SkiEntry(
     val driveOut: SkiDrive? = null,
     val driveBack: SkiDrive? = null,
     val chains: List<ChainControl> = emptyList(),
+    /** Part of the road couldn't be checked, so [chains] may be missing some or out of date. */
+    val chainsUnavailable: Boolean = false,
     val alerts: List<WeatherAlert> = emptyList(),
     /** Which of the household's passes get in here. */
     val passes: Set<SkiPass> = emptySet(),
@@ -68,6 +70,8 @@ data class SkiCost(
     val onEpochDay: Int? = null,
     /** The same party at the window, where the resort gives that too. */
     val windowTotal: Double? = null,
+    /** [total] is the least it could be: the resort gives where its prices start, not the day's. */
+    val startsAt: Boolean = false,
 ) {
     enum class Source {
         /** The resort's own price for that date. */
@@ -131,11 +135,11 @@ object SkiPlanner {
     /** Keeps a day from turning on the far end of the forecast: the first days are the ones to trust. */
     private const val FRESH_DAYS = 3
 
-    fun view(entry: SkiEntry, plan: SkiPlan, epochDay: Int, todayEpochDay: Int, units: WeatherUnits): SkiDayView {
+    fun view(entry: SkiEntry, plan: SkiPlan, epochDay: Int, todayEpochDay: Int, nowEpochSeconds: Long, units: WeatherUnits): SkiDayView {
         val forecast = entry.forecast
         val day = forecast?.day(epochDay)
         val report = entry.latest
-        val runs = report?.runsOn(epochDay, todayEpochDay) ?: false
+        val runs = report?.runsOn(epochDay, todayEpochDay, nowEpochSeconds) ?: false
         val fresh = forecast?.snowBetween(epochDay - (FRESH_DAYS - 1), epochDay)
             ?: report?.outlook.orEmpty().filter { it.epochDay in (epochDay - (FRESH_DAYS - 1))..epochDay }.sumOf { it.cm }
         val cost = cost(plan, entry, epochDay)
@@ -209,8 +213,10 @@ object SkiPlanner {
             val each = own.toDouble()
             return SkiCost(total = each * (plan.adults + plan.children), adult = each, child = each.takeIf { plan.children > 0 }, own = true)
         }
-        entry.prices?.onOrAfter(epochDay)?.let { (day, price) -> party(plan, price, SkiCost.Source.RESORT_DATED, day)?.let { return it } }
-        entry.prices?.tierOn(epochDay)?.let { tier -> party(plan, tier.price, SkiCost.Source.RESORT_TABLE, null)?.let { return it } }
+        entry.prices?.priceFor(epochDay)?.let { (day, price) -> party(plan, price, SkiCost.Source.RESORT_DATED, day)?.let { return it } }
+        entry.prices?.tierOn(epochDay)?.let { tier ->
+            party(plan, tier.price, SkiCost.Source.RESORT_TABLE, null)?.let { return it.copy(startsAt = tier.onlineIsLowest && tier.price.adultOnline != null) }
+        }
         val listed = entry.price ?: return SkiCost()
         return party(plan, SkiDayPrice(adultWindow = listed.adultDay, childWindow = listed.childDay), SkiCost.Source.LISTING, null)?.copy(windowTotal = null) ?: SkiCost()
     }

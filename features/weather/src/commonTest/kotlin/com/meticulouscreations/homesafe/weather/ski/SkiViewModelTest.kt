@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainControl
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiAlerts
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiChainReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDriveSource
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -98,12 +100,18 @@ class SkiViewModelTest {
 
         override suspend fun alerts(facts: SkiResortFacts): List<WeatherAlert> = listOf(WeatherAlert("1", event = "Winter Storm Warning"))
 
+        /** Holds up the drives leaving at these times for as long as it isn't completed. */
+        val heldDrives = mutableMapOf<Long, CompletableDeferred<Unit>>()
+
         override suspend fun drive(from: SkiPoint, to: SkiPoint, departEpochSeconds: Long?): Result<SkiDrive> {
             driveCalls += departEpochSeconds
+            departEpochSeconds?.let { heldDrives[it]?.await() }
             return Result.success(drive.copy(departEpochSeconds = departEpochSeconds))
         }
 
-        override suspend fun chainControls(path: String) = listOf(ChainControl(ChainLevel.R2, "I-80", "Donner Summit", latitude = 39.3, longitude = -120.3))
+        var chainsComplete = true
+
+        override suspend fun chainControls(path: String) = SkiChainReport(listOf(ChainControl(ChainLevel.R2, "I-80", "Donner Summit", latitude = 39.3, longitude = -120.3)), complete = chainsComplete)
 
         var news: SkiResortNews? = null
         var resortPrices: SkiResortPrices? = null
@@ -179,6 +187,29 @@ class SkiViewModelTest {
     }
 
     @Test
+    fun chainsThatCouldntBeCheckedAreSaidToBe() = skiTest(FakeSki().apply { chainsComplete = false }) { vm, _, _ ->
+        vm.setActive(true)
+        runCurrent()
+        val entry = assertNotNull(vm.uiState.value.entries["palisades-tahoe"])
+        assertTrue(entry.chainsUnavailable)
+        assertEquals("I-80", entry.chains.single().route)
+    }
+
+    @Test
+    fun theResortsPricesDontWaitOnItsListingPage() = skiTest(
+        FakeSki().apply {
+            failing += "palisades-tahoe"
+            resortPrices = SkiResortPrices("https://resort.example/tickets")
+        },
+    ) { vm, _, _ ->
+        vm.setActive(true)
+        runCurrent()
+        val entry = assertNotNull(vm.uiState.value.entries["palisades-tahoe"])
+        assertNull(entry.page)
+        assertEquals("https://resort.example/tickets", entry.prices?.pageUrl)
+    }
+
+    @Test
     fun theResortsPricesAreAskedForEveryDayThatCanBeChosen() = skiTest(FakeSki().apply { resortPrices = SkiResortPrices("https://resort.example/tickets") }) { vm, ski, _ ->
         vm.setActive(true)
         runCurrent()
@@ -227,6 +258,29 @@ class SkiViewModelTest {
         assertTrue(vm.uiState.value.hasStart)
         assertEquals("Reno", vm.uiState.value.startCity)
         assertTrue(ski.driveCalls.isNotEmpty())
+    }
+
+    @Test
+    fun aStartThatTurnsUpLaterIsUsedOnTheNextLook() = skiTest(start = FakeStart(point = null)) { vm, ski, start ->
+        vm.setActive(true)
+        runCurrent()
+        assertFalse(vm.uiState.value.hasStart)
+        start.point = SkiPoint(37.8, -122.3)
+        advanceTimeBy(5 * 60_000L + 1)
+        runCurrent()
+        assertTrue(vm.uiState.value.hasStart)
+        assertTrue(ski.driveCalls.isNotEmpty())
+    }
+
+    @Test
+    fun aHomeSetLaterTakesOverFromACity() = skiTest(start = FakeStart(point = SkiPoint(39.5, -119.8, "Reno"))) { vm, _, start ->
+        vm.setActive(true)
+        runCurrent()
+        assertEquals("Reno", vm.uiState.value.startCity)
+        start.point = SkiPoint(37.8, -122.3)
+        advanceTimeBy(5 * 60_000L + 1)
+        runCurrent()
+        assertNull(vm.uiState.value.startCity)
     }
 
     @Test
@@ -377,6 +431,47 @@ class SkiViewModelTest {
         assertTrue(midnight + 16 * 3_600 in ski.driveCalls)
         assertEquals(midnight + 7 * 3_600, state.entries["palisades-tahoe"]?.driveOut?.departEpochSeconds)
         assertEquals(midnight + 16 * 3_600, state.entries["palisades-tahoe"]?.driveBack?.departEpochSeconds)
+    }
+
+    @Test
+    fun anEarlierDaysDrivesArrivingLateDontLandOnTheDayNowChosen() = skiTest { vm, ski, _ ->
+        vm.setActive(true)
+        runCurrent()
+        vm.openResort(palisades)
+        runCurrent()
+        val first = vm.uiState.value.tripEpochDay
+        val second = first + 1
+        val hours = { day: Int -> day * SkiForecast.DAY_SECONDS + 28_800 + 7 * 3_600 }
+        val gate = CompletableDeferred<Unit>()
+        ski.heldDrives[hours(first + 7)] = gate
+
+        vm.pickDay(first + 7)
+        vm.planTrip(palisades)
+        runCurrent()
+        vm.pickDay(second)
+        vm.planTrip(palisades)
+        runCurrent()
+        assertEquals(hours(second), vm.uiState.value.entries["palisades-tahoe"]?.driveOut?.departEpochSeconds)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(hours(second), vm.uiState.value.entries["palisades-tahoe"]?.driveOut?.departEpochSeconds)
+    }
+
+    @Test
+    fun anotherDaysDrivesAreClearedWhileTheNewOnesCome() = skiTest { vm, ski, _ ->
+        vm.setActive(true)
+        runCurrent()
+        vm.openResort(palisades)
+        runCurrent()
+        val next = vm.uiState.value.tripEpochDay + 7
+        ski.heldDrives[next * SkiForecast.DAY_SECONDS + 28_800 + 7 * 3_600] = CompletableDeferred()
+        vm.pickDay(next)
+        vm.planTrip(palisades)
+        runCurrent()
+        assertNull(vm.uiState.value.entries["palisades-tahoe"]?.driveOut)
+        ski.heldDrives.values.forEach { it.complete(Unit) }
+        runCurrent()
     }
 
     @Test

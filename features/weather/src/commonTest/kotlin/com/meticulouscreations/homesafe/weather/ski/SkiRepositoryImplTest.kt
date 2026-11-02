@@ -194,6 +194,31 @@ class SkiRepositoryImplTest {
         assertEquals(1, web.asked.count { "googleapis" in it.url.host })
     }
 
+    @Test
+    fun aPassingFailureFromGoogleIsOnlyThatDrives() = runTest {
+        var down = true
+        val web = Web(InMemoryHouseholdKeys(HouseholdKeys.GOOGLE_MAPS to "secret")) { request ->
+            when {
+                "googleapis" !in request.url.host -> Answer(osrm)
+                down -> Answer(status = HttpStatusCode.ServiceUnavailable)
+                else -> Answer(google)
+            }
+        }
+        assertEquals(SkiDriveSource.FREE_FLOW, web.repository.drive(home, mountain).getOrThrow().source)
+        down = false
+        assertEquals(SkiDriveSource.TRAFFIC, web.repository.drive(home, mountain).getOrThrow().source)
+    }
+
+    @Test
+    fun aRoadGoogleHasNoRouteForLeavesItAskedForTheNext() = runTest {
+        val web = Web(InMemoryHouseholdKeys(HouseholdKeys.GOOGLE_MAPS to "secret")) { request ->
+            if ("googleapis" in request.url.host) Answer("{}") else Answer(osrm)
+        }
+        assertEquals(SkiDriveSource.FREE_FLOW, web.repository.drive(home, mountain).getOrThrow().source)
+        web.repository.drive(home, SkiPoint(38.0, -120.0))
+        assertEquals(2, web.asked.count { "googleapis" in it.url.host })
+    }
+
     // ---- The resort's own site -----------------------------------------------------------------------
 
     private val vailPage = """<script>FR.snowReportData = {"OverallSnowConditions":"Early Season","TwentyFourHourSnowfall":{"Inches":"8","Centimeters":"20"},"BaseDepth":{"Inches":"0","Centimeters":"0"},"CurrentSeason":{"Inches":"8","Centimeters":"20"},"LastUpdatedText":"Updated November 01, 2026 at 10:20 AM PST"};</script>"""
@@ -225,6 +250,17 @@ class SkiRepositoryImplTest {
         up = false
         web.clock.seconds += 3_600
         assertEquals(8 * 2.54, web.repository.resortNews("northstar-california")?.last24Cm)
+    }
+
+    @Test
+    fun whatARecentReadingWasIsKeptWithIt() = runTest {
+        var up = true
+        val web = Web { if (up) Answer(vailPage) else Answer(status = HttpStatusCode.BadGateway) }
+        val readAt = web.clock.seconds
+        assertEquals(readAt, web.repository.resortNews("northstar-california")?.fetchedAtEpochSeconds)
+        up = false
+        web.clock.seconds += 8 * 86_400
+        assertEquals(readAt, web.repository.resortNews("northstar-california")?.fetchedAtEpochSeconds, "the last reading doesn't pass for a new one")
     }
 
     @Test
@@ -311,6 +347,25 @@ class SkiRepositoryImplTest {
     }
 
     @Test
+    fun aRateTableDoesntStandInForACalendarThatDidntAnswer() = runTest {
+        val web = Web { Answer("""{"title":"Lift Ticket","price":"$89","priceDescription":"(starting at)"}""") }
+        web.browser.answer = null
+        web.repository.resortPrices("boreal", listOf(20_813))
+        web.browser.answer = """{"2026-12-26":[99,129,79,99]}"""
+        assertEquals(99.0, web.repository.resortPrices("boreal", listOf(20_813))?.days?.get(20_813)?.adultOnline)
+        assertEquals(2, web.browser.asked.size)
+    }
+
+    @Test
+    fun aCalendarWithNoDatesOnSaleIsAnAnswer() = runTest {
+        val web = Web { Answer("""{"title":"Lift Ticket","price":"$89","priceDescription":"(starting at)"}""") }
+        web.browser.answer = "{}"
+        web.repository.resortPrices("boreal", listOf(20_813))
+        web.repository.resortPrices("boreal", listOf(20_813))
+        assertEquals(1, web.browser.asked.size, "it's a whole page, and it'll say the same for a while")
+    }
+
+    @Test
     fun aPlainRateTableNeedsNoBrowser() = runTest {
         val web = Web { Answer("Sat+Holiday Window Rates Adult (23-64) \$89 \$189 \$114 \$249 Child (6-12) \$49 \$109 \$66 \$139 Super Senior") }
         val prices = web.repository.resortPrices("sugar-bowl-resort", listOf(20_813))
@@ -335,9 +390,9 @@ class SkiRepositoryImplTest {
                 else -> Answer(chainFile("R-2", 40.0, -119.0))
             }
         }
-        val controls = web.repository.chainControls(road)
-        assertEquals(1, controls.size)
-        assertEquals("I-80", controls.single().route)
+        val report = web.repository.chainControls(road)
+        assertTrue(report.complete)
+        assertEquals("I-80", report.controls.single().route)
         assertFalse(web.asked.any { "/d11/" in it.url.encodedPath }, "San Diego's file has nothing to do with this road")
     }
 
@@ -355,7 +410,7 @@ class SkiRepositoryImplTest {
     @Test
     fun noRoadNoChains() = runTest {
         val web = Web { Answer("{}") }
-        assertTrue(web.repository.chainControls("").isEmpty())
+        assertTrue(web.repository.chainControls("").controls.isEmpty())
         assertTrue(web.asked.isEmpty())
     }
 
@@ -369,5 +424,33 @@ class SkiRepositoryImplTest {
         web.clock.seconds += 660
         web.repository.chainControls(road)
         assertTrue(web.asked.size > asked)
+    }
+
+    @Test
+    fun aFileThatCantBeReadIsNoAllClear() = runTest {
+        val web = Web { Answer(status = HttpStatusCode.BadGateway) }
+        val report = web.repository.chainControls(road)
+        assertTrue(report.controls.isEmpty())
+        assertFalse(report.complete)
+    }
+
+    @Test
+    fun aFailureKeepsWhatWasInForceAndTriesAgainSoon() = runTest {
+        var up = true
+        val web = Web { if (up) Answer(chainFile("R-2", 39.6, -120.575)) else Answer(status = HttpStatusCode.BadGateway) }
+        web.repository.chainControls(road)
+        up = false
+        web.clock.seconds += 660
+        val failing = web.repository.chainControls(road)
+        assertEquals("I-80", failing.controls.first().route)
+        assertFalse(failing.complete)
+
+        val asked = web.asked.size
+        web.repository.chainControls(road)
+        assertEquals(asked, web.asked.size, "every resort on the road doesn't wait on the same dead file")
+
+        up = true
+        web.clock.seconds += 61
+        assertTrue(web.repository.chainControls(road).complete)
     }
 }

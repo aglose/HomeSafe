@@ -299,8 +299,8 @@ class ResortPagesTest {
     fun readsSugarBowlsRates() {
         val html = """Sun-Fri Online Starting Rates Sun-Fri Window Rates Sat+Holiday Online Starting Rates Sat+Holiday Window Rates Adult (23-64) ${'$'}89 ${'$'}189 ${'$'}114 ${'$'}249 Young Adult (13-22) ${'$'}77 ${'$'}149 ${'$'}90 ${'$'}189 Senior (65-74) ${'$'}84 ${'$'}159 ${'$'}96 ${'$'}199 Child (6-12) ${'$'}49 ${'$'}109 ${'$'}66 ${'$'}139 Super Senior (75+) ${'$'}49 ${'$'}109"""
         val tiers = ResortPages.sugarBowlPrices(html)
-        val weekday = tiers.first { it.kind == SkiPriceTier.Kind.WEEKDAY }.price
-        val weekend = tiers.first { it.kind == SkiPriceTier.Kind.WEEKEND }.price
+        val weekday = tiers.first { it.kind == SkiPriceTier.Kind.SUNDAY_TO_FRIDAY }.price
+        val weekend = tiers.first { it.kind == SkiPriceTier.Kind.SATURDAY }.price
         assertEquals(89.0, weekday.adultOnline)
         assertEquals(189.0, weekday.adultWindow)
         assertEquals(49.0, weekday.childOnline)

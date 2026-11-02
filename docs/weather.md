@@ -145,8 +145,8 @@ and ticket price. It's a sort order and nothing more; the numbers behind it are 
 | **Ticket prices** | **The resort's own shop or rate table** | See below. Kept a day |
 | Everything else about a resort, and any resort not in that list | [OnTheSnow](https://www.onthesnow.com) | Opening dates, cameras, elevations, coordinates, and for other resorts its report and listed prices, read from its pages (`OnTheSnowPages`, `NextFlightRows`), since it has no API. The card says when a figure is only a listing |
 | Mountain forecast | [Open-Meteo](https://open-meteo.com) | Asked at the summit's and the base's own heights, from the blend and from ECMWF and GFS, whose spread is the range shown. Rain at the base and the freezing level come from here too. Kept an hour |
-| Drive times | [OSRM](https://project-osrm.org) over OpenStreetMap, or [Google Routes](https://developers.google.com/maps/documentation/routes) with the household's Google key (see [key-vault.md](key-vault.md)) | OSRM knows no traffic and runs long over mountain roads, so its time is labelled a rough estimate. Google is used when the key is in the vault and the Routes API is enabled for it, and is what makes the 7 AM out and 4 PM back figures possible. A refused key falls back for the session. Both are told the start to the hundredth of a degree |
-| Chain controls | [Caltrans](https://cwwp2.dot.ca.gov/documentation/cc/cc.htm) | California only, one file per district; only those a route runs through are read, and a checkpoint counts if the route passes within 1.5 km of it. Outside California the card says it doesn't know |
+| Drive times | [OSRM](https://project-osrm.org) over OpenStreetMap, or [Google Routes](https://developers.google.com/maps/documentation/routes) with the household's Google key (see [key-vault.md](key-vault.md)) | OSRM knows no traffic and runs long over mountain roads, so its time is labelled a rough estimate. Google is used when the key is in the vault and the Routes API is enabled for it, and is what makes the 7 AM out and 4 PM back figures possible, by the resort's own clock on that date. A key refused falls back for the session; any other failure falls back for that drive only. Both are told the start to the hundredth of a degree |
+| Chain controls | [Caltrans](https://cwwp2.dot.ca.gov/documentation/cc/cc.htm) | California only, one file per district; only those a route runs through are read, and a checkpoint counts if the route passes within 1.5 km of it. A file that can't be read is never an all-clear: the last one read stays, and the card says it may be out of date. Outside California the card says it doesn't know |
 | Warnings at the resort | National Weather Service | As for any place |
 
 ### Ticket prices
@@ -159,8 +159,8 @@ listing, which can be a season old and is labelled as listed.
 | Sites | How | Gives |
 |---|---|---|
 | Vail's (Heavenly, Northstar, Kirkwood, and so on) | `SkiBrowser`, `ResortScripts.vail` | Online and window prices, adult and child, for each day asked about (the ten that can be chosen, and the first on sale) |
-| The shop platform of Alterra's and POWDR's mountains (Palisades, Winter Park, Boreal) | `SkiBrowser`, `ResortScripts.shop` | The season's calendar at once, adult and child, online and base price. Boreal hasn't loaded this season's dates yet |
-| Sugar Bowl, Sierra-at-Tahoe, China Peak, Donner Ski Ranch, Boreal's starting price | A plain page | Rates by kind of day. Sierra doesn't say which dates are peak, so a weekend is taken as one. Sugar Bowl's and China Peak's online figures are where prices *start* |
+| The shop platform of Alterra's and POWDR's mountains (Palisades, Winter Park, Boreal) | `SkiBrowser`, `ResortScripts.shop` | The season's calendar at once, adult and child, online and base price |
+| Sugar Bowl, Sierra-at-Tahoe, China Peak, Donner Ski Ranch, Boreal's starting price | A plain page | Rates by kind of day. Sierra doesn't say which dates are peak, so a weekend is taken as one; Sugar Bowl's table has Sunday with its cheaper days. Sugar Bowl's, China Peak's and Boreal's online figures are where prices *start*, so a cost from them reads "From" |
 
 Those shops turn away anything but a page of their own: Vail's sit behind Akamai and a Queue-it
 waiting room, and the others behind a web application firewall. So **`SkiBrowser`** opens the shop in
@@ -193,7 +193,9 @@ no snow figures at all; Mt. Shasta's published sheet is empty until its season. 
 listing. A site that changes shape falls back the same way, and says so.
 
 A report older than a week counts as no report: out of season the numbers on a resort's page are
-last spring's. Its opening date is kept, and a date already past says nothing about a closed resort.
+last spring's. A site that puts no date on its report goes by when it was last read, so one that has
+stopped answering ages out too. An "open" from an old report doesn't count as running, and the card
+says there's no recent report rather than open or closed. Its opening date is kept, and a date already past says nothing about a closed resort.
 
 Everything is kept in `ski.db` (`SkiDatabase`, one table of JSON by key), including the plan. A
 service that stops answering leaves its last answer on screen; every one of them shows its date.
