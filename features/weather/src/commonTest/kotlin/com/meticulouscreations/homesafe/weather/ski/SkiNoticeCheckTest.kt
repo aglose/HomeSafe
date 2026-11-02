@@ -89,7 +89,7 @@ class SkiNoticeCheckTest {
 
         override fun hasResortSite(slug: String) = true
 
-        override suspend fun resortPrices(slug: String, epochDays: List<Int>): SkiResortPrices? = null
+        override suspend fun resortPrices(slug: String, epochDays: List<Int>, tripDays: Int): SkiResortPrices? = null
 
         override suspend fun passResorts(pass: SkiPass) = Result.success(emptySet<String>())
     }

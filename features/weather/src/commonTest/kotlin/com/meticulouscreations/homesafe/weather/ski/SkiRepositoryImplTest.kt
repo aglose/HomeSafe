@@ -526,16 +526,18 @@ class SkiRepositoryImplTest {
         val background = SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock)
         web.repository.updatePlan { it.copy(resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"), SkiResortRef("heavenly-mountain-resort", "california", "Heavenly"))) }
         web.repository.resortNews("northstar-california")
+        // The last round got through the first resort before its time ran out.
+        web.dao.keep(SkiKeptEntity("background-refresh", "1", web.clock.seconds))
         web.clock.seconds += 1_800
-
-        kotlinx.coroutines.withTimeoutOrNull(7_000) { background.refresh() }
-        assertTrue(web.asked.any { "northstarcalifornia" in it.url.host })
 
         web.asked.clear()
-        web.clock.seconds += 1_800
         background.refresh()
         assertTrue(web.asked.any { "skiheavenly" in it.url.host }, "the one it didn't reach")
         assertFalse(web.asked.any { "northstarcalifornia" in it.url.host }, "and not the one it did")
+
+        web.asked.clear()
+        background.refresh()
+        assertTrue(web.asked.isEmpty(), "the round is done, so it waits for the next")
     }
 
     // ---- Which sites have stopped being readable -----------------------------------------------------

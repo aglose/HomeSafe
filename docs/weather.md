@@ -212,7 +212,7 @@ nothing.
 
 Followed resorts are brought up to date in the background every few hours, along with the weather's own
 background check (`SkiBackgroundRefresh`), which only runs on a device with weather notifications on:
-reports, forecast and the drive, one resort at a time and spaced out, as the resorts' bot protection doesn't take long to stop answering a household's address. Prices wait for the tab, as a shop's browser is a whole page and needs a window. The Mac has no background check, so its tab catches up when it opens.
+reports, forecast and the drive, one resort at a time and spaced out, picking up where the last check ran out of time, as the resorts' bot protection doesn't take long to stop answering a household's address. Prices wait for the tab, as a shop's browser is a whole page and needs a window. The Mac has no background check, so its tab catches up when it opens.
 
 A report older than a week counts as no report: out of season the numbers on a resort's page are
 last spring's. A site that puts no date on its report goes by when it was last read, so one that has
