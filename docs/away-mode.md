@@ -212,7 +212,8 @@ off the review's `data.zones`, which only names it once a person has set foot th
 other label counts as inside it, and looks again each poll, so someone who steps off the sidewalk
 is told as they do. The in-app poller applies the same rule through `inZones`. Add the zone to the
 camera's `review.alerts.required_zones` too, so someone there is an alert while somebody's home as
-well.
+well. A push names only what the zone it talks about counts as inside (`zone_subject`), so "Person on
+the property" doesn't pick up the car on the road and the bicycle on the sidewalk from the same frame.
 
 Why: from 2026-10-25 to 11-01 the Front Yard pushed 301 times, 277 of them from this bypass, and
 226 had nobody but passers-by on the sidewalk. The Front Yard's outline is the sidewalk's house-side

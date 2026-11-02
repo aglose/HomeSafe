@@ -231,10 +231,28 @@ def alert_zone(zones: list[str], required_zones: list[str]) -> str | None:
     return next((z for z in required_zones if z in zones), zones[-1] if zones else None)
 
 
+def zone_subject(camera: str, zone: str | None, objects: list[str], sub_labels: list[str]) -> str:
+    """
+    `subject_for`, kept to what `zone` counts as inside. A review lists everything in the frame, so
+    with someone on the property and a car on the road, "Person and car on the property" says what
+    nobody saw. A zone with no list counts everything, and if it counts nothing here the review is
+    told whole.
+    """
+    wanted = _zone_labels.get(camera, {}).get(zone or "")
+    labels = unique([str(o).removesuffix("-verified") for o in objects if o])
+    kept = [label for label in labels if label in wanted] if wanted else labels
+    if not wanted or not kept:
+        return subject_for(objects, sub_labels)
+    names = unique([s for s in sub_labels if s and s.lower() not in NOT_A_NAME])
+    cars = car_names(labels, names)
+    named = [n for n in names if (n in cars and "car" in kept) or (n not in cars and "person" in kept)]
+    return subject_for(kept, named)
+
+
 def sentence(item: dict[str, Any], required_zones: list[str]) -> tuple[str, str]:
     data = item.get("data") or {}
     zone = alert_zone(data.get("zones") or [], required_zones)
-    subject = subject_for(data.get("objects") or [], data.get("sub_labels") or [])
+    subject = zone_subject(item.get("camera", ""), zone, data.get("objects") or [], data.get("sub_labels") or [])
     return camera_name(item.get("camera", "")), told(subject, zone)
 
 
@@ -880,6 +898,9 @@ _car_zone_outlines: dict[str, dict[str, list[tuple[float, float]]]] = {}
 _live_streams: dict[str, list[str]] = {}
 _detect_sizes: dict[str, tuple[int, int]] = {}
 _property_cameras: set[str] = set()
+# Per camera and zone, the labels its `objects` lists; a zone with no list is absent. Read as it
+# stands by `zone_subject`: the poll loop keeps it fresh through `required_zones`.
+_zone_labels: dict[str, dict[str, list[str]]] = {}
 _config_loaded_at = 0.0
 
 # The zone that says where the household's own ground ends. On a camera with one, Away mode's "any
@@ -908,7 +929,7 @@ def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def refresh_config() -> None:
-    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _detect_sizes, _property_cameras, _config_loaded_at
+    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _detect_sizes, _property_cameras, _zone_labels, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
@@ -926,6 +947,10 @@ def refresh_config() -> None:
                 if (d := cam.get("detect") or {}).get("width") and d.get("height")
             }
             _property_cameras = {name for name, cam in cameras.items() if PROPERTY_ZONE in (cam.get("zones") or {})}
+            _zone_labels = {
+                name: {z: list(zone["objects"]) for z, zone in (cam.get("zones") or {}).items() if (zone or {}).get("objects")}
+                for name, cam in cameras.items()
+            }
             _config_loaded_at = time.time()
         except Exception as e:  # keep the last known maps
             log.warning("config refresh failed: %s", e)
@@ -1659,7 +1684,7 @@ class Visit:
 
     def sentence(self, required_zones: list[str]) -> tuple[str, str]:
         zone = alert_zone(self.zones, required_zones)
-        body = told(subject_for(self.objects, self.sub_labels), zone, self.movement())
+        body = told(zone_subject(self.camera, zone, self.objects, self.sub_labels), zone, self.movement())
         if self.count > 1:
             body += f" · {self.count} alerts"
         return camera_name(self.camera), body
