@@ -592,6 +592,15 @@ class SkiViewModelTest {
     }
 
     @Test
+    fun pricesReachTheEndOfATripFromTheLastDayThatCanBeChosen() = skiTest(FakeSki().apply { resortPrices = SkiResortPrices("https://resort.example/tickets") }) { vm, ski, _ ->
+        vm.setTrip(3, 0, 15)
+        runCurrent()
+        vm.setActive(true)
+        runCurrent()
+        assertTrue(vm.uiState.value.todayEpochDay + 11 in ski.pricedDays.last())
+    }
+
+    @Test
     fun parkingTheHouseholdSetsIsKeptByResort() = skiTest { vm, ski, _ ->
         vm.setOwnParking("palisades-tahoe", 40)
         runCurrent()

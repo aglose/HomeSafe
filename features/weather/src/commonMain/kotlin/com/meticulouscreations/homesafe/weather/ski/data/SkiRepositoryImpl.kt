@@ -52,9 +52,6 @@ import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlin.time.Clock
 
-/** Kept once the tab has fetched anything: how the background knows anyone uses it. */
-internal const val SITE_HEALTH_KEY = "site-health"
-
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
@@ -254,7 +251,7 @@ class SkiRepositoryImpl(
             val held = row?.let { kept -> withContext(Dispatchers.Default) { runCatching { weatherJson.decodeFromString(SkiResortPrices.serializer(), kept.json) }.getOrNull() } }
             val fresh = held?.takeIf { row.savedAtEpochSeconds + SITE_PRICE_MAX_AGE > now() }
             val upToDate = fresh != null && when {
-                site.hasPlainCalendar -> epochDays.all { it in fresh.daysAsked } && (tripDays <= 1 || tripDays in fresh.packLengthsAsked)
+                site.hasPlainCalendar -> epochDays.all { it in fresh.daysAsked } && (tripDays <= 1 || epochDays.all { tripDays in fresh.packsAsked[it].orEmpty() })
                 !browser.isSupported -> true
                 site is ResortSite.Vail -> epochDays.all { it in fresh.daysAsked }
                 site.hasCalendar -> fresh.daysAsked.isNotEmpty()
@@ -274,6 +271,14 @@ class SkiRepositoryImpl(
             // A Vail shop is asked a day at a time, and says which it got an answer for. A calendar answers all at once or not at all, and an empty one is a shop with no dates on sale.
             val checked = shop?.let { it.checked ?: epochDays.toSet() }.orEmpty()
             if (table.isEmpty() && checked.isEmpty()) return@withLock held
+            // What a shop answered replaces what it said before about those days: all their lengths where it gives them all at once, the one asked after where each is a request of its own.
+            val keptPacks = fresh?.packs.orEmpty().mapValues { (day, lengths) ->
+                when {
+                    day !in checked -> lengths
+                    site.hasPlainCalendar -> lengths - tripDays
+                    else -> emptyMap()
+                }
+            }
             val prices = SkiResortPrices(
                 pageUrl = site.ticketsUrl.orEmpty(),
                 // A day the shop was asked about and now has no price for is off sale: its old price goes.
@@ -282,8 +287,8 @@ class SkiRepositoryImpl(
                 fetchedAtEpochSeconds = now(),
                 // Only if the shop answered at all: a browser that got nowhere has learned nothing about these days.
                 daysAsked = fresh?.daysAsked.orEmpty() + epochDays.filter { it in checked },
-                packs = fresh?.packs.orEmpty() + packs,
-                packLengthsAsked = fresh?.packLengthsAsked.orEmpty() + if (checked.isNotEmpty() && tripDays > 1) setOf(tripDays) else emptySet(),
+                packs = keptPacks.keys.plus(packs.keys).associateWith { keptPacks[it].orEmpty() + packs[it].orEmpty() }.filterValues { it.isNotEmpty() },
+                packsAsked = if (tripDays > 1) epochDays.filter { it in checked }.fold(fresh?.packsAsked.orEmpty()) { asked, day -> asked + (day to asked[day].orEmpty() + tripDays) } else fresh?.packsAsked.orEmpty(),
             )
             suspendRunCatching { dao.keep(SkiKeptEntity(key, weatherJson.encodeToString(SkiResortPrices.serializer(), prices), now())) }
             prices
@@ -323,7 +328,7 @@ class SkiRepositoryImpl(
 
     private companion object {
         const val PLAN_KEY = "plan"
-        const val HEALTH_KEY = SITE_HEALTH_KEY
+        const val HEALTH_KEY = "site-health"
         const val REPORT_MAX_AGE = 20 * 60L
         const val FORECAST_MAX_AGE = 60 * 60L
         const val TRAFFIC_MAX_AGE = 15 * 60L

@@ -209,8 +209,8 @@ data class SkiResortPrices(
     val daysAsked: Set<Int> = emptySet(),
     /** Tickets for several days, where it sells them: by the day they start, then by how many days. */
     val packs: Map<Int, Map<Int, SkiDayPrice>> = emptyMap(),
-    /** How many days long a ticket has been asked after, where each length is a request of its own. */
-    val packLengthsAsked: Set<Int> = emptySet(),
+    /** The lengths of ticket asked after for each start day, sold or not, where each length is a request of its own. */
+    val packsAsked: Map<Int, Set<Int>> = emptyMap(),
 ) {
     /** The price on [epochDay], or before a season opens the first day's. A day with none inside the calendar has none: another day's isn't its price. */
     fun priceFor(epochDay: Int): Pair<Int, SkiDayPrice>? {

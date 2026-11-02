@@ -173,6 +173,7 @@ import homesafe.shared.generated.resources.ski_trip_parking
 import homesafe.shared.generated.resources.ski_trip_tickets
 import homesafe.shared.generated.resources.ski_trip_tickets_covered
 import homesafe.shared.generated.resources.ski_trip_tickets_days
+import homesafe.shared.generated.resources.ski_trip_tickets_first_day
 import homesafe.shared.generated.resources.ski_trip_tickets_one
 import homesafe.shared.generated.resources.ski_trip_title
 import homesafe.shared.generated.resources.ski_trip_total
@@ -697,6 +698,8 @@ private fun TripCostCard(entry: SkiEntry, trip: SkiTripCost, ownParking: Int?, a
             Text(stringResource(if (trip.complete) Res.string.ski_trip_total else Res.string.ski_trip_total_at_least), style = WeatherTheme.type.bodyStrong, color = colors.onSky, modifier = Modifier.weight(1f))
             Text(trip.total?.let { SkiPlanner.money(it, currency) } ?: stringResource(Res.string.ski_trip_not_known), style = WeatherTheme.type.value, color = colors.onSky)
         }
+        if (trip.childrenLeftOut) Text(stringResource(Res.string.ski_ticket_kids_left_out), style = WeatherTheme.type.label, color = colors.watch)
+        if (trip.ticketsFromAnotherDay) Text(stringResource(Res.string.ski_trip_tickets_first_day), style = WeatherTheme.type.label, color = colors.onSkyMuted)
         if (trip.daysNotPriced > 0) Text(pluralStringResource(Res.plurals.ski_trip_days_not_priced, trip.daysNotPriced, trip.daysNotPriced), style = WeatherTheme.type.label, color = colors.watch)
         Spacer(Modifier.height(12.dp))
         SkiAmountField(stringResource(Res.string.ski_own_parking_label), ownParking, "ski_own_parking", { actions.onOwnParking(entry.ref.slug, it) })

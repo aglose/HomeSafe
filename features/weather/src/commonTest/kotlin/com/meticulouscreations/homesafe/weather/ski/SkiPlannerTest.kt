@@ -381,6 +381,37 @@ class SkiPlannerTest {
     }
 
     @Test
+    fun severalDaysAreNotOneDaysPriceOverAndOver() {
+        val prices = SkiResortPrices("https://a.example", days = mapOf(saturday + 20 to dated))
+        val trip = SkiPlanner.trip(threeDays, SkiEntry(ref("a"), prices = prices), saturday)
+        assertNull(trip.tickets)
+        assertEquals(3, trip.daysNotPriced)
+    }
+
+    @Test
+    fun aDayTripBeforeTheSeasonGoesByTheFirstDayOnSaleAndSaysSo() {
+        val prices = SkiResortPrices("https://a.example", days = mapOf(saturday + 20 to dated))
+        val trip = SkiPlanner.trip(SkiPlan(adults = 1), SkiEntry(ref("a"), prices = prices, drive = SkiDrive(1, 1_000.0, SkiDriveSource.FREE_FLOW), parking = null), saturday)
+        assertEquals(205.0, trip.tickets)
+        assertTrue(trip.ticketsFromAnotherDay)
+        assertFalse(trip.complete)
+    }
+
+    @Test
+    fun childrenWithNoPriceMakeATotalALowerBound() {
+        val noChildren = threeDayPrices
+        val party = threeDays.copy(children = 1, ownParking = mapOf("a" to 40))
+        val entry = SkiEntry(ref("a"), prices = noChildren, drive = SkiDrive(1, 1_000.0, SkiDriveSource.FREE_FLOW))
+        val daily = SkiPlanner.trip(party, entry, saturday)
+        assertTrue(daily.childrenLeftOut)
+        assertFalse(daily.complete)
+        val packs = SkiPlanner.trip(party, entry.copy(prices = noChildren.copy(packs = mapOf(saturday to mapOf(3 to SkiDayPrice(adultOnline = 280.0))))), saturday)
+        assertTrue(packs.ticketsAreOne)
+        assertTrue(packs.childrenLeftOut)
+        assertFalse(packs.complete)
+    }
+
+    @Test
     fun aClosedRoadOnTheWayCounts() {
         val closed = ChainControl(ChainLevel.CLOSED, "SR-89", "Monitor Pass", latitude = 38.66, longitude = -119.7)
         val open = view(entry("a", listOf(day(saturday, 10.0))))

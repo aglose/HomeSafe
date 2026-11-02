@@ -449,7 +449,7 @@ class NevadaRoadsApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) 
     }
 
     private class Stretch(val road: String, val box: GeoBox, val described: Regex? = null) {
-        fun matches(row: NevadaRoadDto): Boolean = row.area != "California" && row.roadway.orEmpty().startsWith(road) && (described == null || described.containsMatchIn(row.description.orEmpty()))
+        fun matches(row: NevadaRoadDto): Boolean = row.area != "California" && row.roadway.orEmpty().trim().substringBefore(' ') == road && (described == null || described.containsMatchIn(row.description.orEmpty()))
     }
 
     private companion object {

@@ -453,6 +453,38 @@ class SkiRepositoryImplTest {
         assertEquals(asked, web.asked.size)
     }
 
+    private fun twoDayAnswers(request: io.ktor.client.request.HttpRequestData): Answer {
+        if ("book.mammothmountain.com" !in request.url.host) return Answer(status = HttpStatusCode.NotFound)
+        val form = (request.body as io.ktor.client.request.forms.FormDataContent).formData
+        return when (form["days"]) {
+            "2" -> Answer("""[{"Price":394.0,"Days":2,"Date":"2026-12-26","Quantity":5,"BundleOnly":false},{"Price":380.0,"Days":2,"Date":"2027-01-09","Quantity":5,"BundleOnly":false}]""")
+            "3" -> Answer("""[{"Price":570.0,"Days":3,"Date":"2026-12-26","Quantity":5,"BundleOnly":false}]""")
+            else -> Answer(inntopiaAnswer)
+        }
+    }
+
+    @Test
+    fun aLengthAskedAfterForOtherDaysDoesntCountForTheseOnes() = runTest {
+        val january = 20_827 // 9 January 2027.
+        val web = Web { twoDayAnswers(it) }
+        web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813), tripDays = 2)
+        web.repository.resortPrices("mammoth-mountain-ski-area", listOf(january))
+        val prices = web.repository.resortPrices("mammoth-mountain-ski-area", listOf(january), tripDays = 2)
+        assertEquals(380.0, prices?.packs?.get(january)?.get(2)?.adultOnline)
+    }
+
+    @Test
+    fun anotherLengthOfTicketDoesntLoseTheOneAlreadyInHand() = runTest {
+        val web = Web { twoDayAnswers(it) }
+        web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813), tripDays = 2)
+        val both = web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813), tripDays = 3)
+        assertEquals(394.0, both?.packs?.get(20_813)?.get(2)?.adultOnline)
+        assertEquals(570.0, both?.packs?.get(20_813)?.get(3)?.adultOnline)
+        val asked = web.asked.size
+        web.repository.resortPrices("mammoth-mountain-ski-area", listOf(20_813), tripDays = 2)
+        assertEquals(asked, web.asked.size, "back to the first length: nothing to ask")
+    }
+
     @Test
     fun aCalendarThatWontAnswerLearnsNothing() = runTest {
         var up = false
@@ -490,6 +522,18 @@ class SkiRepositoryImplTest {
         override suspend fun of(origin: SkiOrigin) = point
     }
 
+    /**
+     * On the real clock, with hardly a wait between resorts: on virtual time an attempt's limit runs
+     * out the moment the test goes idle, which it does while a request is out on a real thread.
+     */
+    private inner class RealTimeRefresh(web: Web) {
+        private val inner = SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock).apply { betweenResortsMillis = 1 }
+
+        suspend fun refresh() = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { inner.refresh() }
+    }
+
+    private fun untimed(web: Web) = RealTimeRefresh(web)
+
     @Test
     fun theBackgroundLeavesItAloneUntilTheTabHasBeenUsed() = runTest {
         val web = Web { Answer(vailPage) }
@@ -500,8 +544,8 @@ class SkiRepositoryImplTest {
     @Test
     fun theBackgroundBringsTheNewsUpToDateEveryFewHoursWithNoBrowser() = runTest {
         val web = Web { request -> if ("snow-and-weather" in request.url.encodedPath) Answer(vailPage) else Answer(status = HttpStatusCode.NotFound) }
-        val background = SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock)
-        web.repository.updatePlan { it.copy(resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"))) }
+        val background = untimed(web)
+        web.repository.updatePlan { it.copy(tabOpened = true, resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"))) }
         web.repository.resortNews("northstar-california")
 
         web.asked.clear()
@@ -523,8 +567,8 @@ class SkiRepositoryImplTest {
     @Test
     fun aRoundCutShortCarriesOnWhereItStopped() = runTest {
         val web = Web { request -> if ("snow-and-weather" in request.url.encodedPath) Answer(vailPage) else Answer(status = HttpStatusCode.NotFound) }
-        val background = SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock)
-        web.repository.updatePlan { it.copy(resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"), SkiResortRef("heavenly-mountain-resort", "california", "Heavenly"))) }
+        val background = untimed(web)
+        web.repository.updatePlan { it.copy(tabOpened = true, resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"), SkiResortRef("heavenly-mountain-resort", "california", "Heavenly"))) }
         web.repository.resortNews("northstar-california")
         // The last round got through the first resort before its time ran out.
         web.dao.keep(SkiKeptEntity("background-refresh", "1", web.clock.seconds))
@@ -538,6 +582,40 @@ class SkiRepositoryImplTest {
         web.asked.clear()
         background.refresh()
         assertTrue(web.asked.isEmpty(), "the round is done, so it waits for the next")
+    }
+
+    @Test
+    fun aRoundWhoseResortsHaveGoneStartsAgain() = runTest {
+        val web = Web { request -> if ("snow-and-weather" in request.url.encodedPath) Answer(vailPage) else Answer(status = HttpStatusCode.NotFound) }
+        val background = untimed(web)
+        web.repository.updatePlan { it.copy(tabOpened = true, resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"))) }
+        web.dao.keep(SkiKeptEntity("background-refresh", "4", web.clock.seconds))
+        background.refresh()
+        assertTrue(web.asked.any { "northstarcalifornia" in it.url.host })
+    }
+
+    @Test
+    fun aResortThatStallsIsPassedOverNotTriedForEver() = runTest {
+        val web = Web { request ->
+            if ("northstarcalifornia" in request.url.host) kotlinx.coroutines.awaitCancellation()
+            if ("snow-and-weather" in request.url.encodedPath) Answer(vailPage) else Answer(status = HttpStatusCode.NotFound)
+        }
+        val background = SkiBackgroundRefreshImpl(web.repository, web.dao, AtHome(home), web.clock)
+        background.attemptMillis = 300
+        background.betweenResortsMillis = 1
+        web.repository.updatePlan { it.copy(tabOpened = true, resorts = listOf(SkiResortRef("northstar-california", "california", "Northstar"), SkiResortRef("heavenly-mountain-resort", "california", "Heavenly"))) }
+        // On the real clock, as the stall has to outlast a request that's really being made.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { background.refresh() }
+        assertTrue(web.asked.any { "skiheavenly" in it.url.host })
+    }
+
+    @Test
+    fun aResortWithNoSiteOfItsOwnIsStillBroughtUpToDate() = runTest {
+        val web = Web { Answer(listPage) }
+        val background = untimed(web)
+        web.repository.updatePlan { it.copy(tabOpened = true, resorts = listOf(SkiResortRef("alta", "utah", "Alta"))) }
+        background.refresh()
+        assertTrue(web.asked.any { "utah" in it.url.encodedPath }, "the tab has been used, whatever the resort")
     }
 
     // ---- Which sites have stopped being readable -----------------------------------------------------
@@ -671,6 +749,14 @@ class SkiRepositoryImplTest {
         assertEquals("From Diamond Peak to Incline Lake", notice.place)
         assertTrue(report.complete)
         assertTrue(web.asked.any { "nvroads" in it.url.host && "SR-431" in it.url.toString() })
+    }
+
+    @Test
+    fun anotherRoadWhoseNumberStartsTheSameIsAnotherRoad() = runTest {
+        val rows = """{"data":[{"area":"Reno","roadway":"SR-287","description":"Elsewhere","stale":false,"primaryCondition":"Road Closed","secondaryConditions":[]},{"area":"Reno","roadway":"SR-28","description":"From US-50","stale":false,"primaryCondition":"Snow Covered","secondaryConditions":[]}]}"""
+        val web = nevadaWeb { Answer(rows) }
+        val controls = web.repository.chainControls("_ggnFnvb{U_|Bo}@").controls.filter { it.place == "Elsewhere" || it.place == "From US-50" }
+        assertEquals(listOf("SR-28"), controls.map { it.route }.distinct())
     }
 
     @Test

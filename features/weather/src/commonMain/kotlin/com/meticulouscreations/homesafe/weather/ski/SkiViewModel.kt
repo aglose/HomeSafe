@@ -248,9 +248,11 @@ class SkiViewModel(
         launch { repository.resortNews(ref.slug, force)?.let { news -> change(ref) { it.copy(news = news) } } }
         launch {
             val state = _uiState.value
-            val days = (0 until DAYS_PRICED).map { state.todayEpochDay + it }
-            val trip = (0 until state.plan.tripDays.coerceAtLeast(1)).map { state.tripEpochDay + it }
-            repository.resortPrices(ref.slug, (days + trip).distinct(), state.plan.tripDays.coerceAtLeast(1))?.let { prices -> change(ref) { it.copy(prices = prices) } }
+            val tripDays = state.plan.tripDays.coerceAtLeast(1)
+            // As far as a trip from any day that can be chosen could run.
+            val days = (0 until DAYS_PRICED + tripDays - 1).map { state.todayEpochDay + it }
+            val trip = (0 until tripDays).map { state.tripEpochDay + it }
+            repository.resortPrices(ref.slug, (days + trip).distinct(), tripDays)?.let { prices -> change(ref) { it.copy(prices = prices) } }
         }
         val page = repository.resortPage(ref, force = force || includeCams)
         page.getOrNull()?.let { loaded -> change(ref) { it.copy(page = loaded, report = it.report ?: loaded.report, error = null) } }

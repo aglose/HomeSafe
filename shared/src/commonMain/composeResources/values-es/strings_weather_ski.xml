@@ -204,6 +204,7 @@
     <string name="ski_trip_tickets">Forfaits</string>
     <string name="ski_trip_tickets_covered">Forfaits, con %1$s</string>
     <string name="ski_trip_tickets_one">Un forfait de %1$d días</string>
+    <string name="ski_trip_tickets_first_day">Los forfaits van al precio del primer día a la venta, porque este día aún no lo está.</string>
     <string name="ski_trip_tickets_days">Forfaits de un día, %1$d días</string>
     <string name="ski_trip_parking">Aparcamiento</string>
     <string name="ski_trip_driving">Gasolina o carga, ida y vuelta</string>

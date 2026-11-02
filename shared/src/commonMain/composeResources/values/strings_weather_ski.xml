@@ -203,6 +203,7 @@
     <string name="ski_trip_tickets">Lift tickets</string>
     <string name="ski_trip_tickets_covered">Lift tickets, on %1$s</string>
     <string name="ski_trip_tickets_one">A %1$d-day ticket</string>
+    <string name="ski_trip_tickets_first_day">Tickets are at the price of the first day on sale, as this day isn't yet.</string>
     <string name="ski_trip_tickets_days">Day tickets, %1$d days</string>
     <string name="ski_trip_parking">Parking</string>
     <string name="ski_trip_driving">Gas or charging, there and back</string>

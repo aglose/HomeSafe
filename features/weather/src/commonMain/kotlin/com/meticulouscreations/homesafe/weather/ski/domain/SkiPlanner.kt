@@ -102,6 +102,10 @@ data class SkiTripCost(
     val coveredBy: SkiPass? = null,
     /** [tickets] is the least they could be. */
     val startsAt: Boolean = false,
+    /** There are children going and no child's price: [tickets] leaves them out. */
+    val childrenLeftOut: Boolean = false,
+    /** [tickets] is the price on the first day a shop has on sale, as it has none for the day itself. */
+    val ticketsFromAnotherDay: Boolean = false,
     val nights: Int = 0,
     /** Null when no price for a night has been set. */
     val lodging: Double? = null,
@@ -112,7 +116,7 @@ data class SkiTripCost(
     val total: Double? get() = listOfNotNull(tickets, lodging, parking, driving).takeIf { it.isNotEmpty() }?.sum()
 
     /** Everything that goes in it is known, so [total] is the whole of it. */
-    val complete: Boolean get() = tickets != null && daysNotPriced == 0 && !startsAt && (lodging != null || nights == 0) && parking != null && driving != null
+    val complete: Boolean get() = tickets != null && daysNotPriced == 0 && !startsAt && !childrenLeftOut && !ticketsFromAnotherDay && (lodging != null || nights == 0) && parking != null && driving != null
 }
 
 /** A thing worth saying about a resort's day, and how it should read. */
@@ -272,7 +276,12 @@ object SkiPlanner {
         val nights = days - 1
         val first = cost(plan, entry, epochDay)
         val pack = if (days > 1 && first.coveredBy == null && !first.own) entry.prices?.packs?.get(epochDay)?.get(days)?.let { party(plan, it, SkiCost.Source.RESORT_DATED, epochDay) } else null
-        val daily = if (pack == null) (0 until days).map { cost(plan, entry, epochDay + it) } else emptyList()
+        // Before a season, a day's cost is the first day on sale's, which it says. Several of those added up would be one day's price over and over.
+        val daily = if (pack == null) {
+            (0 until days).map { after -> cost(plan, entry, epochDay + after).takeIf { days == 1 || it.onEpochDay == null || it.onEpochDay == epochDay + after } ?: SkiCost() }
+        } else {
+            emptyList()
+        }
         val parkingADay = plan.ownParking[entry.ref.slug] ?: entry.parking?.dayPrice
         return SkiTripCost(
             days = days,
@@ -281,6 +290,8 @@ object SkiPlanner {
             daysNotPriced = daily.count { it.total == null },
             coveredBy = first.coveredBy,
             startsAt = daily.any { it.startsAt },
+            childrenLeftOut = pack?.childrenLeftOut ?: daily.any { it.childrenLeftOut },
+            ticketsFromAnotherDay = days == 1 && daily.any { it.onEpochDay != null && it.onEpochDay != epochDay },
             nights = nights,
             lodging = plan.lodgingPerNight.takeIf { it > 0 }?.let { (it * nights).toDouble() },
             parking = parkingADay?.let { (it * days).toDouble() },
