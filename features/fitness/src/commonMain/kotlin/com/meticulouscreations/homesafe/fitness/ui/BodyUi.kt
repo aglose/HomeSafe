@@ -53,6 +53,8 @@ import homesafe.shared.generated.resources.fitness_body_connect_body
 import homesafe.shared.generated.resources.fitness_body_connect_button
 import homesafe.shared.generated.resources.fitness_body_connect_hint
 import homesafe.shared.generated.resources.fitness_body_failed
+import homesafe.shared.generated.resources.fitness_body_failed_phone
+import homesafe.shared.generated.resources.fitness_body_from_phone
 import homesafe.shared.generated.resources.fitness_body_manage_button
 import homesafe.shared.generated.resources.fitness_body_missing_body
 import homesafe.shared.generated.resources.fitness_body_missing_button
@@ -106,8 +108,8 @@ private val TileShape = RoundedCornerShape(18.dp)
 /**
  * On Today: what the band says about the body. A readiness score with what it was read from,
  * today's steps against the week, and last night's sleep. Before the health store is connected
- * it is the invitation to connect it, and says where the data comes from and that it stays on
- * the phone.
+ * it is the invitation to connect it, and says where the data comes from and where it goes. On a
+ * device with no store of its own it is what the phone last read, and says when that was.
  */
 @Composable
 internal fun BodyCard(health: HealthUiState, onConnect: () -> Unit, onManage: () -> Unit, modifier: Modifier = Modifier, animated: Boolean = true) {
@@ -152,9 +154,27 @@ internal fun BodyCard(health: HealthUiState, onConnect: () -> Unit, onManage: ()
                     StepsTile(health.body.steps, Modifier.weight(1f).fillMaxHeight())
                     SleepTile(health.body.sleep, Modifier.weight(1f).fillMaxHeight())
                 }
+                health.fromPhoneAtEpochSeconds?.let { readAt ->
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(
+                            Res.string.fitness_body_from_phone,
+                            FitnessFormat.whenText(readAt, health.nowEpochSeconds, health.utcOffsetSeconds).resolve(),
+                            FitnessFormat.timeOfDay(readAt, health.utcOffsetSeconds).resolve(),
+                        ),
+                        style = type.label,
+                        color = colors.textFaint,
+                        modifier = Modifier.testTag("fitness_body_from_phone"),
+                    )
+                }
                 if (health.failed) {
                     Spacer(Modifier.height(10.dp))
-                    Text(stringResource(Res.string.fitness_body_failed), style = type.label, color = colors.textFaint, modifier = Modifier.testTag("fitness_body_failed"))
+                    Text(
+                        stringResource(if (health.fromPhone) Res.string.fitness_body_failed_phone else Res.string.fitness_body_failed),
+                        style = type.label,
+                        color = colors.textFaint,
+                        modifier = Modifier.testTag("fitness_body_failed"),
+                    )
                 }
                 // Android's sheet is only for the first asking: a kind left out then can only be added over there.
                 if (health.partlyShared) {

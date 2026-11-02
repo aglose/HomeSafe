@@ -451,6 +451,11 @@ def db() -> sqlite3.Connection:
         "CREATE TABLE IF NOT EXISTS fitness_rows (owner TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, data TEXT, updated REAL NOT NULL, PRIMARY KEY (owner, kind, id))"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS fitness_rows_by_rev ON fitness_rows (owner, rev)")
+    # What each login's phone last read from its health store, whole, and its runs' tracks (see "fitness").
+    conn.execute("CREATE TABLE IF NOT EXISTS fitness_health (owner TEXT PRIMARY KEY, device TEXT NOT NULL, snapshot TEXT NOT NULL, tracks TEXT NOT NULL, updated REAL NOT NULL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS fitness_health_tracks (owner TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, track TEXT NOT NULL, updated REAL NOT NULL, PRIMARY KEY (owner, id))"
+    )
     # Where each institution's transactions were read up to (Plaid's cursor), when they were last
     # asked for and last changed, and whether Plaid has finished fetching their history.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_items)")}
@@ -15175,6 +15180,129 @@ def post_fitness_sync(body: dict[str, Any], request: Request) -> dict[str, Any]:
     if expected is not None and not isinstance(expected, str):
         raise HTTPException(status_code=400, detail="Not a login")
     return fitness_sync(owner, since, fitness_changes(body), time.time(), expected)
+
+
+# What a login's phone last read from its health store (Health Connect), for that login's devices
+# with no store of their own (docs/fitness.md, "The body, and runs"). Unlike the log this is a copy
+# and not a record: the phone sends the whole of it each time, so a kind switched off over there is
+# gone from here with the next send, and a run's track is only held while the snapshot lists it.
+FITNESS_HEALTH_MAX_BYTES = 4_000_000
+FITNESS_HEALTH_MAX_TRACKS = 2_000
+
+
+def fitness_health_save(owner: str, device: str, snapshot: dict[str, Any], tracks: list[str], now: float) -> dict[str, Any]:
+    """Replaces `owner`'s snapshot, lets go of the tracks it no longer lists, and says which it has of the rest, so the phone sends only what is missing or has changed."""
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        c.execute(
+            "INSERT OR REPLACE INTO fitness_health (owner, device, snapshot, tracks, updated) VALUES (?,?,?,?,?)",
+            (owner, device, json.dumps(snapshot, separators=(",", ":")), json.dumps(tracks), now),
+        )
+        listed = set(tracks)
+        held: dict[str, str] = {}
+        for track_id, fingerprint in c.execute("SELECT id, fingerprint FROM fitness_health_tracks WHERE owner=?", (owner,)).fetchall():
+            if track_id in listed:
+                held[track_id] = fingerprint
+            else:
+                c.execute("DELETE FROM fitness_health_tracks WHERE owner=? AND id=?", (owner, track_id))
+        c.commit()
+        return {"tracks": held}
+
+    return with_db(work)
+
+
+def fitness_health_clear(owner: str, device: str) -> bool:
+    """Takes `owner`'s copy off the server, if `device` is the one that sent it: another install that was never let into the store has no say over what this one sent."""
+
+    def work(c: sqlite3.Connection) -> bool:
+        held = c.execute("SELECT device FROM fitness_health WHERE owner=?", (owner,)).fetchone()
+        if held is None or held[0] != device:
+            return False
+        c.execute("DELETE FROM fitness_health WHERE owner=?", (owner,))
+        c.execute("DELETE FROM fitness_health_tracks WHERE owner=?", (owner,))
+        c.commit()
+        return True
+
+    return with_db(work)
+
+
+def fitness_health_save_track(owner: str, track_id: str, fingerprint: str, track: dict[str, Any], now: float) -> bool:
+    """Keeps one run's track, if the snapshot still lists it: one on its way as the run was deleted, or its kind switched off, is not kept."""
+
+    def work(c: sqlite3.Connection) -> bool:
+        held = c.execute("SELECT tracks FROM fitness_health WHERE owner=?", (owner,)).fetchone()
+        if held is None or track_id not in json.loads(held[0]):
+            return False
+        c.execute(
+            "INSERT OR REPLACE INTO fitness_health_tracks (owner, id, fingerprint, track, updated) VALUES (?,?,?,?,?)",
+            (owner, track_id, fingerprint, json.dumps(track, separators=(",", ":")), now),
+        )
+        c.commit()
+        return True
+
+    return with_db(work)
+
+
+@app.put("/fitness/health")
+def put_fitness_health(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """The phone's latest reading of its health store, whole (see above)."""
+    owner = fitness_owner(request)
+    device, snapshot, tracks = body.get("device"), body.get("snapshot"), body.get("tracks", [])
+    if not isinstance(device, str) or not device or len(device) > 200:
+        raise HTTPException(status_code=400, detail="Not a device")
+    if not isinstance(snapshot, dict):
+        raise HTTPException(status_code=400, detail="Not a snapshot")
+    if not isinstance(tracks, list) or len(tracks) > FITNESS_HEALTH_MAX_TRACKS or any(not isinstance(t, str) or not t or len(t) > 200 for t in tracks):
+        raise HTTPException(status_code=400, detail="Not a list of tracks")
+    if len(json.dumps(snapshot, separators=(",", ":"))) > FITNESS_HEALTH_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Too large a snapshot")
+    return fitness_health_save(owner, device, snapshot, tracks, time.time())
+
+
+@app.get("/fitness/health")
+def get_fitness_health(request: Request) -> dict[str, Any]:
+    """What this login's phone last read, for a device with no store of its own. `snapshot` is null where there is none."""
+    owner = fitness_owner(request)
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        row = c.execute("SELECT snapshot FROM fitness_health WHERE owner=?", (owner,)).fetchone()
+        return {"snapshot": json.loads(row[0]) if row else None}
+
+    return with_db(work)
+
+
+@app.delete("/fitness/health")
+def delete_fitness_health(device: str, request: Request) -> dict[str, Any]:
+    """The phone's store no longer shares anything with the app, so neither does this."""
+    return {"cleared": fitness_health_clear(fitness_owner(request), device)}
+
+
+@app.put("/fitness/health/track")
+def put_fitness_health_track(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """One run moment by moment: its heart, its stretches of distance and its route."""
+    owner = fitness_owner(request)
+    track_id, fingerprint, track = body.get("id"), body.get("fingerprint"), body.get("track")
+    if not isinstance(track_id, str) or not track_id or len(track_id) > 200:
+        raise HTTPException(status_code=400, detail="Not a track's id")
+    if not isinstance(fingerprint, str) or len(fingerprint) > 200:
+        raise HTTPException(status_code=400, detail="Not a fingerprint")
+    if not isinstance(track, dict):
+        raise HTTPException(status_code=400, detail="Not a track")
+    if len(json.dumps(track, separators=(",", ":"))) > FITNESS_MAX_ROW_BYTES:
+        raise HTTPException(status_code=413, detail="Too large a track")
+    return {"kept": fitness_health_save_track(owner, track_id, fingerprint, track, time.time())}
+
+
+@app.get("/fitness/health/track")
+def get_fitness_health_track(id: str, request: Request) -> dict[str, Any]:
+    """One run's track for this login, or null where there isn't one."""
+    owner = fitness_owner(request)
+
+    def work(c: sqlite3.Connection) -> dict[str, Any]:
+        row = c.execute("SELECT track FROM fitness_health_tracks WHERE owner=? AND id=?", (owner, id)).fetchone()
+        return {"track": json.loads(row[0]) if row else None}
+
+    return with_db(work)
 
 
 class ChargingSessionPatch(BaseModel):

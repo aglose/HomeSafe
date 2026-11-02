@@ -27,7 +27,8 @@ a set counts down at its head as it does on the workout. With a
 heart-rate sensor connected (Android), the workout also shows the [heart rate](#heart-rate) live.
 
 What a band records away from the app (steps, sleep, runs) is read from [Health Connect](#the-body-and-runs)
-(Android), and is the one part of the app that isn't the app's own log. A run can also be
+on an Android phone, which [sends it to the home server](#on-another-device) for the rest of that
+login's devices, and is the one part of the app that isn't the app's own log. A run can also be
 [recorded in the app](#recording-a-run) with the phone's GPS (Android).
 
 ## The model: a ladder
@@ -253,10 +254,10 @@ is treated as dropped without waiting for Android to notice.
 
 What the band records when the app isn't looking, it gives to the Google Health app, and Google
 Health can write it into **Health Connect**, Android's store of health records on the phone.
-The fitness app reads it from there. **Android only**: on iOS, the desktop and the web the port
-answers "unsupported" and none of this is shown. It only reads. Nothing read leaves the phone
-(not to the home server, not anywhere), and nothing read is kept by the app: Health Connect is
-asked again each time the fitness app comes on screen, at most once a minute.
+The fitness app reads it from there, on Android. It only reads. What it reads goes to the home
+server and nowhere else, so that [the same login's other devices](#on-another-device) can show it;
+none of it is kept on the phone: Health Connect is asked again each time the fitness app comes on
+screen, at most once a minute.
 
 ### Setting it up
 
@@ -283,6 +284,55 @@ Connect that can't say what is shared just then leaves the card as it was.
 On Android 13 Health Connect is an app from the Play Store, and the card offers to get it; from
 14 it is part of the system. The page Health Connect links to for "why does this app want my
 data" is `HealthRationaleActivity`, which Android requires before it will show the sheet at all.
+
+### On another device
+
+A device with no health store (a Mac, an iPhone or iPad, since the app reads no HealthKit) shows
+what this login's phone last read. Today's Body card, the runs door and the runs page are the same
+as on the phone, and the card says when it was read: *Read on your phone: Today, 2:14 PM*.
+
+- **What goes**: everything read. Steps (the last week), sleep with its stages, resting heart rate
+  and variability (the last thirty days or so), and every run of the last sixteen weeks with its
+  totals, its heart rate and stretches of distance, and its route. A route Health Connect only hands
+  over when asked goes once it has been asked for on the phone; before that the run has no route
+  elsewhere, and can't be asked for from there.
+- **When**: only while the fitness app or the drawer is on screen on the phone, after each read.
+  There is no background job, so with the phone's app unopened since yesterday the other devices
+  are as of yesterday. The score is worked out where it is shown, from the same readings, so last
+  night is still last night: until the phone has sent one, the Mac says **Waiting for last night**
+  and not yesterday's number. A day's steps stand at whatever they were when last sent.
+- **Whose**: the Frigate login, the `owner` of [the log](#on-the-server). One login can't read
+  another's. Signed out, a device holds none of it, and nothing is stored on a device with no store:
+  it is asked for each time, so with no connection there is nothing to show.
+- **What the server holds is a copy, and only that.** A snapshot replaces the last one whole
+  (`fitness_health` in `relay/relay.py`), so a kind switched off in Health Connect is gone from the
+  server with the next read. A run's track (`fitness_health_tracks`) is held only while the snapshot
+  lists it, so one that has aged out or been deleted goes too. It is in `relay.db` as plain JSON, as
+  the log and the finance tables are, and so in the nightly copy of that database.
+- **Taking it away**: all of it goes when Health Connect shares nothing with the app any more, the
+  next time Fitness is opened on that phone. Uninstalling the app doesn't reach the server: that
+  takes a query against `relay.db`. Only the install that sent a copy can clear it this way (by its
+  `DeviceIdentityStore` id), so a debug build beside the release one, never let into Health Connect,
+  doesn't wipe it. There is no switch: a phone with Health Connect allowed sends what it reads.
+- **More than one phone**: whichever read last stands. Android with Health Connect not allowed or
+  not installed still offers to connect or to get it, and doesn't show another phone's copy.
+
+**How it goes** (`HealthUploader`). After a read that got everything it asked for, `HealthViewModel`
+sends the readings behind the screen (`PUT /fitness/health`), and nothing on the phone waits for it
+or says how it went. A read where a kind failed isn't sent, since a kind missing from a snapshot
+means it stopped being shared. The same readings again aren't sent for fifteen minutes. The answer
+says which tracks the server has, each by a fingerprint of what it depends on (the run's end,
+distance and average heart rate, its route access, whether heart rate and distance are shared), and
+the phone reads and sends those missing or changed (`PUT /fitness/health/track`), ten a pass, newest
+first, since each takes several calls to Health Connect. The heart through a run
+[recorded in the app](#recording-a-run) goes the same way, read again each hour for two days since
+the band may yet sync it, under an id made of the run's minutes.
+
+**How it is read** (`RelayHealthSource`). `AppGraph` gives a platform with no store a `HealthSource`
+that answers from `GET /fitness/health` (`HealthAvailability.REMOTE`). So `HealthViewModel`, the
+score and the screens run as they do on a phone, with `fromPhoneAtEpochSeconds` set: what can only
+be done on the phone (connecting, **Open Health Connect**, **Show the route**) isn't offered. With
+no snapshot on the server it is as though there were no store, and none of this is shown.
 
 ### Readiness
 
@@ -447,7 +497,11 @@ thrown away to get past a migration. A change to its tables needs a migration wr
   first let in, and everything since.
 - Runs are not in the log: they aren't on History's calendar and aren't in [a copy of the log](#moving-the-log).
   One recorded in the app does [go to the server](#on-the-server) once it is finished, positions
-  and all, and so shows on every device. One read from the band stays where the band is.
+  and all, and so shows on every device. One read from the band reaches them [as a copy](#on-another-device),
+  as it stood when the phone last had the app open.
+- The other devices have **never been shown a real phone's readings**: the way there is tested
+  against fakes and the real relay with made-up numbers, for as long as the Health Connect reader
+  itself hasn't been tried.
 
 ## Bringing notes in
 
@@ -496,10 +550,14 @@ the sign-in screen with nothing signed in. The foot of the Lifts tab says where 
 |---|---|
 | Exercises, sets, workouts, phases, weigh-ins | The heart-rate sensor chosen (it is this device's radio talking to a band) |
 | The numbers the zones are worked out from, and each workout's time in zone | Which figure is drawn (`FitnessPreferencesRepository`) |
-| Runs recorded in the app, once finished, with their positions | Anything read from Health Connect (steps, sleep, readiness, the band's runs) |
+| Runs recorded in the app, once finished, with their positions | |
 
 A run being recorded stays here until it is finished. On a device with no health store, a run
-that came from the server still has its door on Today.
+that came from the server still has its door on Today, and takes the band's heart from
+[the phone's copy](#on-another-device) where there is one.
+
+What is read from Health Connect also reaches the server, but it isn't part of the log and doesn't
+go this way: [it is a copy that is replaced whole](#on-another-device).
 
 **How it stays in step** (`FitnessLogSyncImpl`, and `fitness_sync` in `relay/relay.py`). While the
 log is on screen, a pass runs at once, two seconds after each change here, and every thirty
@@ -711,7 +769,8 @@ A movement of its own is four things, and the tests name whichever is still miss
   advertisement is the chosen sensor, reading the measurement, and trying again when a link
   drops, goes quiet or never comes up. So all of that is tested against a fake radio.
 - The health store is in two halves the same way. `HealthSource` is the platform's and only
-  hands records over (`createHealthSource`; Android reads Health Connect, the others are stubs).
+  hands records over (`createHealthSource`; Android reads Health Connect, and the others have none,
+  so `AppGraph` gives them `RelayHealthSource` and [the phone's copy](#on-another-device)).
   What they mean is common code: `Body.kt` (`SleepNights`, `ReadinessScore`, `BodyBoards`) and
   `Runs.kt` (a run's pace, the weeks, splits, the heart in zones). `HealthViewModel` sits beside
   `FitnessViewModel`, scoped to the activity, and reads when the fitness app or the drawer comes on
@@ -752,7 +811,10 @@ A movement of its own is four things, and the tests name whichever is still miss
 - The body and runs: `domain/BodyTest` (nights out of sleep sessions, each part of the readiness
   score and the score, Today's board) and `domain/RunsTest` (pace, the weeks, splits, the heart
   in zones), `HealthViewModelTest` over a fake store (what is asked of the user, what is read
-  and when, a read that fails, a run opened), and `uiTest/.../FitnessHealthUiTest`. The Android
+  and when, a read that fails, a run opened, what goes to the server, and a phone's readings shown
+  on a device with no store), `data/HealthUploaderTest` (what is sent and when, tracks and their
+  fingerprints, reading it back), `data/HealthRelayApiImplTest` (what is said to the relay and heard
+  back), `FitnessHealthTest` in `relay/test_relay.py`, and `uiTest/.../FitnessHealthUiTest`. The Android
   reader itself (`HealthSource.android.kt`) has no test: it needs a phone with Health Connect.
 - The figures: `MovementClassifierTest` (every exercise is a movement), `MovementCatalogTest`
   (every movement has a rig figure; the anchors' reader), `FitnessPreferencesRepositoryImplTest`,

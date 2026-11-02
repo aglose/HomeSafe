@@ -1,15 +1,21 @@
 package com.meticulouscreations.homesafe.fitness
 
+import com.meticulouscreations.homesafe.data.DeviceIdentityStore
 import com.meticulouscreations.homesafe.data.InMemoryFitnessDao
 import com.meticulouscreations.homesafe.data.InMemoryFitnessRunDao
+import com.meticulouscreations.homesafe.data.InMemorySettingsDao
+import com.meticulouscreations.homesafe.finance.FakeServerConnection
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.DAY
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
+import com.meticulouscreations.homesafe.fitness.data.HealthUploader
 import com.meticulouscreations.homesafe.fitness.data.RecordedRunsImpl
+import com.meticulouscreations.homesafe.fitness.data.RelayHealthSource
 import com.meticulouscreations.homesafe.fitness.domain.DistanceSpan
 import com.meticulouscreations.homesafe.fitness.domain.GpsFix
 import com.meticulouscreations.homesafe.fitness.domain.HealthAvailability
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
+import com.meticulouscreations.homesafe.fitness.domain.HealthReadings
 import com.meticulouscreations.homesafe.fitness.domain.HealthSample
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.METERS_PER_MILE
@@ -66,7 +72,8 @@ class HealthViewModelTest {
         val clock = MutableClock(NOW)
         val recordedRuns = RecordedRunsImpl(InMemoryFitnessRunDao())
         val recorder = FakeRunRecorder()
-        val vm = HealthViewModel(source, repository, recordedRuns, recorder, clock)
+        val upload = FakeHealthUpload()
+        val vm = HealthViewModel(source, repository, recordedRuns, recorder, upload, clock)
         val state get() = vm.uiState.value
     }
 
@@ -660,5 +667,179 @@ class HealthViewModelTest {
         open(h)
         assertNull(h.state.detail)
         assertEquals(emptyList(), h.state.runs.runs)
+    }
+
+    // ---- To the server, and from it ------------------------------------------------------------
+
+    @Test
+    fun whatIsReadGoesToTheServerWhole() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        open(h)
+        val (readings, recorded) = h.upload.sent.single()
+        assertEquals(NOW, readings.readAtEpochSeconds)
+        assertEquals(everything, readings.granted)
+        assertEquals(h.source.steps, readings.steps)
+        assertEquals(h.source.sleeps, readings.sleep)
+        assertEquals(h.source.resting, readings.resting)
+        assertEquals(h.source.variability, readings.variability)
+        assertEquals(listOf(run), readings.runs)
+        assertEquals(emptyList(), recorded)
+    }
+
+    @Test
+    fun onlyWhatIsSharedGoes() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = setOf(HealthKind.STEPS)
+        open(h)
+        val (readings) = h.upload.sent.single()
+        assertEquals(setOf(HealthKind.STEPS), readings.granted)
+        assertEquals(h.source.steps, readings.steps)
+        assertEquals(emptyList(), readings.sleep)
+        assertEquals(emptyList(), readings.runs)
+    }
+
+    @Test
+    fun aReadThatPartlyFailedDoesntGo() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        h.source.failing = setOf(HealthKind.SLEEP)
+        open(h)
+        assertTrue(h.state.failed)
+        assertEquals(emptyList(), h.upload.sent, "it would look to the other devices as though sleep had stopped being shared")
+    }
+
+    @Test
+    fun aServerThatCantBeReachedChangesNothingOnScreen() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        h.upload.failing = true
+        open(h)
+        assertTrue(h.state.loaded)
+        assertFalse(h.state.failed)
+        assertEquals(listOf("r1"), h.state.runs.runs.map { it.id })
+    }
+
+    @Test
+    fun aStoreThatStopsSharingAnythingTakesTheServersCopyAway() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        open(h)
+        assertEquals(0, h.upload.clears)
+        h.source.allowed = emptySet()
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(1, h.upload.clears)
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(1, h.upload.clears, "once told, it needn't be told again")
+    }
+
+    @Test
+    fun aClearThatDidntReachTheServerIsTriedAgain() = runHealthTest { h ->
+        h.upload.failing = true
+        open(h)
+        assertEquals(0, h.upload.clears)
+        h.upload.failing = false
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(1, h.upload.clears)
+    }
+
+    @Test
+    fun aStoreThatCantSayWhatIsSharedClearsNothing() = runHealthTest { h ->
+        h.source.grantsFailing = true
+        open(h)
+        assertEquals(0, h.upload.clears)
+    }
+
+    @Test
+    fun aStoreNotInstalledClearsNothing() = runHealthTest(HealthAvailability.MISSING) { h ->
+        open(h)
+        assertEquals(0, h.upload.clears)
+    }
+
+    @Test
+    fun aRouteHandedOverGoesWithItsRun() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        val route = listOf(RoutePoint(1.0, 2.0), RoutePoint(1.1, 2.1))
+        h.source.routes = mapOf("r1" to route)
+        open(h)
+        h.vm.openRun("r1")
+        runCurrent()
+        h.vm.askForRoute()
+        runCurrent()
+        val (id, sent) = h.upload.tracks.single()
+        assertEquals("r1", id)
+        assertEquals(route, sent.route)
+        assertEquals(track.heart, sent.heart, "the rest of the track stays with it")
+    }
+
+    @Test
+    fun aDeviceWithNoStoreDoesntSendAnything() = runHealthTest(HealthAvailability.REMOTE) { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        open(h)
+        assertTrue(h.state.loaded)
+        assertEquals(emptyList(), h.upload.sent)
+        h.source.allowed = emptySet()
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(0, h.upload.clears)
+    }
+
+    @Test
+    fun withNoStoreAndNothingFromAPhoneNothingIsShown() = runHealthTest(HealthAvailability.REMOTE) { h ->
+        assertEquals(HealthAccess.UNSUPPORTED, h.state.access)
+        open(h)
+        assertEquals(HealthAccess.UNSUPPORTED, h.state.access)
+        assertFalse(h.state.bodyCardShown)
+    }
+
+    /** The whole way: a phone reads its store and sends it, and a device with no store shows the same. */
+    @Test
+    fun whatThePhoneReadsIsWhatAMacShows() = runHealthTest { phone ->
+        val relay = FakeHealthRelay()
+        val connection = FakeServerConnection("http://frigate.test")
+        fill(phone.source)
+        phone.source.allowed = everything
+        val uploader = HealthUploader(relay, connection, DeviceIdentityStore(InMemorySettingsDao()), phone.source)
+        val sending = HealthViewModel(phone.source, phone.repository, phone.recordedRuns, phone.recorder, uploader, phone.clock)
+        sending.setActive(true)
+        runCurrent()
+
+        val mac = HealthViewModel(RelayHealthSource(relay, connection), phone.repository, phone.recordedRuns, FakeRunRecorder(isSupported = false), FakeHealthUpload(), phone.clock)
+        assertEquals(HealthAccess.UNSUPPORTED, mac.uiState.value.access)
+        mac.setActive(true)
+        runCurrent()
+
+        val shown = mac.uiState.value
+        assertEquals(HealthAccess.ON, shown.access)
+        assertEquals(NOW, shown.fromPhoneAtEpochSeconds)
+        assertTrue(shown.bodyCardShown)
+        assertFalse(shown.partlyShared)
+        assertNotNull(shown.body.readiness)
+        assertEquals(sending.uiState.value.body, shown.body)
+        assertEquals(sending.uiState.value.runs, shown.runs.copy(runs = shown.runs.runs.map { it.copy(route = RouteAccess.ASK) }))
+        mac.openRun("r1")
+        runCurrent()
+        assertEquals(track.heart.size, assertNotNull(mac.uiState.value.detail).heart.size, "the run's own track came too")
+    }
+
+    @Test
+    fun aPhonesCopyOnADeviceWithNoStoreSaysWhenItWasRead() = runHealthTest { phone ->
+        val relay = FakeHealthRelay()
+        val connection = FakeServerConnection("http://frigate.test")
+        fill(phone.source)
+        phone.source.allowed = setOf(HealthKind.EXERCISE)
+        HealthUploader(relay, connection, DeviceIdentityStore(InMemorySettingsDao()), phone.source)
+            .send(HealthReadings(NOW - 600, setOf(HealthKind.EXERCISE), runs = listOf(run)), emptyList())
+        val mac = HealthViewModel(RelayHealthSource(relay, connection), phone.repository, phone.recordedRuns, FakeRunRecorder(isSupported = false), FakeHealthUpload(), phone.clock)
+        mac.setActive(true)
+        runCurrent()
+        assertEquals(NOW - 600, mac.uiState.value.fromPhoneAtEpochSeconds)
+        assertTrue(mac.uiState.value.runsShared)
+        assertFalse(mac.uiState.value.bodyCardShown, "only runs were shared, and there is nothing to connect from here")
     }
 }

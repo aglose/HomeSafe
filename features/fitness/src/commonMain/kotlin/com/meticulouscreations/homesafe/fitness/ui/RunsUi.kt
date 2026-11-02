@@ -113,6 +113,7 @@ import homesafe.shared.generated.resources.fitness_run_route_described
 import homesafe.shared.generated.resources.fitness_run_row_stats
 import homesafe.shared.generated.resources.fitness_run_row_timed
 import homesafe.shared.generated.resources.fitness_run_source
+import homesafe.shared.generated.resources.fitness_run_source_phone
 import homesafe.shared.generated.resources.fitness_run_split_mile
 import homesafe.shared.generated.resources.fitness_run_splits
 import homesafe.shared.generated.resources.fitness_run_spm
@@ -234,7 +235,7 @@ internal fun RunsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (health.canRecord) RecordRunCard(recording, health.locationRefused, onStartRun, onOpenRecording)
-        if (!health.runsShared && health.supported) {
+        if (!health.runsShared && health.supported && !health.fromPhone) {
             FitnessCard(Modifier.testTag("fitness_runs_unshared")) {
                 Text(stringResource(if (health.canRecord) Res.string.fitness_run_not_shared_recording else Res.string.fitness_run_not_shared), style = type.body, color = colors.textMuted)
                 Spacer(Modifier.height(14.dp))
@@ -254,8 +255,8 @@ internal fun RunsScreen(
             Text(stringResource(Res.string.fitness_run_not_runs_note), style = type.label, color = colors.textFaint)
             board.notRuns.forEach { left -> NotRunCard(left, onOpen = { onOpenRun(left.run.id) }) }
         }
-        Text(stringResource(Res.string.fitness_run_source), style = type.label, color = colors.textFaint, modifier = Modifier.padding(top = 6.dp))
-        if (health.runsShared) ManageButton(onManage)
+        Text(stringResource(if (health.fromPhone) Res.string.fitness_run_source_phone else Res.string.fitness_run_source), style = type.label, color = colors.textFaint, modifier = Modifier.padding(top = 6.dp))
+        if (health.runsShared && !health.fromPhone) ManageButton(onManage)
     }
 }
 

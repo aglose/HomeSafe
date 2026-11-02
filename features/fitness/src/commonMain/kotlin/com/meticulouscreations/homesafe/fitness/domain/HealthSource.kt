@@ -11,6 +11,9 @@ enum class HealthAvailability {
     MISSING,
 
     AVAILABLE,
+
+    /** None here: what is read is what another device of this login last read from its own, by way of the server. */
+    REMOTE,
 }
 
 /** A kind of record in the health store, each of which the user allows or refuses by itself. */
@@ -120,6 +123,9 @@ data class RunTrack(
 interface HealthSource {
     fun availability(): HealthAvailability
 
+    /** When what this hands over was read from the store itself, where that isn't now: see [HealthAvailability.REMOTE]. */
+    fun readAtEpochSeconds(): Long? = null
+
     /** The kinds the user has allowed so far. */
     suspend fun granted(): Set<HealthKind>
 
@@ -154,6 +160,34 @@ interface HealthSource {
 
     /** Asks the user for the route of the run [runId], and waits. Empty when they said no or it has none. */
     suspend fun requestRoute(runId: String): List<RoutePoint>
+}
+
+/** All a read of the store came to, which the phone sends to the server whole. */
+@Immutable
+data class HealthReadings(
+    val readAtEpochSeconds: Long,
+    val granted: Set<HealthKind>,
+    val steps: Map<Long, Long> = emptyMap(),
+    val sleep: List<SleepSession> = emptyList(),
+    val resting: List<HealthSample> = emptyList(),
+    val variability: List<HealthSample> = emptyList(),
+    val runs: List<RunRecord> = emptyList(),
+)
+
+/**
+ * What a device with a health store does for those of the same login without one: puts what it
+ * read on the server, where [HealthAvailability.REMOTE] reads it. See docs/fitness.md, "The body,
+ * and runs". Every call may throw when the server can't be reached; it all goes again next read.
+ */
+interface HealthUpload {
+    /** Replaces the server's copy with [readings], and the tracks of its runs and of the runs [recorded] in the app. */
+    suspend fun send(readings: HealthReadings, recorded: List<Run>)
+
+    /** One run's track again, with the route the user has just handed over for it. */
+    suspend fun sendTrack(run: RunRecord, granted: Set<HealthKind>, track: RunTrack)
+
+    /** The store shares nothing with the app any more, so the server's copy goes, if this install sent it. */
+    suspend fun clear()
 }
 
 /** For the platforms with no health store this app can read. */
