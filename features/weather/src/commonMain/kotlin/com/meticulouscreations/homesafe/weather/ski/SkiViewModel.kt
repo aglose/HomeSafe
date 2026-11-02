@@ -78,6 +78,8 @@ data class SkiUiState(
     val startCity: String? = null,
     /** This device can tell where it is. */
     val canLocate: Boolean = true,
+    /** Resorts' sites that have stopped being readable, and since when, by slug. */
+    val siteTrouble: Map<String, Long> = emptyMap(),
 ) {
     val followed: List<SkiEntry> get() = plan.resorts.map { entries[it.slug] ?: SkiEntry(it) }
 }
@@ -130,7 +132,13 @@ class SkiViewModel(
                     state.copy(plan = plan, tripEpochDay = saved ?: state.tripEpochDay)
                 }
                 // Whatever was on its way was for the old plan. What it already fetched is kept, so this costs only what's new.
-                if (active && (before.resorts != plan.resorts || before.regions != plan.regions || before.origin != plan.origin || before.passes != plan.passes)) load(force = false, restart = true)
+                if (active && (before.resorts != plan.resorts || before.regions != plan.regions || before.origin != plan.origin || before.passes != plan.passes || before.tripDays != plan.tripDays)) load(force = false, restart = true)
+            }
+        }
+        viewModelScope.launch {
+            repository.siteHealth().collect { health ->
+                val trouble = health.trouble(now())
+                if (trouble != _uiState.value.siteTrouble) _uiState.update { it.copy(siteTrouble = trouble) }
             }
         }
     }
@@ -235,13 +243,16 @@ class SkiViewModel(
 
     /** A resort's page first, as it says where the resort is; then what hangs off that, each in its own time. */
     private suspend fun loadResort(ref: SkiResortRef, from: SkiPoint?, force: Boolean, includeCams: Boolean = false) = coroutineScope {
-        change(ref) { it.copy(loading = true) }
+        change(ref) { it.copy(loading = true, parking = repository.parking(ref.slug)) }
         // The resort's own word on its snow and its prices don't wait for anything else, and need nothing else.
         launch { repository.resortNews(ref.slug, force)?.let { news -> change(ref) { it.copy(news = news) } } }
         launch {
-            val days = (0 until DAYS_PRICED).map { _uiState.value.todayEpochDay + it }
-            val trip = _uiState.value.tripEpochDay
-            repository.resortPrices(ref.slug, (days + trip).distinct())?.let { prices -> change(ref) { it.copy(prices = prices) } }
+            val state = _uiState.value
+            val tripDays = state.plan.tripDays.coerceAtLeast(1)
+            // As far as a trip from any day that can be chosen could run.
+            val days = (0 until DAYS_PRICED + tripDays - 1).map { state.todayEpochDay + it }
+            val trip = (0 until tripDays).map { state.tripEpochDay + it }
+            repository.resortPrices(ref.slug, (days + trip).distinct(), tripDays)?.let { prices -> change(ref) { it.copy(prices = prices) } }
         }
         val page = repository.resortPage(ref, force = force || includeCams)
         page.getOrNull()?.let { loaded -> change(ref) { it.copy(page = loaded, report = it.report ?: loaded.report, error = null) } }
@@ -311,7 +322,7 @@ class SkiViewModel(
         viewModelScope.launch { planDrives(ref, startingPoint(_uiState.value.plan.origin)) }
     }
 
-    /** The trip's drives: out at seven in the morning and back at four, by the resort's clock. */
+    /** The trip's drives: out at seven in the morning on its first day and back at four on its last, by the resort's clock. */
     private suspend fun planDrives(ref: SkiResortRef, from: SkiPoint?) {
         val state = _uiState.value
         val entry = state.entries[ref.slug] ?: return
@@ -320,7 +331,7 @@ class SkiViewModel(
         if (from == null) return
         val day = state.tripEpochDay
         val out = forecast.epochSecondsAt(day, DEPART_HOUR)
-        val back = forecast.epochSecondsAt(day, RETURN_HOUR)
+        val back = forecast.epochSecondsAt(day + state.plan.tripDays.coerceAtLeast(1) - 1, RETURN_HOUR)
         val now = now()
         val to = SkiPoint(facts.latitude, facts.longitude)
         // Another day's times aren't this day's, while these are on their way.
@@ -330,7 +341,7 @@ class SkiViewModel(
         val coming = if (back > now) repository.drive(to, from, back).getOrNull() else null
         // The day or the start changed while these were on their way: the answers for that are coming, and may already be here.
         val latest = _uiState.value
-        if (latest.tripEpochDay != day || latest.plan.origin != state.plan.origin || from.rounded() != startingPoint.rounded()) return
+        if (latest.tripEpochDay != day || latest.plan.origin != state.plan.origin || latest.plan.tripDays != state.plan.tripDays || from.rounded() != startingPoint.rounded()) return
         change(ref) { it.copy(driveOut = going, driveBack = coming) }
     }
 
@@ -422,6 +433,22 @@ class SkiViewModel(
     fun setOwnPrice(slug: String, price: Int?) {
         viewModelScope.launch {
             repository.updatePlan { it.copy(ownPrices = if (price != null && price >= 0) it.ownPrices + (slug to price) else it.ownPrices - slug) }
+        }
+    }
+
+    /** How long the trip is and what a night and a mile come to. */
+    fun setTrip(days: Int, lodgingPerNight: Int, drivingCentsPerMile: Int) {
+        viewModelScope.launch {
+            repository.updatePlan {
+                it.copy(tripDays = days.coerceIn(1, SkiPlan.MAX_TRIP_DAYS), lodgingPerNight = lodgingPerNight.coerceAtLeast(0), drivingCentsPerMile = drivingCentsPerMile.coerceAtLeast(0))
+            }
+        }
+    }
+
+    /** What parking costs a day at a resort; null goes back to what the resort publishes, if it does. */
+    fun setOwnParking(slug: String, price: Int?) {
+        viewModelScope.launch {
+            repository.updatePlan { it.copy(ownParking = if (price != null && price >= 0) it.ownParking + (slug to price) else it.ownParking - slug) }
         }
     }
 

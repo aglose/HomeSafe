@@ -12136,6 +12136,21 @@ class SkiSiteReadingTest(unittest.TestCase):
         self.assertEqual(self.inches(1), reading["last24"])
         self.assertEqual(relay.calendar.timegm((2025, 3, 13, 15, 0, 0)), reading["updated"])
 
+    def test_a_mountain_in_a_shared_config_is_asked_for_by_its_own_id(self):
+        asked = []
+
+        def get(url, **params):
+            asked.append(params)
+            return types.SimpleNamespace(json=lambda: {"bearerToken": "t", "resortIds": [173, 57, 58]} if "mtnfeed" in url else {})
+
+        kept = relay.ski_get, relay.SKI_READ_GAP_SECONDS
+        relay.ski_get, relay.SKI_READ_GAP_SECONDS = get, 0
+        try:
+            relay.ski_read_site("bear-mountain", 0)
+        finally:
+            relay.ski_get, relay.SKI_READ_GAP_SECONDS = kept
+        self.assertEqual(57, asked[-1]["resortId[]"])
+
     def test_every_resort_the_app_reads_is_read_here_too(self):
         """Two lists of the same thing, in two languages, that a new resort has to be added to."""
         source = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "features", "weather", "src", "commonMain", "kotlin", "com", "meticulouscreations", "homesafe", "weather", "ski", "data", "ResortSites.kt")
@@ -12143,7 +12158,8 @@ class SkiSiteReadingTest(unittest.TestCase):
             self.skipTest("the app's source isn't here")
         with open(source, encoding="utf-8") as f:
             app = set(relay.re.findall(r'^\s+"([a-z0-9-]+)" to ', f.read(), relay.re.M))
-        self.assertEqual(app, set(relay.SKI_SITES))
+        # Mt. Shasta's in the app for its shop's prices. It has no report of its own to read.
+        self.assertEqual(app - {"mount-shasta-board-ski-park"}, set(relay.SKI_SITES))
 
 
 class SkiForecastTest(unittest.TestCase):

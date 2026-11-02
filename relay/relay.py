@@ -5862,12 +5862,13 @@ SKI_CHAIN_DISTRICTS = {
 }
 
 
-def _ski_vail(host: str, zone: str = SKI_PACIFIC) -> dict[str, str]:
-    return {"kind": "vail", "url": f"https://{host}/the-mountain/mountain-conditions/snow-and-weather-report.aspx", "zone": zone}
+def _ski_vail(host: str, zone: str = SKI_PACIFIC, report_page: str = "snow-and-weather-report.aspx") -> dict[str, str]:
+    return {"kind": "vail", "url": f"https://{host}/the-mountain/mountain-conditions/{report_page}", "zone": zone}
 
 
-def _ski_feed(slug: str) -> dict[str, str]:
-    return {"kind": "feed", "slug": slug}
+def _ski_feed(slug: str, resort_id: int | None = None) -> dict[str, str]:
+    """A mountain on the feed. [resort_id] says which, where one config covers several."""
+    return {"kind": "feed", "slug": slug} | ({"resort_id": str(resort_id)} if resort_id is not None else {})
 
 
 def _ski_powdr(host: str) -> dict[str, str]:
@@ -5893,6 +5894,10 @@ SKI_SITES: dict[str, dict[str, str]] = {
     "whistler-blackcomb": _ski_vail("www.whistlerblackcomb.com"),
     "stowe-mountain-resort": _ski_vail("www.stowe.com", SKI_EASTERN),
     "okemo-mountain-resort": _ski_vail("www.okemo.com", SKI_EASTERN),
+    "hunter-mountain": _ski_vail("www.huntermtn.com", SKI_EASTERN),
+    "crested-butte-mountain-resort": _ski_vail("www.skicb.com", SKI_MOUNTAIN, "weather-report.aspx"),
+    "stevens-pass-resort": _ski_vail("www.stevenspass.com", SKI_PACIFIC, "weather-report.aspx"),
+    "mount-snow": _ski_vail("www.mountsnow.com", SKI_EASTERN, "weather-report.aspx"),
     "palisades-tahoe": _ski_feed("palisades-tahoe"),
     "mammoth-mountain-ski-area": _ski_feed("mammoth"),
     "june-mountain": _ski_feed("june-mountain"),
@@ -5903,6 +5908,11 @@ SKI_SITES: dict[str, dict[str, str]] = {
     "sugarbush": _ski_feed("sugarbush"),
     "solitude-mountain-resort": _ski_feed("solitude"),
     "crystal-mountain-wa": _ski_feed("crystal-mountain"),
+    "arapahoe-basin-ski-area": _ski_feed("arapahoe-basin"),
+    "blue-mountain": _ski_feed("blue-mountain"),
+    "snow-valley": _ski_feed("big-bear-mountain", 173),
+    "bear-mountain": _ski_feed("big-bear-mountain", 57),
+    "snow-summit": _ski_feed("big-bear-mountain", 58),
     "boreal": _ski_powdr("api.rideboreal.com"),
     "soda-springs": _ski_powdr("api.skisodasprings.com"),
     "sugar-bowl-resort": _ski_page("sugar_bowl", "https://www.sugarbowl.com/conditions"),
@@ -6154,7 +6164,8 @@ def ski_read_site(slug: str, now: float) -> dict[str, Any] | None:
         ids = config.get("resortIds") or []
         if not config.get("bearerToken") or not ids:
             return None
-        return ski_read_feed(ski_get("https://mtnpowder.com/feed/v3.json", bearer_token=config["bearerToken"], **{"resortId[]": ids[0]}).json())
+        wanted = int(site["resort_id"]) if "resort_id" in site else ids[0]
+        return ski_read_feed(ski_get("https://mtnpowder.com/feed/v3.json", bearer_token=config["bearerToken"], **{"resortId[]": wanted if wanted in ids else ids[0]}).json())
     page = ski_get(site["url"])
     if kind == "powdr":
         return ski_read_powdr(page.json())

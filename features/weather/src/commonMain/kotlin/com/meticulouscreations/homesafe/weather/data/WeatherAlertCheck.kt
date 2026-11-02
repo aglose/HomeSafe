@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.weather.data
 
 import com.meticulouscreations.homesafe.domain.platform.NotificationMute
+import com.meticulouscreations.homesafe.finance.data.suspendRunCatching
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.text.UiText
@@ -19,6 +20,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherPlacesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherPreferencesRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherRepository
 import com.meticulouscreations.homesafe.weather.domain.WeatherSoonClaims
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiBackgroundRefresh
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiNoticeSync
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
@@ -72,6 +74,8 @@ class WeatherAlertCheck(
     private val claims: WeatherSoonClaims,
     /** Keeps the relay told what the Ski tab follows, which is all its notifications need from here. */
     private val skiSync: SkiNoticeSync,
+    /** The Ski tab's data rides along with this check, which is what the OS wakes for. */
+    private val skiRefresh: SkiBackgroundRefresh = SkiBackgroundRefresh {},
 ) {
     private val running = Mutex()
     private var watching = false
@@ -101,6 +105,8 @@ class WeatherAlertCheck(
         val posted = running.withLock { runCatching { check() }.getOrDefault(0) }
         // Last and briefly, since iOS gives a check little time and this reads resorts' pages one by one. What it reads is kept, so the next one gets further.
         runCatching { withTimeoutOrNull(SKI_SYNC_BUDGET_MS) { skiSync.sync() } }
+        // After that, and to the same budget: it's a convenience, and what it reads is kept for the next one to build on.
+        suspendRunCatching { withTimeoutOrNull(SKI_SYNC_BUDGET_MS) { skiRefresh.refresh() } }
         return posted
     }
 

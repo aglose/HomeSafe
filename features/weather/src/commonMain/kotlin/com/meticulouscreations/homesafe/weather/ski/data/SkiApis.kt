@@ -45,13 +45,16 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlin.math.PI
 import kotlin.math.cos
@@ -376,6 +379,7 @@ internal class ChainPointDto(val location: ChainLocationDto? = null, val inServi
             "R-1", "R1" -> ChainLevel.R1
             "R-2", "R2" -> ChainLevel.R2
             "R-3", "R3" -> ChainLevel.R3
+            "ROAD CLOSED" -> ChainLevel.CLOSED
             else -> return null
         }
         val where = location ?: return null
@@ -404,9 +408,97 @@ internal class ChainLocationDto(
 @Serializable
 internal class ChainStatusDto(val status: String? = null, val statusDescription: String? = null)
 
+/**
+ * Nevada's road conditions, from the list its road service's site shows (nvroads.com). The rows name
+ * a stretch of road and have no coordinates, so [STRETCHES] says where the ones that matter for
+ * skiing are, and only those a drive runs through are asked for.
+ */
+@Inject
+class NevadaRoadsApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
+    /** The named roads a drive comes through. */
+    fun roadsOn(road: List<SkiPoint>): Set<String> =
+        STRETCHES.filter { stretch -> road.any { stretch.box.contains(it.latitude, it.longitude) } }.mapTo(LinkedHashSet()) { it.road }
+
+    /** What's reported on the stretches of [roadName] that [road] comes through. It throws if the list can't be read. */
+    suspend fun conditions(roadName: String, road: List<SkiPoint>): List<ChainControl> {
+        val query = buildJsonObject {
+            putJsonArray("columns") {
+                addJsonObject {
+                    put("data", JsonNull)
+                    put("name", "")
+                }
+                addJsonObject {
+                    put("name", "sortOrder")
+                    put("s", true)
+                }
+            }
+            putJsonArray("order") {
+                addJsonObject {
+                    put("column", 1)
+                    put("dir", "asc")
+                }
+            }
+            put("start", 0)
+            put("length", 100)
+            putJsonObject("search") { put("value", roadName) }
+        }
+        val response = httpClient.get("https://www.nvroads.com/List/GetData/RoadConditions") { parameter("query", query.toString()) }
+        if (!response.status.isSuccess()) throw WeatherServiceException(UiText.of(Res.string.ski_chains_unavailable), response.status.value)
+        val stretches = STRETCHES.filter { it.road == roadName && road.any { point -> it.box.contains(point.latitude, point.longitude) } }
+        return response.decode<NevadaRoadsDto>().data.filter { row -> stretches.any { it.matches(row) } }.mapNotNull { it.toControl() }
+    }
+
+    private class Stretch(val road: String, val box: GeoBox, val described: Regex? = null) {
+        fun matches(row: NevadaRoadDto): Boolean = row.area != "California" && row.roadway.orEmpty().trim().substringBefore(' ') == road && (described == null || described.containsMatchIn(row.description.orEmpty()))
+    }
+
+    private companion object {
+        val STRETCHES = listOf(
+            Stretch("SR-431", GeoBox(39.24, 39.43, -119.98, -119.75)),
+            Stretch("SR-28", GeoBox(39.10, 39.27, -120.02, -119.90)),
+            Stretch("SR-207", GeoBox(38.95, 39.02, -119.95, -119.75)),
+            Stretch("US-50", GeoBox(38.95, 39.21, -119.98, -119.70), Regex("California border|Glenbrook|SR-28|Carson City line|Mile Marker CC")),
+            Stretch("I-80", GeoBox(39.48, 39.60, -120.01, -119.75), Regex("California border|Boomtown|Mogul|Robb Dr|Keystone")),
+            Stretch("I-580", GeoBox(39.15, 39.53, -119.85, -119.72)),
+            Stretch("US-395", GeoBox(38.70, 39.16, -119.85, -119.60), Regex("California boa?rder|-DO|SR-88")),
+        )
+    }
+}
+
+@Serializable
+internal class NevadaRoadsDto(val data: List<NevadaRoadDto> = emptyList())
+
+@Serializable
+internal class NevadaRoadDto(
+    val area: String? = null,
+    val roadway: String? = null,
+    val description: String? = null,
+    val stale: Boolean = false,
+    val primaryCondition: String? = null,
+    val secondaryConditions: List<String> = emptyList(),
+) {
+    /** Nothing unless something's reported, and it isn't an old report. The road service's words are its own, so they go through as they are. */
+    fun toControl(): ChainControl? {
+        if (stale) return null
+        val said = (listOfNotNull(primaryCondition) + secondaryConditions).map { it.trim() }.filter { it.isNotEmpty() && !it.equals("No Report", ignoreCase = true) }
+        if (said.isEmpty()) return null
+        val closed = said.any { it.contains("closed", ignoreCase = true) }
+        return ChainControl(
+            level = if (closed) ChainLevel.CLOSED else ChainLevel.NOTICE,
+            route = roadway.orEmpty().trim(),
+            place = description.orEmpty().trim(),
+            latitude = 0.0,
+            longitude = 0.0,
+            description = said.joinToString(", "),
+        )
+    }
+}
+
 /** A rectangle of the map. */
 data class GeoBox(val south: Double, val north: Double, val west: Double, val east: Double) {
     fun overlaps(other: GeoBox): Boolean = south <= other.north && north >= other.south && west <= other.east && east >= other.west
+
+    fun contains(latitude: Double, longitude: Double): Boolean = latitude in south..north && longitude in west..east
 }
 
 /** The road's points from a polyline as Google and OSRM both encode them: five decimal places, each a difference from the last. */
@@ -464,4 +556,7 @@ internal fun passesNear(road: List<SkiPoint>, latitude: Double, longitude: Doubl
     return false
 }
 
-private const val CHAIN_MATCH_METERS = 1_500.0
+internal const val CHAIN_MATCH_METERS = 1_500.0
+
+/** A closed road's gate is on the road: a checkpoint's slack here would close roads that only go by it. */
+internal const val CLOSURE_MATCH_METERS = 500.0
