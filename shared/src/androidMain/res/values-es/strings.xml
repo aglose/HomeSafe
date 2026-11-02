@@ -13,6 +13,8 @@
     <string name="notif_channel_summaries_description">Algunas veces al día: lo que vieron las cámaras mientras había alguien en casa</string>
     <string name="notif_channel_weather_name">Clima</string>
     <string name="notif_channel_weather_description">Lluvia o nieve en camino, y lo que traen hoy y mañana</string>
+    <string name="notif_channel_weather_soon_name">Lluvia en camino</string>
+    <string name="notif_channel_weather_soon_description">Lluvia, nieve o tormentas a punto de empezar donde estás</string>
     <string name="notif_channel_weather_severe_name">Clima severo</string>
     <string name="notif_channel_weather_severe_description">Avisos oficiales para donde estás</string>
     <string name="notif_channel_budget_name">Presupuesto</string>

@@ -10,7 +10,7 @@
     <string name="fitness_body_title">Body</string>
 
     <!-- Connecting. "Health Connect" and "Google Health" are the names of Android's health store and Google's app -->
-    <string name="fitness_body_connect_body">See a readiness score, your steps, last night's sleep and your runs here. They are read from Health Connect, where Google Health puts what your band records. Nothing leaves this phone.</string>
+    <string name="fitness_body_connect_body">See a readiness score, your steps, last night's sleep and your runs here. They are read from Health Connect, where Google Health puts what your band records, and go to your home server so your other devices can show them. They go nowhere else.</string>
     <string name="fitness_body_connect_hint">In Google Health, switch on Health Connect under Connections first.</string>
     <string name="fitness_body_connect_button">Connect Health Connect</string>
     <string name="fitness_body_missing_body">Steps, sleep and runs from your band come through Health Connect, which this phone doesn't have yet.</string>
@@ -19,6 +19,8 @@
     <string name="fitness_body_refused">Android stops asking after two refusals. Allow PercySafe in Health Connect itself.</string>
     <string name="fitness_body_manage_button">Open Health Connect</string>
     <string name="fitness_body_reading">Reading Health Connect…</string>
+    <string name="fitness_body_from_phone">Read on your phone: %1$s, %2$s</string>
+    <string name="fitness_body_failed_phone">Couldn't reach your home server just now. This is from the last time it could.</string>
     <string name="fitness_body_failed">Couldn't reach Health Connect just now. This is from the last time it could.</string>
     <!-- Connected, but none of steps, sleep or the heart's readings is shared -->
     <string name="fitness_body_nothing_shared">Steps, sleep and heart readings aren't shared with PercySafe.</string>
@@ -80,7 +82,7 @@
     <string name="fitness_body_rationale_sleep">Sleep, for last night's length and stages, and as part of the readiness score.</string>
     <string name="fitness_body_rationale_heart">Resting heart rate and heart rate variability, which the readiness score compares with your own last four weeks.</string>
     <string name="fitness_body_rationale_runs">Exercise, distance, heart rate, calories, elevation and routes, for your runs: their pace, splits, heart-rate zones and where they went.</string>
-    <string name="fitness_body_rationale_privacy">Everything read stays on this phone. None of it is sent to the home server or to anyone else, and none of it is kept by PercySafe: it is read again from Health Connect each time.</string>
+    <string name="fitness_body_rationale_privacy">Everything read, routes included, goes to your home server under your login, so your other devices can show it. It goes nowhere else. PercySafe keeps no copy on this phone: it is read again from Health Connect each time.</string>
     <string name="fitness_body_rationale_change">You can stop sharing any of it at any time in Health Connect, under App permissions.</string>
     <string name="fitness_body_rationale_done">Done</string>
 </resources>

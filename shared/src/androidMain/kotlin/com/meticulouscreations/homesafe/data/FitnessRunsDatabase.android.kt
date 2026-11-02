@@ -21,3 +21,6 @@ private fun fitnessRunsDatabase(context: Context): FitnessRunsDatabase = fitness
 
 actual fun createFitnessRunDao(context: PlatformContext): FitnessRunDao =
     fitnessRunsDatabase(context.context.applicationContext).fitnessRunDao()
+
+actual fun createFitnessSyncDao(context: PlatformContext): FitnessSyncDao =
+    fitnessRunsDatabase(context.context.applicationContext).fitnessSyncDao()

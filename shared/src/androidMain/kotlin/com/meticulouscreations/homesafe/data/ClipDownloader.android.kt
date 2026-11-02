@@ -2,7 +2,7 @@ package com.meticulouscreations.homesafe.data
 
 import android.app.DownloadManager
 import android.content.Context
-import android.os.Environment
+import android.net.Uri
 import androidx.core.net.toUri
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
@@ -17,16 +17,24 @@ import homesafe.shared.generated.resources.download_file_exists
 import homesafe.shared.generated.resources.download_frigate_refused
 import homesafe.shared.generated.resources.download_no_space
 import homesafe.shared.generated.resources.download_too_many_redirects
+import homesafe.shared.generated.resources.download_write_failed
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 
 /**
  * Hands the clip off to Android's own [DownloadManager] rather than fetching it in-process:
- * that gets a system download notification, resilience across the app being backgrounded or
- * killed, and — since minSdk 33 is well past scoped storage — a write into the public Downloads
- * collection with no storage permission needed, all for free.
+ * that gets a system download notification and resilience across the app being backgrounded,
+ * for free. It lands in the app's own external files first, not Downloads, because Frigate's
+ * clip is a fragmented MP4 that other apps can't attach; [saveClipToDownloads] rewrites it into
+ * the public Downloads collection (no storage permission needed since scoped storage) and the
+ * download's own entry, file and notification are then removed.
  *
  * How it's getting on is read by polling the download's row rather than waiting on
  * [DownloadManager.ACTION_DOWNLOAD_COMPLETE]: that broadcast comes from the downloads provider,
@@ -34,7 +42,7 @@ import kotlinx.coroutines.withContext
  * isn't meant for other apps) may never hear it — leaving the caller saving forever. Polling
  * also gives the progress the broadcast can't.
  */
-private class AndroidClipDownloader(context: Context) : ClipDownloader {
+private class AndroidClipDownloader(private val context: Context) : ClipDownloader {
     private val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     override suspend fun download(
@@ -42,22 +50,91 @@ private class AndroidClipDownloader(context: Context) : ClipDownloader {
         headers: Map<String, String>,
         fileName: String,
         onProgress: (ClipDownloadProgress) -> Unit,
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> {
+        val result = runCatching { downloadAndSave(url, headers, fileName, onProgress) }
+        // The save outlives a cancelled caller, but its result mustn't: a newer download may
+        // already be showing where this one's "Downloaded" would land.
+        currentCoroutineContext().ensureActive()
+        return result
+    }
+
+    private suspend fun downloadAndSave(
+        url: String,
+        headers: Map<String, String>,
+        fileName: String,
+        onProgress: (ClipDownloadProgress) -> Unit,
+    ) {
+        val staging = withContext(Dispatchers.IO) { stagingFile(fileName) }
         val request = DownloadManager.Request(url.toUri())
             .setTitle(fileName)
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            // Only while it runs: the finished file moves to Downloads and this entry is removed.
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+            .setDestinationUri(Uri.fromFile(staging))
             .setMimeType("video/mp4")
         headers.forEach { (key, value) -> request.addRequestHeader(key, value) }
 
         val downloadId = downloadManager.enqueue(request)
         onProgress(ClipDownloadProgress.Preparing)
-        awaitCompletion(downloadId, onProgress)
+        // A caller that goes away (the moments page closed) still gets the clip into Downloads,
+        // as it did when DownloadManager wrote it there itself; only the waiting is abandoned.
+        withContext(NonCancellable) {
+            try {
+                awaitCompletion(downloadId, onProgress)
+                withContext(Dispatchers.IO) {
+                    try {
+                        saveClipToDownloads(context.contentResolver, staging, fileName)
+                    } catch (e: Exception) {
+                        throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't save $fileName to Downloads: ${e.message}")
+                    }
+                }
+            } finally {
+                // Takes the staged file and the notification with it.
+                downloadManager.remove(downloadId)
+                withContext(Dispatchers.IO) { staging.delete() }
+            }
+        }
     }
 
     /**
-     * Follows [downloadId] until [DownloadManager] finishes it, failing if it didn't succeed. A
-     * cancelled caller stops following; the download itself carries on, notification and all.
+     * A fresh file in the app's external files for [fileName] to download into. DownloadManager
+     * only writes to external storage, and this part of it is the app's own and never scanned
+     * into the gallery. Anything left from a download the process died during is swept away,
+     * once it's old and no download still waiting or running (a paused one, offline) writes it.
+     */
+    private fun stagingFile(fileName: String): File {
+        val root = context.getExternalFilesDir(null)
+            ?: throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "No external storage")
+        val dir = File(root, STAGING_DIR)
+        dir.mkdirs()
+        unfinishedDownloadPaths()?.let { inUse ->
+            val stale = System.currentTimeMillis() - STAGED_FILE_MAX_AGE_MS
+            dir.listFiles()
+                ?.filter { it.lastModified() < stale && it.absolutePath !in inUse }
+                ?.forEach { it.delete() }
+        }
+        return File(dir, "${UUID.randomUUID()}-$fileName")
+    }
+
+    /**
+     * Where this app's pending, running and paused downloads are writing, or null when one of
+     * them doesn't say, in which case nothing is safe to sweep.
+     */
+    private fun unfinishedDownloadPaths(): Set<String>? {
+        val unfinished = DownloadManager.STATUS_PENDING or DownloadManager.STATUS_RUNNING or DownloadManager.STATUS_PAUSED
+        return downloadManager.query(DownloadManager.Query().setFilterByStatus(unfinished)).use { cursor ->
+            val column = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)
+            val paths = mutableSetOf<String>()
+            while (cursor.moveToNext()) {
+                val path = cursor.getString(column)?.toUri()?.path ?: return@use null
+                paths += File(path).absolutePath
+            }
+            paths
+        }
+    }
+
+    /**
+     * Follows [downloadId] until [DownloadManager] finishes it, failing if it didn't succeed. It
+     * runs to the end even for a cancelled caller (see [downloadAndSave]), so the clip still lands.
      */
     private suspend fun awaitCompletion(downloadId: Long, onProgress: (ClipDownloadProgress) -> Unit) {
         var last: ClipDownloadProgress = ClipDownloadProgress.Preparing
@@ -111,6 +188,11 @@ private class AndroidClipDownloader(context: Context) : ClipDownloader {
 
 /** Often enough for a progress ring to move smoothly; a query is one small row. */
 private const val POLL_INTERVAL_MS = 500L
+
+private const val STAGING_DIR = "clip-downloads"
+
+/** Old enough that no download still running could own it. */
+private const val STAGED_FILE_MAX_AGE_MS = 24L * 60 * 60 * 1000
 
 actual fun createClipDownloader(platformContext: PlatformContext, httpClient: HttpClient): ClipDownloader =
     AndroidClipDownloader(platformContext.context.applicationContext)

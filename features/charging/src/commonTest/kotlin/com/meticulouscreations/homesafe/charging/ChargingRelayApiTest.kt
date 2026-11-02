@@ -96,13 +96,14 @@ class ChargingRelayApiTest {
     @Test
     fun readsWhatPricesAKwhAndAMile() = runTest {
         val answer = api(
-            body = """{"months": [{"month": "2026-10", "cars": [{"car": "a", "fast_kwh": 40, "fast_cost": 18, "fast_priced_kwh": 40, "fast_battery_kwh": 38, "fast_idle": 2,
+            body = """{"months": [{"month": "2026-10", "cars": [{"car": "a", "fast_kwh": 40, "fast_cost": 18, "fast_priced_kwh": 40, "fast_battery_kwh": 38, "fast_idle": 2, "miles": 100, "used_kwh": 5, "used_miles": 20,
                 "home_priced_kwh": 1, "home_battery_kwh": 0.9, "other_priced_kwh": 3, "other_battery_kwh": 2.7}]}],
                 "sessions": [{"id": 1, "car": "a", "started": 5, "kwh": 40, "cost": 18, "cost_is": "receipt", "idle_fee": 2}]}""",
         ).summary("http://box").getOrThrow()
         val car = answer.months.single().cars.single()
         assertEquals(listOf(40.0, 38.0, 2.0), listOf(car.fastPricedKwh, car.fastBatteryKwh, car.fastIdle))
         assertEquals(listOf(1.0, 0.9, 3.0, 2.7), listOf(car.homePricedKwh, car.homeBatteryKwh, car.otherPricedKwh, car.otherBatteryKwh))
+        assertEquals(20.0, car.usedMiles)
         assertEquals(2.0, answer.sessions.single().idleFee)
         assertEquals(0.4, answer.sessions.single().pricePerKwh)
     }

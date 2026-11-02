@@ -10,6 +10,13 @@ import com.meticulouscreations.homesafe.weather.WeatherData.report
 import com.meticulouscreations.homesafe.weather.WeatherData.slices
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_kind_clear_night
+import homesafe.shared.generated.resources.weather_outlook_all_day
+import homesafe.shared.generated.resources.weather_outlook_from_to
+import homesafe.shared.generated.resources.weather_outlook_in_hours_minutes
+import homesafe.shared.generated.resources.weather_outlook_in_minutes
+import homesafe.shared.generated.resources.weather_outlook_on_off
+import homesafe.shared.generated.resources.weather_outlook_rest_of_today
+import homesafe.shared.generated.resources.weather_outlook_until
 import homesafe.shared.generated.resources.weather_span_mix_around
 import homesafe.shared.generated.resources.weather_span_rain_all_day
 import homesafe.shared.generated.resources.weather_span_rain_around
@@ -761,5 +768,142 @@ class WeatherStoryTest {
         assertTrue(WeatherStory.feelsDifferent(WeatherData.current(now, temperatureC = 20.0, feelsLikeC = 22.5)))
         assertFalse(WeatherStory.feelsDifferent(WeatherData.current(now, temperatureC = 20.0, feelsLikeC = 17.6)))
         assertFalse(WeatherStory.feelsDifferent(WeatherData.current(now, temperatureC = 20.0, feelsLikeC = 20.0)))
+    }
+
+    // ---- The tiles ----------------------------------------------------------------------------
+
+    private val us = WeatherUnits()
+
+    private fun rainFrom(from: Int, to: Int, day: Int = 0, mm: Double = 1.0, code: Int = 61) = WeatherData.calmHours { h ->
+        if (h.epochSeconds >= at(day, from) && h.epochSeconds < at(day, to)) h.copy(precipitationMm = mm, precipitationProbability = 80, weatherCode = code) else h
+    }
+
+    @Test
+    fun twoDryDaysHaveNoNews() {
+        val now = at(0, 9)
+        val outlooks = WeatherStory.outlooks(report(now), us, now)!!
+        assertEquals(OutlookKind.DRY, outlooks.today.kind)
+        assertEquals(OutlookKind.DRY, outlooks.tomorrow?.kind)
+        assertFalse(outlooks.hasNews)
+    }
+
+    @Test
+    fun rainLaterTodaySaysWhenAndHowSoon() {
+        val now = at(0, 13, 40)
+        val today = WeatherStory.outlooks(report(now, hourly = rainFrom(15, 18)), us, now)!!.today
+        assertEquals(OutlookKind.RAIN, today.kind)
+        assertEquals(UiText.of(Res.string.weather_outlook_from_to, UiText.of(Res.string.weather_time_pm, "3"), UiText.of(Res.string.weather_time_pm, "6")), today.timing)
+        assertEquals(UiText.of(Res.string.weather_outlook_in_hours_minutes, 1, 20), today.note)
+    }
+
+    @Test
+    fun rainThatHasAlreadyFallenIsNotNews() {
+        val now = at(0, 16)
+        assertEquals(OutlookKind.DRY, WeatherStory.outlooks(report(now, hourly = rainFrom(9, 12)), us, now)!!.today.kind)
+    }
+
+    @Test
+    fun aSprinkleIsNotNews() {
+        val now = at(0, 9)
+        assertEquals(OutlookKind.DRY, WeatherStory.outlooks(report(now, hourly = rainFrom(15, 16, mm = 0.3)), us, now)!!.today.kind)
+    }
+
+    @Test
+    fun tomorrowsRainIsNewsAndNotCountedDown() {
+        val now = at(0, 9)
+        val outlooks = WeatherStory.outlooks(report(now, hourly = rainFrom(8, 11, day = 1)), us, now)!!
+        assertEquals(OutlookKind.DRY, outlooks.today.kind)
+        assertEquals(OutlookKind.RAIN, outlooks.tomorrow?.kind)
+        assertEquals(null, outlooks.tomorrow?.note)
+        assertTrue(outlooks.hasNews)
+    }
+
+    @Test
+    fun rainAllOfTomorrowIsAllDay() {
+        val now = at(0, 9)
+        assertEquals(UiText.of(Res.string.weather_outlook_all_day), WeatherStory.outlooks(report(now, hourly = rainFrom(0, 24, day = 1)), us, now)!!.tomorrow?.timing)
+    }
+
+    @Test
+    fun rainNowThatOutlastsTheDayIsTheRestOfToday() {
+        val now = at(0, 15)
+        val raining = report(now, hourly = rainFrom(14, 24), minutely = slices(now, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        assertEquals(UiText.of(Res.string.weather_outlook_rest_of_today), WeatherStory.outlooks(raining, us, now)!!.today.timing)
+    }
+
+    @Test
+    fun aStormAndSnowAreToldApart() {
+        val now = at(0, 9)
+        assertEquals(OutlookKind.STORM, WeatherStory.outlooks(report(now, hourly = rainFrom(15, 18, code = 95)), us, now)!!.today.kind)
+        val snow = WeatherData.calmHours { h ->
+            if (h.epochSeconds >= at(1, 5) && h.epochSeconds < at(1, 9)) h.copy(precipitationMm = 1.0, snowfallCm = 2.0, precipitationProbability = 80, weatherCode = 73) else h
+        }
+        assertEquals(OutlookKind.SNOW, WeatherStory.outlooks(report(now, hourly = snow), us, now)!!.tomorrow?.kind)
+    }
+
+    @Test
+    fun rainDueAfterMidnightIsNotTodays() {
+        val now = at(0, 23, 30)
+        val r = report(now, hourly = rainFrom(0, 3, day = 1), minutely = slices(now, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        val outlooks = WeatherStory.outlooks(r, us, now)!!
+        assertEquals(OutlookKind.DRY, outlooks.today.kind)
+        assertEquals(OutlookKind.RAIN, outlooks.tomorrow?.kind)
+    }
+
+    @Test
+    fun rainPartWayThroughThisHourStartsWhenTheQuarterHoursSay() {
+        val now = at(0, 15)
+        val r = report(now, hourly = rainFrom(15, 18), minutely = slices(now, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5))
+        val today = WeatherStory.outlooks(r, us, now)!!.today
+        assertEquals(UiText.of(Res.string.weather_outlook_from_to, UiText.of(Res.string.weather_time_pm, "3:30"), UiText.of(Res.string.weather_time_pm, "6")), today.timing)
+        assertEquals(UiText.of(Res.string.weather_outlook_in_minutes, 30), today.note)
+    }
+
+    @Test
+    fun aShortShowerBeforeTheDaysRealRainIsToldAndCountedApart() {
+        val now = at(0, 15)
+        val r = report(now, hourly = rainFrom(19, 21), minutely = slices(now, 0.0, 0.0, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0))
+        val today = WeatherStory.outlooks(r, us, now)!!.today
+        assertEquals(OutlookKind.RAIN, today.kind)
+        assertEquals(UiText.of(Res.string.weather_outlook_on_off), today.timing)
+        assertEquals(UiText.of(Res.string.weather_outlook_in_minutes, 30), today.note)
+        assertEquals(WeatherFormat.precipitation(2.4, us), today.marks.first())
+    }
+
+    @Test
+    fun rainStoppingSoonSaysUntilThenUnlessMoreFollows() {
+        val now = at(0, 15)
+        val stopping = slices(now, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        val until = UiText.of(Res.string.weather_outlook_until, UiText.of(Res.string.weather_time_pm, "3:30"))
+        assertEquals(until, WeatherStory.outlooks(report(now, hourly = rainFrom(15, 16), minutely = stopping), us, now)!!.today.timing)
+        val more = WeatherData.calmHours { h ->
+            val wet = h.epochSeconds == at(0, 15) || (h.epochSeconds >= at(0, 19) && h.epochSeconds < at(0, 21))
+            if (wet) h.copy(precipitationMm = 1.0, precipitationProbability = 80, weatherCode = 61) else h
+        }
+        assertEquals(
+            UiText.of(Res.string.weather_outlook_from_to, UiText.of(Res.string.weather_time_pm, "3"), UiText.of(Res.string.weather_time_pm, "9")),
+            WeatherStory.outlooks(report(now, hourly = more, minutely = stopping), us, now)!!.today.timing,
+        )
+    }
+
+    @Test
+    fun theAirIsNewsWhenNothingFalls() {
+        val now = at(0, 9)
+        val windy = WeatherData.calmHours { h -> if (h.epochSeconds == at(0, 15)) h.copy(gustKmh = 70.0) else h }
+        assertEquals(OutlookKind.WIND, WeatherStory.outlooks(report(now, hourly = windy), us, now)!!.today.kind)
+        val hot = WeatherData.calmHours { h -> if (h.epochSeconds == at(1, 15)) h.copy(feelsLikeC = 40.0) else h }
+        assertEquals(OutlookKind.HEAT, WeatherStory.outlooks(report(now, hourly = hot), us, now)!!.tomorrow?.kind)
+        val bitter = WeatherData.calmHours { h -> if (h.epochSeconds == at(1, 3)) h.copy(feelsLikeC = -20.0) else h }
+        assertEquals(OutlookKind.COLD, WeatherStory.outlooks(report(now, hourly = bitter), us, now)!!.tomorrow?.kind)
+    }
+
+    @Test
+    fun theNextWetDayIsPastTomorrow() {
+        val now = at(0, 9)
+        val days = WeatherData.calmDays(-1..3) { d ->
+            if (d.epochSeconds == at(1, 0) || d.epochSeconds == at(3, 0)) d.copy(precipitationMm = 3.0, precipitationProbability = 70) else d
+        }
+        assertEquals(at(3, 0), WeatherStory.nextWetDay(report(now, daily = days), now)?.epochSeconds)
+        assertEquals(null, WeatherStory.nextWetDay(report(now), now))
     }
 }

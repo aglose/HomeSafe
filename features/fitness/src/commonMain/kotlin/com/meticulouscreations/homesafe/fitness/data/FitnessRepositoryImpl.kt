@@ -5,6 +5,8 @@ import com.meticulouscreations.homesafe.data.FitnessDao
 import com.meticulouscreations.homesafe.data.FitnessExerciseEntity
 import com.meticulouscreations.homesafe.data.FitnessHeartSettingsEntity
 import com.meticulouscreations.homesafe.data.FitnessHeartSummaryEntity
+import com.meticulouscreations.homesafe.data.FitnessLogGone
+import com.meticulouscreations.homesafe.data.FitnessLogRows
 import com.meticulouscreations.homesafe.data.FitnessPhaseEntity
 import com.meticulouscreations.homesafe.data.FitnessSetEntity
 import com.meticulouscreations.homesafe.data.FitnessWorkoutEntity
@@ -12,6 +14,7 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Equipment
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.FitnessIdFloor
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
@@ -37,12 +40,17 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Clock
 
 /** The training log in the app's database ([FitnessDao]). */
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
-class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
+class FitnessRepositoryImpl(
+    private val dao: FitnessDao,
+    /** Where a new row's id begins. A test that counts ids hands in its own. */
+    private val idFloor: FitnessIdFloor = FitnessIdFloor.FromClock,
+) : FitnessRepository {
     // One writer at a time, every write included. Ids are handed out here, rising, so two never get the same one; a decision
     // made on what the log holds (is this workout empty? is one already open? has this set been imported?) is made and acted
     // on in one piece; and the log read under it ([held]) is the log at one moment, with no edit half in it.
@@ -80,7 +88,7 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
     private suspend fun insert(drafts: List<SetDraft>): List<LoggedSet> {
         if (drafts.isEmpty()) return emptyList()
         val workouts = drafts.mapNotNull { it.workoutId }.distinct().associateWith { dao.workout(it) != null }
-        var next = (dao.maxSetId() ?: 0L) + 1
+        var next = newId(dao.maxSetId())
         val rows = drafts.map { draft ->
             val workoutId = draft.workoutId?.takeIf { workouts[it] == true }
             FitnessSetEntity(next++, draft.exerciseId, workoutId, draft.epochSeconds, draft.weight, draft.reps, draft.bodyweight, draft.note, draft.imported)
@@ -94,23 +102,95 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
     override suspend fun bringIn(copy: LogCopy): LogMerge = writes.withLock {
         // Worked out and written under the one lock every writer takes, so nothing moves between the two; and written as
         // one transaction, so a copy that is cut off part-way (the app killed, the caller cancelled) leaves nothing behind.
-        val merge = LogCopies.merge(copy, held())
+        val here = held()
+        val merge = LogCopies.merge(copy, here, floorOver(here))
         if (!merge.isEmpty) {
+            val rows = merge.toRows()
             dao.writeMerge(
-                exercises = merge.exercises.map { it.toEntity() },
-                sets = merge.sets.map { it.toEntity() },
-                workouts = merge.workouts.map { FitnessWorkoutEntity(it.id, it.focus.name, it.startedAtEpochSeconds, it.finishedAtEpochSeconds) },
-                phases = merge.phases.map { FitnessPhaseEntity(it.id, it.kind.name, it.startedAtEpochSeconds) },
-                bodyweights = merge.bodyweights.map { FitnessBodyweightEntity(it.epochDay, it.pounds) },
-                heartSettings = merge.heart?.let { heart ->
-                    val profile = heart.profile
-                    FitnessHeartSettingsEntity(maxBpm = profile.maxBpm, age = profile.age, restingBpm = profile.restingBpm, sensorAddress = heart.sensor?.address, sensorName = heart.sensor?.name)
-                },
-                heartSummaries = merge.heartSummaries.map { (workoutId, summary) -> summary.toEntity(workoutId) },
+                exercises = rows.exercises,
+                sets = rows.sets,
+                workouts = rows.workouts,
+                phases = rows.phases,
+                bodyweights = rows.bodyweights,
+                heartSettings = merge.heart?.toEntity(),
+                heartSummaries = rows.heartSummaries,
             )
         }
         merge
     }
+
+    /** A new row's id: past the [highest] the log holds, and past [idFloor]. */
+    private fun newId(highest: Long?): Long = maxOf((highest ?: 0L) + 1, idFloor.next(highest ?: 0L))
+
+    /** Where the new ids of a merge into [log] begin. */
+    private fun floorOver(log: LogCopy): Long =
+        idFloor.next(maxOf(log.workouts.maxOfOrNull { it.id } ?: 0L, log.sets.maxOfOrNull { it.id } ?: 0L, log.phases.maxOfOrNull { it.id } ?: 0L))
+
+    /** Runs [block] with no write to the log able to land in the middle of it: what the server is told, and what it says, are worked out under this. */
+    internal suspend fun <T> holdingLog(block: suspend () -> T): T = writes.withLock { block() }
+
+    /** The log's rows as they stand. Under [holdingLog]. */
+    internal suspend fun rows() = FitnessLogRows(
+        exercises = dao.observeExercises().first(),
+        sets = dao.sets(),
+        workouts = dao.observeWorkouts().first(),
+        phases = dao.observePhases().first(),
+        bodyweights = dao.observeBodyweights().first(),
+        heartSummaries = dao.observeHeartSummaries().first(),
+    )
+
+    /** What the zones are worked out from, which is what goes to the server of the heart-rate settings. Under [holdingLog]. */
+    internal suspend fun heartProfile(): HeartProfile = dao.heartSettings()?.let { HeartProfile(it.maxBpm, it.age, it.restingBpm) } ?: HeartProfile()
+
+    /** Writes what another device changed. A null [profile] leaves the zones as they are; the sensor chosen here stays, whatever they did there. Under [holdingLog]. */
+    internal suspend fun writeFromServer(written: FitnessLogRows, profile: HeartProfile?, gone: FitnessLogGone) {
+        dao.writeFromServer(written, profile?.let { (dao.heartSettings() ?: EMPTY_HEART_SETTINGS).withProfile(it) }, gone)
+    }
+
+    /**
+     * Brings this log together with the server's for the first time, which is [server] as it stands:
+     * what the server has is taken as it is, and what only this device had is kept, under new ids
+     * ([LogCopies.merge], as for a copy of a log brought in). The new ones are in the log afterwards
+     * and not on the server, so the next comparison sends them. One transaction, so that being stopped
+     * part-way loses nothing, and if it runs again it finds nothing more to add.
+     *
+     * Not while a workout in progress here would change its id (returns false), because the screen is
+     * holding on to it: anything but the server's same workout does, since another install's workout
+     * can have the id without being the one. A later try will find it closed.
+     */
+    internal suspend fun adopt(server: FitnessLogRows, profile: HeartProfile, nowEpochSeconds: Long = Clock.System.now().epochSeconds): Boolean = writes.withLock {
+        val here = held()
+        val theirs = LogCopy(
+            exercises = server.exercises.map { it.toDomain() },
+            sets = server.sets.map { it.toDomain() },
+            workouts = server.workouts.map { it.toDomain() },
+            phases = server.phases.map { Phase(it.id, enumOr(it.kind, PhaseKind.MAINTAIN), it.startedAtEpochSeconds) },
+            bodyweights = server.bodyweights.map { BodyweightEntry(it.epochDay, it.pounds) },
+            heart = HeartSettings(profile),
+            heartSummaries = server.heartSummaries.associate { it.workoutId to it.toDomain() },
+        )
+        val keepsItsId = theirs.workouts.mapTo(HashSet()) { Triple(it.id, it.focus, it.startedAtEpochSeconds) }
+        if (here.workouts.any { it.isInProgress(nowEpochSeconds) && Triple(it.id, it.focus, it.startedAtEpochSeconds) !in keepsItsId }) return@withLock false
+        val merge = LogCopies.merge(here, theirs, floorOver(theirs))
+        val added = merge.toRows()
+        // The exercises the merge rewrites are the ones it says differ, so they go in over the server's own.
+        val rewritten = added.exercises.mapTo(HashSet()) { it.id }
+        dao.replaceLog(
+            FitnessLogRows(
+                exercises = server.exercises.filter { it.id !in rewritten } + added.exercises,
+                sets = server.sets + added.sets,
+                workouts = server.workouts + added.workouts,
+                phases = server.phases + added.phases,
+                bodyweights = server.bodyweights + added.bodyweights,
+                heartSummaries = server.heartSummaries + added.heartSummaries,
+            ),
+            (merge.heart ?: theirs.heart).toEntity(),
+        )
+        true
+    }
+
+    /** Takes everything out of the log but the sensor chosen here. For a log that has all gone to the server and belongs to someone else. Under [holdingLog]. */
+    internal suspend fun emptyLog() = dao.replaceLog(FitnessLogRows(), dao.heartSettings()?.withProfile(HeartProfile()))
 
     /** Under [writes], which every write takes: the log as it stands at one moment, with no edit half in it. */
     private suspend fun held() = LogCopy(exercises.first(), sets.first(), workouts.first(), phases.first(), bodyweights.first(), heartSettings.first(), heartSummaries.first())
@@ -127,7 +207,7 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
 
     override suspend fun startWorkout(focus: WorkoutFocus, atEpochSeconds: Long): Workout = writes.withLock {
         dao.openWorkout()?.toDomain()?.takeIf { it.isInProgress(atEpochSeconds) }?.let { return@withLock it }
-        val row = FitnessWorkoutEntity((dao.maxWorkoutId() ?: 0L) + 1, focus.name, atEpochSeconds, null)
+        val row = FitnessWorkoutEntity(newId(dao.maxWorkoutId()), focus.name, atEpochSeconds, null)
         dao.upsertWorkout(row)
         row.toDomain()
     }
@@ -145,7 +225,7 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
     override suspend fun deleteWorkout(id: Long) = writes.withLock { dao.removeWorkout(id) }
 
     override suspend fun startPhase(kind: PhaseKind, atEpochSeconds: Long) = writes.withLock {
-        dao.upsertPhase(FitnessPhaseEntity((dao.maxPhaseId() ?: 0L) + 1, kind.name, atEpochSeconds))
+        dao.upsertPhase(FitnessPhaseEntity(newId(dao.maxPhaseId()), kind.name, atEpochSeconds))
     }
 
     override suspend fun saveBodyweight(entry: BodyweightEntry) = writes.withLock { dao.upsertBodyweight(FitnessBodyweightEntity(entry.epochDay, entry.pounds)) }
@@ -161,7 +241,7 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
     // The profile and the sensor share a row and are saved apart, so each is written over what the row holds at that moment.
     override suspend fun saveHeartProfile(profile: HeartProfile) = writes.withLock {
         val row = dao.heartSettings() ?: EMPTY_HEART_SETTINGS
-        dao.upsertHeartSettings(row.copy(maxBpm = profile.maxBpm, age = profile.age, restingBpm = profile.restingBpm))
+        dao.upsertHeartSettings(row.withProfile(profile))
     }
 
     override suspend fun saveHeartSensor(sensor: HeartSensor?) = writes.withLock {
@@ -177,6 +257,20 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
 }
 
 private val EMPTY_HEART_SETTINGS = FitnessHeartSettingsEntity(maxBpm = null, age = null, restingBpm = null, sensorAddress = null, sensorName = null)
+
+private fun FitnessHeartSettingsEntity.withProfile(profile: HeartProfile) = copy(maxBpm = profile.maxBpm, age = profile.age, restingBpm = profile.restingBpm)
+
+private fun HeartSettings.toEntity() =
+    FitnessHeartSettingsEntity(maxBpm = profile.maxBpm, age = profile.age, restingBpm = profile.restingBpm, sensorAddress = sensor?.address, sensorName = sensor?.name)
+
+private fun LogMerge.toRows() = FitnessLogRows(
+    exercises = exercises.map { it.toEntity() },
+    sets = sets.map { it.toEntity() },
+    workouts = workouts.map { FitnessWorkoutEntity(it.id, it.focus.name, it.startedAtEpochSeconds, it.finishedAtEpochSeconds) },
+    phases = phases.map { FitnessPhaseEntity(it.id, it.kind.name, it.startedAtEpochSeconds) },
+    bodyweights = bodyweights.map { FitnessBodyweightEntity(it.epochDay, it.pounds) },
+    heartSummaries = heartSummaries.map { (workoutId, summary) -> summary.toEntity(workoutId) },
+)
 
 private fun FitnessHeartSummaryEntity.toDomain() =
     HeartSummary(belowMillis, listOf(zone1Millis, zone2Millis, zone3Millis, zone4Millis, zone5Millis), bpmMillis, peakBpm)

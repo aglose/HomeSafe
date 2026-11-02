@@ -7,13 +7,19 @@ that tell you rain is coming.
 
 | Tab | What it shows |
 |---|---|
-| **Today** | The temperature and what the day is doing, written straight on the sky. Then cards: any government warning in force, the next two hours by the quarter hour (only when rain is near), the next day hour by hour, the best time to be outside, a still of the radar, and the details: UV, wind, sun, moon, humidity, pressure, precipitation, air quality, visibility |
-| **Forecast** | The ten days as a strip to scroll along, a column a day: its date and sky, its high and low as figures on the week's two curves, what falls and how hard it blows. Then the list: each day's sky, chance of rain and range against the week's. A day opens in place into its own sky, its hours and its numbers; tapping one in the strip opens it in the list and sets it in a blob of clear jelly that slides, stretches and wobbles from day to day |
+| **Today** | The temperature and what the day is doing, written straight on the sky. Then cards: any government warning in force, today and tomorrow as two tiles (only when either has weather worth planning around), the next wet day after that, the next two hours by the quarter hour (only when rain is near), the next day hour by hour, the best time to be outside, a still of the radar, and the details: UV, wind, sun, moon, humidity, pressure, precipitation, air quality, visibility |
+| **Forecast** | The ten days as a strip to scroll along, a column a day: its date and sky, its high and low as figures on the week's two curves, what falls and how hard it blows, with a wet day lit from top to bottom. Then the list: each day's sky and range against the week's, and for a wet day a lane of its hours showing when it falls, with how much and how likely. A day opens in place into its own sky, its hours and its numbers; tapping one in the strip opens it in the list and sets it in a blob of clear jelly that slides, stretches and wobbles from day to day |
 | **Radar** | A map the height of the screen with the radar loop on it: the past two hours, and over the US the next two as a model's forecast. Play, scrub, pinch, double-tap |
 
 Swipe sideways on Today or Forecast to move between places. The top bar's name opens **Places**
 (search, your cities under their own skies, a tap to add a popular one); the sliders open
 **Settings** (units, notifications, a still sky).
+
+## Today and tomorrow
+
+Two tiles under the temperature, each a word you can read at a glance: *Rain*, *Snow*, *Wintry mix*, *Storms*, or, when nothing falls, *Windy*, *Very hot*, *Bitterly cold*. A day with one of those is a solid tile of its colour, saying when, how soon and how much; a dry day beside it stays dark glass. `WeatherStory.outlooks` reads them from the forecast, with the notifications' own thresholds, so the screen and the shade agree: a spell of at least a millimetre (or a centimetre of snow), gusts of 40 mph, feeling like 100 °F or 0 °F. Today only counts what is still ahead.
+
+With two dry days there are no tiles and the day's one sentence stays under the temperature. Below the tiles comes the next day hour by hour, unless rain is within two hours, when the quarter-hour chart goes between them.
 
 ## The sky
 
@@ -72,7 +78,9 @@ observation.
 ## Where the data comes from
 
 Nothing here needs a key or an account, and none of it goes through the relay. The weather
-services are asked directly, by a client of their own that never carries Frigate's cookies.
+services are asked directly, by a client of their own that never carries Frigate's cookies. The
+relay does ask Open-Meteo one thing on its own account, about home, to push rain on the way (see
+[below](#rain-soon-from-the-relay)).
 
 | What | From | Notes |
 |---|---|---|
@@ -104,12 +112,13 @@ or from the suggestions, and can be reordered and removed with *Edit*.
 
 The last position is kept on the phone (so there is somewhere to forecast for when a fix can't be
 had) and goes nowhere but, rounded as above, to Open-Meteo and the National Weather Service. The
-permission prompts on iOS say so.
+permission prompts on iOS say so. That includes the relay: it forecasts for home, which it already
+holds for the geofences, and is never told where a phone is.
 
 ## Notifications
 
 On by default; each kind has its own switch in Weather's Settings, and they arrive on channels of
-their own (**Weather**, **Severe weather**) so Android can silence them apart from the cameras'.
+their own (**Weather**, **Rain on the way**, **Severe weather**) so Android can silence them apart from the cameras'.
 
 ### What one looks like
 
@@ -121,12 +130,13 @@ it; each platform shows as much of that as it has a place for.
 |---|---|---|
 | **Which kind, at a glance** | Its own icon in the status bar and its own accent colour: a cloud with rain in blue, with a bolt in violet, a thermometer in orange, a funnel in red. The same glyph on a coloured tile is the large icon | The tile is the banner's thumbnail |
 | **The place** | Beside the app's name | The subtitle |
-| **Opened out** | A card: the tile, the one thing to read large (when the rain starts, the day's high and low), the numbers as small marks (how much rain, the gusts, the UV index), and a chart: the next two hours of rain by the quarter hour, or the day by the hour with the present marked. A government warning opens into the agency's words instead, what to do first: an excerpt of up to 700 characters, cut at a word and marked "…" where the agency ran longer | The same card on a long press; the same excerpt of a warning's words as the body |
+| **Opened out** | A card: the tile, the one thing to read large (when the rain starts, the day's high and low), the numbers as small marks (how long, how much, when it is heaviest, the gusts, the UV index), and a chart: the next two hours of rain by the quarter hour, or the day by the hour with the present marked. A government warning opens into the agency's words instead, what to do first: an excerpt of up to 700 characters, cut at a word and marked "…" where the agency ran longer | The same card on a long press; the same excerpt of a warning's words as the body |
 | **Its time** | When it happens: a shower reads "in 25 min" and counts down by itself | When it was posted |
 | **Taken down** | By itself, when the shower has passed, the day is over, the warning has lapsed. A warning goes the moment it lapses; the others stay at least ten minutes from when they went up, so one posted late can still be read | At the next check after that (iOS can't give a notification an end). Every check sweeps, whatever the switches say; a sample is also swept ten minutes on while the app is running |
 | **A tap** | Opens the weather app on what it was about: Today for rain on the way and today's outlook, the Forecast for tomorrow's, the warning in full for a warning still in force (Today if it has lapsed); on the place it was for | The same |
-| **A button** | **Radar** | **Radar** (long press) |
+| **A button** | **Radar**; on rain about to start, with half an hour or more to go, **Remind me at 2:45 PM** too. It takes the notification down, and fifteen minutes before the rain it comes back from a fresh forecast, if the rain is still coming | **Radar** and **Remind me 15 min before** (long press). iOS can't ask the forecast at that moment, so the reminder repeats what was said; turning rain off or muting calls it off |
 | **Stacking** | In a group of their own, never bundled with the cameras' | In a thread of their own |
+| **Coming up over the screen** | Rain about to start, on the Rain on the way channel | As any notification |
 | **A warning** | Heads-up, on the Severe weather channel | Time-sensitive (breaks through a Focus once the app has that entitlement) |
 
 There is one drawing of each icon. `NotificationGlyph` (`ui/notification/NotificationGlyphs.kt`)
@@ -148,7 +158,7 @@ change what you do with your day, each said once:
 
 | Notification | When |
 |---|---|
-| **Rain (snow, storms) starting in about N min** | It is dry now, and the quarter-hour forecast has it starting within 75 minutes: two wet quarter-hours in a row, or one of 1 mm/h or more. One per shower: nothing more for three hours |
+| **Rain (snow, storms) at 3 PM** | Says for about how long and how much. It is dry now, and the quarter-hour forecast has it starting within 75 minutes: two wet quarter-hours in a row, or one of 1 mm/h or more. One per shower: nothing more for three hours |
 | **Rain today** | Once, between 6 and 11 in the morning, when the rest of the day has a spell of at least a millimetre (or a centimetre of snow): when, and about how much |
 | **Rain tomorrow** | Once, between 6 and 10 in the evening, the same for tomorrow, with its high |
 | Added to those two with *Wind, heat, cold, sun and air* | Gusts of 40 mph or more, feeling like 100 °F or hotter, feeling like 0 °F or colder, an air quality index of 151 or more, a first freeze, a high 8 °C (14 °F) or more above or below today's. Any of these is also reason enough for the notification by itself. A UV index of 8 or more is mentioned when there is one, but never sends one alone: in summer that would be every clear morning |
@@ -170,6 +180,64 @@ check runs:
   opened. iOS decides how often that is, from how the app is used.
 - Whenever the weather app is opened, on any platform with notifications.
 
+### Rain soon, from the relay
+
+A shower is only worth announcing before it arrives, and neither of those schedules promises that:
+Android's job drifts when the phone dozes, and iOS may not grant a refresh for hours. So the relay
+watches for rain too (`relay.py`, "rain soon"), and pushes **Rain at 3 PM** itself. The phone's own
+check stays, for when the phone is somewhere else and for when the relay is down. The rest of the
+notifications are the phone's alone.
+
+**Where.** Home, only for a phone the relay has at home: one of the two tracked phones
+([away-mode.md](away-mode.md)), not away and not on its way out, with the app's switches on and a
+push token. Home is what the relay already holds for the geofences; it goes to Open-Meteo rounded
+to the hundredth of a degree, the same as a phone's position does. A phone's position never goes to
+the relay, so this gives up rain where you are when you're out: away from home a phone has only
+its own check, as it always did. The notification says **Home**, so it can't be read as being about
+anywhere else.
+
+A debug build isn't told, since nothing says where it is; nor is a phone with its cameras' switch
+off, which registers no token (see [notifications.md](notifications.md)).
+
+**How often.** Every 15 minutes, which is as fast as those quarter-hours change, and only from 6 AM
+to 10 PM on the household's clock and while there is a phone to tell. One call a time, of nine
+variables: at most 64 a day, against Open-Meteo's free 10,000. Told to slow down (HTTP 429), it waits an hour.
+
+**Once per shower.** Each phone's row on the relay says what it was last told of, and when. Whoever
+is about to say so takes that first (`POST /devices/{id}/rain-soon`, for the phone), and
+it holds the other off for the three hours the planner would:
+
+| | What stops the second one |
+|---|---|
+| The relay pushed first | The phone's check asks, is told no, and posts nothing, and marks nothing as said: a push still on its way can land, and if that push fails the relay lets go, so the next check asks again and says it. An Android phone that got the push first needn't ask: it went through the ledger |
+| The phone's check said first | The relay finds it taken and doesn't push |
+| The relay was out of reach when the phone asked | The phone goes ahead: better twice than never. An Android phone drops the later push against its ledger. On an iPhone the push is drawn by iOS, so it can be seen a second time, on the same notification. The same goes for an iPhone told no at one check, whose push iOS never woke the app for, that can't reach the relay at the next |
+
+**What it looks like.** The push is a small forecast (`weather_soon`, read by `WeatherSoonPush`), not
+a finished notification. `WeatherNoticePlanner` plans from it as from any other, so the words, the
+card, the channel, the switches and the quiet hours are all the app's, and a shower that has
+already begun by the time it lands says nothing.
+
+- **Android** does that at once, from the high-priority data message; no network is needed.
+- **iOS** draws the push's own text first: English, from the relay, a time rather than a countdown,
+  with **Home** as its subtitle, in the weather's stack with the same buttons (**Radar**, and **Remind
+  me 15 min before** with half an hour or more to go), and a tap that lands on Today as any weather
+  notification's does. `content-available` also wakes the app, if iOS
+  allows, and the same planning puts the app's card in its place without alerting again. iOS
+  won't wake an app swiped away from the switcher, and throttles these as it likes: then the text
+  is all there is, until the next check takes it down.
+
+Neither service delivers one once its shower has started (`push_until`).
+
+Rain can't be summoned, so to see it work, on the box:
+
+```sh
+docker exec homesafe-relay python relay.py rain-soon-test
+```
+
+That pushes a made-up shower to every phone that wants these, at home or not; the phone still plans
+from it, so a real shower in the last three hours or the quiet hours will hold it back on Android.
+
 ## Tests
 
 - `weather/domain`: the astronomy against known sunrises and lunations, the forecast's sentences,
@@ -183,3 +251,6 @@ check runs:
 - `WeatherShadersCompileTest` (JVM) compiles every shader with Skia; `WeatherShadersTest` (Android
   device) compiles them as AGSL on a real Android, where AGSL's own compiler gets the final say.
 - `WeatherAppUiTest` drives the whole app from fixtures.
+- `relay/test_relay.py` (stdlib only): the relay's reading of a forecast against the same cases as
+  the planner's, who is told, when the forecast is asked for, and one shower being said once
+  from either end. `WeatherAlertCheckTest` has the other side of that, and reads the same payload.

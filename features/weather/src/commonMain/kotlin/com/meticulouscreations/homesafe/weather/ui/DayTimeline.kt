@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -16,10 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,18 +32,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -71,7 +76,6 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /** The narrowest a day is drawn: room for its date and for a wind speed with its unit and arrow. */
 private val DayColumnMin = 64.dp
@@ -83,7 +87,7 @@ private val DayHead = 87.dp
 private val DayCurve = 132.dp
 private val DayCurveInset = 28.dp
 
-/** Under the curves: how much falls, as a bar. */
+/** Under the curves: the chance of what falls, on a wet day. */
 private val DayBars = 26.dp
 
 /** And under that: the amount in figures, then the wind. */
@@ -91,8 +95,9 @@ private val DayFoot = 50.dp
 
 /**
  * The days ahead as one strip to scroll along, a column a day: its name and date, its sky and
- * chance of rain, its high and low as figures on the two curves that run through the week, what
- * falls as a bar with the amount under it, and the wind.
+ * chance of rain, its high and low as figures on the two curves that run through the week, how
+ * much falls, and the wind. A day worth planning around is lit from top to bottom, rain drawn
+ * across its column, so the wet days can be counted at a glance.
  *
  * A tap picks a day ([selected] and what [onSelect] is told count from today, the first of
  * [WeatherReport.daysFromToday]; -1 is no day). The one picked sits in a blob of clear jelly in
@@ -152,8 +157,21 @@ internal fun DayTimeline(report: WeatherReport, nowEpochSeconds: Long, selected:
                 val highBrush = Brush.horizontalGradient(*stops { it.highC }, startX = 0f, endX = size.width)
                 val lowBrush = Brush.horizontalGradient(*stops { it.lowC }, startX = 0f, endX = size.width)
                 val bandBrush = Brush.horizontalGradient(*days.mapIndexed { i, _ -> (i + 0.5f) / days.size to Color.White.copy(alpha = 0.11f * certainty(i)) }.toTypedArray(), startX = 0f, endX = size.width)
-                val wettest = max(6.0, days.maxOf { max(it.precipitationMm, it.snowfallCm) })
+                // Each wet day's column: a tint with rain drawn across it, all the way down the strip.
+                val inset = 3.dp.toPx()
+                val lanes = days.mapIndexedNotNull { i, day ->
+                    wetColor(day, colors)?.let { color ->
+                        val area = Rect(i * column + inset, 0f, (i + 1) * column - inset, size.height)
+                        val cell = Path().apply { addRoundRect(RoundRect(area, CornerRadius(18.dp.toPx()))) }
+                        Triple(cell, color.copy(alpha = certainty(i)), streaks(area, 9.dp.toPx(), 0.27f))
+                    }
+                }
                 onDrawBehind {
+                    lanes.forEach { (cell, color, streak) ->
+                        drawPath(cell, color.copy(alpha = color.alpha * 0.2f))
+                        clipPath(cell) { drawPath(streak, color.copy(alpha = color.alpha * 0.42f), style = Stroke(2.dp.toPx())) }
+                        drawPath(cell, color.copy(alpha = color.alpha * 0.75f), style = Stroke(1.dp.toPx()))
+                    }
                     drawPath(band, bandBrush)
                     days.forEachIndexed { i, day ->
                         // The day's own span, low to high: what ties its two figures together.
@@ -165,13 +183,6 @@ internal fun DayTimeline(report: WeatherReport, nowEpochSeconds: Long, selected:
                             StrokeCap.Round,
                             alpha = 0.3f * certainty(i),
                         )
-                        val amount = max(day.precipitationMm, day.snowfallCm)
-                        if (amount >= WET_DAY_AMOUNT) {
-                            // Taller for more, fainter for less likely, and fainter again a week off.
-                            val h = (sqrt(amount / wettest).toFloat() * (DayBars.toPx() - 4.dp.toPx())).coerceAtLeast(3.dp.toPx())
-                            val alpha = (0.4f + 0.6f * ((day.precipitationProbability ?: 70) / 100f)) * certainty(i)
-                            drawRoundRect((if (day.isSnowy) colors.snow else colors.rain).copy(alpha = alpha), Offset(i * column + column * 0.3f, barsFoot - h), Size(column * 0.4f, h), CornerRadius(3.dp.toPx()))
-                        }
                     }
                     drawPath(highLine, highBrush, style = Stroke(2.8.dp.toPx(), cap = StrokeCap.Round))
                     drawPath(lowLine, lowBrush, style = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round), alpha = 0.85f)
@@ -211,8 +222,27 @@ internal fun DayTimeline(report: WeatherReport, nowEpochSeconds: Long, selected:
     }
 }
 
-/** A day with less than this (millimetres of rain, centimetres of snow) is a dry one: no bar, no figure. */
+/** A day with less than this (millimetres of rain, centimetres of snow) is a dry one: no figure. */
 private const val WET_DAY_AMOUNT = 0.2
+
+/** The colour a day worth planning around is lit in, in the strip and on its pill; null for any other. */
+private fun wetColor(day: DayForecast, colors: WeatherPalette): Color? = when {
+    !day.isWet -> null
+    day.isSnowy -> colors.snow
+    day.kind.isStorm -> colors.violet
+    else -> colors.rain
+}
+
+/** Parallel lines across [area], [gap] apart, leaning [lean] of their height to the left as they fall: rain, standing still. */
+private fun streaks(area: Rect, gap: Float, lean: Float): Path = Path().apply {
+    val run = area.height * lean
+    var x = area.left
+    while (x < area.right + run) {
+        moveTo(x, area.top)
+        lineTo(x - run, area.bottom)
+        x += gap
+    }
+}
 
 /** How firmly a day [index] days off is drawn: fainter from [LESS_CERTAIN_FROM] on. */
 private fun certainty(index: Int): Float = if (index >= LESS_CERTAIN_FROM) 0.62f else 1f
@@ -274,6 +304,7 @@ private fun DayColumn(
     val high = WeatherFormat.degrees(day.highC, units)
     val low = WeatherFormat.degrees(day.lowC, units)
     val chance = day.precipitationProbability?.takeIf { it >= 25 && (day.kind.isPrecipitation || it >= 45) }
+    val lit = wetColor(day, colors)
     val fall = when {
         max(day.precipitationMm, day.snowfallCm) < WET_DAY_AMOUNT -> null
         day.isSnowy -> WeatherFormat.snow(day.snowfallCm, units)
@@ -333,16 +364,32 @@ private fun DayColumn(
             )
             Text(date, style = small, color = colors.onSkyFaint, maxLines = 1, softWrap = false)
             Spacer(Modifier.height(8.dp))
-            WeatherGlyph(day.kind, isDay = true, Modifier.size(26.dp))
-            Text(percent ?: "", style = small, color = colors.rain, maxLines = 1)
+            WeatherGlyph(day.kind, isDay = true, Modifier.size(if (lit != null) 30.dp else 26.dp))
+            // A lit day has its chance on a pill under the curves.
+            if (lit == null) Text(percent ?: "", style = small, color = colors.rain, maxLines = 1)
         }
         Box(Modifier.height(DayCurve).fillMaxWidth()) {
             // Each sits clear of its point on its curve: the high above, the low below.
             Text(high, style = type.bodyStrong, color = colors.onSky, maxLines = 1, modifier = Modifier.align(Alignment.TopCenter).offset(y = highAt - 26.dp))
             Text(low, style = type.bodyStrong, color = colors.onSkyMuted, maxLines = 1, modifier = Modifier.align(Alignment.TopCenter).offset(y = lowAt + 6.dp))
         }
-        Spacer(Modifier.height(DayBars + 4.dp))
-        Text(amount ?: "", style = small, color = if (day.isSnowy) colors.snow else colors.rain, maxLines = 1, softWrap = false, modifier = Modifier.height(15.dp))
+        Box(Modifier.height(DayBars + 4.dp), contentAlignment = Alignment.BottomCenter) {
+            if (lit != null && percent != null) {
+                Text(
+                    percent,
+                    style = small,
+                    color = OnWeatherColor,
+                    maxLines = 1,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(lit).padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+        val amountColor = when {
+            lit != null -> colors.onSky
+            day.isSnowy -> colors.snow
+            else -> colors.rain
+        }
+        Text(amount ?: "", style = small, color = amountColor, maxLines = 1, softWrap = false, modifier = Modifier.height(15.dp))
         Spacer(Modifier.height(5.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             // A wind worth noticing is written brighter.

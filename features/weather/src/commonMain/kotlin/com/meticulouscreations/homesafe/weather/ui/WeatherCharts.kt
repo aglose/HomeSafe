@@ -332,6 +332,36 @@ internal fun TemperatureRangeBar(lowC: Double, highC: Double, weekLowC: Double, 
     }
 }
 
+// ---- When it falls ------------------------------------------------------------------------------
+
+/**
+ * A day's hours as a row of bars, so when it rains can be seen rather than read: each wet hour
+ * lit in what falls and as tall as it falls hard (on a square root, as the other charts have
+ * it), each dry one a low mark. What is already behind [nowEpochSeconds] is dimmed.
+ */
+@Composable
+internal fun HourLane(hours: List<HourForecast>, nowEpochSeconds: Long, modifier: Modifier = Modifier) {
+    val colors = WeatherTheme.colors
+    Canvas(modifier.height(20.dp)) {
+        if (hours.isEmpty()) return@Canvas
+        val gap = 2.dp.toPx()
+        val width = (size.width - gap * (hours.size - 1)) / hours.size
+        val wettest = max(hours.maxOf { it.precipitationMm }, 0.1)
+        hours.forEachIndexed { i, hour ->
+            val past = hour.epochSeconds + WeatherReport.HOUR_SECONDS <= nowEpochSeconds
+            val wet = hour.isWet
+            val h = if (wet) (8.dp.toPx() + sqrt(hour.precipitationMm / wettest).toFloat() * (size.height - 8.dp.toPx())) else 3.dp.toPx()
+            val color = when {
+                !wet -> colors.hairline
+                hour.kind.isSnow -> colors.snow
+                hour.kind.isStorm -> colors.violet
+                else -> colors.rain
+            }
+            drawRoundRect(color.copy(alpha = color.alpha * if (past) 0.35f else 1f), Offset(i * (width + gap), size.height - h), Size(width, h), CornerRadius(2.dp.toPx()))
+        }
+    }
+}
+
 // ---- One day, hour by hour ---------------------------------------------------------------------
 
 /**

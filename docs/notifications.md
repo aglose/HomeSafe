@@ -76,8 +76,9 @@ twenty times between 12:39 and 13:37 on the 28th without moving.
   camera within 5 minutes of each other are one visit. Nothing kept, no summary. A slot the relay
   slept through is covered by the next. The push is `summary=1`, `silent=1`, `notif_id=summary`
   with no moment to open; Android posts it on its own low-importance "Summaries" channel.
-- **Away, grouped.** Every alert and every person detection goes through the same visits the old
-  rules used for ordinary alerts: the first of a camera's run sounds on the loud channel ("Away ·
+- **Away, grouped.** Every alert and every person detection (on a camera with a `property` zone,
+  every person inside it; see [away-mode.md](away-mode.md), "On the property") goes through the
+  same visits the old rules used for ordinary alerts: the first of a camera's run sounds on the loud channel ("Away ·
   Front Door"), more of the same updates it quietly, something new in it sounds again. Replayed
   over 2026-09-26 to 29 as if nobody had been home, 970 pushes become 220 that sound — though most
   of those days' traffic was the household itself, which isn't there when everyone's away.
@@ -221,7 +222,15 @@ push from Settings → Notifications reaches the iPhone.
 ## Weather
 
 The weather app's notifications (rain on the way, the day ahead, government warnings) are a
-separate thing from everything above: they don't come from the cameras or the relay. The phone
-checks the forecast itself and posts them on channels of their own, **Weather** and **Severe
-weather**, each with its kind's icon and colour and a picture of the forecast behind it. See
+separate thing from everything above: they don't come from the cameras. The phone checks the
+forecast itself and posts them on channels of their own, **Weather** and **Severe weather**, each
+with its kind's icon and colour and a picture of the forecast behind it. See
 [weather.md](weather.md#notifications).
+
+One of them also comes from the relay: rain on the way, at home, to a phone that is there
+([weather.md](weather.md#rain-soon-from-the-relay)). The weather's own switches and quiet hours
+govern it; quiet hours, "only when everyone's away" and "only strangers" here don't. It travels on
+the push token like every other, so with the cameras' switch off, or everything muted, the relay
+has nowhere to send it, and the phone's own check is all there is. The push is `weather_soon=<a
+small forecast>`, `notif_id=soon:<hour>`; Android posts it through the weather's notifier, and
+iOS draws its text and then, if it wakes the app, the weather's card.

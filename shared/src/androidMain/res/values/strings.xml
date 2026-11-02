@@ -25,6 +25,8 @@
     <string name="notif_run_paused_text">%1$s · %2$s</string>
     <string name="notif_channel_weather_name">Weather</string>
     <string name="notif_channel_weather_description">Rain or snow on the way, and what today and tomorrow hold</string>
+    <string name="notif_channel_weather_soon_name">Rain on the way</string>
+    <string name="notif_channel_weather_soon_description">Rain, snow or storms about to start where you are</string>
     <string name="notif_channel_weather_severe_name">Severe weather</string>
     <string name="notif_channel_weather_severe_description">Government warnings for where you are</string>
     <string name="notif_channel_budget_name">Budget</string>

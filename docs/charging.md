@@ -59,7 +59,8 @@ cost but not in what its kWh cost.
 
 **A price per mile** by place compares home with fast charging fairly, since a home kWh is counted at
 the wall and loses about 10% on its way to the battery. It is the place's price over the battery
-energy it gave, at that car's own mileage from its odometer and lifetime energy. Idle fees are left
+energy it gave, at that car's own mileage from its odometer and lifetime energy, counted only
+between days it has said both, since the two can start apart. Idle fees are left
 out here too.
 
 **Each car** has a page of its own, from its row in the month: what it has come to so far, and each

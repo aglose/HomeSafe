@@ -24,9 +24,14 @@
 	<array>
 		<string>com.meticulouscreations.homesafe.weather.refresh</string>
 	</array>
+	<!--
+	  remote-notification: the relay's "rain on the way" asks to wake the app, when iOS allows it, to
+	  give its banner the app's own picture (docs/weather.md). Nothing else from the relay asks.
+	-->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>remote-notification</string>
 	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>HomeSafe uses Face ID to securely sign you in without retyping your password.</string>
