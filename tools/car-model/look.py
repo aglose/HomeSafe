@@ -49,7 +49,7 @@ def arg(flag, default):
 def aim(camera, target, roll=0.0):
     direction = Vector(target) - Vector(camera.location)
     camera.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
-    camera.rotation_euler.rotate_axis("Z", -roll)
+    camera.rotation_euler.rotate_axis("Z", roll)
 
 
 def main():

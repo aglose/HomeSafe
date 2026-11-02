@@ -296,7 +296,8 @@ internal class MetalGl(
             "uHalfSize" to 32,
             "uStrength" to 33,
             "uFloor" to 34,
+            "uSide" to 35,
         )
-        const val SLOTS = 35
+        const val SLOTS = 36
     }
 }

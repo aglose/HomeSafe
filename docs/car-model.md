@@ -99,6 +99,10 @@ attribute on a 4-byte boundary, which Apple's GPUs require.
 
 A car that has settled costs nothing: each surface draws when the camera changes and then stops.
 
+Windows are drawn twice, with no sorting of triangles: faces seen from inside first, so a far pane always shows through, then those seen from outside, nearest pane first and writing depth, so the edge of a further pane can't paint over a near pane's reflection.
+
+Besides dragging, the viewer takes the arrow keys and plus and minus, and offers a screen reader the same moves as actions (`CarOrbitState.onKey`, `customActions` in `CarViewer`).
+
 The shading is image-based. Paint is a coloured metal base with flakes under a clear coat, each with
 its own reflection (softer on phones, whose cube is smaller); glass is a reflection over a tint, on a pane's outer face only, as its inner face would mirror the dark cabin; everything is darkened by the baked occlusion, the coat only under a real overhang, as the bake's small variations would blotch its reflections.
 The tone curve is Khronos PBR Neutral, the same one the Cycles renders use. The lighting turns with

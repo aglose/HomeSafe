@@ -31,6 +31,7 @@ struct Uniforms {
     float4 halfSize;
     float4 strength;
     float4 floorAmount;
+    float4 side;
 };
 
 struct VertexIn {
@@ -190,6 +191,7 @@ fragment float4 carGlass(
     float3 n = normalize(in.normal);
     if (dot(n, in.local - float3(0.0, 0.2, 0.85)) < 0.0) n = -n;
     bool outside = dot(n, v) > 0.0;
+    if (u.side.x != 0.0 && outside != (u.side.x > 0.0)) discard_fragment();
     if (!outside) n = -n;
     float nv = max(dot(n, v), 0.001);
     float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);

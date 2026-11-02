@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -50,6 +51,20 @@ class CarOrbitState(azimuth: Float = START_AZIMUTH, elevation: Float = START_ELE
 @Composable
 fun rememberCarOrbitState(): CarOrbitState = remember { CarOrbitState() }
 
+/** The same moves for a keyboard: arrows turn it and plus and minus zoom. Whether the key was one of these. */
+internal fun CarOrbitState.onKey(key: Key): Boolean {
+    when (key) {
+        Key.DirectionLeft -> turn(CAR_TURN_STEP, 0f)
+        Key.DirectionRight -> turn(-CAR_TURN_STEP, 0f)
+        Key.DirectionUp -> turn(0f, CAR_TILT_STEP)
+        Key.DirectionDown -> turn(0f, -CAR_TILT_STEP)
+        Key.Plus, Key.Equals, Key.NumPadAdd -> zoomBy(CAR_ZOOM_STEP)
+        Key.Minus, Key.NumPadSubtract -> zoomBy(1f / CAR_ZOOM_STEP)
+        else -> return false
+    }
+    return true
+}
+
 /** One finger or the mouse turns the car and it coasts on after; two pinch; a wheel zooms. */
 internal fun Modifier.carOrbitGestures(state: CarOrbitState): Modifier = pointerInput(state) {
     coroutineScope {
@@ -72,7 +87,11 @@ internal fun Modifier.carOrbitGestures(state: CarOrbitState): Modifier = pointer
             while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
-                if (pressed.isEmpty()) break
+                if (pressed.isEmpty()) {
+                    // The lift counts as a sample, so a pause before it leaves no speed to coast on.
+                    event.changes.firstOrNull()?.let { tracker.addPosition(it.uptimeMillis, it.position) }
+                    break
+                }
                 val pan = event.calculatePan()
                 val zoom = event.calculateZoom()
                 if (zoom != 1f) state.zoomBy(zoom)
@@ -99,7 +118,10 @@ internal fun Modifier.carOrbitGestures(state: CarOrbitState): Modifier = pointer
     }
 }
 
-private const val DEGREES_PER_PIXEL = 0.42f
+internal const val CAR_TURN_STEP = 15f
+internal const val CAR_TILT_STEP = 8f
+internal const val CAR_ZOOM_STEP = 1.2f
+internal const val DEGREES_PER_PIXEL = 0.42f
 private const val VERTICAL_SHARE = 0.55f
 private const val WHEEL_ZOOM = 1.06f
 private const val COAST_FRICTION = 2.4f

@@ -59,6 +59,7 @@ internal class CarScene(private val gl: Gl, private val look: CarLook, private v
     private val emissive = gl.location(surfaceProgram.id, "uEmissive")
     private val occlusionPower = gl.location(surfaceProgram.id, "uOcclusionPower")
     private val tint = gl.location(glassProgram.id, "uTint")
+    private val side = gl.location(glassProgram.id, "uSide")
     private val shadowViewProjection = gl.location(shadowProgram, "uViewProjection")
     private val shadowHalfSize = gl.location(shadowProgram, "uHalfSize")
     private val shadowTexture = gl.location(shadowProgram, "uShadow")
@@ -119,11 +120,17 @@ internal class CarScene(private val gl: Gl, private val look: CarLook, private v
         prepare(glassProgram, viewProjection, eye, exposure)
         gl.uniformMatrix(glassProgram.model, bodyModel)
         gl.uniform(glassProgram.unit, assets.body.unit)
+        gl.uniform(side, BOTH_FACES)
         drawGlass(LENSES)
-        // Windows write depth, so a far pane can never paint over a near one: their parts hold both
-        // sides of the car, in no order the camera could rely on.
-        gl.blended(depthWrites = true)
+        // Back to front without sorting triangles: a sight line leaves the car through a pane's inner
+        // face and enters through an outer one, so the inner faces go first and always show through.
+        gl.uniform(side, FACES_SEEN_FROM_INSIDE)
         drawGlass(WINDOWS)
+        // The outer ones nearest first, writing depth: the edge of a pane further off that faces the
+        // viewer too would otherwise paint its tint over the near pane's reflection.
+        gl.blended(depthWrites = true)
+        gl.uniform(side, FACES_SEEN_FROM_OUTSIDE)
+        drawGlass(if (eye[1] < 0f) WINDOWS else WINDOWS.asReversed())
     }
 
     private fun drawGlass(names: List<String>) {
@@ -191,6 +198,9 @@ internal class CarScene(private val gl: Gl, private val look: CarLook, private v
         const val ORBIT_CENTRE_Z = 0.62f
         const val SHADOW_HALF_SIZE = 4f
         const val SHADOW_STRENGTH = 0.96f
+        const val BOTH_FACES = 0f
+        const val FACES_SEEN_FROM_INSIDE = -1f
+        const val FACES_SEEN_FROM_OUTSIDE = 1f
 
         val WHEELS = listOf(
             Wheel(TRACK / 2, FRONT_AXLE, rear = false, turnedRound = false),
@@ -201,7 +211,7 @@ internal class CarScene(private val gl: Gl, private val look: CarLook, private v
 
         /** Inner lenses before the outer: each shows through the next. */
         val LENSES = listOf("tail_lens", "tail_outer_lens", "fog_lens", "head_lens")
-        val WINDOWS = listOf("rear_glass", "rear_side_glass", "rear_door_glass", "front_door_glass", "windshield")
+        val WINDOWS = listOf("windshield", "front_door_glass", "rear_door_glass", "rear_side_glass", "rear_glass")
 
         /** A quad in the shadow shader's corners: two shorts per corner in the mesh's layout, then its indices. */
         val QUAD: ByteArray = run {

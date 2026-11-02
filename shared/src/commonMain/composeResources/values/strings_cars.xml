@@ -52,6 +52,12 @@
     <string name="household_cars_sentry">Sentry on</string>
     <string name="household_cars_inside">Inside %1$s</string>
     <string name="household_cars_view_3d">See %1$s in 3D</string>
+    <string name="car_model_turn_left">Turn left</string>
+    <string name="car_model_turn_right">Turn right</string>
+    <string name="car_model_tilt_up">See it from higher up</string>
+    <string name="car_model_tilt_down">See it from lower down</string>
+    <string name="car_model_zoom_in">Zoom in</string>
+    <string name="car_model_zoom_out">Zoom out</string>
     <string name="household_cars_3d_hint">Drag to turn it, pinch or scroll to zoom</string>
     <string name="household_cars_3d_description">3D model of %1$s. Drag to turn it, pinch or scroll to zoom.</string>
     <string name="car_model_blue_performance">2023 Model Y Performance, Deep Blue</string>

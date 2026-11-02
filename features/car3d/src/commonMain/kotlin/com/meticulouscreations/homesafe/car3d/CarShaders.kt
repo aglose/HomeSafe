@@ -173,6 +173,7 @@ in vec3 vLocal;
 in vec3 vNormal;
 in float vOcclusion;
 uniform vec3 uTint;
+uniform float uSide; // 1 draws only faces seen from outside, -1 only those seen from inside, 0 both
 out vec4 fragColor;
 
 void main() {
@@ -181,6 +182,7 @@ void main() {
     // Winding can't be trusted, but a pane's outside faces away from the middle of the cabin.
     if (dot(n, vLocal - vec3(0.0, 0.2, 0.85)) < 0.0) n = -n;
     bool outside = dot(n, v) > 0.0;
+    if (uSide != 0.0 && outside != (uSide > 0.0)) discard;
     if (!outside) n = -n;
     float nv = max(dot(n, v), 0.001);
     float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
