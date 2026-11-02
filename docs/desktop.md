@@ -61,9 +61,9 @@ It is built for Apple silicon (M1 and later). An Intel Mac can build its own wit
 
 `packageDmg` packages the JDK it runs on (Java 21), so the app is for that Mac's CPU, with that
 CPU's Skia and FFmpeg. On a Mac the build also compiles the Touch ID helper
-(`desktopApp/macos/OwnerCheck.swift`) and the notifications library (`desktopApp/macos/Notifications.swift`)
-with the Xcode command-line tools. `-PdesktopBuild=<n>` sets
-the version's last number (`1.0.<n>`); CI passes its run number.
+(`desktopApp/macos/OwnerCheck.swift`), the notifications library (`desktopApp/macos/Notifications.swift`)
+and the Ski tab's browser (`desktopApp/macos/SkiBrowser.swift`) with the Xcode command-line tools.
+`-PdesktopBuild=<n>` sets the version's last number (`1.0.<n>`); CI passes its run number.
 
 ## How it is laid out
 
@@ -125,10 +125,11 @@ acts on while it is up. On Android a hardware keyboard sends the same, with Ctrl
 | Notifications | The alert poller's and the weather's, while the app runs, in the Mac's Notification Center as HomeSafe's own (`macos/Notifications.swift`, loaded through JNA by `MacNotifications.kt`; macOS asks once to allow them). Each keeps the deep link it opens (`homesafe://…`, as Android's do), so clicking one opens what that one was about, even after HomeSafe has quit and started again. While they aren't allowed (asked again for each one), they come from the menu-bar icon instead, and a click opens the latest. No push reaches a computer. |
 | Closing the window | Keeps HomeSafe running in the menu bar, so alerts still arrive; ⌘Q quits. The menu-bar icon's first item opens the window, or minimises it when it is up. |
 | Downloads | Into `~/Downloads`, shown in Finder. |
+| Ski tickets | The resorts' shops are read with the Mac's own WebKit, by a small program the app runs one page at a time (`macos/SkiBrowser.swift`, see [The Ski tab](weather.md#the-ski-tab)). No Dock icon, no focus taken, and a window of a couple of points that can't be seen. A build without it, or another OS, shows each resort's other prices and a link to its shop. |
 | The network | Watched for changes every few seconds; the tailnet is read off the computer's own addresses, and Tailscale.app can be opened from the app. |
 | Data | `~/Library/Application Support/HomeSafe` and the app's preferences. |
 | App icon | The one chosen in Settings goes in the Dock while the app runs. |
-| Not here | Away mode's location (a computer stays home), Health Connect and run recording, heart-rate straps, push. |
+| Not here | Away mode's location (a computer stays home, so the Ski tab's drives start from home or a city from the weather), Health Connect and run recording, heart-rate straps, push. |
 
 ## Tests
 

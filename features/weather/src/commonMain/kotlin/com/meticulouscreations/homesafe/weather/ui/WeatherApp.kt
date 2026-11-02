@@ -50,9 +50,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DownhillSkiing
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Radar
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WbSunny
@@ -76,6 +78,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -100,6 +103,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.ImageLoader
+import coil3.annotation.ExperimentalCoilApi
+import coil3.compose.LocalPlatformContext
+import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.AppSection
@@ -114,6 +121,7 @@ import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.ui.publishAppSections
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
+import com.meticulouscreations.homesafe.ui.showsSidebar
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import com.meticulouscreations.homesafe.weather.PlaceWeather
 import com.meticulouscreations.homesafe.weather.RadarLoad
@@ -125,6 +133,16 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherKind
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import com.meticulouscreations.homesafe.weather.domain.WeatherStory
 import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
+import com.meticulouscreations.homesafe.weather.ski.SkiUiState
+import com.meticulouscreations.homesafe.weather.ski.SkiViewModel
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiActions
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiFindScreen
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiRegionScreen
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiRegions
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiResortScreen
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiScreen
+import com.meticulouscreations.homesafe.weather.ski.ui.SkiSetupScreen
 import com.meticulouscreations.homesafe.weather.ui.radar.RadarScreen
 import com.meticulouscreations.homesafe.weather.ui.shader.WeatherShaderWarmUp
 import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
@@ -133,6 +151,11 @@ import com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.ski_open_find
+import homesafe.shared.generated.resources.ski_open_setup
+import homesafe.shared.generated.resources.ski_refresh
+import homesafe.shared.generated.resources.ski_title_find
+import homesafe.shared.generated.resources.ski_title_setup
 import homesafe.shared.generated.resources.weather_close
 import homesafe.shared.generated.resources.weather_open_places
 import homesafe.shared.generated.resources.weather_open_settings
@@ -141,6 +164,7 @@ import homesafe.shared.generated.resources.weather_place_position
 import homesafe.shared.generated.resources.weather_places_use_location
 import homesafe.shared.generated.resources.weather_tab_forecast
 import homesafe.shared.generated.resources.weather_tab_radar
+import homesafe.shared.generated.resources.weather_tab_ski
 import homesafe.shared.generated.resources.weather_tab_today
 import homesafe.shared.generated.resources.weather_title_alert
 import homesafe.shared.generated.resources.weather_title_places
@@ -153,11 +177,12 @@ import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** The weather app's three tabs, in nav order. */
+/** The weather app's tabs, in nav order. */
 enum class WeatherTab(val label: StringResource, val icon: ImageVector) {
     TODAY(Res.string.weather_tab_today, Icons.Filled.WbSunny),
     FORECAST(Res.string.weather_tab_forecast, Icons.Filled.CalendarMonth),
     RADAR(Res.string.weather_tab_radar, Icons.Filled.Radar),
+    SKI(Res.string.weather_tab_ski, Icons.Filled.DownhillSkiing),
 }
 
 /** A page pushed over the tabs. */
@@ -169,6 +194,18 @@ sealed interface WeatherPage {
 
     /** A government warning in full, by its id. */
     data class Alert(val id: String) : WeatherPage
+
+    /** One ski resort in full. */
+    data class SkiResort(val ref: SkiResortRef) : WeatherPage
+
+    /** Where to look for more ski resorts. */
+    data object SkiFind : WeatherPage
+
+    /** Every ski resort in a region, by its slug. */
+    data class SkiRegion(val slug: String) : WeatherPage
+
+    /** Who's going skiing, on what, from where. */
+    data object SkiSetup : WeatherPage
 }
 
 /** Everything the weather screens can ask for, as one thing to hand down: the view model's side of the app. */
@@ -193,9 +230,10 @@ class WeatherActions(
 /**
  * The weather app: an app of its own inside PercySafe, opened from the drawer, as Finance is.
  * Its background is the sky over the place in view, drawn live by shaders; on it, Today (now,
- * the next hours, the details), Forecast (the ten days) and Radar, with a swipe between places
- * and Places and Settings pushed over the top. Back pops a page, then leaves the app ([onClose]).
+ * the next hours, the details), Forecast (the ten days), Radar and Ski (planning a day on the
+ * mountain), with a swipe between places and Places and Settings pushed over the top. Back pops a page, then leaves the app ([onClose]).
  */
+@OptIn(ExperimentalCoilApi::class)
 @Composable
 fun WeatherApp(
     onClose: () -> Unit,
@@ -226,7 +264,30 @@ fun WeatherApp(
             onRadarVisible = viewModel::setRadarVisible,
         )
     }
-    WeatherAppContent(state, viewModel.tiles, actions, modifier, active, link = link, onShowLink = onShowLink)
+    val skiViewModel: SkiViewModel = metroViewModel()
+    val ski by skiViewModel.uiState.collectAsStateWithLifecycle()
+    val skiActions = remember(skiViewModel) {
+        SkiActions(
+            onActive = skiViewModel::setActive,
+            onRefresh = skiViewModel::refresh,
+            onPickDay = skiViewModel::pickDay,
+            onOpenResort = skiViewModel::openResort,
+            onPlanTrip = skiViewModel::planTrip,
+            onOpenRegion = skiViewModel::openRegion,
+            onFollow = skiViewModel::follow,
+            onFollowRegion = skiViewModel::followRegion,
+            onParty = skiViewModel::setParty,
+            onPass = skiViewModel::setPass,
+            onOrigin = skiViewModel::setOrigin,
+            onOwnPrice = skiViewModel::setOwnPrice,
+        )
+    }
+    // The mountain cameras come through the weather's own client, so Frigate's cookies stay home.
+    val platformContext = LocalPlatformContext.current
+    val pictures = remember(skiViewModel, platformContext) {
+        ImageLoader.Builder(platformContext).components { add(KtorNetworkFetcherFactory(skiViewModel.pictureClient)) }.build()
+    }
+    WeatherAppContent(state, viewModel.tiles, actions, modifier, active, link = link, onShowLink = onShowLink, ski = ski, skiActions = skiActions, skiPictures = pictures)
 }
 
 /** [WeatherApp] without its view model: everything on screen from one [state], for previews and tests as much as for the app. */
@@ -242,6 +303,9 @@ fun WeatherAppContent(
     initialPage: WeatherPage? = null,
     link: WeatherDeepLink? = null,
     onShowLink: () -> Unit = {},
+    ski: SkiUiState = SkiUiState(),
+    skiActions: SkiActions = SkiActions(),
+    skiPictures: ImageLoader? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<WeatherPage>().apply { initialPage?.let(::add) } }
@@ -305,10 +369,20 @@ fun WeatherAppContent(
     val selected = state.selected
     val report = selected?.report
     val scrubbed = remember(scrub, report) { scrub?.let { at -> report?.hourly?.firstOrNull { it.epochSeconds == at } } }
-    val scene = remember(selected?.place, report?.current, scrubbed, state.nowEpochSeconds / 120) {
+    // On the Ski tab the sky is the mountain's: the first followed resort with a forecast to go on.
+    val skiSky = remember(tab, ski.entries, ski.plan.resorts, state.nowEpochSeconds / 600) {
+        if (tab != WeatherTab.SKI) return@remember null
+        ski.followed.firstNotNullOfOrNull { entry ->
+            val facts = entry.page?.facts ?: return@firstNotNullOfOrNull null
+            val hour = entry.forecast?.hours?.lastOrNull { it.epochSeconds <= state.nowEpochSeconds } ?: return@firstNotNullOfOrNull null
+            SkyScene.of(hour.kind, null, hour.windKmh, SKI_SKY_WIND_DEG, hour.visibilityM, facts.latitude, facts.longitude, state.nowEpochSeconds)
+        }
+    }
+    val scene = remember(selected?.place, report?.current, scrubbed, state.nowEpochSeconds / 120, skiSky) {
         val latitude = selected?.place?.latitude ?: 40.0
         val longitude = selected?.place?.longitude ?: -100.0
         when {
+            skiSky != null -> skiSky
             scrubbed != null -> SkyScene.of(scrubbed, latitude, longitude)
             report != null -> SkyScene.of(report.current, latitude, longitude, state.nowEpochSeconds)
             else -> SkyScene.of(WeatherKind.MOSTLY_CLEAR, null, 8.0, 270, null, latitude, longitude, state.nowEpochSeconds)
@@ -317,13 +391,17 @@ fun WeatherAppContent(
     val onSky = pages.isEmpty() && tab != WeatherTab.RADAR
     // Today or Forecast, whichever the pager of places was last showing.
     var lastPlaceTab by rememberSaveable { mutableStateOf(if (initialTab == WeatherTab.FORECAST) WeatherTab.FORECAST else WeatherTab.TODAY) }
-    LaunchedEffect(tab) { if (tab != WeatherTab.RADAR) lastPlaceTab = tab }
+    LaunchedEffect(tab) { if (tab == WeatherTab.TODAY || tab == WeatherTab.FORECAST) lastPlaceTab = tab }
     LaunchedEffect(active, pages.isEmpty(), tab, selected?.place?.id) {
         // The radar loop is wanted by the Radar tab and by Today's small map of it.
-        actions.onRadarVisible(active && pages.isEmpty() && tab != WeatherTab.FORECAST && selected != null)
+        actions.onRadarVisible(active && pages.isEmpty() && (tab == WeatherTab.TODAY || tab == WeatherTab.RADAR) && selected != null)
     }
     // Gone from the screen by any road (a tab switch can take the overlay away without closing it): nobody wants the loop.
     DisposableEffect(actions) { onDispose { actions.onRadarVisible(false) } }
+    // The Ski tab fetches only while it, or a page opened from it, is what's up.
+    val skiUp = active && (tab == WeatherTab.SKI || pages.lastOrNull().isSkiPage())
+    LaunchedEffect(skiUp) { skiActions.onActive(skiUp) }
+    DisposableEffect(skiActions) { onDispose { skiActions.onActive(false) } }
 
     val palette = remember { WeatherPalette() }
     // Remembered: a new instance through the static local would recompose the whole tree on every state change.
@@ -380,6 +458,8 @@ fun WeatherAppContent(
             }
             // The pages end at the keyboard while it is up, so the field being typed in scrolls up above
             // it; the nav stays put, under the keyboard.
+            // The board, and the regions it leads to, stay where they were left when a page opened from them comes back.
+            val skiScrolls = rememberSaveableStateHolder()
             rememberPredictiveBackTransition(target, previous, back, label = "weatherPage").AnimatedContent(
                 modifier = Modifier.imePadding(),
                 transitionSpec = { weatherTransition(initialState, targetState, pop = back.inProgress || depth[1] < 0) },
@@ -389,8 +469,8 @@ fun WeatherAppContent(
                 when (shown) {
                     WeatherTab.TODAY, WeatherTab.FORECAST -> PlacePager(
                         state = state,
-                        // Its own tab while it is on its way out to the radar, not whatever came next.
-                        tab = if (tab == WeatherTab.RADAR) lastPlaceTab else tab,
+                        // Its own tab while it is on its way out to another, not whatever came next.
+                        tab = if (tab == WeatherTab.TODAY || tab == WeatherTab.FORECAST) tab else lastPlaceTab,
                         scrubbedEpochSeconds = scrub,
                         tiles = tiles,
                         padding = padding,
@@ -421,6 +501,37 @@ fun WeatherAppContent(
                         ),
                         animated = active && !state.preferences.stillSky,
                     )
+
+                    WeatherTab.SKI -> skiScrolls.SaveableStateProvider("ski") {
+                        SkiScreen(
+                            state = ski,
+                            actions = skiActions,
+                            padding = padding,
+                            onOpenResort = { pages += WeatherPage.SkiResort(it) },
+                            onOpenRegion = { pages += WeatherPage.SkiRegion(it) },
+                            onOpenFind = { pages += WeatherPage.SkiFind },
+                            onDim = { dim.floatValue = it },
+                        )
+                    }
+
+                    is WeatherPage.SkiResort -> SkiResortScreen(shown.ref, ski, skiActions, skiPictures, pagePadding)
+
+                    WeatherPage.SkiFind -> skiScrolls.SaveableStateProvider("ski_find") {
+                        SkiFindScreen(ski.plan, pagePadding, onOpenRegion = { pages += WeatherPage.SkiRegion(it) })
+                    }
+
+                    is WeatherPage.SkiRegion -> skiScrolls.SaveableStateProvider("ski_region_${shown.slug}") {
+                        SkiRegionScreen(
+                            slug = shown.slug,
+                            load = ski.regions[shown.slug],
+                            state = ski,
+                            actions = skiActions,
+                            padding = pagePadding,
+                            onOpenResort = { pages += WeatherPage.SkiResort(it) },
+                        )
+                    }
+
+                    WeatherPage.SkiSetup -> SkiSetupScreen(ski.plan, skiActions, pagePadding, canLocate = ski.canLocate, startCity = ski.startCity)
 
                     WeatherPage.Places -> PlacesScreen(
                         state = state,
@@ -470,6 +581,10 @@ fun WeatherAppContent(
                 onOpenPlaces = { if (pages.lastOrNull() != WeatherPage.Places) pages += WeatherPage.Places },
                 onOpenSettings = { if (pages.lastOrNull() != WeatherPage.Settings) pages += WeatherPage.Settings },
                 closable = !inSidebar,
+                ski = tab == WeatherTab.SKI,
+                onOpenSkiFind = { pages += WeatherPage.SkiFind },
+                onOpenSkiSetup = { pages += WeatherPage.SkiSetup },
+                onRefreshSki = skiActions.onRefresh,
             )
 
             val onPickTab: (WeatherTab) -> Unit = { picked ->
@@ -667,6 +782,13 @@ private fun PlacePage(
     }
 }
 
+/** The forecast for a mountain has no wind direction to hand; westerlies are near enough for clouds to drift by. */
+private const val SKI_SKY_WIND_DEG = 270
+
+/** Whether this is one of the Ski tab's own pages, which keep its data coming. */
+private fun WeatherPage?.isSkiPage(): Boolean =
+    this is WeatherPage.SkiResort || this is WeatherPage.SkiRegion || this == WeatherPage.SkiFind || this == WeatherPage.SkiSetup
+
 /**
  * One of a place's two tabs as a layer: drawn at [alpha], which is read only when it is drawn,
  * and while it isn't the one [shown], under the other (so no finger reaches it) and unsaid to
@@ -748,6 +870,10 @@ private fun WeatherTopBar(
     onOpenPlaces: () -> Unit,
     onOpenSettings: () -> Unit,
     closable: Boolean = true,
+    ski: Boolean = false,
+    onOpenSkiFind: () -> Unit = {},
+    onOpenSkiSetup: () -> Unit = {},
+    onRefreshSki: () -> Unit = {},
 ) {
     val colors = WeatherTheme.colors
     val type = WeatherTheme.type
@@ -756,8 +882,11 @@ private fun WeatherTopBar(
             .fillMaxWidth()
             .then(
                 when {
-                    page != null -> Modifier.background(Brush.verticalGradient(0f to colors.surface, 0.8f to colors.surface.copy(alpha = 0.94f), 1f to Color.Transparent))
+                    // The Ski tab's cards scroll right up under its title, with nothing else above them to read it against.
+                    page != null || ski -> Modifier.background(Brush.verticalGradient(0f to colors.surface, 0.8f to colors.surface.copy(alpha = 0.94f), 1f to Color.Transparent))
+
                     onSky -> Modifier.background(Brush.verticalGradient(listOf(Color(0x4D000000), Color.Transparent)))
+
                     else -> Modifier
                 },
             )
@@ -782,11 +911,23 @@ private fun WeatherTopBar(
                     WeatherPage.Places -> stringResource(Res.string.weather_title_places)
                     WeatherPage.Settings -> stringResource(Res.string.weather_title_settings)
                     is WeatherPage.Alert -> stringResource(Res.string.weather_title_alert)
+                    is WeatherPage.SkiResort -> page.ref.name
+                    WeatherPage.SkiFind -> stringResource(Res.string.ski_title_find)
+                    is WeatherPage.SkiRegion -> SkiRegions.of(page.slug)?.let { stringResource(it.name) } ?: page.slug
+                    WeatherPage.SkiSetup -> stringResource(Res.string.ski_title_setup)
                 },
                 style = type.bodyStrong,
                 color = colors.onSky,
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             )
+            return@Row
+        }
+        if (ski) {
+            Text(stringResource(Res.string.weather_tab_ski), style = type.title, color = colors.onSky, modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
+            // A mouse can't pull a page down to refresh it.
+            if (showsSidebar()) BarButton(Icons.Filled.Refresh, stringResource(Res.string.ski_refresh), onRefreshSki, Modifier.testTag("ski_refresh_button"))
+            BarButton(Icons.Filled.Search, stringResource(Res.string.ski_open_find), onOpenSkiFind, Modifier.testTag("ski_find_button"))
+            BarButton(Icons.Filled.Tune, stringResource(Res.string.ski_open_setup), onOpenSkiSetup, Modifier.testTag("ski_setup_button"))
             return@Row
         }
         val selected = state.selected
@@ -834,7 +975,7 @@ private fun BarButton(icon: ImageVector, label: String, onClick: () -> Unit, mod
     ) {
         // The tooltip hangs off the whole button: what it says shows wherever the pointer is over it.
         WithTooltip(label, Modifier.matchParentSize()) {
-            Box(contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = label, tint = WeatherTheme.colors.onSky, modifier = Modifier.size(22.dp))
             }
         }
@@ -871,7 +1012,7 @@ private fun WeatherNav(selected: WeatherTab, onSelect: (WeatherTab) -> Unit, ver
 }
 
 @Composable
-private fun NavItem(tab: WeatherTab, isSelected: Boolean, onSelect: (WeatherTab) -> Unit, modifier: Modifier = Modifier, horizontalPadding: Dp = 18.dp) {
+private fun NavItem(tab: WeatherTab, isSelected: Boolean, onSelect: (WeatherTab) -> Unit, modifier: Modifier = Modifier, horizontalPadding: Dp = 12.dp) {
     val colors = WeatherTheme.colors
     Column(
         modifier

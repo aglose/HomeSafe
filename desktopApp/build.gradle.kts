@@ -72,14 +72,26 @@ val buildNotifications by tasks.registering(Exec::class) {
     )
     doFirst { output.parentFile.mkdirs() }
 }
-tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildOwnerCheck, buildNotifications) }
-// jpackage copies the app's resources without their executable bit, so the helper is marked
+// The browser the Ski tab reads resorts' ticket shops with (macos/SkiBrowser.swift, run by
+// SkiBrowser.desktop.kt); without it those resorts show their other prices and a link to the shop.
+val buildSkiBrowser by tasks.registering(Exec::class) {
+    val onMac = isMac
+    val source = layout.projectDirectory.file("macos/SkiBrowser.swift")
+    val output = appResources.get().file("$skikoTarget/HomeSafeBrowser").asFile
+    onlyIf { onMac }
+    inputs.file(source)
+    outputs.file(output)
+    commandLine("xcrun", "swiftc", "-O", "-target", "${if (arm) "arm64" else "x86_64"}-apple-macos12", source.asFile.path, "-o", output.path)
+    doFirst { output.parentFile.mkdirs() }
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildOwnerCheck, buildNotifications, buildSkiBrowser) }
+// jpackage copies the app's resources without their executable bit, so the helpers are marked
 // runnable again in the app image (which packageDmg packs as it is).
 tasks.matching { it.name == "createDistributable" }.configureEach {
     val images = layout.buildDirectory.dir("compose/binaries/main/app")
     doLast {
         images.get().asFile.walk()
-            .filter { it.isFile && it.name == "HomeSafe" && it.parentFile.name == "resources" }
+            .filter { it.isFile && (it.name == "HomeSafe" || it.name == "HomeSafeBrowser") && it.parentFile.name == "resources" }
             .forEach { it.setExecutable(true, false) }
     }
 }

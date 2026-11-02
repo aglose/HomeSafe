@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.weather.PlaceWeather
 import com.meticulouscreations.homesafe.weather.RadarLoad
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
@@ -462,6 +463,7 @@ internal fun PillButton(label: String, onClick: () -> Unit, modifier: Modifier =
             .background(if (filled) colors.accent else colors.card)
             .then(if (filled) Modifier else Modifier.border(1.dp, colors.cardBorder, CircleShape))
             .clickable(role = Role.Button, onClick = onClick)
+            .handCursor()
             .padding(horizontal = 18.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

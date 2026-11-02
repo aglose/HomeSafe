@@ -25,6 +25,7 @@ import com.meticulouscreations.homesafe.data.MomentsDao
 import com.meticulouscreations.homesafe.data.PushedAlertActions
 import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.data.SettingsDao
+import com.meticulouscreations.homesafe.data.SkiDao
 import com.meticulouscreations.homesafe.data.WeatherDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
 import com.meticulouscreations.homesafe.data.createApiKeyStore
@@ -45,6 +46,7 @@ import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createNotificationMute
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
+import com.meticulouscreations.homesafe.data.createSkiDao
 import com.meticulouscreations.homesafe.data.createWeatherDao
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
@@ -86,6 +88,8 @@ import com.meticulouscreations.homesafe.weather.data.createWeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.data.createWeatherNotifier
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
+import com.meticulouscreations.homesafe.weather.ski.data.SkiBrowser
+import com.meticulouscreations.homesafe.weather.ski.data.createSkiBrowser
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provider
@@ -228,6 +232,17 @@ interface AppGraph :
     @Provides
     fun provideFitnessRunDao(platformContext: PlatformContext): FitnessRunDao =
         createFitnessRunDao(platformContext)
+
+    /** A real browser for what resorts' ticket shops only give one. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideSkiBrowser(platformContext: PlatformContext): SkiBrowser = createSkiBrowser(platformContext)
+
+    /** What the Weather app's Ski tab plans and last fetched. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideSkiDao(platformContext: PlatformContext): SkiDao =
+        createSkiDao(platformContext)
 
     /** What the finance app last fetched, for opening on without a connection. */
     @SingleIn(AppScope::class)
