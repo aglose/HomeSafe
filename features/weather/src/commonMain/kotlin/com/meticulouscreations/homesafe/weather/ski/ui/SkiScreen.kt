@@ -291,8 +291,7 @@ private fun Stats(view: SkiDayView, now: Long) {
 @Composable
 private fun ChainsLine(view: SkiDayView) {
     val worst = view.entry.chains.maxByOrNull { it.level.ordinal } ?: return
-    Spacer(Modifier.height(10.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.Warning, contentDescription = null, tint = WeatherTheme.colors.watch, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(
