@@ -244,9 +244,9 @@ class SkiViewModel(
                 val to = SkiPoint(facts.latitude, facts.longitude)
                 val drive = repository.drive(from, to)
                 drive.getOrNull()?.let { road ->
-                    change(ref) { it.copy(drive = road) }
+                    // Published together: a drive shown before its chain check is in would read as "no chain controls".
                     val chains = repository.chainControls(road.path)
-                    change(ref) { it.copy(chains = chains.controls, chainsUnavailable = !chains.complete) }
+                    change(ref) { it.copy(drive = road, chains = chains.controls, chainsUnavailable = !chains.complete) }
                 }
                 drive.exceptionOrNull()?.let { e -> change(ref) { entry -> if (entry.drive == null) entry.copy(error = e.orFallback(Res.string.ski_error_drive)) else entry } }
             }

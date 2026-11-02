@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -53,7 +54,6 @@ import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.ski.SkiRegionLoad
 import com.meticulouscreations.homesafe.weather.ski.SkiUiState
-import com.meticulouscreations.homesafe.weather.ski.domain.SkiOpenState
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOrigin
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan
@@ -210,9 +210,10 @@ internal fun SkiRegionScreen(
     val colors = WeatherTheme.colors
     LaunchedEffect(slug) { actions.onOpenRegion(slug) }
     val following = slug in state.plan.regions
-    val reports = remember(load?.reports, load?.news) {
+    val now = state.nowEpochSeconds
+    val reports = remember(load?.reports, load?.news, now) {
         load?.reports.orEmpty().map { report -> load?.news?.get(report.slug)?.let(report::merged) ?: report }.sortedWith(
-            compareBy<SkiReport> { if (it.state == SkiOpenState.OPEN || it.state == SkiOpenState.LIMITED) 0 else 1 }
+            compareBy<SkiReport> { if (it.runningNow(now)) 0 else 1 }
                 .thenByDescending { report -> report.outlook.sumOf { it.cm } + (report.last24Cm ?: 0.0) }
                 .thenBy { it.name },
         )
@@ -312,13 +313,17 @@ internal fun SkiSetupScreen(plan: SkiPlan, actions: SkiActions, padding: Padding
                 Text(stringResource(Res.string.ski_setup_passes_body), style = WeatherTheme.type.label, color = colors.onSkyMuted)
                 Spacer(Modifier.height(6.dp))
                 SkiPass.entries.forEach { pass ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val on = pass in plan.passes
+                    Row(
+                        Modifier.fillMaxWidth().toggleable(value = on, role = Role.Switch, onValueChange = { actions.onPass(pass, it) }).handCursor()
+                            .testTag("ski_pass_${pass.name.lowercase()}").padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(pass.label(), style = WeatherTheme.type.body, color = colors.onSky, modifier = Modifier.weight(1f))
                         Switch(
-                            checked = pass in plan.passes,
-                            onCheckedChange = { actions.onPass(pass, it) },
+                            checked = on,
+                            onCheckedChange = null,
                             colors = SwitchDefaults.colors(checkedTrackColor = colors.accent),
-                            modifier = Modifier.handCursor().testTag("ski_pass_${pass.name.lowercase()}"),
                         )
                     }
                 }
