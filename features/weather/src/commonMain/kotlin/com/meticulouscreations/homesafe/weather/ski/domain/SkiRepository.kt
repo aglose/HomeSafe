@@ -42,6 +42,9 @@ interface SkiRepository {
     /** What the resort's own site says about its snow, or null where the app can't read one, or it said nothing. */
     suspend fun resortNews(slug: String, force: Boolean = false): SkiResortNews?
 
+    /** The snow measured at the nearest station to the resort, or null where there's none, or it hasn't said lately. */
+    suspend fun measuredSnow(ref: SkiResortRef, facts: SkiResortFacts, force: Boolean = false): SkiMeasuredSnow? = null
+
     /** Whether the app can read this resort's own site. */
     fun hasResortSite(slug: String): Boolean
 

@@ -144,11 +144,12 @@ private fun com.meticulouscreations.homesafe.weather.ski.ui.RegionsCard(regions:
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ski.ui.ReportCard(report: com.meticulouscreations.homesafe.weather.ski.domain.SkiReport, now: kotlin.Long, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ski.ui.ReportCard(report: com.meticulouscreations.homesafe.weather.ski.domain.SkiReport, measured: com.meticulouscreations.homesafe.weather.ski.domain.SkiMeasuredSnow?, now: kotlin.Long, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - report: STABLE (marked @Stable or @Immutable)
+    - measured: STABLE (marked @Stable or @Immutable)
     - now: STABLE (primitive type)
     - modifier: STABLE (marked @Stable or @Immutable)
 

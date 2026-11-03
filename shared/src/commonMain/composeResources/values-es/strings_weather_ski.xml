@@ -84,6 +84,8 @@
     <string name="ski_depth_base">Espesor en la base</string>
     <string name="ski_depth_middle">A media montaña</string>
     <string name="ski_depth_summit">En la cima</string>
+    <string name="ski_measured_depth">Medido cerca</string>
+    <string name="ski_measured_source">Nieve en el suelo medida el %3$s, %4$s, en la estación meteorológica de %1$s (%2$s). No es un dato de la estación de esquí.</string>
     <string name="ski_lifts_open">%1$d de %2$d remontes abiertos</string>
     <string name="ski_runs_open">%1$d de %2$d pistas abiertas</string>
     <string name="ski_reported_at">Informe del %1$s, %2$s</string>

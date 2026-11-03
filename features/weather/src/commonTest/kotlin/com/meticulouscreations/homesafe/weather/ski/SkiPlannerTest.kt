@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiDriveSource
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastDay
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiMeasuredSnow
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiNote
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOpenState
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
@@ -537,5 +538,34 @@ class SkiPlannerTest {
         assertEquals(today, forecast.epochDayOf(today * SkiForecast.DAY_SECONDS + 28_800))
         assertEquals(today - 1, forecast.epochDayOf(today * SkiForecast.DAY_SECONDS + 28_799))
         assertEquals(day(today), forecast.day(today))
+    }
+
+    private val measured = SkiMeasuredSnow("Carson Pass", 2_548.0, 25.4, now - 3_600)
+    private val news = SkiResortNews("https://example.com", updatedAtEpochSeconds = now - 3_600)
+
+    @Test
+    fun aResortsZeroLeavesTheStationsSnowToShow() {
+        val entry = SkiEntry(ref("kirkwood"), news = news.copy(baseDepthCm = 0.0), measuredSnow = measured)
+        assertEquals(measured, entry.measuredDepth(now))
+    }
+
+    @Test
+    fun aResortsOwnDepthIsTheOneShown() {
+        val entry = SkiEntry(ref("kirkwood"), news = news.copy(baseDepthCm = 45.0), measuredSnow = measured)
+        assertNull(entry.measuredDepth(now))
+    }
+
+    @Test
+    fun anOldReportsDepthDoesntHideTheStation() {
+        val old = news.copy(baseDepthCm = 45.0, updatedAtEpochSeconds = now - 30 * 86_400)
+        assertEquals(measured, SkiEntry(ref("kirkwood"), news = old, measuredSnow = measured).measuredDepth(now))
+    }
+
+    @Test
+    fun anOldReadingOrASensorWanderingAroundNothingIsntShown() {
+        val stale = measured.copy(epochSeconds = now - 3 * 86_400)
+        val trace = measured.copy(depthCm = 2.54)
+        assertNull(SkiEntry(ref("kirkwood"), news = news, measuredSnow = stale).measuredDepth(now))
+        assertNull(SkiEntry(ref("kirkwood"), news = news, measuredSnow = trace).measuredDepth(now))
     }
 }

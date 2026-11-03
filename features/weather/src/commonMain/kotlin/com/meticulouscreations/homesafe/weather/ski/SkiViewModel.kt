@@ -268,6 +268,7 @@ class SkiViewModel(
             // An open page's drives go by the mountain's clock, so they follow its forecast, and needn't wait on anything slower.
             if (includeCams) planDrives(ref, from)
         }
+        launch { repository.measuredSnow(ref, facts, force)?.let { snow -> change(ref) { it.copy(measuredSnow = snow) } } }
         launch {
             val alerts = repository.alerts(facts)
             change(ref) { it.copy(alerts = alerts) }

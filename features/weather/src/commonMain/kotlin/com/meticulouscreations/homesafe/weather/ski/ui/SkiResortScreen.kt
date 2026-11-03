@@ -73,6 +73,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastDay
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastHour
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiMeasuredSnow
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlanner
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortFacts
@@ -119,6 +120,8 @@ import homesafe.shared.generated.resources.ski_last7
 import homesafe.shared.generated.resources.ski_last72
 import homesafe.shared.generated.resources.ski_lifts_open
 import homesafe.shared.generated.resources.ski_loading
+import homesafe.shared.generated.resources.ski_measured_depth
+import homesafe.shared.generated.resources.ski_measured_source
 import homesafe.shared.generated.resources.ski_model_range
 import homesafe.shared.generated.resources.ski_mountain_acres
 import homesafe.shared.generated.resources.ski_mountain_base
@@ -265,7 +268,7 @@ internal fun SkiResortScreen(
                 DaySummary(view.day, view.notes.map { it.text.resolve() to it.tone.color() }, entry.forecast, state.tripEpochDay)
             }
         }
-        report?.let { item(key = "report", contentType = "report") { ReportCard(it, state.nowEpochSeconds, Modifier.cardWidth()) } }
+        report?.let { item(key = "report", contentType = "report") { ReportCard(it, entry.measuredDepth(state.nowEpochSeconds), state.nowEpochSeconds, Modifier.cardWidth()) } }
         entry.forecast?.let { forecast ->
             val hours = forecast.skiingHours(state.tripEpochDay)
             if (hours.isNotEmpty()) item(key = "hours", contentType = "hours") { HoursCard(hours, forecast, Modifier.cardWidth()) }
@@ -348,9 +351,9 @@ private fun thousands(value: Int): String {
     return if (text.length > 3) text.dropLast(3) + "," + text.takeLast(3) else text
 }
 
-/** What the resort itself reports, or that it hasn't, with its date. */
+/** What the resort itself reports, or that it hasn't, with its date; and where it gives no depth, what a station nearby has [measured]. */
 @Composable
-private fun ReportCard(report: SkiReport, now: Long, modifier: Modifier = Modifier) {
+private fun ReportCard(report: SkiReport, measured: SkiMeasuredSnow?, now: Long, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
     val units = WeatherTheme.units
     val uri = LocalUriHandler.current
@@ -375,8 +378,9 @@ private fun ReportCard(report: SkiReport, now: Long, modifier: Modifier = Modifi
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SkiStat(stringResource(Res.string.ski_season_total), snow(report.seasonCm), Modifier.weight(1f))
-                SkiStat(stringResource(Res.string.ski_depth_base), snow(report.baseDepthCm), Modifier.weight(1f))
-                SkiStat(stringResource(Res.string.ski_depth_summit), snow(report.summitDepthCm ?: report.middleDepthCm), Modifier.weight(1f))
+                // With snow measured nearby, a resort's 0 is a depth it hasn't posted yet.
+                SkiStat(stringResource(Res.string.ski_depth_base), snow(report.baseDepthCm.takeIf { measured == null }), Modifier.weight(1f))
+                SkiStat(stringResource(Res.string.ski_depth_summit), snow((report.summitDepthCm ?: report.middleDepthCm).takeIf { measured == null }), Modifier.weight(1f))
             }
             report.conditions?.let { conditions ->
                 Spacer(Modifier.height(10.dp))
@@ -420,6 +424,18 @@ private fun ReportCard(report: SkiReport, now: Long, modifier: Modifier = Modifi
             )
         } else {
             Text(stringResource(Res.string.ski_source_listing), style = WeatherTheme.type.label, color = colors.onSkyFaint, modifier = Modifier.testTag("ski_report_source"))
+        }
+        // After the resort's source line, so that isn't taken to cover this.
+        measured?.let { station ->
+            val offset = localUtcOffsetSeconds(station.epochSeconds.toDouble())
+            Spacer(Modifier.height(14.dp))
+            SkiStat(stringResource(Res.string.ski_measured_depth), snow(station.depthCm), Modifier.testTag("ski_measured_snow"))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(Res.string.ski_measured_source, station.stationName, heightText(station.elevationM, units), WeatherFormat.date(station.epochSeconds, offset).resolve(), WeatherFormat.clock(station.epochSeconds, offset).resolve()),
+                style = WeatherTheme.type.label,
+                color = colors.onSkyFaint,
+            )
         }
     }
 }

@@ -16,12 +16,14 @@ import com.meticulouscreations.homesafe.weather.ski.data.SkiBrowser
 import com.meticulouscreations.homesafe.weather.ski.data.SkiForecastApi
 import com.meticulouscreations.homesafe.weather.ski.data.SkiRepositoryImpl
 import com.meticulouscreations.homesafe.weather.ski.data.SkiRoutesApi
+import com.meticulouscreations.homesafe.weather.ski.data.SnowStationApi
 import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDriveSource
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOrigin
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPlan
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPoint
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortFacts
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortRef
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiStartingPoint
 import io.ktor.client.HttpClient
@@ -40,6 +42,8 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SkiRepositoryImplTest {
@@ -86,7 +90,7 @@ class SkiRepositoryImplTest {
             },
         )
         val browser = FakeBrowser()
-        val repository = SkiRepositoryImpl(OnTheSnowApi(client), SkiForecastApi(client), SkiRoutesApi(client), CaltransChainApi(client), NevadaRoadsApi(client), ResortSiteApi(client, clock), browser, NwsApi(client), keys, dao, clock)
+        val repository = SkiRepositoryImpl(OnTheSnowApi(client), SkiForecastApi(client), SkiRoutesApi(client), CaltransChainApi(client), NevadaRoadsApi(client), ResortSiteApi(client, clock), SnowStationApi(client), browser, NwsApi(client), keys, dao, clock)
     }
 
     private class Answer(val body: String? = null, val status: HttpStatusCode = HttpStatusCode.OK)
@@ -809,5 +813,102 @@ class SkiRepositoryImplTest {
         up = true
         web.clock.seconds += 61
         assertTrue(web.repository.chainControls(road).complete)
+    }
+
+    private val kirkwood = SkiResortRef("kirkwood", "california", "Kirkwood")
+    private val kirkwoodFacts = SkiResortFacts(38.685, -120.065, baseElevationM = 2_380.0, summitElevationM = 2_987.0)
+
+    /** As SNOTEL sends them, with what the app doesn't read left in: nearest to Kirkwood is Carson Pass, then a low one and a far one it should pass over. */
+    private val stations = """[
+        {"stationTriplet":"9:CA:SNTL","name":"Far Away","elevation":8000.0,"latitude":40.5,"longitude":-120.0,"dataTimeZone":-8.0,"huc":"1"},
+        {"stationTriplet":"8:CA:SNTL","name":"Down The Valley","elevation":4000.0,"latitude":38.69,"longitude":-120.07,"dataTimeZone":-8.0},
+        {"stationTriplet":"5:CA:SNTL","name":"Forestdale Creek","elevation":8050.0,"latitude":38.73,"longitude":-119.97,"dataTimeZone":-8.0},
+        {"stationTriplet":"1067:CA:SNTL","name":"Carson Pass","elevation":8360.0,"latitude":38.69,"longitude":-120.0,"dataTimeZone":-8.0}
+    ]"""
+
+    /** 2026-11-02 15:00 at UTC-8. */
+    private val readingAt = 1_793_660_400L
+
+    private fun snowAnswer(vararg inches: Int?) = """[{"stationTriplet":"1067:CA:SNTL","data":[{"stationElement":{"elementCode":"SNWD"},"values":[${
+        inches.withIndex().joinToString(",") { (i, value) -> """{"date":"2026-11-02 ${(15 - inches.size + 1 + i).toString().padStart(2, '0')}:00","value":$value}""" }
+    }]}]}]"""
+
+    private inner class Stations(private val data: () -> Answer) {
+        val web = Web { request -> if ("/stations" in request.url.encodedPath) Answer(stations) else data() }
+
+        init {
+            web.clock.seconds = readingAt + 600
+        }
+
+        val reads get() = web.asked.filter { "/data" in it.url.encodedPath }
+    }
+
+    @Test
+    fun theNearestStationsSnowIsReadInInchesAtItsOwnClock() = runTest {
+        val at = Stations { Answer(snowAnswer(10, 10, 11, 11, 10)) }
+        val snow = assertNotNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+        assertEquals("Carson Pass", snow.stationName)
+        assertEquals(25.4, snow.depthCm)
+        assertEquals(readingAt, snow.epochSeconds)
+        assertEquals("1067:CA:SNTL,5:CA:SNTL", at.reads.single().url.parameters["stationTriplets"], "the near ones at a height like the slopes', nearest first")
+    }
+
+    @Test
+    fun aSensorsWildReadingDoesntBecomeTheDepth() = runTest {
+        val at = Stations { Answer(snowAnswer(10, 10, 97, null, 10, 10)) }
+        assertEquals(25.4, at.web.repository.measuredSnow(kirkwood, kirkwoodFacts)?.depthCm)
+    }
+
+    @Test
+    fun snowFromBeforeAnOutageIsntTakenForTodays() = runTest {
+        val at = Stations { Answer(snowAnswer(10, 10, 10, 10, null, null, null, null, null, null, 0)) }
+        assertEquals(0.0, at.web.repository.measuredSnow(kirkwood, kirkwoodFacts)?.depthCm)
+    }
+
+    @Test
+    fun noReadingIsAnAnswerKeptAsLongAsAReading() = runTest {
+        val at = Stations { Answer("[]") }
+        assertNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+        assertNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+        assertEquals(1, at.reads.size)
+        at.web.clock.seconds += 3_700
+        assertNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+        assertEquals(2, at.reads.size)
+    }
+
+    @Test
+    fun aStationThatHasGoneQuietSaysNothing() = runTest {
+        val at = Stations { Answer(snowAnswer(10)) }
+        at.web.clock.seconds = readingAt + 3 * 86_400
+        assertNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+    }
+
+    @Test
+    fun aResortWithNoStationNearbyAsksForNoReadings() = runTest {
+        val at = Stations { Answer(snowAnswer(10)) }
+        assertNull(at.web.repository.measuredSnow(SkiResortRef("stowe", "vermont", "Stowe"), SkiResortFacts(44.53, -72.78)))
+        assertTrue(at.reads.isEmpty())
+    }
+
+    @Test
+    fun theStationsAreAskedForOnceAndTheReadingOnceAnHour() = runTest {
+        val at = Stations { Answer(snowAnswer(10)) }
+        at.web.repository.measuredSnow(kirkwood, kirkwoodFacts)
+        at.web.repository.measuredSnow(kirkwood, kirkwoodFacts)
+        assertEquals(1, at.reads.size)
+        at.web.clock.seconds += 3_700
+        at.web.repository.measuredSnow(kirkwood, kirkwoodFacts)
+        assertEquals(2, at.reads.size)
+        assertEquals(1, at.web.asked.count { "/stations" in it.url.encodedPath })
+    }
+
+    @Test
+    fun aStationServiceThatFailsLeavesTheLastReading() = runTest {
+        var up = true
+        val at = Stations { if (up) Answer(snowAnswer(10)) else Answer(status = HttpStatusCode.BadGateway) }
+        val first = at.web.repository.measuredSnow(kirkwood, kirkwoodFacts)
+        up = false
+        at.web.clock.seconds += 3_700
+        assertEquals(first, at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
     }
 }

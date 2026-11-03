@@ -21,6 +21,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiEntry
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastDay
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastHour
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiMeasuredSnow
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOpenState
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiParking
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
@@ -252,6 +253,27 @@ private fun SkiBoardClosedPreview() {
 private fun SkiResortPagePreview() {
     val state = SkiFixtures.state()
     SkiResortScreen(state.entries.getValue("palisades-tahoe").ref, state, SkiActions(), null, PagePadding)
+}
+
+// Before it opens: the resort's report says 0 at the base, and a station nearby has measured what fell.
+@Preview(heightDp = 1500)
+@Preview(name = "Ski resort before it opens, in Spanish", heightDp = 1500, locale = "es")
+@Composable
+private fun SkiResortMeasuredSnowPreview() {
+    val state = SkiFixtures.state()
+    val kirkwood = state.entries.getValue("kirkwood").copy(
+        news = SkiResortNews(
+            pageUrl = "https://www.kirkwood.com/the-mountain/mountain-conditions/snow-and-weather-report.aspx",
+            last24Cm = 0.0,
+            last48Cm = 20.32,
+            last7DaysCm = 20.32,
+            seasonCm = 20.32,
+            baseDepthCm = 0.0,
+            updatedAtEpochSeconds = SkiFixtures.NOW - 5_400,
+        ),
+        measuredSnow = SkiMeasuredSnow("Carson Pass", 2_548.0, 25.4, SkiFixtures.NOW - 1_800),
+    )
+    SkiResortScreen(kirkwood.ref, state.copy(entries = state.entries + ("kirkwood" to kirkwood)), SkiActions(), null, PagePadding)
 }
 
 @Preview(heightDp = 1500)

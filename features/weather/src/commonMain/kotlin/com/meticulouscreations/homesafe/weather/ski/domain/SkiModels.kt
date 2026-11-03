@@ -141,6 +141,26 @@ data class SkiReport(
     }
 }
 
+/** The snow on the ground at a weather station near a resort when it was last measured: not the resort's word, and not on its slopes. */
+@Immutable
+@Serializable
+data class SkiMeasuredSnow(
+    val stationName: String,
+    val elevationM: Double,
+    val depthCm: Double,
+    val epochSeconds: Long,
+) {
+    fun isCurrent(nowEpochSeconds: Long): Boolean = nowEpochSeconds - epochSeconds <= CURRENT_SECONDS
+
+    companion object {
+        /** Snow on the ground changes in a day or two. */
+        const val CURRENT_SECONDS = 2 * 86_400L
+
+        /** Less than this is a station's sensor wandering around nothing. */
+        const val LEAST_DEPTH_CM = 5.0
+    }
+}
+
 /** What a resort's own page says about its snow and lifts. Only what it says: anything else is null. */
 @Immutable
 @Serializable
