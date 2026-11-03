@@ -49,8 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.fitness.domain.GpsSignal
 import com.meticulouscreations.homesafe.fitness.domain.Recording
-import com.meticulouscreations.homesafe.fitness.domain.RunDetail
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_history_none
 import homesafe.shared.generated.resources.fitness_run_discard
@@ -154,6 +154,7 @@ internal fun RecordRunCard(recording: Recording?, refused: Boolean, onStart: () 
 internal fun RecordingScreen(
     recording: Recording?,
     padding: PaddingValues,
+    tiles: MapTileSource,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onFinish: () -> Unit,
@@ -194,7 +195,8 @@ internal fun RecordingScreen(
 
         if (recording.route.size > 1) {
             FitnessCard(Modifier.testTag("fitness_recording_route"), title = stringResource(Res.string.fitness_run_route)) {
-                RouteSketch(RunDetail(runId = recording.id, route = recording.route), Modifier.fillMaxWidth().height(220.dp))
+                // Not to be dragged mid-stride: it follows the run, and a finger on it scrolls the page.
+                RouteMap(recording.route, tiles, Modifier.fillMaxWidth().height(220.dp), interactive = false)
             }
         }
 

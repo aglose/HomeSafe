@@ -206,7 +206,7 @@ public fun com.meticulouscreations.homesafe.fitness.ui.FitnessApp(onClose: kotli
     - active: STABLE (primitive type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.fitness.ui.FitnessAppContent(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, initialTab: com.meticulouscreations.homesafe.fitness.ui.FitnessTab, initialPage: com.meticulouscreations.homesafe.fitness.ui.FitnessPage?, heart: com.meticulouscreations.homesafe.fitness.HeartUiState, health: com.meticulouscreations.homesafe.fitness.HealthUiState, recording: com.meticulouscreations.homesafe.fitness.domain.Recording?): kotlin.Unit
+public fun com.meticulouscreations.homesafe.fitness.ui.FitnessAppContent(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, initialTab: com.meticulouscreations.homesafe.fitness.ui.FitnessTab, initialPage: com.meticulouscreations.homesafe.fitness.ui.FitnessPage?, heart: com.meticulouscreations.homesafe.fitness.HeartUiState, health: com.meticulouscreations.homesafe.fitness.HealthUiState, recording: com.meticulouscreations.homesafe.fitness.domain.Recording?, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -219,6 +219,7 @@ public fun com.meticulouscreations.homesafe.fitness.ui.FitnessAppContent(state: 
     - heart: STABLE (marked @Stable or @Immutable)
     - health: STABLE (marked @Stable or @Immutable)
     - recording: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.FitnessCard(modifier: androidx.compose.ui.Modifier, title: kotlin.String?, padding: androidx.compose.ui.unit.Dp, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
@@ -647,12 +648,13 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.RecordRunCard(recording
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.RecordingScreen(recording: com.meticulouscreations.homesafe.fitness.domain.Recording?, padding: androidx.compose.foundation.layout.PaddingValues, onPause: kotlin.Function0<kotlin.Unit>, onResume: kotlin.Function0<kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.RecordingScreen(recording: com.meticulouscreations.homesafe.fitness.domain.Recording?, padding: androidx.compose.foundation.layout.PaddingValues, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, onPause: kotlin.Function0<kotlin.Unit>, onResume: kotlin.Function0<kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - recording: STABLE (marked @Stable or @Immutable)
     - padding: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
     - onPause: STABLE (function type)
     - onResume: STABLE (function type)
     - onFinish: STABLE (function type)
@@ -716,12 +718,14 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.RoundIconButton(icon: a
     - enabled: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.RouteSketch(detail: com.meticulouscreations.homesafe.fitness.domain.RunDetail, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.RouteMap(route: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.RoutePoint>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, interactive: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
-    - detail: STABLE (marked @Stable or @Immutable)
+    - route: RUNTIME (requires runtime check)
+    - tiles: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - interactive: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.RunBadges(run: com.meticulouscreations.homesafe.fitness.domain.Run, longest: kotlin.Boolean, fastest: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -745,7 +749,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.RunCard(run: com.meticul
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.RunScreen(run: com.meticulouscreations.homesafe.fitness.domain.Run, detail: com.meticulouscreations.homesafe.fitness.domain.RunDetail?, board: com.meticulouscreations.homesafe.fitness.domain.RunsBoard, todayEpochDay: kotlin.Long, padding: androidx.compose.foundation.layout.PaddingValues, onAskRoute: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, bounds: com.meticulouscreations.homesafe.fitness.domain.ZoneBounds?, onOpenHeart: kotlin.Function0<kotlin.Unit>?, onDelete: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.RunScreen(run: com.meticulouscreations.homesafe.fitness.domain.Run, detail: com.meticulouscreations.homesafe.fitness.domain.RunDetail?, board: com.meticulouscreations.homesafe.fitness.domain.RunsBoard, todayEpochDay: kotlin.Long, padding: androidx.compose.foundation.layout.PaddingValues, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, onAskRoute: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, bounds: com.meticulouscreations.homesafe.fitness.domain.ZoneBounds?, onOpenHeart: kotlin.Function0<kotlin.Unit>?, onDelete: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -754,6 +758,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.RunScreen(run: com.meti
     - board: STABLE (marked @Stable or @Immutable)
     - todayEpochDay: STABLE (primitive type)
     - padding: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
     - onAskRoute: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - bounds: STABLE (marked @Stable or @Immutable)

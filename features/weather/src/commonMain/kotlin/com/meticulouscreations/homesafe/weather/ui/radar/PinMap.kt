@@ -61,10 +61,12 @@ data class MapLine(
  * Each pin is drawn by [pin], centred on its place, and follows the map as it is dragged and
  * pinched, over the [lines], which do the same.
  *
- * The map shows every pin, as close in as they allow (no closer than a street, [SPOT_ZOOM]), or,
- * with [focus] set to a pin's key, that one pin at [SPOT_ZOOM]. It moves there when [focus]
- * changes or a pin comes or goes, not when a pin only moves, so a finger looking around isn't
- * pulled back by a fresh reading.
+ * The map shows every pin and the places in [fit] (latitude to longitude: a route the pins only
+ * mark the ends of), as close in as they allow (no closer than a street, [SPOT_ZOOM]) and [margin]
+ * in from its edges, or, with [focus] set to a pin's key, that one pin at [SPOT_ZOOM]. It moves
+ * there when [focus] or [fit] changes or a pin comes or goes, not when a pin only moves, so a
+ * finger looking around isn't pulled back by a fresh reading. Drag and pinch to look around,
+ * unless [interactive] is off.
  */
 @Composable
 fun PinMap(
@@ -74,23 +76,26 @@ fun PinMap(
     focus: String? = null,
     animated: Boolean = true,
     lines: List<MapLine> = emptyList(),
+    fit: List<Pair<Double, Double>> = emptyList(),
+    margin: Dp = PIN_MARGIN,
+    interactive: Boolean = true,
     pin: @Composable (MapPin) -> Unit,
 ) {
     val density = LocalDensity.current.density
     val tilePx = MAP_TILE_DP * density
-    val marginPx = PIN_MARGIN.value * density
+    val marginPx = margin.value * density
     // Measured before the first frame, so the map opens already fitted rather than jumping there.
     BoxWithConstraints(modifier) {
         val width = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat() else 0f
         val height = if (constraints.hasBoundedHeight) constraints.maxHeight.toFloat() else 0f
         val view = { shown: List<MapPin> ->
             shown.firstOrNull { it.key == focus }?.let { MapCamera.at(it.latitude, it.longitude, SPOT_ZOOM) }
-                ?: MapCamera.fitting(shown.map { it.latitude to it.longitude }, width, height, tilePx, SPOT_ZOOM, marginPx, minZoom = PIN_MIN_ZOOM)
+                ?: MapCamera.fitting(shown.map { it.latitude to it.longitude } + fit, width, height, tilePx, SPOT_ZOOM, marginPx, minZoom = PIN_MIN_ZOOM)
         }
         val state = remember { RadarMapState(view(pins) ?: MapCamera.at(0.0, 0.0, PIN_MIN_ZOOM)) }
         val currentPins by rememberUpdatedState(pins)
-        PinMapContent(state, pins, lines, tiles, focus, animated, tilePx, pin)
-        LaunchedEffect(focus, pins.map { it.key }.toSet(), width, height, tilePx) {
+        PinMapContent(state, pins, lines, tiles, focus, animated, interactive, tilePx, pin)
+        LaunchedEffect(focus, fit, marginPx, pins.map { it.key }.toSet(), width, height, tilePx) {
             val target = view(currentPins) ?: return@LaunchedEffect
             if (target == state.camera) return@LaunchedEffect
             flyTo(state, target, animated)
@@ -122,6 +127,7 @@ private fun PinMapContent(
     tiles: MapTileSource,
     focus: String?,
     animated: Boolean,
+    interactive: Boolean,
     tilePx: Float,
     pin: @Composable (MapPin) -> Unit,
 ) {
@@ -133,6 +139,7 @@ private fun PinMapContent(
             position = { 0f },
             tiles = tiles,
             modifier = Modifier.fillMaxSize(),
+            interactive = interactive,
             wholeLoop = false,
             animated = animated,
             minZoom = PIN_MIN_ZOOM,

@@ -114,6 +114,9 @@ import com.meticulouscreations.homesafe.ui.publishAppSections
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
+import com.meticulouscreations.homesafe.weather.MapTilesViewModel
+import com.meticulouscreations.homesafe.weather.data.MapTileSource
+import com.meticulouscreations.homesafe.weather.ui.NoTiles
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_back
@@ -247,6 +250,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val healthViewModel: HealthViewModel = metroViewModel()
     val health by healthViewModel.uiState.collectAsStateWithLifecycle()
     val recording by healthViewModel.recording.collectAsStateWithLifecycle()
+    val maps: MapTilesViewModel = metroViewModel()
     val close by rememberUpdatedState(onClose)
     val share = rememberShareText()
     val shareTitle by rememberUpdatedState(stringResource(Res.string.fitness_copy_share_title))
@@ -293,7 +297,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onSendCopy = share?.let { send -> { scope.launch { viewModel.sendLogCopy { text -> send(text, shareTitle) } } } },
         )
     }
-    FitnessAppContent(state, actions, modifier, active, heart = heart, health = health, recording = recording)
+    FitnessAppContent(state, actions, modifier, active, heart = heart, health = health, recording = recording, tiles = maps.tiles)
 }
 
 /**
@@ -302,7 +306,8 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
  * second; left out, the app is as it is where there is no sensor to be had. So is what the
  * device's health store says ([health]), which comes from elsewhere and at its own pace; left
  * out, the app is as it is where there is no such store. The run being [recording] is beside
- * it too, for the same reason as the heart.
+ * it too, for the same reason as the heart. [tiles] is where a route's map comes from; left out,
+ * the routes are drawn on the map's plain ground.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -316,6 +321,7 @@ fun FitnessAppContent(
     heart: HeartUiState = HeartUiState(),
     health: HealthUiState = HealthUiState(),
     recording: Recording? = null,
+    tiles: MapTileSource = NoTiles,
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<FitnessPage>().apply { initialPage?.let(::add) } }
@@ -559,6 +565,7 @@ fun FitnessAppContent(
                     FitnessPage.Recording -> RecordingScreen(
                         recording = recording,
                         padding = pagePadding,
+                        tiles = tiles,
                         onPause = actions.onPauseRun,
                         onResume = actions.onResumeRun,
                         onFinish = {
@@ -581,6 +588,7 @@ fun FitnessAppContent(
                                 board = health.runs,
                                 todayEpochDay = (health.nowEpochSeconds + health.utcOffsetSeconds).floorDiv(SECONDS_PER_DAY),
                                 padding = pagePadding,
+                                tiles = tiles,
                                 onAskRoute = actions.onAskRunRoute,
                                 bounds = heart.bounds,
                                 onOpenHeart = if (heart.supported) ({ pages += FitnessPage.Heart }) else null,

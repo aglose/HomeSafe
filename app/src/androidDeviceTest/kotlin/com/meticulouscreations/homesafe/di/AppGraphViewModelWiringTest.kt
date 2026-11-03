@@ -12,7 +12,6 @@ import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.integration.testPlatformContext
 import com.meticulouscreations.homesafe.packages.PackagesViewModel
 import com.meticulouscreations.homesafe.ui.screens.CarUnitsViewModel
-import com.meticulouscreations.homesafe.ui.screens.MapTilesViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.AssistantViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
@@ -34,6 +33,7 @@ import com.meticulouscreations.homesafe.viewmodel.NestCameraViewModel
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
 import com.meticulouscreations.homesafe.viewmodel.ServerUptimeViewModel
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
+import com.meticulouscreations.homesafe.weather.MapTilesViewModel
 import com.meticulouscreations.homesafe.weather.WeatherViewModel
 import com.meticulouscreations.homesafe.weather.ski.SkiViewModel
 import kotlin.test.Test
