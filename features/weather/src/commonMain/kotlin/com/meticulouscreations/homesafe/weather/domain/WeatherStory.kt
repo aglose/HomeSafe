@@ -432,7 +432,7 @@ object WeatherStory {
      * what falls: "3 PM to 6 PM", "All day", "On and off". [spanPhrase]'s reading, without the word
      * for the weather; a stretch that is [today] is the rest of today rather than a whole day.
      */
-    private fun spanTiming(spans: List<WetSpan>, from: Long, to: Long, today: Boolean, offsetAt: (Long) -> Int): UiText {
+    internal fun spanTiming(spans: List<WetSpan>, from: Long, to: Long, today: Boolean, offsetAt: (Long) -> Int): UiText {
         val first = spans.first()
         val last = spans.last()
         val wetHours = spans.sumOf { it.hours }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -144,13 +145,28 @@ private fun NoticeStormTodayPreview() {
         WeatherNoticeArt(
             icon = WeatherNoticeIcon.STORM,
             caption = "Thursday",
-            headline = "71° / 55°",
+            headline = "2 PM to 7 PM",
             facts = listOf(
                 WeatherNoticeArt.Fact(WeatherNoticeIcon.STORM, "0.8 in"),
                 WeatherNoticeArt.Fact(WeatherNoticeIcon.WIND, "45 mph"),
-                WeatherNoticeArt.Fact(WeatherNoticeIcon.SUN, "UV 8"),
+                WeatherNoticeArt.Fact(null, "71° / 55°"),
             ),
             chart = day(13.0, 22.0, now = MIDNIGHT + 7 * 3600 + 1800) { h -> if (h in 14..18) 6.0 - (h - 16) * (h - 16) * 1.2 else 0.0 },
+            ticks = QUARTERS,
+        ),
+    )
+}
+
+@Preview
+@Composable
+private fun NoticeRainTomorrowMorningPreview() {
+    NoticeCard(
+        WeatherNoticeArt(
+            icon = WeatherNoticeIcon.RAIN,
+            caption = "Tuesday",
+            headline = "8 AM to 11 AM",
+            facts = listOf(WeatherNoticeArt.Fact(WeatherNoticeIcon.RAIN, "0.09 in"), WeatherNoticeArt.Fact(null, "65° / 52°")),
+            chart = day(11.0, 18.0) { h -> if (h in 8..10) 1.0 else 0.0 },
             ticks = QUARTERS,
         ),
     )
@@ -197,9 +213,39 @@ private fun NoticeTornadoWarningPreview() {
     )
 }
 
+/**
+ * Weather notifications closed, roughly as Android's shade lays one out: the tile as the large
+ * icon, the app and place and time over the title and the text. Not the system's own drawing.
+ */
+@Preview(widthDp = 412)
+@Composable
+private fun NoticeShadePreview() {
+    val rows = listOf(
+        Triple(WeatherNoticeIcon.RAIN, "Home · in 30 min", "Rain at 3:30 PM" to "For about 1 hour, around 0.12 in · Heaviest around 4 PM"),
+        Triple(WeatherNoticeIcon.RAIN, "Home · 7:30 AM", "Rain this afternoon" to "3 PM to 6 PM, around 0.22 in"),
+        Triple(WeatherNoticeIcon.RAIN, "Home · 7:00 PM", "Rain tomorrow morning" to "8 AM to 11 AM, around 0.09 in · High of 65°"),
+        Triple(WeatherNoticeIcon.SNOW, "Home · 7:00 PM", "Snow tomorrow morning" to "5 AM to 1 PM, around 4 in · High of 29°"),
+        Triple(WeatherNoticeIcon.WIND, "Home · 7:30 AM", "Windy today" to "Gusts up to 45 mph"),
+        Triple(WeatherNoticeIcon.TORNADO, "Home · now", "Tornado Warning" to "Take cover now in a basement or an interior room"),
+    )
+    Column(Modifier.background(Color(0xFF11151C)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        rows.forEach { (icon, meta, words) ->
+            Row(Modifier.clip(RoundedCornerShape(24.dp)).background(Color(0xFF232932)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Canvas(Modifier.size(40.dp)) { drawNoticeTile(icon.look, Offset.Zero, size.width) }
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text("HomeSafe · $meta", color = Color(0xFFB9C0CB), fontSize = 12.sp, maxLines = 1)
+                    Text(words.first, color = Color(0xFFF2F4F7), fontSize = 16.sp, maxLines = 1)
+                    Text(words.second, color = Color(0xFFD5DAE2), fontSize = 14.sp, maxLines = 2)
+                }
+            }
+        }
+    }
+}
+
 /** Every weather notice's tile, as the large icon wears it. */
 @OptIn(ExperimentalLayoutApi::class)
-@Preview(widthDp = 400)
+// Tall enough for every tile: a FlowRow leaves out whatever falls below the bottom.
+@Preview(widthDp = 400, heightDp = 300)
 @Composable
 private fun NoticeTilesPreview() {
     FlowRow(Modifier.background(Color(0xFF12161D)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

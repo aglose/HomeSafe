@@ -15,8 +15,11 @@ import homesafe.shared.generated.resources.weather_notice_art_range
 import homesafe.shared.generated.resources.weather_notice_fact_aqi
 import homesafe.shared.generated.resources.weather_notice_fact_uv
 import homesafe.shared.generated.resources.weather_notice_heavy_at_times
-import homesafe.shared.generated.resources.weather_notice_sample_body
+import homesafe.shared.generated.resources.weather_notice_sample_label
+import homesafe.shared.generated.resources.weather_notice_soon_lasting
+import homesafe.shared.generated.resources.weather_notice_title_soon_rain
 import homesafe.shared.generated.resources.weather_now
+import homesafe.shared.generated.resources.weather_outlook_from_to
 import homesafe.shared.generated.resources.weather_time_am
 import homesafe.shared.generated.resources.weather_time_pm
 import homesafe.shared.generated.resources.weather_unit_kmh
@@ -220,7 +223,7 @@ class WeatherNoticePictureTest {
             "the first three: the picture has room for no more, and the text still says the sun",
         )
         assertEquals(UiText.of(Res.string.weather_weekday_long_thu), notice.caption)
-        assertEquals(UiText.of(Res.string.weather_notice_art_range, "20°", "10°"), notice.headline)
+        assertEquals(UiText.of(Res.string.weather_outlook_from_to, pm("2"), pm("5")), notice.headline, "when it rains, large: the range is a mark when there's room")
         assertEquals(at(0, 0) + DAY, notice.expiresEpochSeconds, "down at the end of the day")
         assertNull(notice.eventEpochSeconds, "about the whole day: its time is when it was posted")
         val chart = notice.chart as WeatherNoticeChart.Day
@@ -243,7 +246,7 @@ class WeatherNoticePictureTest {
         assertEquals(WeatherNoticeIcon.FREEZE, notice.icon)
         assertEquals(listOf(WeatherNoticeFact(WeatherNoticeIcon.FREEZE, "-2°".asUiText()), WeatherNoticeFact(WeatherNoticeIcon.COLDER, "12°".asUiText())), notice.facts)
         assertEquals(UiText.of(Res.string.weather_weekday_long_fri), notice.caption)
-        assertEquals(UiText.of(Res.string.weather_notice_art_range, "8°", "-2°"), notice.headline)
+        assertEquals(UiText.of(Res.string.weather_notice_art_range, "8°", "-2°"), notice.headline, "with no rain to time, the range is what's large")
         assertEquals(at(1, 11), notice.expiresEpochSeconds)
         val chart = notice.chart as WeatherNoticeChart.Day
         assertEquals(at(1, 0), chart.hours.first().epochSeconds)
@@ -269,39 +272,44 @@ class WeatherNoticePictureTest {
 
     // ---- A sample, asked for from Settings ----------------------------------------------------
 
+    /** What the made-up sample shower comes to: an hour and a quarter, and 3.6 mm. */
+    private fun sampleShowerSaid() = UiText.of(Res.string.weather_notice_soon_lasting, UiText.of(Res.string.weather_minutes_short, 75), WeatherFormat.precipitation(3.6, metric))
+
+    /** A sample's clause on how long and how much: after "Sample", before when it is heaviest. */
+    private fun showerSaid(notice: WeatherNotice): UiText = ((notice.body as UiText.Joined).parts[1] as UiText.Joined).parts.first()
+
     @Test
-    fun aSampleIsTodayAsTheForecastHasItNewsOrNot() {
+    fun aSampleIsRainOnTheWayEvenOnADryDay() {
         val now = at(0, 15)
         val notice = assertNotNull(WeatherNoticePlanner.sample(report(now), "Portland", metric, now))
         assertEquals(WeatherNoticePlanner.SAMPLE_KEY, notice.key)
-        assertEquals(WeatherStory.headline(report(now), metric, now), notice.title, "the forecast in a sentence, as Today's hero has it")
-        assertEquals(UiText.of(Res.string.weather_notice_sample_body), notice.body)
-        assertEquals(WeatherNoticeIcon.SUN, notice.icon, "a calm dry day")
+        assertEquals(WeatherNoticeKind.PRECIPITATION_SOON, notice.kind)
+        assertTrue(notice.headsUp, "as one arrives: over the screen")
+        assertEquals(UiText.of(Res.string.weather_notice_title_soon_rain, pm("3:30")), notice.title, "half an hour off")
+        assertEquals(UiText.of(Res.string.weather_notice_sample_label), (notice.body as UiText.Joined).parts.first(), "and said to be a sample")
+        assertEquals(WeatherNoticeIcon.RAIN, notice.icon)
         assertEquals("Portland", notice.place)
-        assertEquals(listOf(WeatherNoticeFact(WeatherNoticeIcon.WIND, UiText.of(Res.string.weather_unit_kmh, "8"))), notice.facts)
-        assertEquals(UiText.of(Res.string.weather_notice_art_range, "20°", "10°"), notice.headline)
-        val chart = notice.chart as WeatherNoticeChart.Day
-        assertEquals(24, chart.hours.size)
-        assertEquals(now, chart.nowEpochSeconds)
+        assertEquals(at(0, 15, 30), (notice.chart as WeatherNoticeChart.Soon).startEpochSeconds)
         assertEquals(now + 600, notice.expiresEpochSeconds, "for looking at now")
+        assertNull(notice.reminderEpochSeconds, "no reminder to set for a shower that isn't coming")
         assertFalse(notice.urgent)
+        assertEquals(sampleShowerSaid(), showerSaid(notice), "how long and how much: its own, seen to the end")
     }
 
     @Test
-    fun aSampleOnAWetDayWearsWhatFallsAndSaysHowMuch() {
-        val now = at(0, 9)
-        val hourly = WeatherData.calmHours { h ->
-            if (h.epochSeconds in at(0, 14)..at(0, 16)) h.copy(precipitationMm = 1.0, snowfallCm = 1.0, weatherCode = 73, precipitationProbability = 90, uvIndex = 4.0, isDay = true) else h
-        }
-        val notice = assertNotNull(WeatherNoticePlanner.sample(report(now, hourly = hourly), null, metric, now))
-        assertEquals(WeatherNoticeIcon.SNOW, notice.icon)
-        assertEquals(listOf(WeatherNoticeIcon.SNOW, WeatherNoticeIcon.WIND, WeatherNoticeIcon.SUN), notice.facts.map { it.icon })
-        assertNull(notice.place)
-    }
-
-    @Test
-    fun thereIsNoSampleWithoutAForecastForToday() {
+    fun aMadeUpSampleShowerDoesNotBorrowTheHoursRain() {
         val now = at(0, 15)
-        assertNull(WeatherNoticePlanner.sample(report(now, daily = emptyList()), "Portland", metric, now))
+        val wetHours = WeatherData.calmHours { h -> if (h.epochSeconds in at(0, 15)..at(0, 20)) h.copy(precipitationMm = 4.0, weatherCode = 63, precipitationProbability = 90) else h }
+        val notice = assertNotNull(WeatherNoticePlanner.sample(report(now, hourly = wetHours), null, metric, now))
+        assertEquals(sampleShowerSaid(), showerSaid(notice), "the made-up shower's own length and amount, not the wet afternoon's")
+    }
+
+    @Test
+    fun aSampleUsesTheForecastsOwnShowerWhenOneIsComing() {
+        val now = at(0, 15)
+        val coming = report(now, minutely = slices(now, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0))
+        val notice = assertNotNull(WeatherNoticePlanner.sample(coming, null, metric, now))
+        assertEquals(UiText.of(Res.string.weather_notice_title_soon_rain, pm("4")), notice.title)
+        assertNull(notice.place)
     }
 }

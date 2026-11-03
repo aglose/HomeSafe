@@ -21,6 +21,7 @@ import homesafe.shared.generated.resources.weather_notice_heat
 import homesafe.shared.generated.resources.weather_notice_heaviest_around
 import homesafe.shared.generated.resources.weather_notice_heavy_at_times
 import homesafe.shared.generated.resources.weather_notice_high_tomorrow
+import homesafe.shared.generated.resources.weather_notice_outlook_wet
 import homesafe.shared.generated.resources.weather_notice_remind_at
 import homesafe.shared.generated.resources.weather_notice_snow_amount
 import homesafe.shared.generated.resources.weather_notice_soon_amount
@@ -30,16 +31,23 @@ import homesafe.shared.generated.resources.weather_notice_title_cold
 import homesafe.shared.generated.resources.weather_notice_title_colder_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_freeze
 import homesafe.shared.generated.resources.weather_notice_title_heat
+import homesafe.shared.generated.resources.weather_notice_title_rain_this_afternoon
 import homesafe.shared.generated.resources.weather_notice_title_rain_today
 import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow
+import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow_morning
+import homesafe.shared.generated.resources.weather_notice_title_rain_tonight
+import homesafe.shared.generated.resources.weather_notice_title_snow_this_afternoon
 import homesafe.shared.generated.resources.weather_notice_title_snow_today
 import homesafe.shared.generated.resources.weather_notice_title_soon_rain
 import homesafe.shared.generated.resources.weather_notice_title_soon_snow
+import homesafe.shared.generated.resources.weather_notice_title_storm_today
 import homesafe.shared.generated.resources.weather_notice_title_uv
 import homesafe.shared.generated.resources.weather_notice_title_warmer_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_wind
 import homesafe.shared.generated.resources.weather_notice_uv
 import homesafe.shared.generated.resources.weather_notice_warmer_tomorrow
+import homesafe.shared.generated.resources.weather_outlook_around
+import homesafe.shared.generated.resources.weather_outlook_from_to
 import homesafe.shared.generated.resources.weather_span_rain_from_to
 import homesafe.shared.generated.resources.weather_span_snow_from_to
 import homesafe.shared.generated.resources.weather_time_am
@@ -389,6 +397,13 @@ class WeatherNoticePlannerTest {
     private fun hoursAt(vararg hours: Int, change: (HourForecast) -> HourForecast): (HourForecast) -> HourForecast =
         { h -> if (hours.any { h.epochSeconds == at(0, it) }) change(h) else h }
 
+    /** An outlook's clause for rain: when, then how much. */
+    private fun wetBody(timing: UiText, amount: UiText) = UiText.of(Res.string.weather_notice_outlook_wet, timing, amount)
+
+    private fun fromTo(from: UiText, to: UiText) = UiText.of(Res.string.weather_outlook_from_to, from, to)
+
+    private fun mm(text: String) = UiText.of(Res.string.weather_unit_mm, text)
+
     private fun wetAfternoon() = todayHours(hoursAt(14, 15, 16) { it.copy(precipitationMm = 1.0, weatherCode = 61, precipitationProbability = 90) })
 
     @Test
@@ -396,14 +411,35 @@ class WeatherNoticePlannerTest {
         val notice = plan(morning, report(morning, hourly = wetAfternoon())).single()
         assertEquals(WeatherNoticeKind.TODAY, notice.kind)
         assertEquals("today:${at(0, 0)}", notice.key)
-        assertEquals(UiText.of(Res.string.weather_notice_title_rain_today), notice.title)
-        assertEquals(
-            joined(
-                UiText.of(Res.string.weather_span_rain_from_to, pm("2"), pm("5")),
-                UiText.of(Res.string.weather_notice_amount, UiText.of(Res.string.weather_unit_mm, "3.0")),
-            ),
-            notice.body,
-        )
+        assertEquals(UiText.of(Res.string.weather_notice_title_rain_this_afternoon), notice.title, "named by the part of the day it rains in")
+        assertEquals(wetBody(fromTo(pm("2"), pm("5")), mm("3.0")), notice.body)
+        assertEquals(fromTo(pm("2"), pm("5")), notice.headline, "when, large on the picture")
+    }
+
+    @Test
+    fun rainAllDayIsTheDaysAsAWhole() {
+        val now = at(0, 6, 15)
+        val wet = todayHours { h -> if (h.epochSeconds >= at(0, 6)) h.copy(precipitationMm = 1.0, weatherCode = 61, precipitationProbability = 90) else h }
+        assertEquals(UiText.of(Res.string.weather_notice_title_rain_today), plan(now, report(now, hourly = wet)).single().title)
+    }
+
+    @Test
+    fun rainOneTimeAndStormsAnotherIsTheDaysAsAWhole() {
+        val both = todayHours { h ->
+            when (h.epochSeconds) {
+                at(0, 9), at(0, 10) -> h.copy(precipitationMm = 1.0, weatherCode = 61, precipitationProbability = 90)
+                at(0, 14), at(0, 15), at(0, 16) -> h.copy(precipitationMm = 2.0, weatherCode = 95, precipitationProbability = 90)
+                else -> h
+            }
+        }
+        // Not "Storms this morning": the storms come in the afternoon.
+        assertEquals(UiText.of(Res.string.weather_notice_title_storm_today), plan(morning, report(morning, hourly = both)).single().title)
+    }
+
+    @Test
+    fun rainLateInTheDayIsTonights() {
+        val late = todayHours(hoursAt(21, 22) { it.copy(precipitationMm = 1.0, weatherCode = 61, precipitationProbability = 90) })
+        assertEquals(UiText.of(Res.string.weather_notice_title_rain_tonight), plan(morning, report(morning, hourly = late)).single().title)
     }
 
     @Test
@@ -439,14 +475,8 @@ class WeatherNoticePlannerTest {
     fun aSnowyDayAheadIsToldInSnow() {
         val snowy = todayHours(hoursAt(14, 15) { it.copy(precipitationMm = 1.0, snowfallCm = 1.5, weatherCode = 73, precipitationProbability = 90) })
         val notice = plan(morning, report(morning, hourly = snowy)).single()
-        assertEquals(UiText.of(Res.string.weather_notice_title_snow_today), notice.title)
-        assertEquals(
-            joined(
-                UiText.of(Res.string.weather_span_snow_from_to, pm("2"), pm("4")),
-                UiText.of(Res.string.weather_notice_snow_amount, UiText.of(Res.string.weather_unit_cm, "3.0")),
-            ),
-            notice.body,
-        )
+        assertEquals(UiText.of(Res.string.weather_notice_title_snow_this_afternoon), notice.title)
+        assertEquals(wetBody(fromTo(pm("2"), pm("4")), UiText.of(Res.string.weather_unit_cm, "3.0")), notice.body)
     }
 
     @Test
@@ -546,16 +576,9 @@ class WeatherNoticePlannerTest {
             }
         }
         val notice = plan(morning, report(morning, hourly = both)).single()
-        assertEquals(UiText.of(Res.string.weather_notice_title_rain_today), notice.title)
+        assertEquals(UiText.of(Res.string.weather_notice_title_rain_this_afternoon), notice.title)
         assertEquals(
-            // Each item is its own run of parts, and the notice joins the items.
-            joined(
-                joined(
-                    UiText.of(Res.string.weather_span_rain_from_to, pm("2"), pm("5")),
-                    UiText.of(Res.string.weather_notice_amount, UiText.of(Res.string.weather_unit_mm, "3.0")),
-                ),
-                UiText.of(Res.string.weather_notice_gusts, UiText.of(Res.string.weather_unit_kmh, "70")),
-            ),
+            joined(wetBody(fromTo(pm("2"), pm("5")), mm("3.0")), UiText.of(Res.string.weather_notice_gusts, UiText.of(Res.string.weather_unit_kmh, "70"))),
             notice.body,
         )
     }
@@ -569,8 +592,8 @@ class WeatherNoticePlannerTest {
             }
         }
         val notice = plan(morning, report(morning, hourly = both), settings = all.copy(extremes = false)).single()
-        assertEquals(UiText.of(Res.string.weather_notice_title_rain_today), notice.title)
-        assertEquals(2, (notice.body as UiText.Joined).parts.size)
+        assertEquals(UiText.of(Res.string.weather_notice_title_rain_this_afternoon), notice.title)
+        assertEquals(wetBody(UiText.of(Res.string.weather_outlook_around, pm("2")), mm("3.0")), notice.body, "the rain alone, not the gusts")
     }
 
     @Test
@@ -607,17 +630,8 @@ class WeatherNoticePlannerTest {
         val notice = plan(evening, report(evening, hourly = tomorrowRain())).single()
         assertEquals(WeatherNoticeKind.TOMORROW, notice.kind)
         assertEquals("tomorrow:${at(1, 0)}", notice.key)
-        assertEquals(UiText.of(Res.string.weather_notice_title_rain_tomorrow), notice.title)
-        assertEquals(
-            joined(
-                joined(
-                    UiText.of(Res.string.weather_span_rain_from_to, am("9"), pm("12")),
-                    UiText.of(Res.string.weather_notice_amount, UiText.of(Res.string.weather_unit_mm, "3.0")),
-                ),
-                UiText.of(Res.string.weather_notice_high_tomorrow, "20°"),
-            ),
-            notice.body,
-        )
+        assertEquals(UiText.of(Res.string.weather_notice_title_rain_tomorrow_morning), notice.title)
+        assertEquals(joined(wetBody(fromTo(am("9"), pm("12")), mm("3.0")), UiText.of(Res.string.weather_notice_high_tomorrow, "20°")), notice.body)
     }
 
     @Test
@@ -670,7 +684,7 @@ class WeatherNoticePlannerTest {
     fun aWetDayWithASwingDoesNotRepeatTheHigh() {
         val r = report(evening, hourly = tomorrowRain(), daily = tomorrowDays { it.copy(highC = 30.0) })
         val body = plan(evening, r).single().body as UiText.Joined
-        // The rain (itself a phrase and an amount) and the swing: no separate line for the high.
+        // The rain and the swing: no separate line for the high.
         assertEquals(2, body.parts.size)
         assertTrue(body.parts.none { it == UiText.of(Res.string.weather_notice_high_tomorrow, "30°") })
         assertEquals(UiText.of(Res.string.weather_notice_warmer_tomorrow, "30°", "10°"), body.parts.last())
@@ -681,13 +695,7 @@ class WeatherNoticePlannerTest {
         val r = report(evening, hourly = tomorrowRain(), daily = tomorrowDays { it.copy(highC = 30.0, lowC = -3.0) })
         val body = plan(evening, r, settings = all.copy(extremes = false)).single().body as UiText.Joined
         assertEquals(
-            listOf(
-                joined(
-                    UiText.of(Res.string.weather_span_rain_from_to, am("9"), pm("12")),
-                    UiText.of(Res.string.weather_notice_amount, UiText.of(Res.string.weather_unit_mm, "3.0")),
-                ),
-                UiText.of(Res.string.weather_notice_high_tomorrow, "30°"),
-            ),
+            listOf(wetBody(fromTo(am("9"), pm("12")), mm("3.0")), UiText.of(Res.string.weather_notice_high_tomorrow, "30°")),
             body.parts,
         )
     }

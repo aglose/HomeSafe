@@ -237,7 +237,7 @@
     <string name="weather_settings_notices_extremes">Viento, calor, frío, sol y aire</string>
     <string name="weather_settings_notices_extremes_body">Se suman al adelanto: ráfagas fuertes, una primera helada, un gran cambio de temperatura, un índice UV muy alto, aire insalubre</string>
     <string name="weather_settings_notices_sample">Enviar una de muestra</string>
-    <string name="weather_settings_notices_sample_body">El pronóstico de hoy como notificación, para ver cómo se ve</string>
+    <string name="weather_settings_notices_sample_body">Lluvia en camino como notificación, para ver cómo llega</string>
     <string name="weather_settings_notices_place">Son para donde está tu teléfono; cuando no lo puede saber, para donde estuvo por última vez. Entre las 10 p. m. y las 6 a. m. solo se envían avisos.</string>
     <string name="weather_settings_sky">El cielo</string>
     <string name="weather_settings_still_sky">Cielo quieto</string>

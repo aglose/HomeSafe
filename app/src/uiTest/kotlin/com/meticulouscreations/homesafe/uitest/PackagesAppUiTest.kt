@@ -2,14 +2,17 @@ package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.text.AnnotatedString
 import com.meticulouscreations.homesafe.packages.PackagesUiState
 import com.meticulouscreations.homesafe.packages.domain.ParcelChange
 import com.meticulouscreations.homesafe.packages.domain.PorchState
@@ -111,7 +114,10 @@ class PackagesAppUiTest {
     fun aTrackingNumberIsAdded() = runComposeUiTest(testTimeout = 5.minutes) {
         val calls = Calls()
         show(this, PackagesPreviewData.state(), calls, page = PackagesPage.Add)
-        onNodeWithTag("add_tracking").performTextInput("1Z999AA10123456784")
+        // Set as the field's text rather than typed: typing brings the keyboard up, and Save then puts
+        // it away from the test's thread, which Android refuses ("only the original thread that
+        // created a view hierarchy can touch its views") when the emulator's frames land that way.
+        onNodeWithTag("add_tracking").performSemanticsAction(SemanticsActions.SetText) { it(AnnotatedString("1Z999AA10123456784")) }
         onNodeWithTag("add_save").performScrollTo().performClick()
         assertEquals(listOf("1Z999AA10123456784"), calls.adds)
     }

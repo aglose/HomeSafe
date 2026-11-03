@@ -42,37 +42,59 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * How one kind of weather notification looks: its glyph, the two colours of the tile the glyph
- * sits on ([light] at the top left running to [deep]), and the colour of the glyph's own
- * coloured part (the drops, the bolt, the mercury) where the rest is white.
+ * How one kind of weather notification looks: its glyph, the solid colour of the tile it sits on
+ * ([fill], the Today tab's colour for the same weather, with the glyph in [OnFill] over it), and
+ * the deeper colour the card's sky leans toward ([deep]).
  */
-class WeatherNoticeLook(val glyph: NotificationGlyph, val light: Color, val deep: Color, val accent: Color = Color.White) {
+class WeatherNoticeLook(val glyph: NotificationGlyph, val fill: Color, val deep: Color) {
     /** One colour to stand for it where the platform takes only one (Android tints the small icon and the buttons with it). */
-    val tintArgb: Int get() = lerp(light, deep, 0.45f).toArgb()
+    val tintArgb: Int get() = fill.toArgb()
 }
 
-/** Blues for what falls, violet for a storm, warm for heat, red for what is dangerous: told apart before a word is read. */
+/** The glyph's colour on a tile: nearly black, readable on every colour one comes in, as on the Today tab's tiles. */
+val OnFill = Color(0xFF06121F)
+
+/** The Today tab's colours for what falls and for the air: blue rain, white snow, violet storms, amber for wind, heat and cold; red for what is dangerous. */
 val WeatherNoticeIcon.look: WeatherNoticeLook
     get() = when (this) {
-        WeatherNoticeIcon.RAIN -> WeatherNoticeLook(NotificationGlyph.RAIN, Color(0xFF4C9BF5), Color(0xFF1F5FCB), Color(0xFFB9E0FF))
-        WeatherNoticeIcon.SNOW -> WeatherNoticeLook(NotificationGlyph.SNOW, Color(0xFF8DB7E8), Color(0xFF4A76B4))
-        WeatherNoticeIcon.MIX -> WeatherNoticeLook(NotificationGlyph.MIX, Color(0xFF6FA8C9), Color(0xFF35688C), Color(0xFFC9ECFF))
-        WeatherNoticeIcon.STORM -> WeatherNoticeLook(NotificationGlyph.STORM, Color(0xFF7B6CE6), Color(0xFF382A92), Color(0xFFFFD84D))
-        WeatherNoticeIcon.FOG -> WeatherNoticeLook(NotificationGlyph.FOG, Color(0xFF9AA8B8), Color(0xFF596678), Color(0xFFDCE4EC))
-        WeatherNoticeIcon.WIND -> WeatherNoticeLook(NotificationGlyph.WIND, Color(0xFF3CBFB4), Color(0xFF157A78))
-        WeatherNoticeIcon.SUN -> WeatherNoticeLook(NotificationGlyph.SUN, Color(0xFFFFB737), Color(0xFFEE7A12), Color(0xFFFFF6D0))
-        WeatherNoticeIcon.HEAT -> WeatherNoticeLook(NotificationGlyph.HEAT, Color(0xFFFF8E4A), Color(0xFFD9382A), Color(0xFFFFE08A))
-        WeatherNoticeIcon.COLD -> WeatherNoticeLook(NotificationGlyph.COLD, Color(0xFF5BB8F5), Color(0xFF2264C6), Color(0xFFD6F0FF))
-        WeatherNoticeIcon.FREEZE -> WeatherNoticeLook(NotificationGlyph.FREEZE, Color(0xFF79C7F2), Color(0xFF2B7AC0))
-        WeatherNoticeIcon.WARMER -> WeatherNoticeLook(NotificationGlyph.WARMER, Color(0xFFFFA24D), Color(0xFFE5592A), Color(0xFFFFE9A8))
-        WeatherNoticeIcon.COLDER -> WeatherNoticeLook(NotificationGlyph.COLDER, Color(0xFF62B0F2), Color(0xFF2A5FC2), Color(0xFFD6F0FF))
-        WeatherNoticeIcon.AIR -> WeatherNoticeLook(NotificationGlyph.AIR, Color(0xFFC49A62), Color(0xFF825C38))
-        WeatherNoticeIcon.TORNADO -> WeatherNoticeLook(NotificationGlyph.TORNADO, Color(0xFFF0565B), Color(0xFFA51B2D))
-        WeatherNoticeIcon.FLOOD -> WeatherNoticeLook(NotificationGlyph.FLOOD, Color(0xFF3FA7C9), Color(0xFF125F8B), Color(0xFFB8ECFF))
-        WeatherNoticeIcon.HURRICANE -> WeatherNoticeLook(NotificationGlyph.HURRICANE, Color(0xFFE8527A), Color(0xFF981D4C))
-        WeatherNoticeIcon.FIRE -> WeatherNoticeLook(NotificationGlyph.FIRE, Color(0xFFFF7A3D), Color(0xFFC6281B))
-        WeatherNoticeIcon.WARNING -> WeatherNoticeLook(NotificationGlyph.WARNING, Color(0xFFFFA63D), Color(0xFFDF541E))
-        WeatherNoticeIcon.CHAINS -> WeatherNoticeLook(NotificationGlyph.CHAINS, Color(0xFF8EA0B5), Color(0xFF47566C), Color(0xFFFFC857))
+        WeatherNoticeIcon.RAIN -> WeatherNoticeLook(NotificationGlyph.RAIN, Color(0xFF5EB6FF), Color(0xFF1F5FCB))
+
+        WeatherNoticeIcon.SNOW -> WeatherNoticeLook(NotificationGlyph.SNOW, Color(0xFFEAF2FF), Color(0xFF4A76B4))
+
+        WeatherNoticeIcon.MIX -> WeatherNoticeLook(NotificationGlyph.MIX, Color(0xFF8FD0FF), Color(0xFF35688C))
+
+        WeatherNoticeIcon.STORM -> WeatherNoticeLook(NotificationGlyph.STORM, Color(0xFFC08BFF), Color(0xFF382A92))
+
+        WeatherNoticeIcon.FOG -> WeatherNoticeLook(NotificationGlyph.FOG, Color(0xFFC9D3DE), Color(0xFF596678))
+
+        WeatherNoticeIcon.WIND -> WeatherNoticeLook(NotificationGlyph.WIND, Color(0xFFFFC14D), Color(0xFF157A78))
+
+        WeatherNoticeIcon.SUN -> WeatherNoticeLook(NotificationGlyph.SUN, Color(0xFFFFCB52), Color(0xFFEE7A12))
+
+        WeatherNoticeIcon.HEAT -> WeatherNoticeLook(NotificationGlyph.HEAT, Color(0xFFFFC14D), Color(0xFFD9382A))
+
+        WeatherNoticeIcon.COLD -> WeatherNoticeLook(NotificationGlyph.COLD, Color(0xFFFFC14D), Color(0xFF2264C6))
+
+        WeatherNoticeIcon.FREEZE -> WeatherNoticeLook(NotificationGlyph.FREEZE, Color(0xFF9FD8FF), Color(0xFF2B7AC0))
+
+        WeatherNoticeIcon.WARMER -> WeatherNoticeLook(NotificationGlyph.WARMER, Color(0xFFFFB25C), Color(0xFFE5592A))
+
+        WeatherNoticeIcon.COLDER -> WeatherNoticeLook(NotificationGlyph.COLDER, Color(0xFF8FC4FF), Color(0xFF2A5FC2))
+
+        WeatherNoticeIcon.AIR -> WeatherNoticeLook(NotificationGlyph.AIR, Color(0xFFD9B382), Color(0xFF825C38))
+
+        WeatherNoticeIcon.TORNADO -> WeatherNoticeLook(NotificationGlyph.TORNADO, Color(0xFFFF6B5C), Color(0xFFA51B2D))
+
+        WeatherNoticeIcon.FLOOD -> WeatherNoticeLook(NotificationGlyph.FLOOD, Color(0xFF5FD0E6), Color(0xFF125F8B))
+
+        WeatherNoticeIcon.HURRICANE -> WeatherNoticeLook(NotificationGlyph.HURRICANE, Color(0xFFFF7FA6), Color(0xFF981D4C))
+
+        WeatherNoticeIcon.FIRE -> WeatherNoticeLook(NotificationGlyph.FIRE, Color(0xFFFF8A4C), Color(0xFFC6281B))
+
+        WeatherNoticeIcon.WARNING -> WeatherNoticeLook(NotificationGlyph.WARNING, Color(0xFFFF9A3D), Color(0xFFDF541E))
+
+        // Chains on the road to a ski trip: the amber the tiles give anything to plan around that isn't falling.
+        WeatherNoticeIcon.CHAINS -> WeatherNoticeLook(NotificationGlyph.CHAINS, Color(0xFFFFC14D), Color(0xFF47566C))
     }
 
 /**
@@ -142,23 +164,11 @@ private val InkFaint = Color(0x99FFFFFF)
 private val Hairline = Color(0x24FFFFFF)
 private val Chip = Color(0x1FFFFFFF)
 
-/** The glyph in white on its tile: a rounded square, [look]'s light colour at the top left running to its deep one. */
+/** The glyph in [OnFill] on its tile: a rounded square of [look]'s solid colour, as the Today tab's tiles are. */
 internal fun DrawScope.drawNoticeTile(look: WeatherNoticeLook, topLeft: Offset, side: Float) {
-    drawRoundRect(
-        brush = Brush.linearGradient(listOf(look.light, look.deep), start = topLeft, end = topLeft + Offset(side, side)),
-        topLeft = topLeft,
-        size = Size(side, side),
-        cornerRadius = CornerRadius(side * 0.28f),
-    )
-    // A little light along the top edge, as on glass.
-    drawRoundRect(
-        brush = Brush.verticalGradient(listOf(Color(0x33FFFFFF), Color.Transparent), startY = topLeft.y, endY = topLeft.y + side * 0.55f),
-        topLeft = topLeft,
-        size = Size(side, side),
-        cornerRadius = CornerRadius(side * 0.28f),
-    )
+    drawRoundRect(look.fill, topLeft = topLeft, size = Size(side, side), cornerRadius = CornerRadius(side * 0.28f))
     val inset = side * 0.18f
-    drawGlyph(look.glyph, topLeft + Offset(inset, inset), side - inset * 2, Color.White, look.accent)
+    drawGlyph(look.glyph, topLeft + Offset(inset, inset), side - inset * 2, OnFill)
 }
 
 /**
@@ -173,7 +183,7 @@ internal fun DrawScope.drawNoticeCard(art: WeatherNoticeArt, measurer: TextMeasu
 
     drawRect(Brush.verticalGradient(listOf(lerp(Night, look.deep, if (art.isDay) 0.62f else 0.4f), lerp(Night, look.deep, 0.12f))))
     drawCircle(
-        Brush.radialGradient(listOf(look.light.copy(alpha = if (art.isDay) 0.34f else 0.2f), Color.Transparent), center = Offset(pad + tile / 2, pad + tile / 2), radius = size.width * 0.55f),
+        Brush.radialGradient(listOf(look.fill.copy(alpha = if (art.isDay) 0.3f else 0.18f), Color.Transparent), center = Offset(pad + tile / 2, pad + tile / 2), radius = size.width * 0.55f),
         radius = size.width * 0.55f,
         center = Offset(pad + tile / 2, pad + tile / 2),
     )
@@ -206,7 +216,7 @@ internal fun DrawScope.drawNoticeCard(art: WeatherNoticeArt, measurer: TextMeasu
     if (area.height < 16.dp.toPx()) return
     when (chart) {
         is WeatherNoticeChart.Soon -> drawSoon(chart, area, ticks, if (art.icon == WeatherNoticeIcon.STORM) StormViolet else RainBlue)
-        is WeatherNoticeChart.Day -> drawDay(chart, area, ticks)
+        is WeatherNoticeChart.Day -> drawDay(chart, area, ticks, if (art.icon == WeatherNoticeIcon.STORM) StormViolet else RainBlue)
     }
 }
 
@@ -224,7 +234,7 @@ private fun DrawScope.drawFacts(facts: List<WeatherNoticeArt.Fact>, measurer: Te
         val pill = inner + lead + text.size.width + inner
         if (x + pill > topLeft.x + width) return
         drawRoundRect(Chip, Offset(x, topLeft.y), Size(pill, height), CornerRadius(height / 2))
-        fact.icon?.let { drawGlyph(it.look.glyph, Offset(x + inner, topLeft.y + (height - glyph) / 2), glyph, InkMuted, it.look.light.lighten()) }
+        fact.icon?.let { drawGlyph(it.look.glyph, Offset(x + inner, topLeft.y + (height - glyph) / 2), glyph, it.look.fill) }
         drawText(text, Ink, Offset(x + inner + lead, topLeft.y + (height - text.size.height) / 2))
         x += pill + 6.dp.toPx()
     }
@@ -275,7 +285,7 @@ private fun DrawScope.drawSoon(chart: WeatherNoticeChart.Soon, area: Rect, ticks
  * colours, what falls as bars under it, a faint line each six hours, and on today's the present
  * marked with what is behind it dimmed.
  */
-private fun DrawScope.drawDay(chart: WeatherNoticeChart.Day, area: Rect, ticks: List<TextLayoutResult>) {
+private fun DrawScope.drawDay(chart: WeatherNoticeChart.Day, area: Rect, ticks: List<TextLayoutResult>, falling: Color) {
     val hours = chart.hours
     if (hours.size < 2) return
     val palette = WeatherPalette()
@@ -304,7 +314,7 @@ private fun DrawScope.drawDay(chart: WeatherNoticeChart.Day, area: Rect, ticks: 
                 val h = (sqrt(hour.precipitationMm / wettest).toFloat() * area.height * 0.42f).coerceAtLeast(2.dp.toPx())
                 val sure = 0.4f + 0.6f * ((hour.precipitationProbability ?: 70) / 100f)
                 drawRoundRect(
-                    (if (hour.kind.isSnow) SnowWhite else RainBlue).copy(alpha = sure * alpha),
+                    (if (hour.kind.isSnow) SnowWhite else falling).copy(alpha = sure * alpha),
                     Offset(area.left + i * step + step * 0.18f, area.bottom - h),
                     Size(step * 0.64f, h),
                     CornerRadius(2.dp.toPx()),
@@ -341,9 +351,6 @@ private fun nowIndex(hours: List<HourForecast>, now: Long): Float? {
 
 private fun TextMeasurer.line(text: String, style: TextStyle, maxWidth: Int): TextLayoutResult =
     measure(text, style, overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1, constraints = Constraints(maxWidth = maxWidth.coerceAtLeast(0)))
-
-/** Toward white, for a small glyph on dark glass where the tile's own colour would be too dim. */
-private fun Color.lighten(): Color = lerp(this, Color.White, 0.45f)
 
 private val CaptionStyle = TextStyle(fontFamily = FontFamily.Default, fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.2.sp)
 private val HeadlineStyle = TextStyle(fontFamily = FontFamily.Default, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
