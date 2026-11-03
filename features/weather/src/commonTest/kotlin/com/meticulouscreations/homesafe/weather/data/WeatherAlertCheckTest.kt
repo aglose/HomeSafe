@@ -437,7 +437,8 @@ class WeatherAlertCheckTest {
         assertEquals(WeatherNoticePlanner.SAMPLE_KEY, sample.id)
         assertEquals("Portland", sample.place)
         assertEquals(WeatherDeepLink(WeatherDeepLink.View.TODAY, placeId = Place.CURRENT_ID), sample.link)
-        assertTrue(sample.art.chart is WeatherNoticeChart.Day)
+        assertTrue(sample.art.chart is WeatherNoticeChart.Soon, "rain on the way, as one arrives")
+        assertTrue(sample.headsUp)
         assertTrue(h.ledger.sent(now).isEmpty())
     }
 

@@ -242,9 +242,9 @@ it; each platform shows as much of that as it has a place for.
 
 | | Android | iOS |
 |---|---|---|
-| **Which kind, at a glance** | Its own icon in the status bar and its own accent colour: a cloud with rain in blue, with a bolt in violet, a thermometer in orange, a funnel in red. The same glyph on a coloured tile is the large icon | The tile is the banner's thumbnail |
+| **Which kind, at a glance** | Its own icon in the status bar and its own colour, the Today tab's for the same weather: a cloud with rain in blue, snow in white, a bolt in violet, wind, heat and cold in amber, a funnel in red. The same glyph, nearly black on a tile of that colour, is the large icon | The tile is the banner's thumbnail |
 | **The place** | Beside the app's name | The subtitle |
-| **Opened out** | A card: the tile, the one thing to read large (when the rain starts, the day's high and low), the numbers as small marks (how long, how much, when it is heaviest, the gusts, the UV index), and a chart: the next two hours of rain by the quarter hour, or the day by the hour with the present marked. A government warning opens into the agency's words instead, what to do first: an excerpt of up to 700 characters, cut at a word and marked "…" where the agency ran longer | The same card on a long press; the same excerpt of a warning's words as the body |
+| **Opened out** | A card: the tile, the one thing to read large (when the rain starts or falls, or the day's high and low when nothing does), the numbers as small marks (how long, how much, when it is heaviest, the gusts, the UV index), and a chart: the next two hours of rain by the quarter hour, or the day by the hour with the present marked. A government warning opens into the agency's words instead, what to do first: an excerpt of up to 700 characters, cut at a word and marked "…" where the agency ran longer | The same card on a long press; the same excerpt of a warning's words as the body |
 | **Its time** | When it happens: a shower reads "in 25 min" and counts down by itself | When it was posted |
 | **Taken down** | By itself, when the shower has passed, the day is over, the warning has lapsed. A warning goes the moment it lapses; the others stay at least ten minutes from when they went up, so one posted late can still be read | At the next check after that (iOS can't give a notification an end). Every check sweeps, whatever the switches say; a sample is also swept ten minutes on while the app is running |
 | **A tap** | Opens the weather app on what it was about: Today for rain on the way and today's outlook, the Forecast for tomorrow's, the warning in full for a warning still in force (Today if it has lapsed); on the place it was for | The same |
@@ -273,13 +273,17 @@ change what you do with your day, each said once:
 | Notification | When |
 |---|---|
 | **Rain (snow, storms) at 3 PM** | Says for about how long and how much. It is dry now, and the quarter-hour forecast has it starting within 75 minutes: two wet quarter-hours in a row, or one of 1 mm/h or more. One per shower: nothing more for three hours |
-| **Rain today** | Once, between 6 and 11 in the morning, when the rest of the day has a spell of at least a millimetre (or a centimetre of snow): when, and about how much |
-| **Rain tomorrow** | Once, between 6 and 10 in the evening, the same for tomorrow, with its high |
+| **Rain this afternoon** (this morning, this evening, tonight; today when it's all day or on and off) | Once, between 6 and 11 in the morning, when the rest of the day has a spell of at least a millimetre (or a centimetre of snow): "3 PM to 6 PM, around 0.22 in", the same words as the Today tab's tiles |
+| **Rain tomorrow morning** (and so on) | Once, between 6 and 10 in the evening, the same for tomorrow, with its high |
 | Added to those two with *Wind, heat, cold, sun and air* | Gusts of 40 mph or more, feeling like 100 °F or hotter, feeling like 0 °F or colder, an air quality index of 151 or more, a first freeze, a high 8 °C (14 °F) or more above or below today's. Any of these is also reason enough for the notification by itself. A UV index of 8 or more is mentioned when there is one, but never sends one alone: in summer that would be every clear morning |
 | **A government warning** | Severe or extreme ones, whatever the hour, once each: an update to a warning already announced is the same warning (told apart by its VTEC event number, not its message id) |
 
 Nothing but warnings is sent between 10 PM and 6 AM. What has been sent is remembered for five
 days by what it was about (this warning, this morning, this shower), which is what stops repeats.
+
+**Send a sample**, in Weather's Settings, sends rain on the way as it would arrive, whatever the
+hour or the switches: the forecast's own shower when one is coming, and otherwise one made up from
+now (half an hour off, for an hour and a half), with "Sample" leading its text and no reminder to set.
 
 They are for where the phone is; with no position to go on at all, for the first city on the list.
 Nothing is fetched or marked as sent while the OS has notifications switched off for the app, and

@@ -21,8 +21,9 @@ import homesafe.shared.generated.resources.weather_notice_heat
 import homesafe.shared.generated.resources.weather_notice_heaviest_around
 import homesafe.shared.generated.resources.weather_notice_heavy_at_times
 import homesafe.shared.generated.resources.weather_notice_high_tomorrow
+import homesafe.shared.generated.resources.weather_notice_outlook_wet
 import homesafe.shared.generated.resources.weather_notice_remind_at
-import homesafe.shared.generated.resources.weather_notice_sample_body
+import homesafe.shared.generated.resources.weather_notice_sample_label
 import homesafe.shared.generated.resources.weather_notice_snow_amount
 import homesafe.shared.generated.resources.weather_notice_soon_amount
 import homesafe.shared.generated.resources.weather_notice_soon_lasting
@@ -31,24 +32,59 @@ import homesafe.shared.generated.resources.weather_notice_title_cold
 import homesafe.shared.generated.resources.weather_notice_title_colder_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_freeze
 import homesafe.shared.generated.resources.weather_notice_title_heat
+import homesafe.shared.generated.resources.weather_notice_title_mix_this_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_mix_this_evening
+import homesafe.shared.generated.resources.weather_notice_title_mix_this_morning
 import homesafe.shared.generated.resources.weather_notice_title_mix_today
 import homesafe.shared.generated.resources.weather_notice_title_mix_tomorrow
+import homesafe.shared.generated.resources.weather_notice_title_mix_tomorrow_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_mix_tomorrow_evening
+import homesafe.shared.generated.resources.weather_notice_title_mix_tomorrow_morning
+import homesafe.shared.generated.resources.weather_notice_title_mix_tomorrow_night
+import homesafe.shared.generated.resources.weather_notice_title_mix_tonight
+import homesafe.shared.generated.resources.weather_notice_title_rain_this_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_rain_this_evening
+import homesafe.shared.generated.resources.weather_notice_title_rain_this_morning
 import homesafe.shared.generated.resources.weather_notice_title_rain_today
 import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow
+import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow_evening
+import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow_morning
+import homesafe.shared.generated.resources.weather_notice_title_rain_tomorrow_night
+import homesafe.shared.generated.resources.weather_notice_title_rain_tonight
+import homesafe.shared.generated.resources.weather_notice_title_snow_this_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_snow_this_evening
+import homesafe.shared.generated.resources.weather_notice_title_snow_this_morning
 import homesafe.shared.generated.resources.weather_notice_title_snow_today
 import homesafe.shared.generated.resources.weather_notice_title_snow_tomorrow
+import homesafe.shared.generated.resources.weather_notice_title_snow_tomorrow_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_snow_tomorrow_evening
+import homesafe.shared.generated.resources.weather_notice_title_snow_tomorrow_morning
+import homesafe.shared.generated.resources.weather_notice_title_snow_tomorrow_night
+import homesafe.shared.generated.resources.weather_notice_title_snow_tonight
 import homesafe.shared.generated.resources.weather_notice_title_soon_mix
 import homesafe.shared.generated.resources.weather_notice_title_soon_rain
 import homesafe.shared.generated.resources.weather_notice_title_soon_snow
 import homesafe.shared.generated.resources.weather_notice_title_soon_storm
+import homesafe.shared.generated.resources.weather_notice_title_storm_this_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_storm_this_evening
+import homesafe.shared.generated.resources.weather_notice_title_storm_this_morning
 import homesafe.shared.generated.resources.weather_notice_title_storm_today
 import homesafe.shared.generated.resources.weather_notice_title_storm_tomorrow
+import homesafe.shared.generated.resources.weather_notice_title_storm_tomorrow_afternoon
+import homesafe.shared.generated.resources.weather_notice_title_storm_tomorrow_evening
+import homesafe.shared.generated.resources.weather_notice_title_storm_tomorrow_morning
+import homesafe.shared.generated.resources.weather_notice_title_storm_tomorrow_night
+import homesafe.shared.generated.resources.weather_notice_title_storm_tonight
 import homesafe.shared.generated.resources.weather_notice_title_uv
 import homesafe.shared.generated.resources.weather_notice_title_warmer_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_wind
 import homesafe.shared.generated.resources.weather_notice_uv
 import homesafe.shared.generated.resources.weather_notice_warmer_tomorrow
 import homesafe.shared.generated.resources.weather_now
+import homesafe.shared.generated.resources.weather_outlook_all_day
+import homesafe.shared.generated.resources.weather_outlook_on_off
+import homesafe.shared.generated.resources.weather_outlook_rest_of_today
 import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -282,40 +318,30 @@ object WeatherNoticePlanner {
         soon(report, units, nowEpochSeconds)?.copy(place = placeName)
 
     /**
-     * A notification to look at, asked for from Settings: today as the forecast has it, whether
-     * or not there is news in it, with everything a real one carries (its picture, the day's
-     * chart, the place, a tap that opens Today). Null without a forecast for today. It is no
-     * part of [plan]: nothing remembers it was sent, and it is gone in ten minutes.
+     * A notification to look at, asked for from Settings: rain on the way, as it would arrive,
+     * with everything a real one carries (its picture and chart, the place, coming up over the
+     * screen, a tap that opens Today). The shower is the forecast's own when one is coming, and
+     * otherwise one made up from now: half an hour off, for an hour and a half, and said to be a
+     * sample. It is no part of [plan]: nothing
+     * remembers it was sent, it has no reminder to set, and it is gone in ten minutes.
      */
     fun sample(report: WeatherReport, placeName: String?, units: WeatherUnits, nowEpochSeconds: Long): WeatherNotice? {
-        val day = report.today(nowEpochSeconds) ?: return null
-        val hours = report.hoursOf(day)
-        val spans = WeatherStory.wetSpans(hours)
-        val gust = hours.maxOfOrNull { it.gustKmh } ?: 0.0
-        val uv = hours.filter { it.isDay }.maxOfOrNull { it.uvIndex ?: 0.0 } ?: 0.0
-        val icon = when {
-            spans.isNotEmpty() -> WeatherNoticeIcon.of(WeatherStory.dominantFamily(spans))
-            report.current.kind == WeatherKind.FOG -> WeatherNoticeIcon.FOG
-            gust >= WINDY_GUST_KMH -> WeatherNoticeIcon.WIND
-            else -> WeatherNoticeIcon.SUN
-        }
-        return outlook(
+        val shower = soon(report, units, nowEpochSeconds) ?: soon(madeUpShower(report, nowEpochSeconds), units, nowEpochSeconds) ?: return null
+        return shower.copy(
             key = SAMPLE_KEY,
-            kind = WeatherNoticeKind.TODAY,
-            title = WeatherStory.headline(report, units, nowEpochSeconds),
-            body = UiText.of(Res.string.weather_notice_sample_body),
-            icon = icon,
-            facts = listOfNotNull(
-                spans.takeIf { it.isNotEmpty() }?.let { WeatherNoticeFact(icon, amount(it, units).second) },
-                WeatherNoticeFact(WeatherNoticeIcon.WIND, WeatherFormat.speed(gust, units)),
-                WeatherNoticeFact(WeatherNoticeIcon.SUN, UiText.of(Res.string.weather_notice_fact_uv, uv.toInt())).takeIf { uv >= 1.0 },
-            ),
-            report = report,
-            day = day,
-            units = units,
-            expires = nowEpochSeconds + SAMPLE_SECONDS,
-            now = nowEpochSeconds,
-        ).copy(place = placeName, isDay = report.current.isDay)
+            body = dotted(listOf(UiText.of(Res.string.weather_notice_sample_label), shower.body)),
+            place = placeName,
+            expiresEpochSeconds = nowEpochSeconds + SAMPLE_SECONDS,
+            reminderEpochSeconds = null,
+            reminderLabel = null,
+        )
+    }
+
+    /** [report] with a shower drawn into its quarter-hours from [now] on, and nothing falling now. */
+    private fun madeUpShower(report: WeatherReport, now: Long): WeatherReport {
+        val quarter = now - now.mod(WeatherReport.SLICE_SECONDS)
+        val slices = SAMPLE_SHOWER_MM.mapIndexed { i, mm -> PrecipSlice(quarter + i * WeatherReport.SLICE_SECONDS, mm) }
+        return report.copy(minutely = slices, current = report.current.copy(precipitationMm = 0.0))
     }
 
     private fun warning(alert: WeatherAlert, report: WeatherReport): WeatherNotice {
@@ -446,13 +472,39 @@ object WeatherNoticePlanner {
         return peak.epochSeconds.takeIf { seenToTheEnd || peak != falling.last() }
     }
 
-    /** One thing an outlook has to say: the title it would give the notification, its clause of the body, and its mark on the picture. */
-    private class Item(val title: StringResource, val text: UiText, val icon: WeatherNoticeIcon, val fact: UiText)
+    /**
+     * One thing an outlook has to say: the title it would give the notification, its clause of the
+     * body, and its mark on the picture. [headline] is what the picture shows large in place of the
+     * day's range: when the rain falls.
+     */
+    private class Item(val title: StringResource, val text: UiText, val icon: WeatherNoticeIcon, val fact: UiText, val headline: UiText? = null)
 
-    private fun wet(spans: List<WetSpan>, phrase: UiText, titles: Map<Precipitation, StringResource>, units: WeatherUnits): Item {
+    /**
+     * What falls between [from] and [to], today or tomorrow, as the tiles tell it: the title names
+     * the part of the day ("Rain this afternoon"), the body when and how much ("3 PM to 6 PM,
+     * around 0.22 in"). Rain all day or on and off is the day's as a whole.
+     */
+    private fun wet(spans: List<WetSpan>, report: WeatherReport, from: Long, to: Long, today: Boolean, units: WeatherUnits): Item {
         val family = WeatherStory.dominantFamily(spans)
-        val amount = amount(spans, units)
-        return Item(titles[family] ?: titles.getValue(Precipitation.RAIN), dotted(listOf(phrase, amount.first)), WeatherNoticeIcon.of(family), amount.second)
+        val amount = amount(spans, units).second
+        val timing = WeatherStory.spanTiming(spans, from, to, today, report::offsetAt)
+        val whole = if (today) TODAY_TITLES else TOMORROW_TITLES
+        val titles = if (timing in WHOLE_DAY_TIMINGS) whole else partOfDay(report.localHour(maxOf(spans.first().startEpochSeconds, from)), today)
+        return Item(
+            title = titles[family] ?: whole.getValue(Precipitation.RAIN),
+            text = UiText.of(Res.string.weather_notice_outlook_wet, timing, amount),
+            icon = WeatherNoticeIcon.of(family),
+            fact = amount,
+            headline = timing,
+        )
+    }
+
+    /** The titles for rain starting at [hour] on the place's clock: the morning up to noon, the afternoon to five, the evening to nine, then the night. */
+    private fun partOfDay(hour: Int, today: Boolean): Map<Precipitation, StringResource> = when {
+        hour < 12 -> if (today) THIS_MORNING else TOMORROW_MORNING
+        hour < 17 -> if (today) THIS_AFTERNOON else TOMORROW_AFTERNOON
+        hour < 21 -> if (today) THIS_EVENING else TOMORROW_EVENING
+        else -> if (today) TONIGHT else TOMORROW_NIGHT
     }
 
     private fun today(report: WeatherReport, settings: WeatherNoticeSettings, units: WeatherUnits, now: Long): WeatherNotice? {
@@ -463,7 +515,7 @@ object WeatherNoticePlanner {
 
         val spans = WeatherStory.wetSpans(hours).filter { it.totalMm >= NOTABLE_MM || it.snowCm >= NOTABLE_SNOW_CM }
         if (spans.isNotEmpty() && hours.isNotEmpty()) {
-            WeatherStory.spanPhrase(spans, hours.first().epochSeconds, end, report::offsetAt)?.let { items += wet(spans, it, TODAY_TITLES, units) }
+            items += wet(spans, report, hours.first().epochSeconds, end, today = true, units)
         }
         if (settings.extremes) {
             val gust = hours.maxOfOrNull { it.gustKmh } ?: 0.0
@@ -503,7 +555,7 @@ object WeatherNoticePlanner {
 
         val spans = WeatherStory.wetSpans(hours).filter { it.totalMm >= NOTABLE_MM || it.snowCm >= NOTABLE_SNOW_CM }
         if (spans.isNotEmpty()) {
-            WeatherStory.spanPhrase(spans, next.epochSeconds, next.epochSeconds + WeatherReport.DAY_SECONDS, report::offsetAt)?.let { items += wet(spans, it, TOMORROW_TITLES, units) }
+            items += wet(spans, report, next.epochSeconds, next.epochSeconds + WeatherReport.DAY_SECONDS, today = false, units)
         }
         var swung = false
         if (settings.extremes) {
@@ -544,19 +596,25 @@ object WeatherNoticePlanner {
         units: WeatherUnits,
         expires: Long,
         now: Long?,
-    ): WeatherNotice = outlook(
-        key = key,
-        kind = kind,
-        title = UiText.of(items.first().title),
-        body = dotted(parts),
-        icon = items.first().icon,
-        facts = items.take(MAX_FACTS).map { WeatherNoticeFact(it.icon, it.fact) },
-        report = report,
-        day = day,
-        units = units,
-        expires = expires,
-        now = now,
-    )
+    ): WeatherNotice {
+        val headline = items.first().headline
+        // When the rain falls takes the range's place on the picture; the range moves to a mark.
+        val range = headline?.let { WeatherNoticeFact(null, UiText.of(Res.string.weather_notice_art_range, WeatherFormat.degrees(day.highC, units), WeatherFormat.degrees(day.lowC, units))) }
+        val notice = outlook(
+            key = key,
+            kind = kind,
+            title = UiText.of(items.first().title),
+            body = dotted(parts),
+            icon = items.first().icon,
+            facts = (items.map { WeatherNoticeFact(it.icon, it.fact) } + listOfNotNull(range)).take(MAX_FACTS),
+            report = report,
+            day = day,
+            units = units,
+            expires = expires,
+            now = now,
+        )
+        return if (headline != null) notice.copy(headline = headline) else notice
+    }
 
     /** A notification about [day] as a whole: its name and range beside the picture, and its hours as the chart. */
     private fun outlook(
@@ -618,6 +676,62 @@ object WeatherNoticePlanner {
         Precipitation.STORM to Res.string.weather_notice_title_storm_tomorrow,
     )
 
+    private val THIS_MORNING = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_this_morning,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_this_morning,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_this_morning,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_this_morning,
+    )
+    private val THIS_AFTERNOON = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_this_afternoon,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_this_afternoon,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_this_afternoon,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_this_afternoon,
+    )
+    private val THIS_EVENING = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_this_evening,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_this_evening,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_this_evening,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_this_evening,
+    )
+    private val TONIGHT = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_tonight,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_tonight,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_tonight,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_tonight,
+    )
+    private val TOMORROW_MORNING = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_tomorrow_morning,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_tomorrow_morning,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_tomorrow_morning,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_tomorrow_morning,
+    )
+    private val TOMORROW_AFTERNOON = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_tomorrow_afternoon,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_tomorrow_afternoon,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_tomorrow_afternoon,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_tomorrow_afternoon,
+    )
+    private val TOMORROW_EVENING = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_tomorrow_evening,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_tomorrow_evening,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_tomorrow_evening,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_tomorrow_evening,
+    )
+    private val TOMORROW_NIGHT = mapOf(
+        Precipitation.RAIN to Res.string.weather_notice_title_rain_tomorrow_night,
+        Precipitation.SNOW to Res.string.weather_notice_title_snow_tomorrow_night,
+        Precipitation.MIX to Res.string.weather_notice_title_mix_tomorrow_night,
+        Precipitation.STORM to Res.string.weather_notice_title_storm_tomorrow_night,
+    )
+
+    /** Timings that are the day's as a whole rather than a part of it. */
+    private val WHOLE_DAY_TIMINGS = setOf(
+        UiText.of(Res.string.weather_outlook_all_day),
+        UiText.of(Res.string.weather_outlook_rest_of_today),
+        UiText.of(Res.string.weather_outlook_on_off),
+    )
+
     private val PARAGRAPH_BREAK = Regex("\\n\\s*\\n")
     private val LINE_BREAK = Regex("\\s*\\n\\s*")
 
@@ -625,6 +739,9 @@ object WeatherNoticePlanner {
 
     /** The sample's key: one sample replaces the last. */
     const val SAMPLE_KEY = "sample"
+
+    /** The made-up sample shower, a quarter-hour at a time from the present: dry for half an hour, then building and easing off over an hour and a half. */
+    private val SAMPLE_SHOWER_MM = listOf(0.0, 0.0, 0.3, 0.6, 1.2, 1.0, 0.6, 0.3, 0.0, 0.0)
 
     /** A sample is for looking at now. */
     private const val SAMPLE_SECONDS = 10 * 60L

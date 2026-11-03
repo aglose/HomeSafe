@@ -136,6 +136,43 @@
     <string name="weather_notice_title_soon_snow">Snow at %1$s</string>
     <string name="weather_notice_title_soon_mix">Wintry mix at %1$s</string>
     <string name="weather_notice_title_soon_storm">Storms at %1$s</string>
+    <!-- The morning's and the evening's look ahead, by the part of the day the rain starts in -->
+    <string name="weather_notice_title_rain_this_morning">Rain this morning</string>
+    <string name="weather_notice_title_rain_this_afternoon">Rain this afternoon</string>
+    <string name="weather_notice_title_rain_this_evening">Rain this evening</string>
+    <string name="weather_notice_title_rain_tonight">Rain tonight</string>
+    <string name="weather_notice_title_rain_tomorrow_morning">Rain tomorrow morning</string>
+    <string name="weather_notice_title_rain_tomorrow_afternoon">Rain tomorrow afternoon</string>
+    <string name="weather_notice_title_rain_tomorrow_evening">Rain tomorrow evening</string>
+    <string name="weather_notice_title_rain_tomorrow_night">Rain tomorrow night</string>
+    <string name="weather_notice_title_snow_this_morning">Snow this morning</string>
+    <string name="weather_notice_title_snow_this_afternoon">Snow this afternoon</string>
+    <string name="weather_notice_title_snow_this_evening">Snow this evening</string>
+    <string name="weather_notice_title_snow_tonight">Snow tonight</string>
+    <string name="weather_notice_title_snow_tomorrow_morning">Snow tomorrow morning</string>
+    <string name="weather_notice_title_snow_tomorrow_afternoon">Snow tomorrow afternoon</string>
+    <string name="weather_notice_title_snow_tomorrow_evening">Snow tomorrow evening</string>
+    <string name="weather_notice_title_snow_tomorrow_night">Snow tomorrow night</string>
+    <string name="weather_notice_title_mix_this_morning">Wintry mix this morning</string>
+    <string name="weather_notice_title_mix_this_afternoon">Wintry mix this afternoon</string>
+    <string name="weather_notice_title_mix_this_evening">Wintry mix this evening</string>
+    <string name="weather_notice_title_mix_tonight">Wintry mix tonight</string>
+    <string name="weather_notice_title_mix_tomorrow_morning">Wintry mix tomorrow morning</string>
+    <string name="weather_notice_title_mix_tomorrow_afternoon">Wintry mix tomorrow afternoon</string>
+    <string name="weather_notice_title_mix_tomorrow_evening">Wintry mix tomorrow evening</string>
+    <string name="weather_notice_title_mix_tomorrow_night">Wintry mix tomorrow night</string>
+    <string name="weather_notice_title_storm_this_morning">Storms this morning</string>
+    <string name="weather_notice_title_storm_this_afternoon">Storms this afternoon</string>
+    <string name="weather_notice_title_storm_this_evening">Storms this evening</string>
+    <string name="weather_notice_title_storm_tonight">Storms tonight</string>
+    <string name="weather_notice_title_storm_tomorrow_morning">Storms tomorrow morning</string>
+    <string name="weather_notice_title_storm_tomorrow_afternoon">Storms tomorrow afternoon</string>
+    <string name="weather_notice_title_storm_tomorrow_evening">Storms tomorrow evening</string>
+    <string name="weather_notice_title_storm_tomorrow_night">Storms tomorrow night</string>
+    <!-- %1$s when ("3 PM to 6 PM", "All day"), %2$s how much ("0.22 in") -->
+    <string name="weather_notice_outlook_wet">%1$s, around %2$s</string>
+    <!-- Leads a sample notification's body -->
+    <string name="weather_notice_sample_label">Sample</string>
     <string name="weather_notice_title_wind">Windy today</string>
     <string name="weather_notice_title_heat">Very hot today</string>
     <string name="weather_notice_title_cold">Bitterly cold today</string>
