@@ -29,6 +29,8 @@ data class SkiEntry(
     val news: SkiResortNews? = null,
     /** The resort's own ticket prices. */
     val prices: SkiResortPrices? = null,
+    /** The nearest station's snow. Read [measuredDepth], which leaves it out where the resort has given its own. */
+    val measuredSnow: SkiMeasuredSnow? = null,
     val forecast: SkiForecast? = null,
     val price: SkiTicketPrice? = null,
     val drive: SkiDrive? = null,
@@ -52,6 +54,12 @@ data class SkiEntry(
             val listing = report ?: page?.report ?: news?.let { SkiReport(ref.slug, ref.regionSlug, ref.name) }
             return if (news != null) listing?.merged(news) else listing
         }
+
+    /** A station's snow, where the resort gives no depth of its own: until they open, many say 0 whatever has fallen. */
+    fun measuredDepth(nowEpochSeconds: Long): SkiMeasuredSnow? {
+        if ((latest?.takeIf { it.isCurrent(nowEpochSeconds) }?.deepestCm ?: 0.0) > 0.0) return null
+        return measuredSnow?.takeIf { it.isCurrent(nowEpochSeconds) && it.depthCm >= SkiMeasuredSnow.LEAST_DEPTH_CM }
+    }
 }
 
 /** What a ticket comes to for the household. */

@@ -13,6 +13,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.SkiDriveSource
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastDay
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecastHour
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiMeasuredSnow
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPoint
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiResortFacts
@@ -42,6 +43,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -58,6 +63,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -245,6 +251,101 @@ private fun JsonObject.allModels(key: String, index: Int): List<Double> =
 private suspend inline fun <reified T> HttpResponse.decode(): T {
     val text = bodyAsText()
     return withContext(Dispatchers.Default) { weatherJson.decodeFromString(text) }
+}
+
+/**
+ * What's on the ground near a resort, from SNOTEL, the US government's automatic mountain snow
+ * stations: free and keyless, in the American West only. Many resorts' reports say 0 until they
+ * open, whatever has fallen, and a station has measured it either way.
+ */
+@Inject
+class SnowStationApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
+    internal suspend fun stations(): Result<List<SnowStationDto>> = suspendRunCatching {
+        val response = httpClient.get("$BASE/stations") {
+            parameter("stationTriplets", "*:*:SNTL")
+            parameter("elements", "SNWD")
+            parameter("activeOnly", true)
+            parameter("returnStationElements", false)
+        }
+        if (!response.status.isSuccess()) throw failed(response.status.value)
+        response.decode()
+    }
+
+    /** The first of [stations] with a recent reading, or null if none has. */
+    internal suspend fun latest(stations: List<SnowStationDto>, nowEpochSeconds: Long): Result<SkiMeasuredSnow?> = suspendRunCatching {
+        val today = (nowEpochSeconds / 86_400).toInt()
+        val response = httpClient.get("$BASE/data") {
+            parameter("stationTriplets", stations.joinToString(",") { it.stationTriplet })
+            parameter("elements", "SNWD")
+            parameter("duration", "HOURLY")
+            parameter("beginDate", "${LocalDate.fromEpochDays(today - 2)} 00:00")
+            parameter("endDate", "${LocalDate.fromEpochDays(today + 1)} 00:00")
+        }
+        if (!response.status.isSuccess()) throw failed(response.status.value)
+        val answers = response.decode<List<SnowAnswerDto>>()
+        stations.firstNotNullOfOrNull { station -> answers.firstOrNull { it.stationTriplet == station.stationTriplet }?.reading(station, nowEpochSeconds) }
+    }
+
+    private fun failed(status: Int) = WeatherServiceException(UiText.of(Res.string.ski_error_report), status)
+
+    companion object {
+        private const val BASE = "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1"
+        private const val MOST_NEARBY = 3
+        private const val NEAR_KM = 25.0
+        private const val KM_PER_DEGREE = 111.0
+
+        /** A station this far above or below the resort's slopes has other weather. */
+        private const val HEIGHT_MARGIN_M = 300.0
+
+        /** The closest stations to a resort with a height like its slopes', nearest first. */
+        internal fun near(stations: List<SnowStationDto>, facts: SkiResortFacts): List<SnowStationDto> {
+            val lowest = (facts.baseElevationM ?: Double.NEGATIVE_INFINITY) - HEIGHT_MARGIN_M
+            val highest = (facts.summitElevationM ?: Double.POSITIVE_INFINITY) + HEIGHT_MARGIN_M
+            fun km(station: SnowStationDto) = KM_PER_DEGREE * hypot(station.latitude - facts.latitude, (station.longitude - facts.longitude) * cos(facts.latitude * PI / 180))
+            return stations.filter { km(it) <= NEAR_KM && it.elevationM in lowest..highest }.sortedBy(::km).take(MOST_NEARBY)
+        }
+    }
+}
+
+/** A SNOTEL station. Its elevation is in feet, and its readings are stamped in [dataTimeZone], hours from UTC. */
+@Serializable
+internal class SnowStationDto(
+    val stationTriplet: String,
+    val name: String,
+    val elevation: Double,
+    val latitude: Double,
+    val longitude: Double,
+    val dataTimeZone: Double = 0.0,
+) {
+    val elevationM: Double get() = elevation * METERS_PER_FOOT
+}
+
+private const val METERS_PER_FOOT = 0.3048
+private const val CM_PER_INCH = 2.54
+private const val STATION_READINGS = 5
+
+@Serializable
+internal class SnowAnswerDto(val stationTriplet: String = "", val data: List<SnowSeriesDto> = emptyList()) {
+    /** The middle of its last few hours, since these sensors throw the odd wild reading: nothing if it hasn't said anything lately. */
+    fun reading(station: SnowStationDto, nowEpochSeconds: Long): SkiMeasuredSnow? {
+        val last = data.firstOrNull()?.values.orEmpty().filter { it.value != null }.takeLast(STATION_READINGS)
+        val at = last.lastOrNull()?.epochSeconds(station.dataTimeZone) ?: return null
+        if (nowEpochSeconds - at > SkiMeasuredSnow.CURRENT_SECONDS) return null
+        val inches = last.mapNotNull { it.value }.sorted()[last.size / 2].coerceAtLeast(0.0)
+        return SkiMeasuredSnow(station.name, station.elevationM, inches * CM_PER_INCH, at)
+    }
+}
+
+@Serializable
+internal class SnowSeriesDto(val values: List<SnowValueDto> = emptyList())
+
+@Serializable
+internal class SnowValueDto(val date: String? = null, val value: Double? = null) {
+    /** `2026-11-02 15:00`. */
+    fun epochSeconds(hoursFromUtc: Double): Long? = date?.let { text ->
+        val local = runCatching { LocalDateTime.parse(text.replace(' ', 'T')) }.getOrNull() ?: return null
+        local.toInstant(TimeZone.UTC).epochSeconds - (hoursFromUtc * 3_600).toLong()
+    }
 }
 
 /**

@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.weather.ski.domain.ChainLevel
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiChainReport
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiDrive
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiForecast
+import com.meticulouscreations.homesafe.weather.ski.domain.SkiMeasuredSnow
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiOrigin
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiParking
 import com.meticulouscreations.homesafe.weather.ski.domain.SkiPass
@@ -49,6 +50,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.SetSerializer
+import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlin.time.Clock
 
@@ -62,6 +64,7 @@ class SkiRepositoryImpl(
     private val chains: CaltransChainApi,
     private val nevada: NevadaRoadsApi,
     private val sites: ResortSiteApi,
+    private val snowStations: SnowStationApi,
     private val browser: SkiBrowser,
     private val nws: NwsApi,
     private val keys: HouseholdKeys,
@@ -216,6 +219,15 @@ class SkiRepositoryImpl(
         }.getOrNull()
     }
 
+    override suspend fun measuredSnow(ref: SkiResortRef, facts: SkiResortFacts, force: Boolean): SkiMeasuredSnow? =
+        cached("measured:${ref.slug}", SkiMeasuredSnow.serializer().nullable, MEASURED_MAX_AGE, force) {
+            suspendRunCatching {
+                val all = cached("snow-stations", ListSerializer(SnowStationDto.serializer()), STATIONS_MAX_AGE, force = false) { snowStations.stations() }.getOrThrow()
+                val near = SnowStationApi.near(all, facts)
+                if (near.isEmpty()) null else snowStations.latest(near, now()).getOrThrow()
+            }
+        }.getOrNull()
+
     override fun siteHealth(): Flow<SkiSiteHealth> = dao.observe(HEALTH_KEY).map { row -> row?.let(::readHealth) ?: SkiSiteHealth() }
 
     private fun readHealth(row: SkiKeptEntity): SkiSiteHealth = runCatching { weatherJson.decodeFromString(SkiSiteHealth.serializer(), row.json) }.getOrDefault(SkiSiteHealth())
@@ -341,6 +353,10 @@ class SkiRepositoryImpl(
 
         /** Resorts change their reports in the morning and a few times through a storm. */
         const val NEWS_MAX_AGE = 15 * 60L
+
+        /** The stations report on the hour. */
+        const val MEASURED_MAX_AGE = 60 * 60L
+        const val STATIONS_MAX_AGE = 30 * 86_400L
 
         /** Prices move as a date comes nearer, but a day at a time. */
         const val SITE_PRICE_MAX_AGE = 86_400L

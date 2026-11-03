@@ -83,6 +83,8 @@
     <string name="ski_depth_base">Depth at base</string>
     <string name="ski_depth_middle">Mid-mountain</string>
     <string name="ski_depth_summit">At summit</string>
+    <string name="ski_measured_depth">Measured nearby</string>
+    <string name="ski_measured_source">Snow on the ground at the %1$s weather station (%2$s), %3$s, %4$s. Not the resort's own figure.</string>
     <string name="ski_lifts_open">%1$d of %2$d lifts open</string>
     <string name="ski_runs_open">%1$d of %2$d runs open</string>
     <string name="ski_reported_at">Reported %1$s, %2$s</string>
