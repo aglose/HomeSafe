@@ -79,8 +79,8 @@ import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.viewmodel.CarsUiState
 import com.meticulouscreations.homesafe.viewmodel.CarsViewModel
+import com.meticulouscreations.homesafe.weather.MapTilesViewModel
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
-import com.meticulouscreations.homesafe.weather.data.MapTileStore
 import com.meticulouscreations.homesafe.weather.domain.MeasureSystem
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherPreferencesRepository
@@ -147,12 +147,6 @@ class CarUnitsViewModel(weather: WeatherPreferencesRepository) : ViewModel() {
         .map { it.units }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeatherUnits())
 }
-
-/** The app's map tiles, for the cars' map: the one tile store the weather app's radar draws from too. */
-@Inject
-@ViewModelKey
-@ContributesIntoMap(AppScope::class)
-class MapTilesViewModel(val tiles: MapTileStore) : ViewModel()
 
 /**
  * The cars' map, from a Tesla's pill on Home: each of the household's Teslas on a street map

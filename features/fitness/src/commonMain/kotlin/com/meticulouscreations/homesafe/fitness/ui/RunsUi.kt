@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.fitness.HealthUiState
 import com.meticulouscreations.homesafe.fitness.domain.FEET_PER_METER
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
@@ -63,6 +64,7 @@ import com.meticulouscreations.homesafe.fitness.domain.NotRun
 import com.meticulouscreations.homesafe.fitness.domain.NotRunReason
 import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.RouteAccess
+import com.meticulouscreations.homesafe.fitness.domain.RoutePoint
 import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunDetail
 import com.meticulouscreations.homesafe.fitness.domain.RunTime
@@ -71,8 +73,15 @@ import com.meticulouscreations.homesafe.fitness.domain.Runs
 import com.meticulouscreations.homesafe.fitness.domain.RunsBoard
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.ZoneBounds
+import com.meticulouscreations.homesafe.maps.BaseMap
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.weather.data.MapTileSource
+import com.meticulouscreations.homesafe.weather.ui.radar.MapCreditLabel
+import com.meticulouscreations.homesafe.weather.ui.radar.MapLine
+import com.meticulouscreations.homesafe.weather.ui.radar.MapPin
+import com.meticulouscreations.homesafe.weather.ui.radar.PinMap
+import com.meticulouscreations.homesafe.weather.ui.radar.mapCredit
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_heart_open
 import homesafe.shared.generated.resources.fitness_history_none
@@ -139,8 +148,6 @@ import homesafe.shared.generated.resources.fitness_run_zones_unset
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -435,6 +442,7 @@ internal fun RunScreen(
     board: RunsBoard,
     todayEpochDay: Long,
     padding: PaddingValues,
+    tiles: MapTileSource,
     onAskRoute: () -> Unit,
     modifier: Modifier = Modifier,
     bounds: ZoneBounds? = null,
@@ -521,7 +529,7 @@ internal fun RunScreen(
         }
 
         if (detail.route.size > 1) {
-            FitnessCard(Modifier.testTag("fitness_run_route"), title = stringResource(Res.string.fitness_run_route)) { RouteSketch(detail, Modifier.fillMaxWidth().height(200.dp)) }
+            FitnessCard(Modifier.testTag("fitness_run_route"), title = stringResource(Res.string.fitness_run_route)) { RouteMap(detail.route, tiles, Modifier.fillMaxWidth().height(240.dp)) }
         } else if (run.route == RouteAccess.ASK) {
             GhostButton(stringResource(Res.string.fitness_run_route_ask), onAskRoute, Modifier.fillMaxWidth().testTag("fitness_run_route_ask"), icon = Icons.Filled.Route, tint = colors.run.first)
         }
@@ -668,41 +676,38 @@ private fun HeartChart(detail: RunDetail, startEpochSeconds: Long, endEpochSecon
 }
 
 /**
- * A run's route as a line, north up, with where it began (a ring) and where it ended (a dot).
- * No map under it: the shape of a route is enough to know it by, and a map would send where the
- * runner lives to a tile server.
+ * A run's route on a street map (whichever is picked in Settings), with where it began (a ring)
+ * and where it ended (a dot), as close in as the whole of it allows. With no tiles to be had the
+ * line stands on the map's plain ground. A route still being recorded stays in view as it grows;
+ * [interactive] lets a finger look around it. Nothing on it animates, so it costs no frames while
+ * a run is going.
  */
 @Composable
-internal fun RouteSketch(detail: RunDetail, modifier: Modifier = Modifier) {
+internal fun RouteMap(route: List<RoutePoint>, tiles: MapTileSource, modifier: Modifier = Modifier, interactive: Boolean = true) {
     val colors = FitnessTheme.colors
-    val route = detail.route
     val described = stringResource(Res.string.fitness_run_route_described)
-    // Flat enough over a run: east-west shrunk by the latitude, so the route keeps its shape.
-    val flat = remember(route) {
-        val squeeze = cos(route.first().latitude * PI / 180)
-        route.map { it.longitude * squeeze to -it.latitude }
-    }
-    Canvas(modifier.semantics { contentDescription = described }) {
-        val west = flat.minOf { it.first }
-        val east = flat.maxOf { it.first }
-        val north = flat.minOf { it.second }
-        val south = flat.maxOf { it.second }
-        val inset = 12.dp.toPx()
-        // An out-and-back along one street has no width to speak of: it is still given a little.
-        val wide = (east - west).coerceAtLeast(1e-6)
-        val tall = (south - north).coerceAtLeast(1e-6)
-        val scale = minOf((size.width - inset * 2) / wide, (size.height - inset * 2) / tall)
-        val left = (size.width - wide * scale) / 2
-        val top = (size.height - tall * scale) / 2
-
-        fun place(point: Pair<Double, Double>) = Offset((left + (point.first - west) * scale).toFloat(), (top + (point.second - north) * scale).toFloat())
-        val line = Path()
-        flat.forEachIndexed { index, point ->
-            val at = place(point)
-            if (index == 0) line.moveTo(at.x, at.y) else line.lineTo(at.x, at.y)
+    val baseMap by tiles.baseMap.collectAsStateWithLifecycle()
+    val places = remember(route) { route.map { it.latitude to it.longitude } }
+    val ends = remember(route) { listOf(MapPin(ROUTE_START, route.first().latitude, route.first().longitude), MapPin(ROUTE_FINISH, route.last().latitude, route.last().longitude)) }
+    // Edged in black, to stand out from a light map's roads as well as a dark one's.
+    val lines = remember(places, colors.run) { listOf(MapLine(places, RouteEdge, 7.dp), MapLine(places, colors.run.first, 4.dp)) }
+    Box(modifier.clip(RoundedCornerShape(14.dp)).testTag("fitness_route_map").semantics { contentDescription = described }) {
+        PinMap(ends, tiles, Modifier.fillMaxSize(), animated = false, lines = lines, fit = places, margin = 20.dp, interactive = interactive) { end ->
+            Canvas(Modifier.size(16.dp).testTag("fitness_route_${end.key}")) {
+                if (end.key == ROUTE_START) {
+                    drawCircle(RouteEdge, 6.5.dp.toPx())
+                    drawCircle(colors.run.second, 5.5.dp.toPx(), style = Stroke(2.5.dp.toPx()))
+                } else {
+                    drawCircle(RouteEdge, 6.dp.toPx())
+                    drawCircle(colors.text, 5.dp.toPx())
+                }
+            }
         }
-        drawPath(line, Brush.linearGradient(listOf(colors.run.second, colors.run.first)), style = Stroke(4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        drawCircle(colors.run.second, 6.dp.toPx(), place(flat.first()), style = Stroke(2.5.dp.toPx()))
-        drawCircle(colors.text, 5.dp.toPx(), place(flat.last()))
+        // Google's credit the map wears itself.
+        if (baseMap == BaseMap.OpenStreetMap) MapCreditLabel(mapCredit(baseMap, null), Modifier.align(Alignment.BottomStart).padding(6.dp))
     }
 }
+
+private const val ROUTE_START = "start"
+private const val ROUTE_FINISH = "finish"
+private val RouteEdge = Color(0x99000000)

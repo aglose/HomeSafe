@@ -401,9 +401,11 @@ has synced: this week's miles and the last run in a line on the door, and behind
   two runs to choose between; a treadmill run says so.
 - **A run's page**: distance, pace and time large; the heart's average and maximum, calories,
   cadence, climb and steps under them; then, once its track has been read:
-  - **The route**, as a line with its start ringed and its finish dotted. No map is drawn under
-    it: the shape is enough to know a route by, and a map would send where the runner lives to a
-    tile server. Health Connect hands another app's routes over one at a time, each when asked:
+  - **The route**, on a street map (Settings, [Maps](maps.md), says whose) fitted to the whole of
+    it, with its start ringed and its finish dotted: drag or pinch to look around. The tiles tell
+    that map's server roughly where the run was, which is to say roughly where the runner lives.
+    With no tiles to be had the line stands on plain ground. The same map follows a run being
+    recorded, there not to be dragged. Health Connect hands another app's routes over one at a time, each when asked:
     **Show the route** puts up its sheet, which also offers to allow all of them.
   - **Heart rate** through the run as a line over bands of the [zones](#zones)' colours, and the
     time in each zone. The zones are the ones set on the heart-rate page; with none set the page

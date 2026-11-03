@@ -49,9 +49,10 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            // :finance for its charts (LineChart and the chart styles).
+            // :finance for its charts (LineChart and the chart styles); :weather for the map a run's route is drawn on.
             implementation(project(":shared"))
             implementation(project(":finance"))
+            implementation(project(":weather"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

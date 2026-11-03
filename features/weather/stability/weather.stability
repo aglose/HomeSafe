@@ -1134,7 +1134,7 @@ public fun com.meticulouscreations.homesafe.weather.ui.radar.MapCreditLabel(text
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.weather.ui.radar.PinMap(pins: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapPin>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, focus: kotlin.String?, animated: kotlin.Boolean, lines: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapLine>, pin: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<com.meticulouscreations.homesafe.weather.ui.radar.MapPin, kotlin.Unit>): kotlin.Unit
+public fun com.meticulouscreations.homesafe.weather.ui.radar.PinMap(pins: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapPin>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, focus: kotlin.String?, animated: kotlin.Boolean, lines: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapLine>, fit: kotlin.collections.List<kotlin.Pair<kotlin.Double, kotlin.Double>>, margin: androidx.compose.ui.unit.Dp, interactive: kotlin.Boolean, pin: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<com.meticulouscreations.homesafe.weather.ui.radar.MapPin, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1144,10 +1144,13 @@ public fun com.meticulouscreations.homesafe.weather.ui.radar.PinMap(pins: kotlin
     - focus: STABLE (class with no mutable properties)
     - animated: STABLE (primitive type)
     - lines: RUNTIME (requires runtime check)
+    - fit: RUNTIME (requires runtime check)
+    - margin: STABLE (marked @Stable or @Immutable)
+    - interactive: STABLE (primitive type)
     - pin: STABLE (composable function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ui.radar.PinMapContent(state: com.meticulouscreations.homesafe.weather.ui.radar.RadarMapState, pins: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapPin>, lines: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapLine>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, focus: kotlin.String?, animated: kotlin.Boolean, tilePx: kotlin.Float, pin: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<com.meticulouscreations.homesafe.weather.ui.radar.MapPin, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.weather.ui.radar.PinMapContent(state: com.meticulouscreations.homesafe.weather.ui.radar.RadarMapState, pins: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapPin>, lines: kotlin.collections.List<com.meticulouscreations.homesafe.weather.ui.radar.MapLine>, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, focus: kotlin.String?, animated: kotlin.Boolean, interactive: kotlin.Boolean, tilePx: kotlin.Float, pin: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<com.meticulouscreations.homesafe.weather.ui.radar.MapPin, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1157,6 +1160,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.radar.PinMapContent(stat
     - tiles: STABLE (marked @Stable or @Immutable)
     - focus: STABLE (class with no mutable properties)
     - animated: STABLE (primitive type)
+    - interactive: STABLE (primitive type)
     - tilePx: STABLE (primitive type)
     - pin: STABLE (composable function type)
 

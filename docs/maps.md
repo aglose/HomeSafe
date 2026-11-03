@@ -1,8 +1,9 @@
 # Maps: OpenStreetMap or Google
 
 Every map in the app is drawn by the app itself from web-mercator tiles: the weather radar
-(`weather/ui/radar/RadarMap.kt`), the Atlas (`atlas/ui/AtlasMap.kt`) and a parked car's spot
-(`SpotMap`, opened from a parking notification: [parking.md](parking.md)). Settings, **Maps**,
+(`weather/ui/radar/RadarMap.kt`), the Atlas (`atlas/ui/AtlasMap.kt`), a parked car's spot
+(`SpotMap`, opened from a parking notification: [parking.md](parking.md)), the household's cars
+and a run's route (`PinMap`). Settings, **Maps**,
 picks whose tiles those are. Everything drawn on top (the radar, the Atlas's glow, the marks,
 the night shader) is the same on either.
 
@@ -34,5 +35,5 @@ secret and stays on the phone. The key is never in this repository, which is pub
   before any map is opened.
 - Each map asks `GET /tile/v1/viewport` for the copyright of what it shows once the view has
   settled for 600 ms (`followCopyright`). The radar and Atlas map screens put it in their credit
-  line; the smaller maps (the radar card, a day, a trip, a place, a parked car) wear it in a
-  corner.
+  line; the smaller maps (the radar card, a day, a trip, a place, a parked car, a run's route)
+  wear it in a corner.

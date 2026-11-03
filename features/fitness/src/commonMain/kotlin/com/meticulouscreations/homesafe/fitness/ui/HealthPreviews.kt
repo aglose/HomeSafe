@@ -1,6 +1,13 @@
 package com.meticulouscreations.homesafe.fitness.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.tooling.preview.Preview
 import com.meticulouscreations.homesafe.fitness.HealthAccess
 import com.meticulouscreations.homesafe.fitness.HealthUiState
@@ -21,6 +28,11 @@ import com.meticulouscreations.homesafe.fitness.domain.SleepSession
 import com.meticulouscreations.homesafe.fitness.domain.SleepStage
 import com.meticulouscreations.homesafe.fitness.domain.SleepStageKind
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
+import com.meticulouscreations.homesafe.weather.data.MapTileSource
+import com.meticulouscreations.homesafe.weather.data.RadarColorTable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -266,6 +278,39 @@ private fun FitnessRecordingPausedPreview() {
 private fun FitnessRunPreview() {
     FrigateTheme {
         FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Run("run-1"), heart = FitnessFixtures.heartAtRest(), health = HealthFixtures.connected(opened = "run-1"))
+    }
+}
+
+/** The same made-up block of streets for every tile, for a preview's route to have a map under it. */
+private object StreetTiles : MapTileSource {
+    private val block by lazy {
+        val image = ImageBitmap(256, 256)
+        val canvas = Canvas(image)
+        val size = Size(256f, 256f)
+        canvas.drawRect(Rect(Offset.Zero, size), Paint().apply { color = Color(0xFFE8E4DC) })
+        val road = Paint().apply {
+            color = Color.White
+            strokeWidth = 6f
+        }
+        for (at in 32 until 256 step 64) {
+            canvas.drawLine(Offset(at.toFloat(), 0f), Offset(at.toFloat(), 256f), road)
+            canvas.drawLine(Offset(0f, at.toFloat()), Offset(256f, at.toFloat()), road)
+        }
+        image
+    }
+
+    override val arrivals: StateFlow<Int> = MutableStateFlow(0)
+
+    override fun image(url: String): ImageBitmap = block
+
+    override fun request(urls: Collection<String>, scope: CoroutineScope, keep: Boolean, radar: RadarColorTable?) = Unit
+}
+
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FitnessRunOnAMapPreview() {
+    FrigateTheme {
+        FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Run("run-1"), health = HealthFixtures.connected(opened = "run-1"), tiles = StreetTiles)
     }
 }
 
