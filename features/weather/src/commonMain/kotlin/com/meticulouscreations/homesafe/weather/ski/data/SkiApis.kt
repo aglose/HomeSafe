@@ -322,17 +322,24 @@ internal class SnowStationDto(
 
 private const val METERS_PER_FOOT = 0.3048
 private const val CM_PER_INCH = 2.54
-private const val STATION_READINGS = 5
+private const val STATION_WINDOW_SECONDS = 5 * 3_600L
 
 @Serializable
 internal class SnowAnswerDto(val stationTriplet: String = "", val data: List<SnowSeriesDto> = emptyList()) {
-    /** The middle of its last few hours, since these sensors throw the odd wild reading: nothing if it hasn't said anything lately. */
+    /**
+     * The middle of the few hours up to its latest reading, since these sensors throw the odd wild
+     * one. Only those hours: a station back from an outage isn't still reporting the snow from
+     * before it. Nothing if it hasn't said anything lately.
+     */
     fun reading(station: SnowStationDto, nowEpochSeconds: Long): SkiMeasuredSnow? {
-        val last = data.firstOrNull()?.values.orEmpty().filter { it.value != null }.takeLast(STATION_READINGS)
-        val at = last.lastOrNull()?.epochSeconds(station.dataTimeZone) ?: return null
+        val readings = data.firstOrNull()?.values.orEmpty().mapNotNull { reading ->
+            val inches = reading.value ?: return@mapNotNull null
+            reading.epochSeconds(station.dataTimeZone)?.let { it to inches }
+        }
+        val at = readings.maxOfOrNull { it.first } ?: return null
         if (nowEpochSeconds - at > SkiMeasuredSnow.CURRENT_SECONDS) return null
-        val inches = last.mapNotNull { it.value }.sorted()[last.size / 2].coerceAtLeast(0.0)
-        return SkiMeasuredSnow(station.name, station.elevationM, inches * CM_PER_INCH, at)
+        val recent = readings.filter { at - it.first < STATION_WINDOW_SECONDS }.map { it.second }.sorted()
+        return SkiMeasuredSnow(station.name, station.elevationM, recent[recent.size / 2].coerceAtLeast(0.0) * CM_PER_INCH, at)
     }
 }
 

@@ -47,10 +47,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.SetSerializer
-import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlin.time.Clock
 
@@ -220,13 +220,13 @@ class SkiRepositoryImpl(
     }
 
     override suspend fun measuredSnow(ref: SkiResortRef, facts: SkiResortFacts, force: Boolean): SkiMeasuredSnow? =
-        cached("measured:${ref.slug}", SkiMeasuredSnow.serializer().nullable, MEASURED_MAX_AGE, force) {
+        cached("measured:${ref.slug}", KeptMeasuredSnow.serializer(), MEASURED_MAX_AGE, force) {
             suspendRunCatching {
                 val all = cached("snow-stations", ListSerializer(SnowStationDto.serializer()), STATIONS_MAX_AGE, force = false) { snowStations.stations() }.getOrThrow()
                 val near = SnowStationApi.near(all, facts)
-                if (near.isEmpty()) null else snowStations.latest(near, now()).getOrThrow()
+                KeptMeasuredSnow(if (near.isEmpty()) null else snowStations.latest(near, now()).getOrThrow())
             }
-        }.getOrNull()
+        }.getOrNull()?.snow
 
     override fun siteHealth(): Flow<SkiSiteHealth> = dao.observe(HEALTH_KEY).map { row -> row?.let(::readHealth) ?: SkiSiteHealth() }
 
@@ -367,6 +367,10 @@ class SkiRepositoryImpl(
         const val ALERTS_TIMEOUT_MS = 4_000L
     }
 }
+
+/** A station's answer as it's kept, so that having no reading is kept as an answer too, and not asked for again until it's old. */
+@Serializable
+private class KeptMeasuredSnow(val snow: SkiMeasuredSnow? = null)
 
 /**
  * Home if the household has one set (its position from the relay), otherwise where the device is

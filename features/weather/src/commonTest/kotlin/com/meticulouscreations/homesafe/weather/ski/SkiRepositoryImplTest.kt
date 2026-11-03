@@ -860,6 +860,23 @@ class SkiRepositoryImplTest {
     }
 
     @Test
+    fun snowFromBeforeAnOutageIsntTakenForTodays() = runTest {
+        val at = Stations { Answer(snowAnswer(10, 10, 10, 10, null, null, null, null, null, null, 0)) }
+        assertEquals(0.0, at.web.repository.measuredSnow(kirkwood, kirkwoodFacts)?.depthCm)
+    }
+
+    @Test
+    fun noReadingIsAnAnswerKeptAsLongAsAReading() = runTest {
+        val at = Stations { Answer("[]") }
+        assertNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+        assertNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+        assertEquals(1, at.reads.size)
+        at.web.clock.seconds += 3_700
+        assertNull(at.web.repository.measuredSnow(kirkwood, kirkwoodFacts))
+        assertEquals(2, at.reads.size)
+    }
+
+    @Test
     fun aStationThatHasGoneQuietSaysNothing() = runTest {
         val at = Stations { Answer(snowAnswer(10)) }
         at.web.clock.seconds = readingAt + 3 * 86_400
