@@ -691,9 +691,9 @@ internal fun RouteMap(route: List<RoutePoint>, tiles: MapTileSource, modifier: M
     val ends = remember(route) { listOf(MapPin(ROUTE_START, route.first().latitude, route.first().longitude), MapPin(ROUTE_FINISH, route.last().latitude, route.last().longitude)) }
     // Edged in black, to stand out from a light map's roads as well as a dark one's.
     val lines = remember(places, colors.run) { listOf(MapLine(places, RouteEdge, 7.dp), MapLine(places, colors.run.first, 4.dp)) }
-    Box(modifier.clip(RoundedCornerShape(14.dp)).semantics { contentDescription = described }) {
+    Box(modifier.clip(RoundedCornerShape(14.dp)).testTag("fitness_route_map").semantics { contentDescription = described }) {
         PinMap(ends, tiles, Modifier.fillMaxSize(), animated = false, lines = lines, fit = places, margin = 20.dp, interactive = interactive) { end ->
-            Canvas(Modifier.size(16.dp)) {
+            Canvas(Modifier.size(16.dp).testTag("fitness_route_${end.key}")) {
                 if (end.key == ROUTE_START) {
                     drawCircle(RouteEdge, 6.5.dp.toPx())
                     drawCircle(colors.run.second, 5.5.dp.toPx(), style = Stroke(2.5.dp.toPx()))
