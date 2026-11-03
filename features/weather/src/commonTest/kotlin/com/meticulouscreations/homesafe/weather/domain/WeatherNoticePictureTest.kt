@@ -16,6 +16,7 @@ import homesafe.shared.generated.resources.weather_notice_fact_aqi
 import homesafe.shared.generated.resources.weather_notice_fact_uv
 import homesafe.shared.generated.resources.weather_notice_heavy_at_times
 import homesafe.shared.generated.resources.weather_notice_sample_label
+import homesafe.shared.generated.resources.weather_notice_soon_lasting
 import homesafe.shared.generated.resources.weather_notice_title_soon_rain
 import homesafe.shared.generated.resources.weather_now
 import homesafe.shared.generated.resources.weather_outlook_from_to
@@ -271,6 +272,12 @@ class WeatherNoticePictureTest {
 
     // ---- A sample, asked for from Settings ----------------------------------------------------
 
+    /** What the made-up sample shower comes to: an hour and a quarter, and 3.6 mm. */
+    private fun sampleShowerSaid() = UiText.of(Res.string.weather_notice_soon_lasting, UiText.of(Res.string.weather_minutes_short, 75), WeatherFormat.precipitation(3.6, metric))
+
+    /** A sample's clause on how long and how much: after "Sample", before when it is heaviest. */
+    private fun showerSaid(notice: WeatherNotice): UiText = ((notice.body as UiText.Joined).parts[1] as UiText.Joined).parts.first()
+
     @Test
     fun aSampleIsRainOnTheWayEvenOnADryDay() {
         val now = at(0, 15)
@@ -286,6 +293,15 @@ class WeatherNoticePictureTest {
         assertEquals(now + 600, notice.expiresEpochSeconds, "for looking at now")
         assertNull(notice.reminderEpochSeconds, "no reminder to set for a shower that isn't coming")
         assertFalse(notice.urgent)
+        assertEquals(sampleShowerSaid(), showerSaid(notice), "how long and how much: its own, seen to the end")
+    }
+
+    @Test
+    fun aMadeUpSampleShowerDoesNotBorrowTheHoursRain() {
+        val now = at(0, 15)
+        val wetHours = WeatherData.calmHours { h -> if (h.epochSeconds in at(0, 15)..at(0, 20)) h.copy(precipitationMm = 4.0, weatherCode = 63, precipitationProbability = 90) else h }
+        val notice = assertNotNull(WeatherNoticePlanner.sample(report(now, hourly = wetHours), null, metric, now))
+        assertEquals(sampleShowerSaid(), showerSaid(notice), "the made-up shower's own length and amount, not the wet afternoon's")
     }
 
     @Test

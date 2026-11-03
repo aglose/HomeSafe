@@ -321,7 +321,7 @@ object WeatherNoticePlanner {
      * A notification to look at, asked for from Settings: rain on the way, as it would arrive,
      * with everything a real one carries (its picture and chart, the place, coming up over the
      * screen, a tap that opens Today). The shower is the forecast's own when one is coming, and
-     * otherwise one made up from now: half an hour off, for an hour and a half, and said to be a
+     * otherwise one made up from now: half an hour off, for an hour and a quarter, and said to be a
      * sample. It is no part of [plan]: nothing
      * remembers it was sent, it has no reminder to set, and it is gone in ten minutes.
      */
@@ -489,7 +489,9 @@ object WeatherNoticePlanner {
         val amount = amount(spans, units).second
         val timing = WeatherStory.spanTiming(spans, from, to, today, report::offsetAt)
         val whole = if (today) TODAY_TITLES else TOMORROW_TITLES
-        val titles = if (timing in WHOLE_DAY_TIMINGS) whole else partOfDay(report.localHour(maxOf(spans.first().startEpochSeconds, from)), today)
+        // Rain one part of the day and storms another is the day's as a whole: the weather named is the worst, not the first.
+        val mixed = spans.map { it.family }.distinct().size > 1
+        val titles = if (mixed || timing in WHOLE_DAY_TIMINGS) whole else partOfDay(report.localHour(maxOf(spans.first().startEpochSeconds, from)), today)
         return Item(
             title = titles[family] ?: whole.getValue(Precipitation.RAIN),
             text = UiText.of(Res.string.weather_notice_outlook_wet, timing, amount),
@@ -740,8 +742,12 @@ object WeatherNoticePlanner {
     /** The sample's key: one sample replaces the last. */
     const val SAMPLE_KEY = "sample"
 
-    /** The made-up sample shower, a quarter-hour at a time from the present: dry for half an hour, then building and easing off over an hour and a half. */
-    private val SAMPLE_SHOWER_MM = listOf(0.0, 0.0, 0.3, 0.6, 1.2, 1.0, 0.6, 0.3, 0.0, 0.0)
+    /**
+     * The made-up sample shower, a quarter-hour at a time from the present: dry for half an hour,
+     * then building and easing off over an hour and a quarter. It ends inside the two hours the
+     * quarter-hours are read for, so its own end and amount are what it says, never the hours'.
+     */
+    private val SAMPLE_SHOWER_MM = listOf(0.0, 0.0, 0.4, 0.8, 1.2, 0.8, 0.4, 0.0, 0.0)
 
     /** A sample is for looking at now. */
     private const val SAMPLE_SECONDS = 10 * 60L

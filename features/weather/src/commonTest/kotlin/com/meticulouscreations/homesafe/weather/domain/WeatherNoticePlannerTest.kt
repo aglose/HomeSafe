@@ -40,6 +40,7 @@ import homesafe.shared.generated.resources.weather_notice_title_snow_this_aftern
 import homesafe.shared.generated.resources.weather_notice_title_snow_today
 import homesafe.shared.generated.resources.weather_notice_title_soon_rain
 import homesafe.shared.generated.resources.weather_notice_title_soon_snow
+import homesafe.shared.generated.resources.weather_notice_title_storm_today
 import homesafe.shared.generated.resources.weather_notice_title_uv
 import homesafe.shared.generated.resources.weather_notice_title_warmer_tomorrow
 import homesafe.shared.generated.resources.weather_notice_title_wind
@@ -420,6 +421,19 @@ class WeatherNoticePlannerTest {
         val now = at(0, 6, 15)
         val wet = todayHours { h -> if (h.epochSeconds >= at(0, 6)) h.copy(precipitationMm = 1.0, weatherCode = 61, precipitationProbability = 90) else h }
         assertEquals(UiText.of(Res.string.weather_notice_title_rain_today), plan(now, report(now, hourly = wet)).single().title)
+    }
+
+    @Test
+    fun rainOneTimeAndStormsAnotherIsTheDaysAsAWhole() {
+        val both = todayHours { h ->
+            when (h.epochSeconds) {
+                at(0, 9), at(0, 10) -> h.copy(precipitationMm = 1.0, weatherCode = 61, precipitationProbability = 90)
+                at(0, 14), at(0, 15), at(0, 16) -> h.copy(precipitationMm = 2.0, weatherCode = 95, precipitationProbability = 90)
+                else -> h
+            }
+        }
+        // Not "Storms this morning": the storms come in the afternoon.
+        assertEquals(UiText.of(Res.string.weather_notice_title_storm_today), plan(morning, report(morning, hourly = both)).single().title)
     }
 
     @Test

@@ -283,7 +283,7 @@ days by what it was about (this warning, this morning, this shower), which is wh
 
 **Send a sample**, in Weather's Settings, sends rain on the way as it would arrive, whatever the
 hour or the switches: the forecast's own shower when one is coming, and otherwise one made up from
-now (half an hour off, for an hour and a half), with "Sample" leading its text and no reminder to set.
+now (half an hour off, for an hour and a quarter), with "Sample" leading its text and no reminder to set.
 
 They are for where the phone is; with no position to go on at all, for the first city on the list.
 Nothing is fetched or marked as sent while the OS has notifications switched off for the app, and
