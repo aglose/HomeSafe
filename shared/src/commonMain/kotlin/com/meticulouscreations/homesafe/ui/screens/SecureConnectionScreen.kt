@@ -57,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -138,6 +139,23 @@ const val SIGN_IN_USERNAME_TEST_TAG = "sign_in_username"
 const val SIGN_IN_PASSWORD_TEST_TAG = "sign_in_password"
 const val SIGN_IN_CONNECT_TEST_TAG = "sign_in_connect"
 
+/**
+ * The sign-in form's server address: the most recent connection's ([stored]) until someone types
+ * or fills one in, then what they entered, whatever the stored connection does after that. The
+ * stored record loads from the database after the form is up, so it can arrive after the typing
+ * has started; seeding the field again then would put the old address back over the new one.
+ */
+@Stable
+internal class ServerUrlField(private val stored: () -> String?) {
+    private var entered by mutableStateOf<String?>(null)
+
+    val value: String get() = entered ?: stored().orEmpty()
+
+    fun enter(url: String) {
+        entered = url
+    }
+}
+
 /** The button under the form that opens the apps' drawer, which needs no sign-in. */
 const val SIGN_IN_APPS_TEST_TAG = "sign_in_apps"
 
@@ -158,11 +176,10 @@ fun SecureConnectionScreen(
     val mostRecentConnection by viewModel.mostRecentConnection.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val hasSavedBiometricCredentials by viewModel.hasSavedBiometricCredentials.collectAsStateWithLifecycle()
-    var serverUrl by remember(mostRecentConnection) {
-        // Empty on a first sign-in, with "Enter Server URL" showing: an example address in the
-        // field reads as the real one, and signing in to it only fails on a host that isn't there.
-        mutableStateOf(mostRecentConnection?.serverUrl.orEmpty())
-    }
+    // Empty on a first sign-in, with "Enter Server URL" showing: an example address in the field
+    // reads as the real one, and signing in to it only fails on a host that isn't there.
+    val serverUrlField = remember { ServerUrlField { mostRecentConnection?.serverUrl } }
+    val serverUrl = serverUrlField.value
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var biometricSaveOffer by remember { mutableStateOf<SavedCredentials?>(null) }
@@ -316,7 +333,7 @@ fun SecureConnectionScreen(
                             )
                             ConnectionTextField(
                                 value = serverUrl,
-                                onValueChange = { serverUrl = it },
+                                onValueChange = serverUrlField::enter,
                                 placeholder = stringResource(Res.string.connection_server_url_placeholder),
                                 leadingIcon = Icons.Filled.Dns,
                                 extraColors = extraColors,
@@ -374,7 +391,7 @@ fun SecureConnectionScreen(
                             TextButton(
                                 onClick = {
                                     if (debugAutofillCredentials.serverUrl.isNotBlank()) {
-                                        serverUrl = debugAutofillCredentials.serverUrl
+                                        serverUrlField.enter(debugAutofillCredentials.serverUrl)
                                     }
                                     username = debugAutofillCredentials.username
                                     password = debugAutofillCredentials.password
