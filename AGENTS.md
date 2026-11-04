@@ -34,12 +34,14 @@ standard adb device, and runs a device-test class in seconds. The `apksim` skill
 ```bash
 brew tap aglose/apksim && brew install apksim
 apksim --control auto --adb auto --no-network androidApp/build/outputs/apk/debug/androidApp-debug.apk
-adb connect localhost:$(cat ~/.apksim/tmp/*/adb.port)   # then adb shell input/screencap/logcat, adb shell apksim nodes
+adb connect localhost:PORT     # PORT from that instance's ~/.apksim/tmp/<pid>/adb.port; then adb shell input/screencap/logcat, adb shell apksim nodes
+./gradlew :fake-frigate:run --args="--port 8971 --host ::1 --advertise localhost"   # sign in at http://localhost:8971
 apksim --instrument X-androidTest.apk -e class a.B#test X-androidTest.apk   # one device test, ~4 s
 ```
 
-Sign in only to the fake Frigate (`./gradlew :fake-frigate:run`), never the real server; keep
-`--no-network` on so the debug build's compiled-in LAN address can't reach it. The tests run
+Sign in only to the fake Frigate (`admin` / `correct-horse`), never the real server; keep
+`--no-network` on so the debug build's compiled-in LAN address can't reach it. Under it the app
+reaches `localhost` (`::1`) but not `127.0.0.1`, hence the fake's `::1` bind. The tests run
 Robolectric-style on API 36 with a simulated clock: keep the emulator for `startup-perf`, and use
 `scripts/preview` for preview-level checks. CI runs the same test APKs on apksim's Linux image in
 the `apksim` workflow, beside the emulator jobs.
