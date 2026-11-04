@@ -62,9 +62,11 @@ jobs:
       - name: Compare
         id: compare
         run: |
-          set -o pipefail
-          scripts/ci/compare-journeys.py results/emulator results/apksim | tee report.md
+          status=0
+          scripts/ci/compare-journeys.py results/emulator results/apksim > report.md || status=$?
+          cat report.md
           cat report.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - name: Report in an issue
         # Only the scheduled run files it: a run by hand reports in its summary alone.
         if: failure() && steps.compare.outcome == 'failure' && github.event_name == 'schedule'

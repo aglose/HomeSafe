@@ -125,6 +125,7 @@ for journey in ${JOURNEYS[@]}; do
   if [ -n "$APKSIM" ]; then
     if ! start_apksim "$name"; then
       echo "FAIL  $name (apksim didn't start)"
+      printf '%s\tfail\t0\t%s\t0\n' "$name" "$(grep -c '<action>' "$run")" >> "$OUT/summary.tsv"
       failed=1
       stop_apksim
       continue

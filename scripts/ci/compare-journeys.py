@@ -15,7 +15,7 @@ import os, sys
 
 
 def read(folder):
-    """{journey: (outcome, passed, expected, seconds)}, or None when the run left no summary."""
+    """{journey: (outcome, passed, expected, seconds)}, or None when the run left no journeys."""
     path = os.path.join(folder, "summary.tsv")
     if not os.path.exists(path):
         return None
@@ -26,7 +26,7 @@ def read(folder):
             if len(parts) == 5:
                 name, outcome, passed, expected, seconds = parts
                 rows[name] = (outcome, passed, expected, int(seconds))
-    return rows
+    return rows or None
 
 
 def cell(row):
