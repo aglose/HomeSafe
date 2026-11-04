@@ -88,9 +88,13 @@ adb shell apksim quit
   `notifications [open N|last|clear]`, `push key=value…` (an FCM message), `location LAT LNG`,
   `biometrics enroll|match|nomatch`, `animscale 10|1|0`, `a11y` (unlabelled controls, small touch
   targets), `debug layout on`, `shot FILE`. The full list is in apksim's README (beside the launcher) and its AGENTS.md.
-- Not supported: `pm clear`, `adb install`, `am instrument`, UiAutomation shell commands. The
-  Android CLI's `android screen capture` works; `android layout` does not (it installs its own
-  APK), so the CLI journeys in `androidApp/src/journeysTest` still need an emulator.
+- From 0.5.0, `adb install` takes an instrumentation-only APK and `am instrument -w PKG/.Class &`
+  runs it in the instance, so the Android CLI works (`android layout`, `input`, `screen capture`).
+  Not supported: installing another app (one app per instance), `pm clear` (see "App data"), and
+  running test APKs over adb (use `--instrument`). Back on the app's last screen quits the
+  instance, and there is no soft keyboard unless you pass `--soft-keyboard`, so a Back meant to
+  hide the keyboard quits the app. The CLI journeys in `androidApp/src/journeysTest` still run on
+  an emulator in CI.
 
 ## App data
 
