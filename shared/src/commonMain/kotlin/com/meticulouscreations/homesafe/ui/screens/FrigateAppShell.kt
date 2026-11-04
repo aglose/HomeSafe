@@ -121,6 +121,7 @@ import com.meticulouscreations.homesafe.ui.WithTooltip
 import com.meticulouscreations.homesafe.ui.assistant.AssistantScreenContext
 import com.meticulouscreations.homesafe.ui.assistant.LocalAssistant
 import com.meticulouscreations.homesafe.ui.assistant.assistantTrigger
+import com.meticulouscreations.homesafe.ui.components.LocalPictureInPictureAllowed
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.handCursor
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
@@ -945,8 +946,15 @@ internal fun ShellScaffold(
             // Ends at the keyboard while it is up, so the scrolling page beneath brings the field
             // being typed in up above it. The bars stay where they are, under the keyboard.
             Box(Modifier.fillMaxSize().padding(start = railClearance).imePadding()) {
-                // Back is the overlay's while one is up, even where the shell shows through it.
-                if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { BackScope(enabled = !contentObscured) { content() } }
+                // Back is the overlay's while one is up, even where the shell shows through it, and
+                // so is leaving the app: a camera under the drawer doesn't float into the mini player.
+                if (!contentCovered) {
+                    saveableState.SaveableStateProvider("shell-content") {
+                        CompositionLocalProvider(LocalPictureInPictureAllowed provides !contentObscured) {
+                            BackScope(enabled = !contentObscured) { content() }
+                        }
+                    }
+                }
             }
 
             // Fades over the nested screen's own header, which is the same height in the same

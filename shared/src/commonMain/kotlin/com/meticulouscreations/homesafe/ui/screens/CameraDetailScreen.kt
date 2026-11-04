@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.SkipNext
@@ -110,7 +111,9 @@ import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
 import com.meticulouscreations.homesafe.ui.components.KeepScreenOn
+import com.meticulouscreations.homesafe.ui.components.LocalPictureInPicture
 import com.meticulouscreations.homesafe.ui.components.MeasuredVideoShapes
+import com.meticulouscreations.homesafe.ui.components.PictureInPicture
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
@@ -124,6 +127,7 @@ import com.meticulouscreations.homesafe.ui.components.isOnItsSide
 import com.meticulouscreations.homesafe.ui.components.pictureInBox
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
+import com.meticulouscreations.homesafe.ui.components.rememberPictureInPicture
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
 import com.meticulouscreations.homesafe.ui.components.turned
 import com.meticulouscreations.homesafe.ui.components.zoomTapGestures
@@ -155,6 +159,7 @@ import homesafe.shared.generated.resources.camera_menu_tag_cars
 import homesafe.shared.generated.resources.camera_moment_clip_length
 import homesafe.shared.generated.resources.camera_next_detection
 import homesafe.shared.generated.resources.camera_no_recordings
+import homesafe.shared.generated.resources.camera_picture_in_picture
 import homesafe.shared.generated.resources.camera_play
 import homesafe.shared.generated.resources.camera_previous_detection
 import homesafe.shared.generated.resources.camera_recent_activity
@@ -197,6 +202,10 @@ import kotlin.math.roundToInt
  *
  * A tablet on its side keeps the page, and has the room to lay it out across rather than down: the
  * video and its timeline at the start, and the prompts and recent activity beside them.
+ *
+ * On Android, leaving the app from here (Home, the recents) floats the video in the system's mini
+ * player, picture-in-picture, as does the menu's "Picture-in-picture": the window shrinks to the
+ * player, which is laid out full screen with none of its chrome (see [LocalPictureInPicture]).
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -238,6 +247,9 @@ fun CameraDetailScreen(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val fullScreen = isCompactLandscape()
+    // Anything to watch can float: the card's stream until the view model's, then the camera's own.
+    val pictureInPicture = rememberPictureInPicture(enabled = cameraAvailable || warmStreamUrl != null, aspectRatio = VIDEO_ASPECT)
+    val onPictureInPicture = pictureInPicture.takeIf { it.available }?.let { it::enter }
     // Hidden from the moment this screen is the one arriving (or being returned to, from the clip
     // editor), and back as it starts to leave, so the camera list isn't revealed under hidden bars.
     if (fullScreen && animatedVisibilityScope.transition.targetState == EnterExitState.Visible) ImmersiveSystemBars()
@@ -377,6 +389,7 @@ fun CameraDetailScreen(
                     onTagCars = onTagCars,
                     statsShown = statsShown,
                     onToggleStats = viewModel::toggleStats,
+                    onPictureInPicture = onPictureInPicture,
                 )
             }
         }
@@ -401,6 +414,7 @@ fun CameraDetailScreen(
                     // The zoomed player fills the viewport only from the top of the scroll.
                     onZoomStarted = { scope.launch { scrollState.animateScrollTo(0) } },
                     fullScreen = fullScreen,
+                    pictureInPicture = pictureInPicture,
                     hasQualityChoice = hasQualityChoice,
                     hint = hintText.takeIf { hint != null },
                     showHint = showHint,
@@ -413,6 +427,7 @@ fun CameraDetailScreen(
                             onTagCars = onTagCars,
                             statsShown = statsShown,
                             onToggleStats = viewModel::toggleStats,
+                            onPictureInPicture = onPictureInPicture,
                             tint = Color.White,
                             onOpenChange = onOpenChange,
                         )
@@ -534,6 +549,10 @@ internal fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
  * actions were: [hasQualityChoice], the line of feedback they report into ([hint], null when there
  * is nothing to say; [showHint] to say it), the ways out — [onBack], and [onClip] into the editor —
  * and the header's [overflowMenu], which tells the chrome when it is open.
+ *
+ * In the mini player ([LocalPictureInPicture]) it is full screen with nothing over the picture
+ * but the spinner: the window is too small for the chrome, and takes no touches to bring it up.
+ * [pictureInPicture] is told where the picture's box is, for the mini player to grow from.
  */
 @Composable
 private fun PlayerSurface(
@@ -547,6 +566,7 @@ private fun PlayerSurface(
     takeover: Animatable<Float, *>,
     onZoomStarted: () -> Unit,
     fullScreen: Boolean,
+    pictureInPicture: PictureInPicture,
     hasQualityChoice: Boolean,
     hint: StringResource?,
     showHint: (StringResource) -> Unit,
@@ -556,6 +576,7 @@ private fun PlayerSurface(
     modifier: Modifier = Modifier,
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
+    val inPictureInPicture = LocalPictureInPicture.current
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val statsShown by viewModel.statsShown.collectAsStateWithLifecycle()
     val turnDegrees by viewModel.turnDegrees.collectAsStateWithLifecycle()
@@ -692,6 +713,8 @@ private fun PlayerSurface(
                 modifier = Modifier
                     .fitVideo()
                     .align(Alignment.Center)
+                    // The box at rest, before the zoom scales what is in it.
+                    .then(pictureInPicture.sourceModifier)
                     .pinchZoomContent(zoom),
             ) {
                 // Until the view model has chosen a stream (its first camera read is still in
@@ -814,6 +837,9 @@ private fun PlayerSurface(
             SkipBadge(skip = skip, modifier = Modifier.matchParentSize())
 
             when {
+                // Only whether it is still coming fits in the mini player.
+                inPictureInPicture && !(playback.isLoadingPlaylist || playback.isBuffering) -> Unit
+
                 playback.isLoadingPlaylist || playback.isBuffering -> CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center).size(40.dp),
                     color = MaterialTheme.colorScheme.primary,
@@ -843,7 +869,7 @@ private fun PlayerSurface(
             if (fullScreen) {
                 // matchParentSize, not fillMaxSize: AnimatedVisibility measures to its content.
                 AnimatedVisibility(
-                    visible = chromeShown,
+                    visible = chromeShown && !inPictureInPicture,
                     modifier = Modifier.matchParentSize(),
                     enter = fadeIn(tween(FULL_SCREEN_CHROME_FADE_MS)),
                     exit = fadeOut(tween(FULL_SCREEN_CHROME_FADE_MS)),
@@ -864,13 +890,15 @@ private fun PlayerSurface(
                 }
                 // Over the chrome, so its close button is always there to press, and down the
                 // side, between the chrome's top row and its timeline.
-                PlayerStreamStats(
-                    cameraName = cameraName,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                        .padding(start = 16.dp),
-                )
+                if (!inPictureInPicture) {
+                    PlayerStreamStats(
+                        cameraName = cameraName,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                            .padding(start = 16.dp),
+                    )
+                }
                 return@Box
             }
 
@@ -1257,8 +1285,9 @@ internal fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit
  * This camera's less-used settings, kept out of the page itself: the polygon editor — what
  * Google Home calls activity zones and Frigate calls masks — and tagging the cars in view by
  * hand, reached from the header rather than cards competing with the timeline and recent
- * activity for the eye. Last, the switch for the "stats for nerds" panel over the video
- * ([statsShown], [onToggleStats]), where every video player keeps it.
+ * activity for the eye. Then the switch for the "stats for nerds" panel over the video
+ * ([statsShown], [onToggleStats]), where every video player keeps it, and last, where the platform
+ * has one, the way into the mini player ([onPictureInPicture]; null hides it).
  *
  * The full-screen player's chrome carries the same menu, in its own [tint], and is told through
  * [onOpenChange] while the menu is open so it doesn't fade away from under it.
@@ -1269,6 +1298,7 @@ private fun CameraOverflowMenu(
     onTagCars: () -> Unit,
     statsShown: Boolean,
     onToggleStats: () -> Unit,
+    onPictureInPicture: (() -> Unit)? = null,
     tint: Color = MaterialTheme.colorScheme.primary,
     onOpenChange: (Boolean) -> Unit = {},
 ) {
@@ -1322,6 +1352,16 @@ private fun CameraOverflowMenu(
                     onToggleStats()
                 },
             )
+            if (onPictureInPicture != null) {
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(Res.string.camera_picture_in_picture), style = MaterialTheme.typography.labelLarge) },
+                    leadingIcon = { Icon(imageVector = Icons.Filled.PictureInPictureAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    onClick = {
+                        setExpanded(false)
+                        onPictureInPicture()
+                    },
+                )
+            }
         }
     }
 }

@@ -451,6 +451,14 @@ public fun com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase()
   params:
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.components.rememberPictureInPicture(enabled: kotlin.Boolean, aspectRatio: kotlin.Float): com.meticulouscreations.homesafe.ui.components.PictureInPicture
+  skippable: false
+  restartable: false
+  params:
+    - enabled: STABLE (primitive type)
+    - aspectRatio: STABLE (primitive type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState(maxScale: kotlin.Float): com.meticulouscreations.homesafe.ui.components.PinchZoomState
   skippable: false
   restartable: false
@@ -843,7 +851,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.CameraFramingScreen(camer
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, statsShown: kotlin.Boolean, onToggleStats: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, onOpenChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, statsShown: kotlin.Boolean, onToggleStats: kotlin.Function0<kotlin.Unit>, onPictureInPicture: kotlin.Function0<kotlin.Unit>?, tint: androidx.compose.ui.graphics.Color, onOpenChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -851,6 +859,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEdi
     - onTagCars: STABLE (function type)
     - statsShown: STABLE (primitive type)
     - onToggleStats: STABLE (function type)
+    - onPictureInPicture: STABLE (function type)
     - tint: STABLE (marked @Stable or @Immutable)
     - onOpenChange: STABLE (function type)
 
@@ -2140,6 +2149,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.PersonGallery(person: co
     - onDelete: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.PictureInPictureButton(onClick: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onClick: STABLE (function type)
+    - tint: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PillIcon(icon: androidx.compose.ui.graphics.vector.ImageVector): kotlin.Unit
   skippable: true
   restartable: true
@@ -2219,7 +2236,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.PlayerStreamStats(camer
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.PlayerSurface(cameraAvailable: kotlin.Boolean, cameraName: kotlin.String, playerKey: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, viewportHeight: androidx.compose.runtime.IntState, bottomInsetPx: kotlin.Int, takeover: androidx.compose.animation.core.Animatable<kotlin.Float, *>, onZoomStarted: kotlin.Function0<kotlin.Unit>, fullScreen: kotlin.Boolean, hasQualityChoice: kotlin.Boolean, hint: org.jetbrains.compose.resources.StringResource?, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onBack: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, overflowMenu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.PlayerSurface(cameraAvailable: kotlin.Boolean, cameraName: kotlin.String, playerKey: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, viewportHeight: androidx.compose.runtime.IntState, bottomInsetPx: kotlin.Int, takeover: androidx.compose.animation.core.Animatable<kotlin.Float, *>, onZoomStarted: kotlin.Function0<kotlin.Unit>, fullScreen: kotlin.Boolean, pictureInPicture: com.meticulouscreations.homesafe.ui.components.PictureInPicture, hasQualityChoice: kotlin.Boolean, hint: org.jetbrains.compose.resources.StringResource?, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onBack: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, overflowMenu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2233,6 +2250,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.PlayerSurface(cameraAvai
     - takeover: UNSTABLE (has mutable properties or unstable members)
     - onZoomStarted: STABLE (function type)
     - fullScreen: STABLE (primitive type)
+    - pictureInPicture: STABLE (marked @Stable or @Immutable)
     - hasQualityChoice: STABLE (primitive type)
     - hint: STABLE (marked @Stable or @Immutable)
     - showHint: STABLE (function type)
