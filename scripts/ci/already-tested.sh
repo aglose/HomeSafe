@@ -45,7 +45,7 @@ trees=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$head/statuses?per_p
     run_everything "Couldn't read the statuses of #$pr's head ${head:0:7}." "$pr"
 
 if grep -qxF "tree $tree" <<< "$trees"; then
-    echo "::notice::#$pr passed ci-green on exactly this tree (${tree:0:7}), so the emulator and iOS jobs are skipped on main."
+    echo "::notice::#$pr passed ci-green on exactly this tree (${tree:0:7}), so the device-test and iOS jobs are skipped on main."
     decide true "$pr"
 fi
 if [ -z "$trees" ]; then

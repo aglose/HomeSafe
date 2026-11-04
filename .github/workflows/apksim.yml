@@ -1,18 +1,15 @@
-# The same device tests as CI's android-ui job, on apksim (https://github.com/aglose/apksim) instead
-# of an emulator: Android's framework running on the JVM in one Linux container, no KVM, no boot,
-# no installs. It is a workflow of its own, beside CI rather than in it, to measure what it costs
-# and whether it agrees with the emulators: the PR autopilot goes by CI's conclusion, so a slow or
-# red run here never holds a merge up. apksim is pinned to a commit of its main branch
-# (APKSIM_REF); its image trains its startup cache on this app's debug APK.
-name: apksim
+# The device tests on apksim (https://github.com/aglose/apksim) instead of an emulator: Android's
+# framework running on the JVM in one Linux container, no KVM, no boot, no installs. Every module's
+# device tests, the whole-app journeys and the end-to-end tests, the same APKs an emulator installs.
+# CI's android-ui job calls it on every pull request and push to main (it is what ci-green waits
+# for), and the nightly run calls it beside the emulators to check the two still agree
+# (device-tests-nightly.yml). apksim is pinned to a commit of its main branch (APKSIM_REF); its
+# image trains its startup cache on this app's debug APK.
+name: Device tests on apksim
 
 on:
-  pull_request:
+  workflow_call:
   workflow_dispatch:
-
-concurrency:
-  group: apksim-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -60,8 +57,10 @@ jobs:
           cp ../androidApp/build/outputs/apk/debug/androidApp-debug.apk testapks/composeapp/app/build/outputs/apk/debug/app-debug.apk
           scripts/docker-build.sh apksim:ci
 
+      # A failure is run once more in a process of its own; one that passes then is reported as
+      # flaky (a warning and the summary) rather than failing the job. See the script.
       - name: Device tests
-        run: scripts/ci/apksim-device-tests.sh .apksim apksim:ci apksim-results
+        run: scripts/ci/apksim-device-tests.py .apksim apksim:ci apksim-results
 
       - uses: actions/upload-artifact@v7
         if: always()

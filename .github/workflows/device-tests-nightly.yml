@@ -1,0 +1,79 @@
+# Pull requests run the device tests on apksim alone (CI's android-ui job). Once a night the
+# emulators run them too, on main as it is, and apksim runs the same commit beside them, and
+# scripts/ci/compare-device-tests.py lists where the two differ: a test the emulator failed
+# (apksim may have let a bug through), one only apksim failed, one that was flaky on apksim, or
+# one that ran on one side only. Anything listed turns the run red and goes in an issue ("Nightly
+# device tests: …"), a comment on it while it stays open, so the difference gets fixed, in the app
+# or in apksim. Run it by hand from the Actions tab to check a change to either (that run reports in
+# its summary and files no issue).
+name: Nightly device tests
+
+on:
+  schedule:
+    - cron: '23 10 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: device-tests-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: Emulators
+    uses: ./.github/workflows/emulator-device-tests.yml
+
+  apksim:
+    name: apksim
+    uses: ./.github/workflows/apksim.yml
+
+  compare:
+    name: Emulators vs apksim
+    needs: [emulator, apksim]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci/compare-device-tests.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: android-ui-reports-*
+          path: results/emulator
+      - uses: actions/download-artifact@v7
+        with:
+          name: apksim-results
+          path: results/apksim
+        continue-on-error: true
+      - name: Compare
+        id: compare
+        run: |
+          set -o pipefail
+          scripts/ci/compare-device-tests.py results/emulator results/apksim | tee report.md
+      - name: Report in an issue
+        # Only the scheduled run files it: a run by hand reports in its summary alone.
+        if: failure() && steps.compare.outcome == 'failure' && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: 'Nightly device tests: the emulators and apksim disagree'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "From the [nightly run]($RUN_URL) on \`${GITHUB_SHA::8}\` (emulator jobs: ${{ needs.emulator.result }}, apksim: ${{ needs.apksim.result }})."
+            echo
+            cat report.md
+          } > body.md
+          issue=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq "map(select(.title == \"$TITLE\")) | first | .number // empty")
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file body.md
+          else
+            gh issue create --title "$TITLE" --body-file body.md
+          fi

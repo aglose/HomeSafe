@@ -117,7 +117,8 @@ apksim --instrument $A -e class com.meticulouscreations.homesafe.uitest.MomentsF
   APKs: `apksim --instrument androidApp-debug-androidTest.apk androidApp-debug.apk`.
 - A whole suite with JUnit XML, one process per test as the Orchestrator does:
   `python3 "$APKSIM_SCRIPTS/instrument.py" APP TEST --isolate -j 4 --xml out.xml`.
-  `scripts/ci/apksim-device-tests.sh` runs every suite the way CI does, in apksim's Linux image.
+  `scripts/ci/apksim-device-tests.py` runs every suite the way CI does, in apksim's Linux image
+  (`APKSIM_LAUNCH=apksim scripts/ci/apksim-device-tests.py "$APKSIM_SCRIPTS/.." - OUT` on the Mac).
 - The whole-app journeys (`-e package com.meticulouscreations.homesafe.integration` of `:app`, 76
   tests, ~2.5 min) have a known flake when all of them run in one process on the Mac: one to four
   time out waiting for the Tailscale badge, with "Failed to connect to /127.0.0.1" in the log.
@@ -126,7 +127,7 @@ apksim --instrument $A -e class com.meticulouscreations.homesafe.uitest.MomentsF
 ## Limits
 
 - Tests run Robolectric-style on API 36 with a simulated clock, whatever the app targets. A pass
-  here is strong evidence, not proof: CI's emulator jobs still run the same APKs.
+  here is what CI gates pull requests on; the nightly emulator run checks it against API 34.
 - Timing is not a phone's. Keep the emulator for `startup-perf` and anything that measures a
   real device, and the user's Pixel only with their say-so.
 - For how one composable looks in one state, `scripts/preview` (the `ui-previews` skill) is faster
