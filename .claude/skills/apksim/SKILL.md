@@ -14,6 +14,7 @@ instead of an emulator on this Mac. It is not a phone: see "Limits" before trust
 ```bash
 brew tap aglose/apksim
 brew install apksim        # Homebrew may first ask you to trust the tap: that is the user's call, ask them
+apksim --version           # 0.4.0 or later (CI pins the same release); else `brew update && brew upgrade --cask apksim`
 apksim --train             # optional: builds the startup cache now (otherwise in the background on first launch)
 ```
 
@@ -51,10 +52,10 @@ Then sign in to `http://localhost:8971` as `admin` / `correct-horse` (`viewer` /
 read-only; `--quiet` gives cameras with no history). apksim reaches the Mac's own localhost
 directly: there is no `10.0.2.2` (that is the emulator's alias, used by the CLI journeys).
 
-Why `::1` and `localhost`: under `--no-network` the sandbox lets the app connect to `localhost`,
-which Java resolves to `::1`, and refuses `127.0.0.1` ("Operation not permitted"). Without
-`--no-network`, `--host 127.0.0.1 --advertise 127.0.0.1` and `http://127.0.0.1:8971` work too, but
-then the LAN route above is open.
+Why `::1` and `localhost`: apksim before 0.4.0 refused `127.0.0.1` under `--no-network`
+("Operation not permitted") and let `localhost` (`::1`) through, so this works on every version.
+From 0.4.0 the whole loopback is allowed and `127.0.0.1` works too. Leaving `--no-network` off is
+never the answer: then the LAN route above is open.
 
 The household fake has three cameras: Front Door, Driveway, Back Yard. Anything else on Home
 (a "Doorbell", say) is left over in the app's saved data, not the fake: see "App data".
