@@ -75,6 +75,13 @@ def main():
             only = ",".join(f"{c}#{m}" for c, m in failed)
             rerun, more = instrument(f"{name}-rerun", app, test, ["--isolate", "-j", "4", "-e", "class", only])
             seconds += more
+            # A rerun that crashed (instrument.py's "(listing)"/"(run)" entries, or no results at all)
+            # proves nothing: keep its crash as a failure of its own and count no test as flaky.
+            broken = {k: v for k, v in rerun.items() if k[0].startswith("(")}
+            if broken or not rerun:
+                results.update({(f"(rerun) {c}", m): v for (c, m), v in broken.items()}
+                               or {("(rerun)", name): ("failed", f"the rerun gave no results: see {name}-rerun.log")})
+                rerun = {}
         counts = {"passed": 0, "failed": 0, "flaky": 0, "skipped": 0}
         for (c, m), (status, message) in results.items():
             if status == "failed" and rerun.get((c, m), ("failed",))[0] == "passed":
