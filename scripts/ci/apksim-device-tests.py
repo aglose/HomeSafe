@@ -5,7 +5,12 @@ apksim's Linux image. The same APKs an emulator would install, built beforehand 
 
     ./gradlew assembleAndroidDeviceTest :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest
 
-Usage: scripts/ci/apksim-device-tests.py APKSIM_CHECKOUT IMAGE OUT
+Usage: scripts/ci/apksim-device-tests.py IMAGE OUT
+
+IMAGE is apksim's published image (ghcr.io/aglose/apksim:VERSION). Each suite runs in one container
+of it, with the image's own instrument.py; OUT is a folder in the repository, which the container
+sees at /work. APKSIM_INSTRUMENT runs another instrument.py instead, such as an apksim installed on
+the Mac (`APKSIM_INSTRUMENT="python3 $APKSIM_SCRIPTS/instrument.py"`, IMAGE unused).
 
 Each module's test APK instruments itself, so it is passed as both APKs. The whole-app journeys
 run in one process (2-3 minutes; one process per test takes over ten), and the end-to-end tests
@@ -19,7 +24,7 @@ which is why.) A test that fails twice, or a suite that crashes, fails the run.
 Writes to OUT a JUnit XML and a log per suite (and per rerun), results.json (every test's outcome,
 for scripts/ci/compare-device-tests.py), and summary.md, which also goes to the job summary.
 """
-import glob, json, os, subprocess, sys, time
+import glob, json, os, shlex, subprocess, sys, time
 import xml.etree.ElementTree as ET
 
 JOURNEYS = "com.meticulouscreations.homesafe.integration"
@@ -28,15 +33,16 @@ MAX_RERUNS = 10
 
 
 def main():
-    apksim_dir, image, out = sys.argv[1:4]
-    apksim_dir = os.path.abspath(apksim_dir)
-    os.makedirs(out, exist_ok=True)
-    out = os.path.abspath(out)
+    image, out = sys.argv[1:3]
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    # Paths are relative to the repository, which is /work in the container.
+    out = os.path.relpath(os.path.abspath(out), root)
+    if out.startswith(".."):
+        sys.exit(f"OUT must be inside the repository ({root})")
     os.chdir(root)
-    # apksim's runner starts the image once per process, with the repository as its working directory.
-    # APKSIM_LAUNCH runs another apksim instead, such as the Mac's (`APKSIM_LAUNCH=apksim`, IMAGE unused).
-    launch = os.environ.get("APKSIM_LAUNCH") or f"docker run --rm -v {root}:/work {image}"
+    os.makedirs(out, exist_ok=True)
+    runner = shlex.split(os.environ.get("APKSIM_INSTRUMENT") or
+                         f"docker run --rm -v {shlex.quote(root)}:/work --entrypoint instrument.py {shlex.quote(image)}")
 
     suites = []  # (name, app, test, instrument.py arguments)
     apk = "shared/build/outputs/apk/androidTest/shared-androidTest.apk"
@@ -59,8 +65,8 @@ def main():
         if os.path.exists(f"{out}/{name}.xml"):
             os.remove(f"{out}/{name}.xml")
         with open(f"{out}/{name}.log", "w") as log:
-            subprocess.run([sys.executable, f"{apksim_dir}/scripts/instrument.py", "--apksim", launch, app, test,
-                            "--xml", f"{out}/{name}.xml", *args], stdout=log, stderr=subprocess.STDOUT)
+            subprocess.run([*runner, app, test, "--xml", f"{out}/{name}.xml", *args],
+                           stdout=log, stderr=subprocess.STDOUT)
         return read_xml(f"{out}/{name}.xml"), time.time() - start
 
     outcomes = {}  # "class#method" -> passed | failed | flaky | skipped
