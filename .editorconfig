@@ -26,7 +26,7 @@ ktlint_function_naming_ignore_when_annotated_with = Composable
 # public when the feature modules were split out. The desktop's: the sidebar (LocalSidebar,
 # LocalShellSidebarWidth, LocalSidebarApp, LocalAppSections) and the shortcut hints the desktop app
 # and Android's keyboard provide (LocalShortcutKey); see docs/desktop.md.
-compose_allowed_composition_locals = LocalAssistant,LocalCarsPage,LocalCompactLandscape,LocalNativeTabBar,LocalShellApps,LocalTwoPanes,LocalPaneWidth,LocalOpenSettingsPage,LocalBalanceEditor,LocalSidebar,LocalShellSidebarWidth,LocalSidebarApp,LocalAppSections,LocalShortcutKey
+compose_allowed_composition_locals = LocalAssistant,LocalCarsPage,LocalCompactLandscape,LocalNativeTabBar,LocalShellApps,LocalTwoPanes,LocalPaneWidth,LocalOpenSettingsPage,LocalBalanceEditor,LocalSidebar,LocalShellSidebarWidth,LocalSidebarApp,LocalAppSections,LocalShortcutKey,LocalPictureInPicture,LocalPictureInPictureAllowed
 
 # This codebase deliberately puts `=` expression bodies on the following line (see
 # ConnectionRepositoryImpl.kt). The rule wants them inline.

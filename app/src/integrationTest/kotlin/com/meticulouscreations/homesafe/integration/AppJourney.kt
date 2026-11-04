@@ -23,6 +23,7 @@ import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.ui.LocalCompactLandscape
 import com.meticulouscreations.homesafe.ui.LocalSidebar
 import com.meticulouscreations.homesafe.ui.LocalTwoPanes
+import com.meticulouscreations.homesafe.ui.components.LocalPictureInPicture
 import com.meticulouscreations.homesafe.uitest.scrollIntoView
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -81,6 +82,7 @@ private fun runJourney(name: String, state: FakeFrigateState, window: JourneyWin
         val onScreen = mutableStateOf(true)
         // Null leaves the layout to the window the journey runs in, as the app itself does.
         val onItsSide = mutableStateOf<Boolean?>(null)
+        val miniPlayer = mutableStateOf(false)
         var stuck = false
         try {
             mainClock.autoAdvance = false
@@ -88,12 +90,13 @@ private fun runJourney(name: String, state: FakeFrigateState, window: JourneyWin
                 if (onScreen.value) {
                     CompositionLocalProvider(
                         LocalCompactLandscape provides onItsSide.value,
+                        LocalPictureInPicture provides miniPlayer.value,
                         LocalSidebar provides window.sidebar,
                         LocalTwoPanes provides window.twoPanes,
                     ) { App(graph) }
                 }
             }
-            val journey = AppJourney(this, server, graph, name, onItsSide)
+            val journey = AppJourney(this, server, graph, name, onItsSide, miniPlayer)
             try {
                 journey.block()
             } catch (failure: Throwable) {
@@ -198,6 +201,7 @@ internal class AppJourney(
     /** Names this journey's screenshots; see [snapshot]. */
     val name: String = "journey",
     private val onItsSide: MutableState<Boolean?> = mutableStateOf(null),
+    private val miniPlayer: MutableState<Boolean> = mutableStateOf(false),
 ) {
     private var snapshots = 0
 
@@ -216,6 +220,20 @@ internal class AppJourney(
         }
         settle()
         snapshot(if (onItsSide) "turned on its side" else "turned upright")
+    }
+
+    /**
+     * Shrinks the app to Android's floating mini player ([on] true), as leaving it from a camera's
+     * screen does, and grows it back (false). As with [turnPhone] the window keeps its size: the app
+     * is told, as the Activity tells it, that it is the mini player now (see `LocalPictureInPicture`).
+     */
+    fun floatInMiniPlayer(on: Boolean) {
+        ui.runOnUiThread {
+            miniPlayer.value = on
+            Snapshot.sendApplyNotifications()
+        }
+        settle()
+        snapshot(if (on) "in the mini player" else "out of the mini player")
     }
 
     val state: FakeFrigateState get() = server.state

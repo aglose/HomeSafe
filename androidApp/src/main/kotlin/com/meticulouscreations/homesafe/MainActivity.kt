@@ -13,6 +13,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
@@ -37,6 +40,7 @@ import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.tracing.traceSection
 import com.meticulouscreations.homesafe.ui.LocalShortcutKey
 import com.meticulouscreations.homesafe.ui.ShortcutKey
+import com.meticulouscreations.homesafe.ui.components.LocalPictureInPicture
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
@@ -44,6 +48,9 @@ import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 // biometric login. FragmentActivity extends ComponentActivity, so setContent {} still works.
 class MainActivity : FragmentActivity() {
     private lateinit var appGraph: AppGraph
+
+    // Whether the window is the floating mini player a camera's screen handed its video to.
+    private var inPictureInPicture by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // The app is dark-only (see FrigateTheme), so the system bar icons must be light whatever
@@ -63,6 +70,9 @@ class MainActivity : FragmentActivity() {
         // and the moment it named was opened the first time round. (A rotation is not one: see
         // android:configChanges in the manifest. A font-size or language change still is.)
         if (savedInstanceState == null) openMomentFrom(intent)
+
+        inPictureInPicture = isInPictureInPictureMode
+        addOnPictureInPictureModeChangedListener { info -> inPictureInPicture = info.isInPictureInPictureMode }
 
         appGraph = traceSection("createAppGraph") { createAppGraph(platformContext = PlatformContext(this)) }
         // BuildConfig.TEST_USERNAME etc. are always empty in release builds (see
@@ -86,7 +96,10 @@ class MainActivity : FragmentActivity() {
                 val configuration = LocalConfiguration.current
                 val keyboard = configuration.keyboard == Configuration.KEYBOARD_QWERTY &&
                     configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
-                CompositionLocalProvider(LocalShortcutKey provides if (keyboard) ShortcutKey.Control else null) {
+                CompositionLocalProvider(
+                    LocalShortcutKey provides if (keyboard) ShortcutKey.Control else null,
+                    LocalPictureInPicture provides inPictureInPicture,
+                ) {
                     App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
                 }
             }

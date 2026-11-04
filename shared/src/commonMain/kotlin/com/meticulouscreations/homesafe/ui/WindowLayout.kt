@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.ui.components.LocalPictureInPicture
 
 /**
  * Stands in for the window's own shape in [isCompactLandscape]: null, the default, asks the
@@ -17,7 +18,8 @@ import androidx.compose.ui.unit.dp
  * (or upright) whatever size it is actually rendered at.
  *
  * A local because the window's shape is ambient in exactly the way [LocalWindowInfo] is: every
- * screen that asks reads the same answer, and nothing in the app itself ever provides this.
+ * screen that asks reads the same answer, and nothing in the app itself ever provides this. (The
+ * mini player, [LocalPictureInPicture], outranks it.)
  */
 val LocalCompactLandscape = compositionLocalOf<Boolean?> { null }
 
@@ -41,11 +43,13 @@ private val SIDE_BY_SIDE_WIDTH = 600.dp
  * but not wide, and keeps it too.
  *
  * Read from the window rather than a device orientation: a resized desktop window that is short
- * and wide wants the same layout.
+ * and wide wants the same layout. The mini player ([LocalPictureInPicture]) is too small to be
+ * either, and is taken as this: it is a camera's video and nothing else, as on a phone on its side.
  */
 @Composable
 @ReadOnlyComposable
 fun isCompactLandscape(): Boolean {
+    if (LocalPictureInPicture.current) return true
     LocalCompactLandscape.current?.let { return it }
     val size = LocalWindowInfo.current.containerSize
     if (size.width <= size.height) return false

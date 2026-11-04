@@ -150,6 +150,7 @@
     <!-- The menu's switch for the panel below, named as video players name theirs. -->
     <string name="camera_menu_stats_show">Stats for nerds</string>
     <string name="camera_menu_stats_hide">Hide stats for nerds</string>
+    <string name="camera_picture_in_picture">Picture-in-picture</string>
 
     <!-- The "stats for nerds" panel over a camera's live video: what the stream is doing, measured as it plays. -->
     <string name="camera_stats_title">Stats for nerds</string>

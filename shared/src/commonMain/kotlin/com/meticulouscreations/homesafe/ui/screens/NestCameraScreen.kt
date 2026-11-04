@@ -23,8 +23,10 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +59,7 @@ import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
 import com.meticulouscreations.homesafe.ui.components.KeepScreenOn
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
+import com.meticulouscreations.homesafe.ui.components.LocalPictureInPicture
 import com.meticulouscreations.homesafe.ui.components.MeasuredVideoShapes
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
@@ -67,6 +70,7 @@ import com.meticulouscreations.homesafe.ui.components.isOnItsSide
 import com.meticulouscreations.homesafe.ui.components.pictureInBox
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
+import com.meticulouscreations.homesafe.ui.components.rememberPictureInPicture
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
 import com.meticulouscreations.homesafe.ui.components.zoomTapGestures
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
@@ -78,6 +82,7 @@ import homesafe.shared.generated.resources.camera_nest_fit_fill
 import homesafe.shared.generated.resources.camera_nest_fit_whole
 import homesafe.shared.generated.resources.camera_nest_live_only
 import homesafe.shared.generated.resources.camera_nest_talk
+import homesafe.shared.generated.resources.camera_picture_in_picture
 import homesafe.shared.generated.resources.camera_sound_turn_off
 import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
@@ -106,6 +111,9 @@ import kotlin.math.abs
  *
  * Turned on its side the video takes the whole window, with the way back, the speaker and talking
  * over it.
+ *
+ * On Android, leaving the app from here, or the picture-in-picture button, floats the video in the
+ * system's mini player, at the picture's shape: the window is the video, with nothing over it.
  *
  * A Nest camera's picture is whatever shape the model makes it (the doorbell's is tall). Shown
  * whole ([VideoFit.Fit], the default), the video's box here takes the picture's own shape, as
@@ -184,6 +192,17 @@ fun NestCameraScreen(
     val onHoldZoom = remember(haptic) { { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } }
 
     val fullScreen = isCompactLandscape()
+    val inPictureInPicture = LocalPictureInPicture.current
+    // The mini player takes the shape the video's box has here: the picture's own when shown whole.
+    val pictureInPicture = rememberPictureInPicture(
+        enabled = request != null,
+        aspectRatio = if (fit == VideoFit.Fit) measuredAspect ?: VIDEO_ASPECT else VIDEO_ASPECT,
+    )
+    val pictureInPictureButton: (@Composable (Color) -> Unit)? = if (pictureInPicture.available) {
+        { tint -> PictureInPictureButton(onClick = pictureInPicture::enter, tint = tint) }
+    } else {
+        null
+    }
     // Only a picture that isn't its box's shape has anything to fit or fill. Upright the box is
     // 16:9; full screen it is the window, which rarely is, so there the button shows once the
     // shape is known (a saved Fill would otherwise crop a 16:9 camera with no way back).
@@ -214,8 +233,9 @@ fun NestCameraScreen(
     val video = @Composable { modifier: Modifier ->
         Box(
             modifier = with(sharedTransitionScope) {
-                // The video is the one thing that travels between the card and here.
-                modifier.sharedBounds(
+                // The video is the one thing that travels between the card and here, and what the
+                // mini player grows from.
+                modifier.then(pictureInPicture.sourceModifier).sharedBounds(
                     sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(streamName)),
                     animatedVisibilityScope = animatedVisibilityScope,
                     boundsTransform = CameraVideoBoundsTransform,
@@ -257,8 +277,18 @@ fun NestCameraScreen(
             }
             // Over the picture and under the badge: a double tap or a hold zooms in where it lands.
             if (request != null) Box(modifier = Modifier.fillMaxSize().zoomTapGestures(zoom, onTap = onTap, onHoldZoom = onHoldZoom))
-            Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
-                StatusBadge(enabled = true, status = status, textColor = extraColors.textPrimary, pillColor = extraColors.glassFill)
+            // The mini player is too small for the badge, and its window is the picture alone.
+            if (!inPictureInPicture) {
+                Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
+                    StatusBadge(enabled = true, status = status, textColor = extraColors.textPrimary, pillColor = extraColors.glassFill)
+                }
+            } else if (request != null && status != LiveStreamStatus.Live) {
+                // The badge's words are gone, but not the sign that the picture is on its way.
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center).size(40.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 3.dp,
+                )
             }
         }
     }
@@ -272,11 +302,13 @@ fun NestCameraScreen(
                 Modifier.align(Alignment.Center).aspectRatio(boxAspect, matchHeightConstraintsFirst = true)
             }
             video(box)
+            if (inPictureInPicture) return@Box
             Row(modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
                 BackButton(onBack = onBack, tint = Color.White)
             }
             Row(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
                 if (fitMatters) FitButton(fit = fit, onToggle = viewModel::toggleFit, tint = Color.White)
+                pictureInPictureButton?.invoke(Color.White)
                 TalkIconButton(onTalk = viewModel::talkInGoogleHome, tint = Color.White)
                 SoundButton(soundOn = soundOn, onToggle = toggleSound, tint = Color.White)
             }
@@ -304,6 +336,7 @@ fun NestCameraScreen(
                 textAlign = TextAlign.Center,
             )
             if (fitMatters) FitButton(fit = fit, onToggle = viewModel::toggleFit, tint = MaterialTheme.colorScheme.primary)
+            pictureInPictureButton?.invoke(MaterialTheme.colorScheme.primary)
             SoundButton(soundOn = soundOn, onToggle = toggleSound, tint = MaterialTheme.colorScheme.primary)
         }
         // Whole, a tall picture gets a tall box, as large as the page leaves room for; filling, the 16:9 frame.
@@ -366,6 +399,13 @@ private fun FitButton(fit: VideoFit, onToggle: () -> Unit, tint: Color) {
 
 /** How far from 16:9 a picture's shape must be before fitting and filling look any different. */
 private const val FIT_ASPECT_TOLERANCE = 0.05f
+
+@Composable
+private fun PictureInPictureButton(onClick: () -> Unit, tint: Color) {
+    IconButton(onClick = onClick) {
+        Icon(imageVector = Icons.Filled.PictureInPictureAlt, contentDescription = stringResource(Res.string.camera_picture_in_picture), tint = tint)
+    }
+}
 
 @Composable
 private fun SoundButton(soundOn: Boolean, onToggle: () -> Unit, tint: Color) {

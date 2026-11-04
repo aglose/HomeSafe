@@ -34,12 +34,16 @@
              theme flipping at sunset) must not recreate the Activity. A recreation builds a new
              app graph: back to the sign-in screen, the navigation stack gone and every live
              stream reconnecting. Rotating to watch a camera full screen is the case that matters
-             most (see CameraDetailScreen). -->
+             most (see CameraDetailScreen), and the mini player below is another: shrinking to it
+             and growing back are resizes too. -->
+        <!-- supportsPictureInPicture: a camera's screen floats its video in the system's mini
+             player when the app is left from it (PictureInPicture.android.kt). -->
         <activity
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
             android:name=".MainActivity"
+            android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
             <!-- No LAUNCHER filter here: the home-screen entry is one of the AppIcon aliases below. -->
             <!-- homesafe://moment?camera=…&start_time=…: one detection, full screen (MomentDeepLink.kt).
