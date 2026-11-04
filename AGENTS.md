@@ -25,6 +25,27 @@ button gets a tooltip (`WithTooltip`, reusing its content description) and what 
 hand cursor (`handCursor()`). Whole-app pictures at a laptop's size come from the JVM journeys:
 `./gradlew :app:desktopTest --tests '*Desktop*'`, then `app/build/journeys/`.
 
+## Running the Android app without an emulator
+
+On the Mac, run, drive and test the Android app on [apksim](https://github.com/aglose/apksim)
+rather than an emulator: it runs the APK as one Mac process (no VM, a first frame in ~4 s) with a
+standard adb device, and runs a device-test class in seconds. The `apksim` skill has the whole loop.
+
+```bash
+brew tap aglose/apksim && brew install apksim
+apksim --control auto --adb auto --no-network androidApp/build/outputs/apk/debug/androidApp-debug.apk
+adb connect localhost:PORT     # PORT from that instance's ~/.apksim/tmp/<pid>/adb.port; then adb shell input/screencap/logcat, adb shell apksim nodes
+./gradlew :fake-frigate:run --args="--port 8971 --host ::1 --advertise localhost"   # sign in at http://localhost:8971
+apksim --instrument X-androidTest.apk -e class a.B#test X-androidTest.apk   # one device test, ~4 s
+```
+
+Sign in only to the fake Frigate (`admin` / `correct-horse`), never the real server; keep
+`--no-network` on so the debug build's compiled-in LAN address can't reach it. Under it the app
+reaches `localhost` (`::1`) but not `127.0.0.1`, hence the fake's `::1` bind. The tests run
+Robolectric-style on API 36 with a simulated clock: keep the emulator for `startup-perf`, and use
+`scripts/preview` for preview-level checks. CI runs the same test APKs on apksim's Linux image in
+the `apksim` workflow, beside the emulator jobs.
+
 ## Cloud sessions
 
 `.claude/hooks/session-start.sh` sets up a Claude Code cloud session: the Android SDK, a warm
