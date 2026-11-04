@@ -50,7 +50,8 @@ use the `homesafe-signin` credentials or the autofill file.
 
 Then sign in to `http://localhost:8971` as `admin` / `correct-horse` (`viewer` / `just-looking` is
 read-only; `--quiet` gives cameras with no history). apksim reaches the Mac's own localhost
-directly: there is no `10.0.2.2` (that is the emulator's alias, used by the CLI journeys).
+directly: there is no `10.0.2.2` (that is the emulator's alias; the CLI journeys type it, and
+their runner rewrites it to `localhost` on apksim).
 
 Why `::1` and `localhost`: apksim before 0.4.0 refused `127.0.0.1` under `--no-network`
 ("Operation not permitted") and let `localhost` (`::1`) through, so this works on every version.
@@ -93,8 +94,11 @@ adb shell apksim quit
   Not supported: installing another app (one app per instance), `pm clear` (see "App data"), and
   running test APKs over adb (use `--instrument`). Back on the app's last screen quits the
   instance, and there is no soft keyboard unless you pass `--soft-keyboard`, so a Back meant to
-  hide the keyboard quits the app. The CLI journeys in `androidApp/src/journeysTest` still run on
-  an emulator in CI.
+  hide the keyboard quits the app. The drawn keyboard is in neither `screencap` nor
+  `android layout`'s windows: only the page moving up shows it.
+- The CLI journeys in `androidApp/src/journeysTest` run on apksim, an instance per journey:
+  `APKSIM=apksim scripts/run-android-cli-journeys.sh` with the fake Frigate on `::1` (above).
+  docs/testing.md has the rest.
 
 ## App data
 

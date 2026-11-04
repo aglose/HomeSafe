@@ -10,7 +10,7 @@ actions, with `testTag` only where text or content descriptions can't pick a nod
 | Screen UI | `shared/src/uiTest`; `app/src/uiTest` for the drawer's apps | One stateless composable from fixtures (`HomeFeed`, `MomentsFeed`, `AlertsSection`, …) | iOS simulator, emulator; `app/src/uiTest` on the JVM too |
 | Integration journeys | `app/src/integrationTest` | The whole app — `App()` on a real `AppGraph` — signed in over HTTP to a fake Frigate | Emulator, JVM (desktop) |
 | End to end | `androidApp/src/androidTest` | The installed app's real `MainActivity`: intents, system back, relaunch | Emulator |
-| Android CLI journeys | `androidApp/src/journeysTest` | Natural-language journeys an agent runs on a device through the Android CLI | Emulator (opt-in) |
+| Android CLI journeys | `androidApp/src/journeysTest` | Natural-language journeys an agent runs on a device through the Android CLI | apksim (opt-in), emulator nightly |
 
 On the JVM (`./gradlew desktopTest`, CI's **Desktop app** workflow) the journeys walk a phone's layout
 (`JourneyWindow.PHONE`) unless they ask for a laptop's (`JourneyWindow.DESKTOP`), and leave a picture of every step
@@ -173,21 +173,32 @@ the Mac takes one iOS job at a time and several pull requests pushed together li
 The Android CLI has no journey runner of its own. An agent reads each journey and drives the device with
 `android layout`, `android screen` and `adb shell input`, as the android-cli skill describes.
 `scripts/run-android-cli-journeys.sh` does that with Claude Code in headless mode. Each journey starts from a
-cleared app, and the script fails unless every action of every journey gets a ✅.
+freshly installed app, and the script fails unless every action of every journey gets a ✅.
 
-To run them locally:
+They run on [apksim](https://github.com/aglose/apksim) (see the `apksim` skill), an instance of its own per journey,
+started with no app data (`--fresh`, since apksim has no `pm clear`) and a drawn keyboard (`--soft-keyboard`: without
+one, the Back that hides the keyboard quits the app). To run them on the Mac:
 
 1. Install the [Android CLI](https://developer.android.com/tools/agents/android-cli). The script installs the skill it needs.
 2. Install Claude Code and sign in (`claude`).
-3. Start the fake Frigate with `--advertise 10.0.2.2` as above.
-4. Install the debug APK on an emulator.
-5. Run `scripts/run-android-cli-journeys.sh` to run them all, or pass journey files to run a subset.
+3. Build the debug APK (`./gradlew :androidApp:assembleDebug`).
+4. Start the fake Frigate on `::1`: `./gradlew :fake-frigate:run --args="--port 8971 --host ::1 --advertise localhost"`.
+5. Run `APKSIM=apksim scripts/run-android-cli-journeys.sh` to run them all, or pass journey files to run a subset.
 
-Results go to `build/journeys/`.
+The journeys type the emulator's address for the fake Frigate, `http://10.0.2.2:8971`; the script gives the agent a
+copy that types `FRIGATE_URL` instead (`http://localhost:8971` on apksim). Without `APKSIM` the script runs them on the
+device adb has, an emulator with the debug APK installed and the fake started with `--advertise 10.0.2.2` as above,
+clearing the app before each journey. Results go to `build/journeys/`, with `summary.tsv` (one line per journey: name,
+result, actions passed and in all, seconds the agent took).
 
-On CI, the **Android CLI journeys** workflow runs them on demand and weekly. It needs the `CLAUDE_CODE_OAUTH_TOKEN` secret
-(Claude Code on a Claude subscription, from `claude setup-token`) and is not part of `ci-green`: an agent judging screenshots costs tokens and isn't deterministic. The deterministic
-layers above are what gate a merge.
+On CI, the **Android CLI journeys** workflow runs them in apksim's Linux image (the release `apksim.yml` pins), a
+container per journey on the runner's network, on demand and on a pull request that changes them or how they run. The
+**Nightly Android CLI journeys** workflow runs them on an API 34 emulator and on apksim and
+[`scripts/ci/compare-journeys.py`](../scripts/ci/compare-journeys.py) puts the two side by side, journey by journey with
+times; a disagreement turns it red and goes in an issue, as the nightly device tests do. Both need the
+`CLAUDE_CODE_OAUTH_TOKEN` secret (Claude Code on a Claude subscription, from `claude setup-token`) and neither is part of
+`ci-green`: an agent judging screenshots costs tokens and isn't deterministic. The deterministic layers above are what
+gate a merge.
 
 The sign-in fields, the Connect button and the bottom nav carry test tags, and `MainActivity` exposes test tags as
 resource ids (`testTagsAsResourceId`). So `android layout`, UiAutomator and the Macrobenchmark journeys all see
