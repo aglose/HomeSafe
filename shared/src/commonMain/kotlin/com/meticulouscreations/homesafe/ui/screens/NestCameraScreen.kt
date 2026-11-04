@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -281,6 +282,13 @@ fun NestCameraScreen(
                 Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
                     StatusBadge(enabled = true, status = status, textColor = extraColors.textPrimary, pillColor = extraColors.glassFill)
                 }
+            } else if (request != null && status != LiveStreamStatus.Live) {
+                // The badge's words are gone, but not the sign that the picture is on its way.
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center).size(40.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 3.dp,
+                )
             }
         }
     }

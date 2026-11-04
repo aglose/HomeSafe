@@ -175,7 +175,9 @@ import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_more_options
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -254,7 +256,28 @@ fun CameraDetailScreen(
     // editor), and back as it starts to leave, so the camera list isn't revealed under hidden bars.
     if (fullScreen && animatedVisibilityScope.transition.targetState == EnterExitState.Visible) ImmersiveSystemBars()
     // The full-screen player fills the viewport from the top of the scroll, which is then held there.
-    LaunchedEffect(fullScreen) { if (fullScreen) scrollState.scrollTo(0) }
+    // The mini player is full screen too, but only for as long as it floats: the scroll the person
+    // had is kept aside while it does (the shorter page would clamp it) and put back on growing.
+    val inPictureInPicture = LocalPictureInPicture.current
+    var scrollBeforePictureInPicture by remember { mutableIntStateOf(0) }
+    var floated by remember { mutableStateOf(false) }
+    LaunchedEffect(inPictureInPicture) {
+        if (inPictureInPicture) {
+            floated = true
+            return@LaunchedEffect
+        }
+        if (floated) {
+            floated = false
+            if (!fullScreen) {
+                withTimeoutOrNull(SCROLL_RESTORE_TIMEOUT_MS) {
+                    snapshotFlow { scrollState.maxValue }.first { it >= scrollBeforePictureInPicture }
+                }
+                scrollState.scrollTo(scrollBeforePictureInPicture)
+            }
+        }
+        snapshotFlow { scrollState.value }.collect { scrollBeforePictureInPicture = it }
+    }
+    LaunchedEffect(fullScreen) { if (fullScreen && !inPictureInPicture) scrollState.scrollTo(0) }
     // In a window much wider than a phone's (a tablet on its side, the desktop) a full-width 16:9
     // player would be the whole page. It stops growing at the width whose 16:9 is
     // PLAYER_MAX_HEIGHT_FRACTION of the window's height, and centres, so the timeline under it
@@ -1001,6 +1024,9 @@ private class SkipFeedback(val edge: TapEdge, val seconds: Int)
 
 /** How far a double tap on a side of the video steps. */
 private const val SKIP_SECONDS = 10
+
+/** How long to wait for the page to be tall enough again after the mini player before restoring the scroll as far as it goes. */
+private const val SCROLL_RESTORE_TIMEOUT_MS = 1_000L
 
 /** How long the badge stays after the last step: long enough for the next tap of a run to find it up. */
 private const val SKIP_BADGE_MS = 900L

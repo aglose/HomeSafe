@@ -77,6 +77,8 @@ private class ActivityPictureInPicture(val activity: Activity) : PictureInPictur
     }
 
     override fun enter() {
+        // Nothing to float unless this is the screen that holds the claim (a Nest camera without a stream, say).
+        if (!claimed) return
         // False (or thrown) when the person has turned picture-in-picture off for the app in the system's settings.
         runCatching { activity.enterPictureInPictureMode(params(autoEnter = claimed)) }
     }
