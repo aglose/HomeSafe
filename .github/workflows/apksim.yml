@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      APKSIM_REF: ffa98e279ca208540187750d93b27770a3130e01
+      APKSIM_REF: 60e1082f468362f9bbbfa8b264b9424797fdda51
     steps:
       - uses: actions/checkout@v7
       - uses: actions/checkout@v7
