@@ -3,8 +3,8 @@
 # device tests, the whole-app journeys and the end-to-end tests, the same APKs an emulator installs.
 # CI's android-ui job calls it on every pull request and push to main (it is what ci-green waits
 # for), and the nightly run calls it beside the emulators to check the two still agree
-# (device-tests-nightly.yml). apksim is pinned to a commit of its main branch (APKSIM_REF); its
-# image trains its startup cache on this app's debug APK.
+# (device-tests-nightly.yml). apksim is pinned to a release of its published image (APKSIM_IMAGE);
+# a new release can change how apps translate, so move it on purpose.
 name: Device tests on apksim
 
 on:
@@ -20,47 +20,29 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      APKSIM_REF: 60e1082f468362f9bbbfa8b264b9424797fdda51
+      APKSIM_IMAGE: ghcr.io/aglose/apksim:0.4.0
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/checkout@v7
-        with:
-          repository: aglose/apksim
-          ref: ${{ env.APKSIM_REF }}
-          path: .apksim
+      # Pulled beside the build, so it is ready when the APKs are.
+      - name: Pull apksim's image
+        run: docker pull --quiet "$APKSIM_IMAGE" > pull.log 2>&1 &
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          # 24 builds apksim (APKSIM_JDK below); 21, the last, is JAVA_HOME for this app's Gradle.
-          java-version: |
-            24
-            21
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          # apksim fetches its libraries with a plain `gradle deps`.
-          gradle-version: 8.14.2
 
       - name: Build the test APKs
         run: ./gradlew assembleAndroidDeviceTest :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest --stacktrace
 
-      - name: Build apksim and its Linux image
-        working-directory: .apksim
-        env:
-          APKSIM_JDK: ${{ env.JAVA_HOME_24_X64 }}
-        run: |
-          gradle -q deps --console=plain
-          for a in work/lib/*.aar; do unzip -p "$a" classes.jar > "${a%.aar}.jar"; done
-          scripts/build.sh
-          # scripts/docker-build.sh trains the image on the APK at apksim's test-app path.
-          mkdir -p testapks/composeapp/app/build/outputs/apk/debug
-          cp ../androidApp/build/outputs/apk/debug/androidApp-debug.apk testapks/composeapp/app/build/outputs/apk/debug/app-debug.apk
-          scripts/docker-build.sh apksim:ci
-
       # A failure is run once more in a process of its own; one that passes then is reported as
       # flaky (a warning and the summary) rather than failing the job. See the script.
       - name: Device tests
-        run: scripts/ci/apksim-device-tests.py .apksim apksim:ci apksim-results
+        run: |
+          docker pull --quiet "$APKSIM_IMAGE"
+          scripts/ci/apksim-device-tests.py "$APKSIM_IMAGE" apksim-results
 
       - uses: actions/upload-artifact@v7
         if: always()

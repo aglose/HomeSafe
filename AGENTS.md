@@ -40,8 +40,9 @@ apksim --instrument X-androidTest.apk -e class a.B#test X-androidTest.apk   # on
 ```
 
 Sign in only to the fake Frigate (`admin` / `correct-horse`), never the real server; keep
-`--no-network` on so the debug build's compiled-in LAN address can't reach it. Under it the app
-reaches `localhost` (`::1`) but not `127.0.0.1`, hence the fake's `::1` bind. The tests run
+`--no-network` on so the debug build's compiled-in LAN address can't reach it. Use apksim 0.4.0 or
+later (`brew upgrade --cask apksim`): older ones refuse `127.0.0.1` under it, which is why the fake
+binds `::1`. The tests run
 Robolectric-style on API 36 with a simulated clock: keep the emulator for `startup-perf`, and use
 `scripts/preview` for preview-level checks. CI gates pull requests on the same test APKs in
 apksim's Linux image; the emulators run them nightly, and any difference goes in an issue
