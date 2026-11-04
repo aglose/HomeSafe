@@ -102,7 +102,7 @@ orders the end-to-end suite after the shared module's when you run both.
 
 On pull requests and main, CI runs them on [apksim](https://github.com/aglose/apksim) rather than an emulator
 ([`.github/workflows/apksim.yml`](../.github/workflows/apksim.yml), CI's `android-ui` job): Android's framework on the
-JVM, API 36, in one Linux container. The same APKs, built with `assembleAndroidDeviceTest :androidApp:assembleDebug
+JVM, API 36, in apksim's published Linux image (`ghcr.io/aglose/apksim`, pinned to a release in the workflow). The same APKs, built with `assembleAndroidDeviceTest :androidApp:assembleDebug
 :androidApp:assembleDebugAndroidTest`, go to [`scripts/ci/apksim-device-tests.py`](../scripts/ci/apksim-device-tests.py),
 which runs each module's suite, the journeys package in one process, the rest of `:app` (`notPackage`), and the
 end-to-end tests one process per test. A test that fails is run once more on its own; if it passes then, the job
