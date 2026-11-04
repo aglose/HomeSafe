@@ -12,6 +12,8 @@ on:
   schedule:
     - cron: '23 10 * * *'
   workflow_dispatch:
+  # TEMPORARY: one run on the pull request that adds this workflow, to see it work. Removed before it merges.
+  pull_request:
 
 concurrency:
   group: device-tests-nightly
