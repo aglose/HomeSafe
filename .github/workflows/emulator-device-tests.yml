@@ -1,0 +1,120 @@
+# The device tests on two API 34 emulators: every module's device tests, the whole-app journeys and
+# the end-to-end tests. Pull requests run the same APKs on apksim instead (apksim.yml, CI's
+# android-ui job), so this runs nightly (device-tests-nightly.yml), where its results are compared
+# with apksim's, and by hand.
+name: Device tests on emulators
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: Android UI tests (emulator, ${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # Two emulators, because one ran the suites for twelve minutes after five of setup. The
+    # whole-app journeys (:app's src/integrationTest) are most of the time on a device, so they
+    # get one to themselves; every module's other device tests and the end-to-end tests share
+    # the other. The split is by test package, so a new test lands on a side without being
+    # listed anywhere: in the journeys' package on the first, anywhere else on the second.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: journeys
+            tasks: :app:connectedAndroidDeviceTest
+            filter: package
+          - name: everything else
+            # Every module's device tests (connectedAndroidDeviceTest without a project path runs
+            # in each), one module after another (see the mustRunAfter in each build script).
+            tasks: connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest
+            filter: notPackage
+    env:
+      API_LEVEL: 34
+      JOURNEYS_PACKAGE: com.meticulouscreations.homesafe.integration
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # KVM is what makes the x86_64 emulator usable on a hosted Linux runner.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # A booted AVD is cached as a snapshot, so later runs resume it instead of cold-booting.
+      # Caches made on main are visible to every branch; a miss only happens the first time
+      # the API level changes (or after the cache is evicted), and then costs one extra boot.
+      - name: AVD snapshot cache
+        id: avd-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api${{ env.API_LEVEL }}-google_apis-x86_64
+      - name: Create AVD and snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+
+      # Two suites, over the two emulators of the matrix above:
+      # - connectedAndroidDeviceTest — each module's commonTest suite on-device, plus src/uiTest
+      #   (Compose UI tests, also run on the iOS simulator) and :app's src/integrationTest
+      #   (whole-app journeys against the fake Frigate).
+      # - :androidApp:connectedDebugAndroidTest — end-to-end tests on the real MainActivity
+      #   (intents, system back, relaunch), one orchestrated instrumentation per test.
+      # The package filter is AndroidJUnitRunner's own argument; AGP passes it to every connected
+      # task, and the end-to-end tests are in a package of their own, so `notPackage` keeps them.
+      # --continue so a failure in the first still reports the second.
+      # The script stops Gradle after 45 minutes and, if it had to, dumps the stuck processes'
+      # threads, so a hang shows up in this log rather than as a silent job timeout.
+      - name: Instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: scripts/run-instrumented-tests.sh 45 -- ${{ matrix.tasks }} -Pandroid.testInstrumentationRunnerArguments.${{ matrix.filter }}=${{ env.JOURNEYS_PACKAGE }} --continue --stacktrace
+
+      # Connected test tasks print only a count; put each failure (message and stack) in the log.
+      - name: Print instrumented test failures
+        if: failure()
+        run: python3 scripts/print-test-failures.py shared/build/outputs/androidTest-results features/*/build/outputs/androidTest-results app/build/outputs/androidTest-results androidApp/build/outputs/androidTest-results
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: android-ui-reports-${{ matrix.filter == 'package' && 'journeys' || 'rest' }}
+          path: |
+            shared/build/reports/**
+            shared/build/outputs/androidTest-results/**
+            features/*/build/reports/**
+            features/*/build/outputs/androidTest-results/**
+            app/build/reports/**
+            app/build/outputs/androidTest-results/**
+            androidApp/build/reports/**
+            androidApp/build/outputs/androidTest-results/**
+          retention-days: 7

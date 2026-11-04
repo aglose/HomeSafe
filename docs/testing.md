@@ -100,12 +100,25 @@ instrumentation and a wiped app, because sign-in history lives in Room and there
 The two device suites can't share an emulator at the same time, because each covers the other's Activities. The build
 orders the end-to-end suite after the shared module's when you run both.
 
-CI runs them on two emulators at once: the integration journeys on one
-(`-Pandroid.testInstrumentationRunnerArguments.package=com.meticulouscreations.homesafe.integration`), and everything
-else in `shared` plus the end-to-end suite on the other (`notPackage=` the same). A new test needs listing nowhere; its
-package decides.
+On pull requests and main, CI runs them on [apksim](https://github.com/aglose/apksim) rather than an emulator
+([`.github/workflows/apksim.yml`](../.github/workflows/apksim.yml), CI's `android-ui` job): Android's framework on the
+JVM, API 36, in one Linux container. The same APKs, built with `assembleAndroidDeviceTest :androidApp:assembleDebug
+:androidApp:assembleDebugAndroidTest`, go to [`scripts/ci/apksim-device-tests.py`](../scripts/ci/apksim-device-tests.py),
+which runs each module's suite, the journeys package in one process, the rest of `:app` (`notPackage`), and the
+end-to-end tests one process per test. A test that fails is run once more on its own; if it passes then, the job
+passes and names it as flaky in a warning and the job summary. A new test needs listing nowhere.
 
-On CI, `scripts/run-instrumented-tests.sh` runs them with a time limit. If they're still running when it expires, the
+Every night the emulators run them too
+([`.github/workflows/device-tests-nightly.yml`](../.github/workflows/device-tests-nightly.yml)), on two API 34
+emulators at once: the integration journeys on one
+(`-Pandroid.testInstrumentationRunnerArguments.package=com.meticulouscreations.homesafe.integration`), and everything
+else plus the end-to-end suite on the other (`notPackage=` the same). apksim runs the same commit beside them, and
+[`scripts/ci/compare-device-tests.py`](../scripts/ci/compare-device-tests.py) lists every test the two disagree on, or
+that was flaky on apksim, or that ran on one side only. Anything listed turns the run red and goes in an issue titled
+"Nightly device tests: the emulators and apksim disagree" (a comment while it stays open), to be fixed in the app or
+in apksim. Run it by hand from the Actions tab, or run the emulators alone with "Device tests on emulators".
+
+On the emulators, `scripts/run-instrumented-tests.sh` runs them with a time limit. If they're still running when it expires, the
 script dumps every thread of the app and test processes and the journey watchdog's output from logcat. Either way it
 prints the last tests the runner started, so a hang shows up in the job log.
 
