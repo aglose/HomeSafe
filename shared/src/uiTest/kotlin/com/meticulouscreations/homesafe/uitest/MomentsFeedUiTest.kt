@@ -316,7 +316,8 @@ class MomentsFeedUiTest {
             }
             onAllNodesWithText("Person detected").assertCountEquals(1)
             // The title is text, not the thumbnail, and still plays the visit's first clip.
-            onNodeWithText("Person detected").performClick()
+            // The text itself: the merged node is the whole card, whose centre is the clip count's own button.
+            onNodeWithText("Person detected", useUnmergedTree = true).performClick()
             assertEquals("v0", played?.id)
             onNodeWithText("5 clips").performClick()
             mainClock.advanceTimeBy(1_000)

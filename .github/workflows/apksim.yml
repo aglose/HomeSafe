@@ -1,0 +1,71 @@
+# The same device tests as CI's android-ui job, on apksim (https://github.com/aglose/apksim) instead
+# of an emulator: Android's framework running on the JVM in one Linux container, no KVM, no boot,
+# no installs. It is a workflow of its own, beside CI rather than in it, to measure what it costs
+# and whether it agrees with the emulators: the PR autopilot goes by CI's conclusion, so a slow or
+# red run here never holds a merge up. apksim is pinned to a commit of its main branch
+# (APKSIM_REF); its image trains its startup cache on this app's debug APK.
+name: apksim
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: apksim-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apksim:
+    name: Device tests on apksim (no emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      APKSIM_REF: 60e1082f468362f9bbbfa8b264b9424797fdda51
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: aglose/apksim
+          ref: ${{ env.APKSIM_REF }}
+          path: .apksim
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          # 24 builds apksim (APKSIM_JDK below); 21, the last, is JAVA_HOME for this app's Gradle.
+          java-version: |
+            24
+            21
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          # apksim fetches its libraries with a plain `gradle deps`.
+          gradle-version: 8.14.2
+
+      - name: Build the test APKs
+        run: ./gradlew assembleAndroidDeviceTest :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest --stacktrace
+
+      - name: Build apksim and its Linux image
+        working-directory: .apksim
+        env:
+          APKSIM_JDK: ${{ env.JAVA_HOME_24_X64 }}
+        run: |
+          gradle -q deps --console=plain
+          for a in work/lib/*.aar; do unzip -p "$a" classes.jar > "${a%.aar}.jar"; done
+          scripts/build.sh
+          # scripts/docker-build.sh trains the image on the APK at apksim's test-app path.
+          mkdir -p testapks/composeapp/app/build/outputs/apk/debug
+          cp ../androidApp/build/outputs/apk/debug/androidApp-debug.apk testapks/composeapp/app/build/outputs/apk/debug/app-debug.apk
+          scripts/docker-build.sh apksim:ci
+
+      - name: Device tests
+        run: scripts/ci/apksim-device-tests.sh .apksim apksim:ci apksim-results
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: apksim-results
+          path: apksim-results/**
+          retention-days: 7

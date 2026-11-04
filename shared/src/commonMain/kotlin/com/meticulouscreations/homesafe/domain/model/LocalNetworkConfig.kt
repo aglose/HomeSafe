@@ -11,3 +11,13 @@ package com.meticulouscreations.homesafe.domain.model
  * server's MAC address is what keeps it from changing on its own.
  */
 const val LOCAL_SERVER_URL = "http://192.168.68.65:8971"
+
+/**
+ * The LAN address the app actually probes: [LOCAL_SERVER_URL], or null for none. Only tests that
+ * bring their own server change it (the journeys' fake Frigate): on a machine on the household's
+ * Wi-Fi the real server answers [LOCAL_SERVER_URL], and the app would take its LAN route and show
+ * the real cameras instead of the fake's.
+ */
+object LocalServer {
+    var url: String? = LOCAL_SERVER_URL
+}
