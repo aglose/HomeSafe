@@ -18,6 +18,8 @@ import androidx.compose.ui.test.printToString
 import com.meticulouscreations.homesafe.App
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.domain.model.LOCAL_SERVER_URL
+import com.meticulouscreations.homesafe.domain.model.LocalServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.ui.LocalCompactLandscape
@@ -77,6 +79,9 @@ internal class JourneyWindow(val width: Int? = null, val height: Int? = null, va
 @OptIn(ExperimentalTestApi::class)
 private fun runJourney(name: String, state: FakeFrigateState, window: JourneyWindow, block: AppJourney.() -> Unit) = runJourneyWindow(window.width, window.height, JOURNEY_TIMEOUT) {
     FakeFrigateServer(state).start().use { server ->
+        // No LAN route: on the household's Wi-Fi the real server answers the compiled-in LAN
+        // address, and the app would show its cameras instead of the fake's.
+        LocalServer.url = null
         val graph = createAppGraph(testPlatformContext())
         val watchdog = JourneyWatchdog(Thread.currentThread(), JOURNEY_WATCHDOG)
         val onScreen = mutableStateOf(true)
@@ -113,6 +118,7 @@ private fun runJourney(name: String, state: FakeFrigateState, window: JourneyWin
                 interrupted,
             )
         } finally {
+            LocalServer.url = LOCAL_SERVER_URL
             watchdog.cancel()
             // Each journey builds its own graph; don't leave this one's detection poller running beside the next.
             graph.detectionAlertService.stop()

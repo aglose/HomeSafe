@@ -3,7 +3,7 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
-import com.meticulouscreations.homesafe.domain.model.LOCAL_SERVER_URL
+import com.meticulouscreations.homesafe.domain.model.LocalServer
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StaleBiometricCredentialsException
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -208,15 +208,15 @@ class ConnectionRepositoryImpl(
         if (cameraDao.observeByServer(record.serverUrl).first().isEmpty()) return
         coroutineScope {
             launch {
-                if (localAnswers(LOCAL_SERVER_URL)) {
-                    _expectedConnection.value = ActiveConnection(record.serverUrl, LOCAL_SERVER_URL, ConnectionRoute.LOCAL_NETWORK)
+                if (localAnswers(LocalServer.url)) {
+                    _expectedConnection.value = ActiveConnection(record.serverUrl, LocalServer.url, ConnectionRoute.LOCAL_NETWORK)
                 }
             }
             launch {
                 if (apiClient.isReachable(record.serverUrl, LOCAL_PROBE_TIMEOUT_MS)) {
                     delay(lanGraceMs)
                     if (_expectedConnection.value == null) {
-                        _expectedConnection.value = ActiveConnection(record.serverUrl, LOCAL_SERVER_URL, ConnectionRoute.TAILSCALE)
+                        _expectedConnection.value = ActiveConnection(record.serverUrl, LocalServer.url, ConnectionRoute.TAILSCALE)
                     }
                 }
             }
@@ -229,7 +229,7 @@ class ConnectionRepositoryImpl(
                 onCredentialsUnlocked()
                 // Deliberately not credentials.localUrl: the LAN address is compiled in, and a
                 // credential saved before this route existed carries none at all.
-                val attempt = connect(credentials.serverUrl, LOCAL_SERVER_URL, credentials.username, credentials.password)
+                val attempt = connect(credentials.serverUrl, LocalServer.url, credentials.username, credentials.password)
                 when (val error = attempt.exceptionOrNull()) {
                     null -> attempt
 
@@ -503,7 +503,7 @@ class ConnectionRepositoryImpl(
         _serverUnreachable.value = true
         _activeConnection.value = ActiveConnection(
             serverUrl = credentials.serverUrl,
-            localUrl = LOCAL_SERVER_URL,
+            localUrl = LocalServer.url,
             route = ConnectionRoute.TAILSCALE,
         )
         if (revalidationJob?.isActive != true) {
