@@ -55,6 +55,9 @@ def main():
 
     def instrument(name, app, test, args):
         start = time.time()
+        # An earlier run's report in a reused OUT must not stand in for one this run never wrote.
+        if os.path.exists(f"{out}/{name}.xml"):
+            os.remove(f"{out}/{name}.xml")
         with open(f"{out}/{name}.log", "w") as log:
             subprocess.run([sys.executable, f"{apksim_dir}/scripts/instrument.py", "--apksim", launch, app, test,
                             "--xml", f"{out}/{name}.xml", *args], stdout=log, stderr=subprocess.STDOUT)
