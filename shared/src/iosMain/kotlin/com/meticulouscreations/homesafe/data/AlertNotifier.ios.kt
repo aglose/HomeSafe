@@ -6,6 +6,8 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLink
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.PackageDeepLink
@@ -38,6 +40,7 @@ import platform.UserNotifications.UNNotificationAttachment
 import platform.UserNotifications.UNNotificationInterruptionLevel
 import platform.UserNotifications.UNNotificationPresentationOptionBanner
 import platform.UserNotifications.UNNotificationPresentationOptionList
+import platform.UserNotifications.UNNotificationPresentationOptionNone
 import platform.UserNotifications.UNNotificationPresentationOptions
 import platform.UserNotifications.UNNotificationRequest
 import platform.UserNotifications.UNNotificationResponse
@@ -96,7 +99,10 @@ private class NotificationCenterDelegate :
         willPresentNotification: UNNotification,
         withCompletionHandler: (UNNotificationPresentationOptions) -> Unit,
     ) {
-        val isUpdate = willPresentNotification.request.content.userInfo[KEY_UPDATE] != null
+        val info = willPresentNotification.request.content.userInfo
+        // A rest running out, with the workout's own page in front saying so: nothing comes down over it.
+        if (info[FitnessDeepLink.KEY] != null && FitnessDeepLinks.workoutOnScreen()) return withCompletionHandler(UNNotificationPresentationOptionNone)
+        val isUpdate = info[KEY_UPDATE] != null
         withCompletionHandler(
             if (isUpdate) {
                 UNNotificationPresentationOptionList
@@ -117,7 +123,9 @@ private class NotificationCenterDelegate :
             IosWeatherActions.remind(didReceiveNotificationResponse.notification.request, withCompletionHandler)
             return
         }
-        if (info[WeatherDeepLink.KEY] != null) {
+        if (info[FitnessDeepLink.KEY] != null) {
+            FitnessDeepLinks.open(FitnessDeepLink.Workout)
+        } else if (info[WeatherDeepLink.KEY] != null) {
             // A tap opens what the notification was about; its "Radar" button, the radar over the same place.
             val link = WeatherDeepLink.from { key -> info[key] as? String }
             WeatherDeepLinks.open(if (didReceiveNotificationResponse.actionIdentifier == IosWeatherActions.RADAR) link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null) else link)

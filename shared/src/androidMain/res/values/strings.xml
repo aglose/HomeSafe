@@ -159,4 +159,10 @@
         <item quantity="other">%1$d packages should come today</item>
     </plurals>
     <string name="notif_package_morning_away">%1$s, and nobody\'s home</string>
+    <!-- The fitness app's workout in progress, outside the app (LiveWorkoutSurface.android.kt) -->
+    <string name="notif_channel_workout_name">Workout in progress</string>
+    <string name="notif_channel_workout_description">While a workout is open: the rest between sets, the time, and the heart rate</string>
+    <string name="notif_channel_rest_over_name">Rest over</string>
+    <string name="notif_channel_rest_over_description">A buzz when the rest between sets has run out</string>
+    <string name="notif_workout_title">Workout in progress</string>
 </resources>

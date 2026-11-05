@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="fitness_live_resting_after">Descanso tras %1$s</string>
+    <string name="fitness_live_resting">Descansando</string>
+    <string name="fitness_live_rest_over">Fin del descanso</string>
+
+    <plurals name="fitness_live_sets">
+        <item quantity="one">%1$d serie</item>
+        <item quantity="other">%1$d series</item>
+    </plurals>
+    <plurals name="fitness_live_records">
+        <item quantity="one">%1$d récord</item>
+        <item quantity="other">%1$d récords</item>
+    </plurals>
+    <string name="fitness_live_no_sets">Aún no hay series</string>
+
+    <string name="fitness_live_lift_last">%1$s · última %2$s</string>
+    <string name="fitness_live_lift_aim">%1$s · objetivo %2$s</string>
+    <string name="fitness_live_up_next">A continuación: %1$s</string>
+    <string name="fitness_live_up_next_aim">A continuación: %1$s · objetivo %2$s</string>
+    <string name="fitness_live_first_up">Primero: %1$s</string>
+    <string name="fitness_live_first_up_aim">Primero: %1$s · objetivo %2$s</string>
+
+    <string name="fitness_live_heart">%1$d lpm</string>
+    <string name="fitness_live_heart_zone">%1$d lpm · zona %2$d</string>
+    <string name="fitness_live_heart_down">%1$d lpm · baja %2$d</string>
+
+    <string name="fitness_live_open">Abrir entrenamiento</string>
+    <string name="fitness_live_hide">Ocultar hasta el próximo descanso</string>
+    <string name="fitness_live_island">Entrenamiento en curso</string>
+</resources>

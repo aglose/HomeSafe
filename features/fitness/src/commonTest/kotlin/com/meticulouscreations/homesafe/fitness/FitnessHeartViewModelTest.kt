@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.fitness.domain.NoFitnessLogSync
 import com.meticulouscreations.homesafe.fitness.domain.SetDraft
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.domain.ZoneTracker
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkouts
 import com.meticulouscreations.homesafe.weather.data.MutableClock
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -55,7 +56,8 @@ class FitnessHeartViewModelTest {
         val repository = FitnessRepositoryImpl(dao)
         val monitor = FakeHeartRateMonitor(supported)
         val clock = MutableClock(NOW)
-        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao), NoFitnessLogSync, boardDispatcher = dispatcher)
+        val live = LiveWorkouts()
+        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao), NoFitnessLogSync, FakeAlertNotifier(), live = live, boardDispatcher = dispatcher)
 
         /** The time of the last reading, moved on by each one. */
         var at = NOW * 1000
@@ -144,6 +146,35 @@ class FitnessHeartViewModelTest {
         h.vm.setActive(true)
         runCurrent()
         assertEquals(listOf("follow ${TEST_BAND.address}", "stop", "follow ${TEST_BAND.address}"), h.monitor.calls)
+    }
+
+    @Test
+    fun whereTheAppIsKeptRunningForAWorkoutTheSensorStaysLinkedWithTheAppAway() = runHeartTest { h ->
+        // Android's workout service keeps the app running: the heart goes on being read with the screen off.
+        h.live.keepsAppRunning = true
+        val id = working(h)
+        h.vm.setActive(false)
+        runCurrent()
+        assertEquals("follow ${TEST_BAND.address}", h.monitor.calls.last())
+        h.read(130)
+        runCurrent()
+        h.read(131)
+        runCurrent()
+        assertEquals(1_000, h.heart.summary?.totalMillis)
+        assertEquals(id, h.vm.uiState.value.workout?.workout?.id)
+
+        // Once the workout is over there is nothing to keep it for.
+        h.vm.finishWorkout()
+        runCurrent()
+        assertEquals("stop", h.monitor.calls.last())
+    }
+
+    @Test
+    fun whereNothingKeepsTheAppRunningTheSensorIsLetGoMidWorkoutAsBefore() = runHeartTest { h ->
+        working(h)
+        h.vm.setActive(false)
+        runCurrent()
+        assertEquals("stop", h.monitor.calls.last())
     }
 
     @Test

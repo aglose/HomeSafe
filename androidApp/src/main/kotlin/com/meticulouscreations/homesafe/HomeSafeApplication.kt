@@ -8,6 +8,8 @@ import androidx.tracing.wire.TraceDriver
 import androidx.tracing.wire.TraceSink
 import com.meticulouscreations.homesafe.data.BackgroundGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.fitness.live.AndroidLiveWorkoutSurface
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkoutPresenter
 
 /**
  * Tells :shared how to build the app graph for code the OS wakes with no screen (receivers,
@@ -34,6 +36,8 @@ class HomeSafeApplication :
         // Otherwise the global tracer stays the library's no-op stub.
         if (BuildConfig.IN_PROCESS_TRACING) Tracer.setGlobalTracer(traceDriver.tracer)
         BackgroundGraph.install { context -> createAppGraph(PlatformContext(context)) }
+        // The workout in progress outside the app: its notification, kept up for the whole process (it outlives any Activity).
+        LiveWorkoutPresenter.install(AndroidLiveWorkoutSurface(this))
     }
 
     override fun create(): AbstractTraceDriver = traceDriver

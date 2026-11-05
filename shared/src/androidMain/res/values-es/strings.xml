@@ -125,4 +125,9 @@
         <item quantity="other">%1$d paquetes deberían llegar hoy</item>
     </plurals>
     <string name="notif_package_morning_away">%1$s, y no hay nadie en casa</string>
+    <string name="notif_channel_workout_name">Entrenamiento en curso</string>
+    <string name="notif_channel_workout_description">Mientras hay un entrenamiento abierto: el descanso entre series, el tiempo y el pulso</string>
+    <string name="notif_channel_rest_over_name">Fin del descanso</string>
+    <string name="notif_channel_rest_over_description">Una vibración cuando se acaba el descanso entre series</string>
+    <string name="notif_workout_title">Entrenamiento en curso</string>
 </resources>

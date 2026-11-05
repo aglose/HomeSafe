@@ -51,6 +51,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <!-- A workout in progress outside the fitness app (LiveWorkoutSurface.android.kt): an ongoing
+         notification that Android 16 promotes to a Live Update, with a chip in the status bar
+         counting the rest down, kept up by a foreground service of the health type. That type
+         starts only once heart rate may be read (Health Connect, asked for with the health store)
+         and connectedDevice only once the heart-rate sensor may be linked, which is what keeps
+         its link up with the screen off; with neither, the notification is posted without the
+         service. The wake lock is held only while a rest counts down, so its end buzzes on time. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- The "Open Tailscale" button on the Home notice (TailscaleApp.android.kt): Android 11+
          hides other apps from this one unless they are named here. -->
     <queries>
@@ -89,6 +101,16 @@
             android:name="com.meticulouscreations.homesafe.fitness.data.RunRecordingService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <service
+            android:name="com.meticulouscreations.homesafe.fitness.live.WorkoutSessionService"
+            android:exported="false"
+            android:foregroundServiceType="health|connectedDevice" />
+
+        <!-- The workout notification's rest buttons: skip, fifteen seconds less, fifteen more. -->
+        <receiver
+            android:name="com.meticulouscreations.homesafe.fitness.live.WorkoutActionReceiver"
+            android:exported="false" />
 
         <receiver
             android:name="com.meticulouscreations.homesafe.data.GeofenceBroadcastReceiver"

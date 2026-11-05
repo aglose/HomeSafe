@@ -67,6 +67,16 @@
 
                 <data android:scheme="homesafe" android:host="finance" />
             </intent-filter>
+            <!-- homesafe://fitness?page=workout: the fitness app, on the workout in progress (FitnessDeepLink.kt).
+                 Where a tap on the workout's notification lands. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="homesafe" android:host="fitness" />
+            </intent-filter>
             <!-- homesafe://doors?door=…: the Doors page on Home, where a door notification's tap
                  lands (DoorDeepLink.kt). -->
             <intent-filter>

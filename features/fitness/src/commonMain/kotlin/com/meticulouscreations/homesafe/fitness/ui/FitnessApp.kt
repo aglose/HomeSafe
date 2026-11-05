@@ -239,10 +239,12 @@ class FitnessActions(
  * what to aim for and logs sets in a tap or two, Lifts keeps every exercise's ladder, History
  * is the months gone by as a calendar with each workout and what it came to, and Progress shows
  * the phase, bodyweight and the week's work on the body. Back pops a page, then leaves the app
- * ([onClose]).
+ * ([onClose]). [workoutAsked] is a tap on the workout in progress from outside the app (its
+ * notification, Live Activity, the Mac's island): the app turns to that workout's page, and says
+ * so with [onShowWorkout].
  */
 @Composable
-fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean = true) {
+fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean = true, workoutAsked: Boolean = false, onShowWorkout: () -> Unit = {}) {
     // The activity's instance, the one the drawer's card shares.
     val viewModel: FitnessViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -297,7 +299,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onSendCopy = share?.let { send -> { scope.launch { viewModel.sendLogCopy { text -> send(text, shareTitle) } } } },
         )
     }
-    FitnessAppContent(state, actions, modifier, active, heart = heart, health = health, recording = recording, tiles = maps.tiles)
+    FitnessAppContent(state, actions, modifier, active, heart = heart, health = health, recording = recording, tiles = maps.tiles, workoutAsked = workoutAsked, onShowWorkout = onShowWorkout)
 }
 
 /**
@@ -322,6 +324,8 @@ fun FitnessAppContent(
     health: HealthUiState = HealthUiState(),
     recording: Recording? = null,
     tiles: MapTileSource = NoTiles,
+    workoutAsked: Boolean = false,
+    onShowWorkout: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<FitnessPage>().apply { initialPage?.let(::add) } }
@@ -346,6 +350,19 @@ fun FitnessAppContent(
             startingRun = false
             if (pages.lastOrNull() == FitnessPage.Runs) pages += FitnessPage.Recording
         }
+    }
+
+    // The workout in progress asked for from outside the app opens on its page, over whatever page was up. Once the log has
+    // been read: until then there is no telling whether it is still open. If it was finished meanwhile, the app opens as it was.
+    val shownWorkout by rememberUpdatedState(onShowWorkout)
+    LaunchedEffect(workoutAsked, state.loaded) {
+        if (!workoutAsked || !state.loaded) return@LaunchedEffect
+        if (state.workout != null && pages.lastOrNull() != FitnessPage.Workout) {
+            pages.clear()
+            tab = FitnessTab.TODAY
+            pages += FitnessPage.Workout
+        }
+        shownWorkout()
     }
 
     // Notes handed over from outside (shared into the app) open on the page that reads them.

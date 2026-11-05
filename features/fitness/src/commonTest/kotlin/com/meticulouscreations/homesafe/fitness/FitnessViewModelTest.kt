@@ -29,6 +29,7 @@ import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.SetDraft
 import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkouts
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.data.MutableClock
@@ -71,11 +72,13 @@ class FitnessViewModelTest {
         val preferences = FitnessPreferencesRepositoryImpl(dao)
         val clock = MutableClock(NOW)
         val logSync = FakeFitnessLogSync()
+        val live = LiveWorkouts()
+        val notifier = FakeAlertNotifier()
 
         private val made = mutableListOf<FitnessViewModel>()
 
         fun viewModel(boards: CoroutineDispatcher = dispatcher) =
-            FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences, logSync, boardDispatcher = boards).also { made += it }
+            FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences, logSync, notifier, live = live, boardDispatcher = boards).also { made += it }
 
         /** Stops the view models' minute tick, which would otherwise keep a finished test's clock turning for ever. */
         fun stop() = made.forEach { it.setActive(false) }

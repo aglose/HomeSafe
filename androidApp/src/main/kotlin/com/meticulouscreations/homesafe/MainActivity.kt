@@ -30,6 +30,8 @@ import com.meticulouscreations.homesafe.navigation.PackageDeepLink
 import com.meticulouscreations.homesafe.navigation.PackageDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLink
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
@@ -150,6 +152,7 @@ class MainActivity : FragmentActivity() {
         ParkingDeepLink.fromUri(intent.dataString)?.let { return ParkingDeepLinks.open(it) }
         // A budget notification's tap asks for the finance app instead (`homesafe://finance`).
         intent.dataString?.let(FinanceDeepLink::fromUri)?.let { return FinanceDeepLinks.open(it) }
+        FitnessDeepLink.fromUri(intent.dataString)?.let { return FitnessDeepLinks.open(it) }
         val link = intent.dataString?.let(MomentDeepLink::fromUri)
             ?: MomentDeepLink.from { key -> intent.getStringExtra(key) }
             ?: return

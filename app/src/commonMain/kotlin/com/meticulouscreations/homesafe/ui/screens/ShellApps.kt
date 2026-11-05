@@ -149,7 +149,7 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
 
                 InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
 
-                InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
+                InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen, workoutAsked = nav.fitnessWorkoutAsked, onShowWorkout = nav::onFitnessLinkShown)
 
                 InnerApp.ATLAS -> AtlasApp(onClose = nav::closeApp, active = nav.appOpen)
 
@@ -234,7 +234,7 @@ private fun AppTabContent(nav: ShellNavigation, app: InnerApp, visible: Boolean)
                     nav.fitnessNotes = null
                 }
             }
-            FitnessApp(onClose = goHome, active = visible)
+            FitnessApp(onClose = goHome, active = visible, workoutAsked = nav.fitnessWorkoutAsked, onShowWorkout = nav::onFitnessLinkShown)
         }
 
         InnerApp.ATLAS -> {

@@ -28,6 +28,9 @@
 	  remote-notification: the relay's "rain on the way" asks to wake the app, when iOS allows it, to
 	  give its banner the app's own picture (docs/weather.md). Nothing else from the relay asks.
 	-->
+	<!-- The workout in progress on the Lock Screen and in the Dynamic Island (WorkoutWidget). -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

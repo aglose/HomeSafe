@@ -27,6 +27,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -114,6 +115,9 @@ fun ApplicationScope.HomeSafeWindow(graph: AppGraph, state: WindowState, visible
                 window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
             }
         }
+        // The workout's island floats over other apps only while this window is away.
+        val focused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(focused, visible, state.isMinimized) { DesktopLiveWorkoutSurface.windowFocused.value = focused && visible && !state.isMinimized }
         HomeSafeMenuBar(
             windowState = state,
             zoom = zoom,
