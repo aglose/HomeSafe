@@ -1,0 +1,89 @@
+# The Android CLI journeys run on apksim when a pull request changes them (android-cli-journeys.yml).
+# Once a night they run on an API 34 emulator too, on main as it is, with apksim beside it, and
+# scripts/ci/compare-journeys.py lists the journeys the two disagree on and both sides' times. A
+# disagreement turns the run red and goes in an issue ("Nightly Android CLI journeys: …"), a comment
+# on it while it stays open, so it gets fixed in the app, the journey or apksim. An agent judges
+# each journey, so a single disagreement can be the agent's: look at both results before blaming
+# either side. Run it by hand from the Actions tab to check a change (that run reports in its
+# summary and files no issue).
+name: Nightly Android CLI journeys
+
+on:
+  schedule:
+    - cron: '47 10 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: android-cli-journeys-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: Emulator
+    uses: ./.github/workflows/android-cli-journeys.yml
+    with:
+      device: emulator
+    secrets: inherit
+
+  apksim:
+    name: apksim
+    uses: ./.github/workflows/android-cli-journeys.yml
+    with:
+      device: apksim
+    secrets: inherit
+
+  compare:
+    name: Emulator vs apksim
+    needs: [emulator, apksim]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci/compare-journeys.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: android-cli-journeys-emulator
+          path: results/emulator
+        continue-on-error: true
+      - uses: actions/download-artifact@v7
+        with:
+          name: android-cli-journeys-apksim
+          path: results/apksim
+        continue-on-error: true
+      - name: Compare
+        id: compare
+        run: |
+          status=0
+          scripts/ci/compare-journeys.py results/emulator results/apksim > report.md || status=$?
+          cat report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Report in an issue
+        # Only the scheduled run files it: a run by hand reports in its summary alone.
+        if: failure() && steps.compare.outcome == 'failure' && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: 'Nightly Android CLI journeys: the emulator and apksim disagree'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "From the [nightly run]($RUN_URL) on \`${GITHUB_SHA::8}\` (emulator: ${{ needs.emulator.result }}, apksim: ${{ needs.apksim.result }})."
+            echo
+            cat report.md
+          } > body.md
+          issue=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq "map(select(.title == \"$TITLE\")) | first | .number // empty")
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file body.md
+          else
+            gh issue create --title "$TITLE" --body-file body.md
+          fi
