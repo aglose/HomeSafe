@@ -161,7 +161,8 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
             coroutineScope {
                 launch { lift.animateTo(1f, LIFT_SPEC) }
                 launch {
-                    // Fingers that stop still before the overlay is up still get their zoom.
+                    // Fingers that stop still, or lift, before the overlay is up still get their
+                    // zoom; and only then is it known whether a lift was back at the card's view.
                     while (!laidOut()) withFrameNanos {}
                     flushPendingPinch()
                     if (releasedBeforeLayout) {
@@ -245,8 +246,9 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     /** The fingers lifted: a look that ended back where its card was (or near enough to settle there) is over. */
     fun pinchEnded() {
-        if (laidOut()) flushPendingPinch()
-        else if (pendingCentroid != null) {
+        if (laidOut()) {
+            flushPendingPinch()
+        } else if (pendingCentroid != null) {
             // Buffered increments are not in the zoom yet, so it says nothing about where this
             // pinch ended; the opening job decides once it has played them.
             releasedBeforeLayout = true
