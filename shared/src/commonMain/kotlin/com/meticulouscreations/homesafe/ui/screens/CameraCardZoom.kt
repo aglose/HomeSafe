@@ -186,6 +186,9 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
     fun pinchFromCard(zoomChange: Float, pan: Offset, centroidInRoot: Offset) {
         // The overlay's content is drawn through the lift transform; undo it so the point under
         // the fingers is the same point of the video whether the lift has finished or not.
+        // Until the overlay has laid out there is nothing to zoom, and an increment applied now
+        // would clamp the crop's shift away: the next frame's increments carry on from rest.
+        if (contentSize == IntSize.Zero || viewportSize == IntSize.Zero) return
         val frame = liftFrame()
         val center = viewportSize.center
         val local = centroidInRoot - overlayOriginInRoot
