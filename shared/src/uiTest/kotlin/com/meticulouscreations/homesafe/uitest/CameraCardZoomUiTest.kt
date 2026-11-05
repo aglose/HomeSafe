@@ -232,19 +232,20 @@ class CameraCardZoomUiTest {
     }
 
     @Test
-    fun aPinchOpeningACroppedCardsLookBeforeItIsLaidOutStillLandsOnTheCrop() = runComposeUiTest {
+    fun aPinchOpeningACroppedCardsLookAndLetGoBeforeItIsLaidOutStillLandsOnTheCrop() = runComposeUiTest {
         val state = setUpHome()
         val card = scrollIntoView(onNodeWithTag("card-driveway")).fetchSemanticsNode().boundsInRoot
         // The card's pinch opens the look and hands it its first increment in the same breath,
         // before the overlay has composed, let alone measured: here, all the way to the zoom's
-        // limit, about the card's middle.
+        // limit, about the card's middle. The fingers lift before the first frame, too.
         runOnUiThread {
             state.openByPinch(tile("driveway", crop = LOW_CROP), card)
             state.pinchFromCard(zoomChange = 2.5f, pan = Offset.Zero, centroidInRoot = card.center)
+            state.pinchEnded()
         }
         mainClock.advanceTimeBy(SETTLE_MS)
 
-        assertEquals("driveway", state.target?.camera?.name)
+        assertEquals("driveway", state.target?.camera?.name, "a spread let go before the overlay was up is still a look")
         // Five boxes tall, taller than the screen, so the picture stays slid up toward the crop as
         // far as the screen allows. Applied before the crop had a place, it would sit in the middle.
         assertEquals(PinchZoomState.DEFAULT_MAX_SCALE, state.zoom.scale, 0.01f)
