@@ -50,7 +50,7 @@ jobs:
     env:
       DEVICE: ${{ inputs.device || 'apksim' }}
       # Moved with apksim.yml's: a new release can change how apps translate.
-      APKSIM_IMAGE: ghcr.io/aglose/apksim:0.5.0
+      APKSIM_IMAGE: ghcr.io/aglose/apksim:0.8.0
       API_LEVEL: 34
     steps:
       - name: Check for an agent token
