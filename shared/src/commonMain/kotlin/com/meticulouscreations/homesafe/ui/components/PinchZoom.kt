@@ -165,8 +165,11 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         }
     }
 
-    /** Back to the [rest]. */
-    suspend fun animateReset() = animateTo(rest.scale, restOffset())
+    /**
+     * Back to the [rest], wherever that is as the animation ends: the bounds may be shrinking
+     * underneath it (a quick look settling into its card), and the rest's shift is clamped by them.
+     */
+    suspend fun animateReset() = animateTo(rest.scale, ::restOffset)
 
     /** Straight back to the [rest], no animation — for a surface that is about to be shown afresh. */
     fun reset() {
@@ -203,10 +206,14 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         val newScale = targetScale.coerceIn(minScale, maxScale)
         val focal = centroid - viewportSize.center
         val newOffset = (focal - (focal - offset) * (newScale / scale)).clampedFor(newScale)
-        animateTo(newScale, newOffset)
+        animateTo(newScale) { newOffset }
     }
 
-    private suspend fun animateTo(targetScale: Float, targetOffset: Offset) {
+    /** Whether the viewport and the content have both been laid out, so a gesture lands where it should. */
+    internal val isLaidOut: Boolean get() = viewportSize != IntSize.Zero && contentSize != IntSize.Zero
+
+    /** To [targetScale] and the offset [targetOffset] gives, asked again each frame. */
+    private suspend fun animateTo(targetScale: Float, targetOffset: () -> Offset) {
         val fromScale = scale
         val fromOffset = offset
         var drift = Offset.Zero
@@ -216,7 +223,7 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         try {
             animate(0f, 1f) { t, _ ->
                 scale = fromScale + (targetScale - fromScale) * t
-                val path = fromOffset + (targetOffset - fromOffset) * t
+                val path = fromOffset + (targetOffset() - fromOffset) * t
                 // Clamped per frame: the viewport may be growing underneath the animation. Drift
                 // the clamp cut off is dropped, so dragging back moves the picture straight away.
                 offset = (path + drift + pendingPan).clampedFor(scale)

@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,6 +82,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.roundToInt
 
 /**
  * A quick look at one camera from the Home list: pinch a card and its video lifts out into a
@@ -158,6 +160,11 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
         run {
             coroutineScope {
                 launch { lift.animateTo(1f, LIFT_SPEC) }
+                launch {
+                    // Fingers that stop still before the overlay is up still get their zoom.
+                    while (!laidOut()) withFrameNanos {}
+                    flushPendingPinch()
+                }
                 takeCardPlayer(tile)
             }
         }
@@ -184,11 +191,41 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     /** One increment of the opening pinch, from the card: [centroidInRoot] is where the fingers are. */
     fun pinchFromCard(zoomChange: Float, pan: Offset, centroidInRoot: Offset) {
+        // Until the overlay has laid out, the zoom doesn't know its sizes, and a crop it rests on
+        // has nowhere to sit yet: moving off the rest then would lose it. Held, and played on top
+        // of the rest once there is one.
+        if (!laidOut()) {
+            pendingZoom *= zoomChange
+            pendingPan += pan
+            pendingCentroid = centroidInRoot
+            return
+        }
+        flushPendingPinch()
+        applyPinch(zoomChange, pan, centroidInRoot)
+    }
+
+    private var pendingZoom = 1f
+    private var pendingPan = Offset.Zero
+    private var pendingCentroid: Offset? = null
+
+    private fun laidOut() = zoom.isLaidOut && zoom.window != null && contentSize != IntSize.Zero && viewportSize != IntSize.Zero
+
+    /** The opening pinch's increments that came before the overlay had laid out, once it has. */
+    private fun flushPendingPinch() {
+        val centroid = pendingCentroid ?: return
+        applyPinch(pendingZoom, pendingPan, centroid)
+        clearPendingPinch()
+    }
+
+    private fun clearPendingPinch() {
+        pendingZoom = 1f
+        pendingPan = Offset.Zero
+        pendingCentroid = null
+    }
+
+    private fun applyPinch(zoomChange: Float, pan: Offset, centroidInRoot: Offset) {
         // The overlay's content is drawn through the lift transform; undo it so the point under
         // the fingers is the same point of the video whether the lift has finished or not.
-        // Until the overlay has laid out there is nothing to zoom, and an increment applied now
-        // would clamp the crop's shift away: the next frame's increments carry on from rest.
-        if (contentSize == IntSize.Zero || viewportSize == IntSize.Zero) return
         val frame = liftFrame()
         val center = viewportSize.center
         val local = centroidInRoot - overlayOriginInRoot
@@ -204,6 +241,7 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     /** The fingers lifted: a look that ended back where its card was (or near enough to settle there) is over. */
     fun pinchEnded() {
+        if (laidOut()) flushPendingPinch()
         if (target != null && zoom.settlesOnRest) close()
     }
 
@@ -247,13 +285,15 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     /**
      * What the picture shows through in the zoom's frame (the overlay before the lift's
-     * transform), centred in it: the video's 16:9 box, growing to the whole overlay with [takeover].
-     * The zoom's pans are bounded by it ([PinchZoomState.window]).
+     * transform), in an [overlay] that size, centred in it: the video's 16:9 box, growing to the
+     * whole overlay with [takeover]. Never further than the lift has gone, so a look settling into
+     * its card is back in the box by the time it lands. The zoom's pans are bounded by it
+     * ([PinchZoomState.window]). From the overlay's size alone, so it is known on the first layout.
      */
-    internal fun zoomWindow(): IntSize {
-        if (contentSize == IntSize.Zero || viewportSize == IntSize.Zero) return viewportSize
-        val t = takeover.value
-        return IntSize(lerp(contentSize.width, viewportSize.width, t), lerp(contentSize.height, viewportSize.height, t))
+    internal fun zoomWindow(overlay: IntSize): IntSize {
+        val box = fittedVideoBox(overlay)
+        val t = minOf(takeover.value, lift.value)
+        return IntSize(lerp(box.width, overlay.width, t), lerp(box.height, overlay.height, t))
     }
 
     /**
@@ -263,7 +303,7 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
     internal fun liftClip(size: Size, cornerRadius: Float): Shape {
         if (contentSize == IntSize.Zero) return WindowShape(Rect.Zero, 0f)
         val frame = liftFrame()
-        val window = zoomWindow()
+        val window = zoomWindow(IntSize(size.width.roundToInt(), size.height.roundToInt()))
         val center = Offset(size.width / 2f, size.height / 2f) + frame.translation
         val half = Offset(window.width * frame.scale / 2f, window.height * frame.scale / 2f)
         return WindowShape(Rect(center - half, center + half), cornerRadius * (1f - shownLift))
@@ -274,6 +314,7 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
         cardBounds = cardBoundsInRoot
         viewportSize = IntSize.Zero
         contentSize = IntSize.Zero
+        clearPendingPinch()
         // On the card's crop from the first frame, so the lift starts from exactly what the card shows.
         val framing = tile.lookFraming()
         zoom.restOn(framing.rest, framing.picture)
@@ -303,7 +344,7 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
         lift.snapTo(0f)
         // The overlay that drove these has gone: back to the card's box, for the next look's rest.
         takeover.snapTo(0f)
-        zoom.window = zoomWindow()
+        zoom.window = zoomWindow(viewportSize)
         zoom.reset()
     }
 
@@ -348,6 +389,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
     val extraColors = LocalFrigateExtraColors.current
     // Remembered: the gesture node is keyed on it, and must not restart under a pinch.
     val onPinchEnded = remember(state) { { state.pinchEnded() } }
+    val openCamera = remember(state, tile, onOpenCamera) { { state.dismiss { onOpenCamera(tile) } } }
     val back = rememberPredictiveBack(onBack = state::closeFromBack)
     SideEffect { state.backProgress = { back.progress } }
     // Read here rather than in the effect: the picture's shape may only now have been measured.
@@ -379,8 +421,8 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
             modifier = Modifier
                 .matchParentSize()
                 .layout { measurable, constraints ->
-                    state.zoom.window = state.zoomWindow()
                     val placeable = measurable.measure(constraints)
+                    state.zoom.window = state.zoomWindow(IntSize(placeable.width, placeable.height))
                     layout(placeable.width, placeable.height) { placeable.place(0, 0) }
                 }
                 .graphicsLayer {
@@ -408,7 +450,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                     modifier = Modifier
                         .fillMaxSize()
                         .pinchZoomContent(state.zoom)
-                        .clickable(interactionSource = null, indication = null) { state.dismiss { onOpenCamera(tile) } },
+                        .clickable(interactionSource = null, indication = null, onClick = openCamera),
                 ) {
                     val streamUrl = tile.streamUrl
                     if (streamUrl != null) {
@@ -425,7 +467,10 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                         ) { videoModifier, onStreamStats ->
                             CameraStreamPlayer(
                                 streamUrl = streamUrl,
-                                modifier = videoModifier,
+                                // A picture filling the box spills past it, and pinched out it is all
+                                // in view: a tap anywhere on it opens the camera, not only inside the
+                                // box (whose clickable is the one a screen reader is given).
+                                modifier = videoModifier.pointerInput(openCamera) { detectTapGestures { openCamera() } },
                                 posterUrl = tile.posterUrl,
                                 webRtcSignalingUrl = tile.webRtcSignalingUrl,
                                 playerKey = tile.camera.name,
@@ -470,6 +515,13 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
             }
         }
     }
+}
+
+/** The video's 16:9 box in an [overlay] that size, as [fitVideo] lays it out: full width upright, full height on its side. */
+private fun fittedVideoBox(overlay: IntSize): IntSize {
+    if (overlay.width <= 0 || overlay.height <= 0) return overlay
+    val width = minOf(overlay.width.toFloat(), overlay.height * VIDEO_ASPECT)
+    return IntSize(width.roundToInt(), (width / VIDEO_ASPECT).roundToInt())
 }
 
 /** A rounded window at [rect] within the shape's bounds, rather than the bounds themselves. */
