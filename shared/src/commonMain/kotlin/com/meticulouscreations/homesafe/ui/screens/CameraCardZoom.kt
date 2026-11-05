@@ -164,6 +164,10 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
                     // Fingers that stop still before the overlay is up still get their zoom.
                     while (!laidOut()) withFrameNanos {}
                     flushPendingPinch()
+                    if (releasedBeforeLayout) {
+                        releasedBeforeLayout = false
+                        if (zoom.settlesOnRest) close()
+                    }
                 }
                 takeCardPlayer(tile)
             }
@@ -242,8 +246,16 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
     /** The fingers lifted: a look that ended back where its card was (or near enough to settle there) is over. */
     fun pinchEnded() {
         if (laidOut()) flushPendingPinch()
+        else if (pendingCentroid != null) {
+            // Buffered increments are not in the zoom yet, so it says nothing about where this
+            // pinch ended; the opening job decides once it has played them.
+            releasedBeforeLayout = true
+            return
+        }
         if (target != null && zoom.settlesOnRest) close()
     }
+
+    private var releasedBeforeLayout = false
 
     /** Settles the video back into its card. */
     fun close() {
@@ -315,6 +327,7 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
         viewportSize = IntSize.Zero
         contentSize = IntSize.Zero
         clearPendingPinch()
+        releasedBeforeLayout = false
         // On the card's crop from the first frame, so the lift starts from exactly what the card shows.
         val framing = tile.lookFraming()
         zoom.restOn(framing.rest, framing.picture)
