@@ -1038,7 +1038,7 @@ private const val SKIP_BADGE_WIDTH_FRACTION = 1f / 3f
 private const val SCRUB_PREVIEW_DEBOUNCE_MS = 150L
 
 private const val QUICK_ACTION_HINT_MS = 3_000L
-private const val ZOOM_TAKEOVER_MS = 300
+internal const val ZOOM_TAKEOVER_MS = 300
 
 /** How long the full-screen player's chrome stays up once it has been left alone. */
 private const val FULL_SCREEN_CHROME_MS = 4_000L

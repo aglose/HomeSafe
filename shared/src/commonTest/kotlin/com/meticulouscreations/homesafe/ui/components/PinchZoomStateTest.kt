@@ -236,6 +236,53 @@ class PinchZoomStateTest {
         assertEquals(250f, state.offset.x, 1f)
     }
 
+    private fun filling() = PinchZoomState().apply {
+        // A 4:3 picture filling a 1600x900 frame is 1600x1200: a 150 px band cut off above and below.
+        viewportSize = IntSize(1600, 900)
+        contentSize = IntSize(1600, 900)
+        restOn(ZoomRest.NONE, pictureInBox(boxAspect = 16f / 9f, aspect = 4f / 3f, fit = VideoFit.Fill, onItsSide = false))
+    }
+
+    @Test
+    fun aPictureFillingItsFrameIsPinchedOutPastItToTheWholeOfIt() = runTest {
+        val state = filling()
+        assertEquals(0.75f, state.minScale, 0.001f, "1200 tall shown in 900")
+        state.transformBy(zoomChange = 0.5f, pan = Offset(0f, 300f), centroid = Offset(800f, 450f))
+        assertEquals(0.75f, state.scale, 0.001f)
+        assertEquals(Offset.Zero, state.offset, "the whole picture, centred: nothing to pan")
+        assertTrue(state.isZoomed)
+        assertFalse(state.settlesOnRest)
+        withContext(FrameClock) { state.settleNearRest() }
+        assertEquals(0.75f, state.scale, 0.001f, "let go there, it stays")
+    }
+
+    @Test
+    fun aPinchLetGoJustPastTheFrameOfAFilledPictureSettlesBackOntoIt() = runTest {
+        val state = filling()
+        state.transformBy(zoomChange = 0.95f, pan = Offset.Zero, centroid = Offset(800f, 450f))
+        assertTrue(state.isZoomed)
+        assertTrue(state.settlesOnRest)
+        withContext(FrameClock) { state.settleNearRest() }
+        assertEquals(1f, state.scale, 0.001f)
+        assertFalse(state.isZoomed)
+    }
+
+    @Test
+    fun aPictureThatIsItsBoxHasNoStopAtOneX() {
+        val state = letterboxed()
+        assertEquals(1f, state.minScale)
+        state.transformBy(zoomChange = 1.05f, pan = Offset.Zero, centroid = centre)
+        assertFalse(state.settlesOnRest, "1x is as far out as it goes: just past it is a zoom of its own")
+    }
+
+    @Test
+    fun aDoubleTapAsCloseAsItGoesOnAFilledPictureShowsTheWholeOfIt() = runTest {
+        val state = filling()
+        state.restOn(ZoomRest(scale = PinchZoomState.DEFAULT_MAX_SCALE), pictureInBox(boxAspect = 16f / 9f, aspect = 4f / 3f, fit = VideoFit.Fill, onItsSide = false))
+        withContext(FrameClock) { state.animateZoomIn(Offset(800f, 450f)) }
+        assertEquals(0.75f, state.scale, 0.001f)
+    }
+
     /** Frames every 16ms of the test's virtual time. */
     private object FrameClock : MonotonicFrameClock {
         private var nanos = 0L
