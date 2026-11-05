@@ -100,6 +100,8 @@ import com.meticulouscreations.homesafe.finance.ui.FinanceTab
 import com.meticulouscreations.homesafe.navigation.BackStackViewModelStores
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLink
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
@@ -284,11 +286,19 @@ class ShellNavigation(
     var packageLink by mutableStateOf<PackageDeepLink?>(null)
         private set
 
+    /**
+     * The workout in progress was asked for from outside the app (its notification, Live Activity
+     * or the Mac's island; see [openFitnessFromLinks]), until the fitness app has turned to it.
+     */
+    var fitnessWorkoutAsked by mutableStateOf(false)
+        private set
+
     fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null, weatherLink: WeatherDeepLink? = null, packageLink: PackageDeepLink? = null) {
         app = which
         this.financeTab = financeTab.takeIf { which == InnerApp.FINANCE }
         this.weatherLink = weatherLink.takeIf { which == InnerApp.WEATHER }
         this.packageLink = packageLink.takeIf { which == InnerApp.PACKAGES }
+        if (which != InnerApp.FITNESS) fitnessWorkoutAsked = false
         drawerOpen = false
         // The app is a destination of its own in the sidebar: it reads what it was asked to show
         // ([financeTab], [weatherLink]) from here when it comes up.
@@ -317,11 +327,17 @@ class ShellNavigation(
         packageLink = null
     }
 
+    /** The fitness app has turned to the workout it was asked for. */
+    fun onFitnessLinkShown() {
+        fitnessWorkoutAsked = false
+    }
+
     fun closeApp() {
         appOpen = false
         financeTab = null
         weatherLink = null
         packageLink = null
+        fitnessWorkoutAsked = false
         // The shell comes back as the app starts closing — and if a tab switch takes the
         // overlay away before it can say so itself (a notification tap), it still comes back.
         appCovering = false
@@ -546,6 +562,21 @@ class ShellNavigation(
     }
 
     /**
+     * Opens the fitness app whenever a tap on the workout in progress asks for it from outside the
+     * app (see [FitnessDeepLink]), for as long as the caller runs: over whatever tab is up, on the
+     * workout's own page; as [openWeatherFromNotifications] does.
+     */
+    suspend fun openFitnessFromLinks() {
+        FitnessDeepLinks.pending.filterNotNull().collect { link ->
+            val host = selectedTab
+            fitnessWorkoutAsked = link.page == FitnessDeepLink.Page.WORKOUT
+            openApp(InnerApp.FITNESS, Offset.Zero, host)
+            if (!appsInSidebar) onTabSelected(host)
+            FitnessDeepLinks.consume(link)
+        }
+    }
+
+    /**
      * Opens the fitness app on notes shared into PercySafe from another app, for as long as the
      * caller runs, handing the text to [onNotes] (the import page reads it from there). Consumed
      * only here, once the shell exists, for the reason [openMomentsFromNotifications] does.
@@ -598,6 +629,7 @@ fun FrigateAppShell() {
     LaunchedEffect(nav) { nav.openWeatherFromNotifications() }
     LaunchedEffect(nav) { nav.openFinanceFromNotifications() }
     LaunchedEffect(nav) { nav.openPackagesFromNotifications() }
+    LaunchedEffect(nav) { nav.openFitnessFromLinks() }
     AssistantScreenContext { nav.assistantContext() }
 
     // Laid out from the window's answer straight away; the navigation catches up after the frame.

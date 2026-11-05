@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.fitness
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
@@ -42,6 +44,8 @@ import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.domain.ZoneBounds
 import com.meticulouscreations.homesafe.fitness.domain.ZoneTracker
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkout
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkouts
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import dev.zacsweers.metro.AppScope
@@ -56,6 +60,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -184,9 +189,15 @@ data class FitnessUiState(
  * then the log is followed, and while it is on screen the clock is moved on each minute so "3
  * days ago" and a break's ease-in stay true.
  *
- * The heart-rate sensor is listened to only while the app itself is on screen: there is no
- * service behind it, so with the phone locked or another app in front the link is let go, and
- * found again on coming back. What the heart did in between isn't known and isn't counted.
+ * The heart-rate sensor is listened to while the app itself is on screen, and through a workout
+ * in progress where the platform keeps the app running for one ([LiveWorkouts.keepsAppRunning]:
+ * Android's foreground service). Otherwise, with the phone locked or another app in front, the
+ * link is let go and found again on coming back; what the heart did in between isn't known and
+ * isn't counted.
+ *
+ * The workout in progress and its rest are handed to [live], the process's own, which is what
+ * the notification, the Live Activity and the Mac's island show and act on. The rest is that
+ * hub's: a rest skipped from the Lock Screen is skipped here too.
  */
 @Inject
 @ViewModelKey
@@ -197,6 +208,10 @@ class FitnessViewModel(
     private val clock: Clock,
     private val preferences: FitnessPreferencesRepository,
     private val logSync: FitnessLogSync,
+    /** Asked, the first time a workout starts, to let the app notify: the workout in progress and its rest running out are shown that way. */
+    private val notifier: AlertNotifier,
+    /** The workout in progress for the whole process, and its rest; a test hands in its own. */
+    private val live: LiveWorkouts = LiveWorkouts.process,
     /**
      * Where the boards are built from the log, off the main thread: every set logged and every
      * minute rebuilds all of them. A test hands in its own.
@@ -222,8 +237,11 @@ class FitnessViewModel(
     private var heartSettings = HeartSettings()
     private var heartSummaries: Map<Long, HeartSummary>? = null
 
-    /** The app itself is on screen, which is when the sensor is listened to. */
-    private var watching = false
+    /** The app itself is on screen. */
+    private val onScreen = MutableStateFlow(false)
+
+    /** The sensor is listened to: the app is on screen, or a workout is in progress and the app is kept running for it. */
+    private val watching: Boolean get() = onScreen.value || (live.keepsAppRunning && _uiState.value.workout != null)
 
     /** Sensors are being looked for, to choose one. */
     private var searching = false
@@ -240,11 +258,28 @@ class FitnessViewModel(
     /** A workout being closed: readings that arrive before the log says so are not added to it. */
     private var closing: Long? = null
 
+    init {
+        // The rest is the hub's: one changed from outside the app (a notification's button) shows here too.
+        viewModelScope.launch { live.rest.collect { rest -> _uiState.update { it.copy(rest = rest) } } }
+        // The workout in progress goes to the live surfaces whenever it or the heart changes, once the log has been read:
+        // until then "no workout" means only that it hasn't been looked for.
+        viewModelScope.launch {
+            combine(_uiState, _heart, onScreen) { state, heart, shown -> if (state.loaded) LiveWorkout.of(state, heart, shown) else UNREAD }.collect { workout ->
+                if (workout !== UNREAD) live.show(workout)
+            }
+        }
+        // A workout left in progress (the app stopped, the Activity built again) is followed from the start, so that its
+        // notification comes back without the fitness app having to be opened first.
+        viewModelScope.launch {
+            if (repository.workouts.first().any { it.isInProgress(now()) }) followLog()
+        }
+    }
+
     /** The drawer ([full] false) or the app itself came on screen; [active] false when both are gone. */
     fun setActive(active: Boolean, full: Boolean = true) {
         tick?.cancel()
         tick = null
-        watching = active && full
+        onScreen.value = active && full
         syncHeartLink()
         if (!active) {
             keepingInStep?.cancel()
@@ -252,18 +287,7 @@ class FitnessViewModel(
             return
         }
         if (keepingInStep == null) keepingInStep = viewModelScope.launch { logSync.follow() }
-        if (follow == null) {
-            followHeart()
-            viewModelScope.launch { logSync.status.collect { status -> _uiState.update { it.copy(syncStatus = status) } } }
-            viewModelScope.launch { preferences.observeFigureStyle().collect { style -> _uiState.update { it.copy(figureStyle = style) } } }
-            follow = viewModelScope.launch {
-                combine(repository.exercises, repository.sets, repository.workouts, repository.phases, repository.bodyweights, ::FitnessLog).collect { latest ->
-                    log = latest
-                    closeAbandonedWorkouts(latest)
-                    publish(loaded = true)
-                }
-            }
-        }
+        followLog()
         if (!full) return
         tick = viewModelScope.launch {
             while (isActive) {
@@ -274,10 +298,30 @@ class FitnessViewModel(
         }
     }
 
+    /** Starts following the log (and the heart's settings), once. */
+    private fun followLog() {
+        if (follow != null) return
+        followHeart()
+        viewModelScope.launch { logSync.status.collect { status -> _uiState.update { it.copy(syncStatus = status) } } }
+        viewModelScope.launch { preferences.observeFigureStyle().collect { style -> _uiState.update { it.copy(figureStyle = style) } } }
+        follow = viewModelScope.launch {
+            combine(repository.exercises, repository.sets, repository.workouts, repository.phases, repository.bodyweights, ::FitnessLog).collect { latest ->
+                log = latest
+                closeAbandonedWorkouts(latest)
+                publish(loaded = true)
+            }
+        }
+    }
+
     fun startWorkout(focus: WorkoutFocus) {
         // A second tap before the first has been read back is the same request, not another workout.
         if (_uiState.value.workout != null || starting?.isActive == true) return
         starting = viewModelScope.launch { repository.startWorkout(focus, now()) }
+        // Outside the app the workout is a notification (Android) and its rest running out an alert (Android, iPhone):
+        // asked for here, as it begins, where the reason is plain. Once refused, the workout carries on without them.
+        viewModelScope.launch {
+            if (notifier.isSupported && notifier.permissionStatus() == NotificationPermission.NOT_DETERMINED) notifier.requestPermission()
+        }
     }
 
     fun finishWorkout() {
@@ -321,6 +365,7 @@ class FitnessViewModel(
         tally = null
         restPeak = null
         forgetDeletedSet()
+        live.skipRest()
         _uiState.update { it.copy(rest = null) }
         _heart.update { it.copy(summary = null, recovery = null) }
         return heart
@@ -347,9 +392,11 @@ class FitnessViewModel(
             val record = Strength.record(exercise, saved, before, phaseStart, state.bodyweight.latest?.trend)
             // The rest starts from where the heart is now; it usually climbs a few beats more before it turns.
             restPeak = _heart.value.bpm
+            val rest = RestTimer(clock.now().toEpochMilliseconds() + exercise.restSeconds * 1000L, exercise.restSeconds, exerciseId)
+            live.startRest(rest)
             _uiState.update { current ->
                 current.copy(
-                    rest = RestTimer(clock.now().toEpochMilliseconds() + exercise.restSeconds * 1000L, exercise.restSeconds, exerciseId),
+                    rest = rest,
                     flash = record?.let { RecordFlash(++flashes, exercise.name, saved, it, exercise.loadKind) } ?: current.flash,
                 )
             }
@@ -390,13 +437,14 @@ class FitnessViewModel(
     fun skipRest() {
         restPeak = null
         _heart.update { it.copy(recovery = null) }
+        live.skipRest()
         _uiState.update { it.copy(rest = null) }
     }
 
     /** Lengthens (or with a negative [seconds], shortens) the rest that is counting. */
-    fun adjustRest(seconds: Int) = _uiState.update { state ->
-        val rest = state.rest ?: return@update state
-        state.copy(rest = rest.copy(endsAtEpochMillis = rest.endsAtEpochMillis + seconds * 1000L, totalSeconds = (rest.totalSeconds + seconds).coerceAtLeast(1)))
+    fun adjustRest(seconds: Int) {
+        live.adjustRest(seconds)
+        _uiState.update { it.copy(rest = live.rest.value) }
     }
 
     /** Adds an exercise by name alone; what it works and how it is loaded are guessed from the name and can be changed after. */
@@ -717,6 +765,8 @@ class FitnessViewModel(
     private suspend fun publish(loaded: Boolean? = null) = publishing.withLock {
         val built = log
         val at = now()
+        // A rest that ran out a while ago has said so for long enough.
+        live.forgetRestOverBefore(at * 1000L - REST_LINGER_MS)
         val offset = localUtcOffsetSeconds(at.toDouble())
         val boards = withContext(boardDispatcher) { FitnessBoardBuilder.build(built, at, offset, offsetAt = { localUtcOffsetSeconds(it.toDouble()) }) }
         // A newer log came in while these were built (the minute's tick, overtaken): its own publish, waiting its turn, shows it.
@@ -731,8 +781,7 @@ class FitnessViewModel(
                 boards = boards.boards,
                 days = boards.days,
                 workout = boards.workout,
-                // A rest that ran out a while ago has said so for long enough.
-                rest = state.rest?.takeIf { it.endsAtEpochMillis > at * 1000L - REST_LINGER_MS },
+                rest = live.rest.value,
                 week = boards.week,
                 recentRecords = boards.recentRecords,
                 bodyweight = boards.bodyweight,
@@ -743,6 +792,8 @@ class FitnessViewModel(
             )
         }
         if (boards.workout?.workout?.id != closing) closing = null
+        // A workout opening or closing may change whether the sensor is listened to with the app away.
+        syncHeartLink()
         _heart.update { it.copy(last = lastHeart(), summary = it.summary.takeIf { boards.workout != null }) }
     }
 
@@ -756,6 +807,9 @@ class FitnessViewModel(
 
         /** How long a finished rest stays on screen, saying it is over, before it is cleared. */
         const val REST_LINGER_MS = 5 * 60_000L
+
+        /** Stands for "the log hasn't been read", which isn't the same as no workout. */
+        private val UNREAD = LiveWorkout(workoutId = -1, focus = WorkoutFocus.CHEST, startedAtEpochMillis = 0)
 
         /** How much of a workout's heart may be added up before it is written down, so a killed app loses little of it. */
         const val HEART_SAVE_MILLIS = 30_000L

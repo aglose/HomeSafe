@@ -41,4 +41,6 @@ val NotificationGlyph.drawableRes: Int
         NotificationGlyph.BUDGET -> R.drawable.ic_notification_budget
         NotificationGlyph.DONE -> R.drawable.ic_notification_done
         NotificationGlyph.RUN -> R.drawable.ic_notification_run
+        NotificationGlyph.WORKOUT -> R.drawable.ic_notification_workout
+        NotificationGlyph.REST -> R.drawable.ic_notification_rest
     }

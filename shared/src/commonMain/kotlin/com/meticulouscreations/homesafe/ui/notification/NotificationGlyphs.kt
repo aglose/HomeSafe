@@ -171,6 +171,16 @@ enum class NotificationGlyph(val resourceName: String, val layers: List<GlyphLay
 
     // ---- The fitness app ------------------------------------------------------------------------
     RUN("ic_notification_run", listOf(line("M5.5,18.5c4,0 3.5,-6.5 7,-6.5s3,-6.5 6,-6.5", accent = true), fill(dot(5.5f, 18.5f, 2.2f) + dot(18.5f, 5.5f, 2.2f)))),
+    WORKOUT(
+        "ic_notification_workout",
+        // A dumbbell end on: two plates a side, and the bar between them.
+        listOf(fill("M5,6.5h3v11h-3zM16,6.5h3v11h-3zM2.5,9h2v6h-2zM19.5,9h2v6h-2z"), line("M8,12h8", width = 2.4f, accent = true)),
+    ),
+    REST(
+        "ic_notification_rest",
+        // A stopwatch: its face, the crown on top, and the hand.
+        listOf(line("M12,6.5a7.5,7.5 0 1,0 0.01,0zM10,2.5h4M12,2.5v4"), line("M12,14v-4", width = 2.2f, accent = true)),
+    ),
 }
 
 /** The grid every glyph is drawn on: Android's 24 dp icon. */

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The workout in progress outside the fitness app's own screen: Android's ongoing notification
+  and its chip in the status bar, the iPhone's Live Activity (Lock Screen and Dynamic Island),
+  and the Mac's island at the top of the screen and its menu-bar item. See docs/fitness.md,
+  "Outside the app", and AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The headline while a rest counts down: %1$s the exercise just done ("Resting after Bench press") -->
+    <string name="fitness_live_resting_after">Resting after %1$s</string>
+    <string name="fitness_live_resting">Resting</string>
+    <!-- The headline once a rest has run out, and the alert that says so -->
+    <string name="fitness_live_rest_over">Rest's up</string>
+
+    <!-- What the workout has come to so far -->
+    <plurals name="fitness_live_sets">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
+    <plurals name="fitness_live_records">
+        <item quantity="one">%1$d record</item>
+        <item quantity="other">%1$d records</item>
+    </plurals>
+    <string name="fitness_live_no_sets">No sets yet</string>
+
+    <!-- The exercise in hand: %1$s its name, %2$s its last set today ("Bench press · last 185 lb × 8") -->
+    <string name="fitness_live_lift_last">%1$s · last %2$s</string>
+    <!-- The exercise in hand before a set of it is logged: %1$s its name, %2$s today's target -->
+    <string name="fitness_live_lift_aim">%1$s · aim for %2$s</string>
+    <!-- The next exercise on the workout's shelves not done today: %1$s its name -->
+    <string name="fitness_live_up_next">Up next: %1$s</string>
+    <!-- The same, with %2$s today's target for it ("Up next: Incline press · aim for 70 lb × 10") -->
+    <string name="fitness_live_up_next_aim">Up next: %1$s · aim for %2$s</string>
+    <!-- Before the workout's first set: %1$s the exercise the workout lists first -->
+    <string name="fitness_live_first_up">First up: %1$s</string>
+    <string name="fitness_live_first_up_aim">First up: %1$s · aim for %2$s</string>
+
+    <!-- The heart rate: %1$d beats a minute -->
+    <string name="fitness_live_heart">%1$d bpm</string>
+    <!-- %1$d beats a minute, %2$d the zone's number ("142 bpm · zone 3") -->
+    <string name="fitness_live_heart_zone">%1$d bpm · zone %2$d</string>
+    <!-- During a rest: %1$d beats a minute now, %2$d how far it has fallen since the set -->
+    <string name="fitness_live_heart_down">%1$d bpm · down %2$d</string>
+
+    <string name="fitness_live_open">Open workout</string>
+    <!-- The Mac's island: put it away until the next rest begins -->
+    <string name="fitness_live_hide">Hide until the next rest</string>
+    <!-- The Mac's island, for a screen reader: what it is -->
+    <string name="fitness_live_island">Workout in progress</string>
+</resources>

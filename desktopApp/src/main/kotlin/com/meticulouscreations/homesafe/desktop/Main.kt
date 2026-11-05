@@ -9,6 +9,7 @@ import androidx.compose.ui.window.application
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkoutPresenter
 import com.meticulouscreations.homesafe.navigation.ShellCommand
 import com.meticulouscreations.homesafe.navigation.ShellCommands
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
@@ -43,6 +44,8 @@ fun main() {
     val graph = DesktopApp.graph
     // The weather's check while the app is open; the switch in the weather app turns it on and off.
     DesktopWeatherRefresh.register { graph.weatherAlertCheck }
+    // The workout in progress outside the window: the island, the menu-bar item, and a rest's end in Notification Center.
+    LiveWorkoutPresenter.install(DesktopLiveWorkoutSurface)
 
     application {
         var windowVisible by remember { mutableStateOf(true) }
@@ -74,6 +77,9 @@ fun main() {
             onMinimize = { windowState.isMinimized = true },
             onQuit = ::exitApplication,
         )
+
+        // The workout in progress, at the top of the screen while the window is away.
+        WorkoutIsland(onOpen = showWindow)
 
         HomeSafeWindow(
             graph = graph,

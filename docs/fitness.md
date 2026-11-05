@@ -162,6 +162,65 @@ workout), so one cut off part-way leaves the workout whole. There is no undo. A 
 [sent as a copy](#moving-the-log) beforehand comes back if that copy is brought in again, since
 a copy adds whatever the log hasn't got.
 
+## Outside the app
+
+A workout in progress goes on being shown once the app is put away: on the phone's Lock Screen and
+status bar, in the iPhone's Dynamic Island, and at the top of the Mac's screen. Each shows the same
+three phases the workout's own page does, and says the same words in the reader's language
+(`fitness/live/LiveWorkoutCopy.kt`, `strings_fitness_live.xml`):
+
+| Phase | Headline | Under it | The time |
+|---|---|---|---|
+| Between rests | "Chest day" | the exercise in hand and its last set, or before the first set what to start on | how long the workout has gone, counting up |
+| Resting | "Resting after Bench press" | what comes next, with today's target | the rest counting down, and a ring or bar draining |
+| Rest's up | "Rest's up" | the exercise to go back to | "Go" |
+
+Where a sensor is on, the heart rate rides along ("128 bpm · down 24" during a rest). While a rest
+counts there are three buttons, **−15**, **+15** and **Skip rest**, which act on the very rest the app
+shows: there is only one, the process's own (`LiveWorkouts`), so a rest skipped from the Lock Screen
+is skipped on the page too. A tap anywhere else opens the workout full screen
+(`homesafe://fitness?page=workout`, `FitnessDeepLink`), over whatever the app had up.
+
+- **Android**: an ongoing notification that Android 16 promotes to a Live Update: at the top of the
+  shade and the Lock Screen, and a chip in the status bar that counts the rest down (between rests,
+  the workout's time; once it is over, "Go"). While resting it is a progress bar in the workout's
+  colour. It is kept up by `WorkoutSessionService`, a foreground service of the `health` type, which
+  keeps the app running with the screen off, so the rest's end buzzes on time (the phone is held
+  awake for the rest's countdown only) and the heart-rate sensor stays linked through the workout.
+  Android starts that type only once the app may read heart rate (Health Connect, asked for with
+  the health store) and `connectedDevice` once a Bluetooth sensor may be linked; with neither, the
+  same notification is posted without the service, and lasts as long as Android keeps the app.
+  When a rest runs out with the app away, a second notification on its own channel ("Rest over")
+  buzzes once, with no sound, and goes after two minutes. With the app in front, the page says it.
+  `LiveWorkoutSurface.android.kt`; logcat `HomeSafeWorkout`.
+- **iPhone**: a Live Activity (`iosApp/WorkoutWidget`, an extension of its own) on the Lock Screen
+  and in the Dynamic Island: the badge and the time when small, the whole card with its buttons when
+  held open. The countdown, the stopwatch and the ring are drawn by the system from dates, so they
+  keep time with the app asleep; the activity is stale from the rest's end, which is when it is
+  drawn as over. An app asleep can't say when a rest is over, so a local notification is scheduled
+  for that moment and moved with the rest; it is the app's one notification with a sound, since an
+  iPhone only buzzes for those (with the ring switch off, it is the buzz alone), and it stays off
+  the screen while the workout's page is up. The buttons are App Intents run in the app
+  (`WorkoutRestIntents.swift`); started afresh just to run one, with no workout in hand, the app
+  changes the activity by itself.
+- **Mac**: an island under the menu bar, where a MacBook's camera notch is, shaped like the
+  iPhone's (`LiveWorkoutIsland`, drawn in `desktopApp/.../WorkoutIsland.kt`). It floats over every
+  app while HomeSafe's window is away (behind another, minimised or closed) and opens out under the
+  pointer into the rest's buttons, a way into the workout, and one to hide it until the next rest.
+  The menu-bar icon becomes the rest's ring while one counts, and its menu leads with the workout
+  and its buttons. A rest that runs out with the window away says so in Notification Center.
+
+The first time a workout starts, the app asks to notify (Android 13 and up, and the iPhone): that is
+how all of the above but the Mac's island is shown. Refused, the workout carries on without them.
+
+A workout left in progress when the app was stopped is followed again as soon as the app starts,
+not only once the fitness app is opened, so its notification and Live Activity come back on their
+own. One left open past eight hours is taken off them, as it is no longer the one in progress.
+
+**Not yet tried on a real phone**: the Live Update and its service have been built and are tested
+through the shared code, and the Live Activity builds and draws in its previews, but neither has
+been run on a device. Android's promotion depends on the phone (Android 16, and the OEM's rules).
+
 ## Heart rate
 
 A workout can show the heart rate live, with the zone it is in, from a Bluetooth heart-rate
@@ -236,9 +295,11 @@ one the band marks as off the skin, or one outside 30–240 is shown as no readi
 
 ### When it stops
 
-**The heart rate is followed only while the fitness app is on screen.** There is no foreground
-service: when the phone is locked, the screen times out, or another app comes in front, the link
-is let go, and it is found again (a few seconds) on coming back. So that a workout isn't cut off
+**The heart rate is followed while the fitness app is on screen, and through a workout in progress
+where the app is kept running for it** (on Android, the workout's foreground service; see
+[Outside the app](#outside-the-app)). Otherwise, when the phone is locked, the screen times out, or
+another app comes in front, the link is let go, and it is found again (a few seconds) on coming
+back. So that a workout isn't cut off
 by the screen timing out between sets, the screen is kept on while a workout is open and the app
 is in front (`KeepScreenOn`: the view's flag on Android, the idle timer on iOS); it times out as
 usual everywhere else, and locking the phone still lets the link go. Zone alerts therefore only
@@ -788,8 +849,11 @@ A movement of its own is four things, and the tests name whichever is still miss
 - `fitness/FitnessBoard.kt`: `FitnessBoardBuilder` works every screen's state out of the whole
   log in one pass, the history's sessions included. The log is a few thousand rows at most, so it is simply rebuilt when it changes.
 - `fitness/FitnessViewModel.kt`: scoped to the activity and shared with the drawer's card. It
-  follows the log once the drawer or the app has been on screen, and holds the open workout's
-  rest timer, the record flash and the import draft. The heart rate is a second state beside
+  follows the log once the drawer or the app has been on screen (or from the start, with a workout
+  left in progress), and holds the record flash and the import draft. The rest timer is the
+  process's (`fitness/live/LiveWorkouts`), which the view model hands the workout to for the
+  [surfaces outside the app](#outside-the-app); `LiveWorkoutPresenter` passes it on to the
+  platform's `LiveWorkoutSurface`. The heart rate is a second state beside
   the first (`heart`), since it alone changes every second.
 - `fitness/ui`: the screens. `FitnessAppContent` is the whole app from one state, for previews
   (`scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md)) and UI tests. `BodyUi.kt` is Today's
@@ -831,6 +895,12 @@ A movement of its own is four things, and the tests name whichever is still miss
   `jvmTest/.../FitnessFigureMigrationTest` (schema 21 to 22 on a real SQLite file), and
   `jvmTest/.../MovementPicturesTest`, which reads every packed movement's files the way the app
   does, so that the renderer and the app can't drift apart unnoticed.
+- Outside the app: `live/LiveWorkoutTest` (what is in hand and what is next, the heart, the phases, and
+  every line's words), `live/LiveWorkoutsTest` (one rest for every surface, and the presenter:
+  shown, ended, a stale rest let go, a stale workout taken off), `navigation/FitnessDeepLinkTest`
+  in `:shared`, and in `FitnessHeartViewModelTest` the sensor kept linked with the app away where
+  the app is kept running. The platforms' own halves (the notification and its service, the Live
+  Activity, the Mac's window) have no test: the Live Activity and the island have previews.
 - `uiTest/.../FitnessAppUiTest`: the screens through their test tags.
 - `jvmTest/.../FitnessShadersCompileTest` and `androidDeviceTest/.../FitnessShadersTest`: every
   shader compiles, on Skia and on a device's AGSL compiler.

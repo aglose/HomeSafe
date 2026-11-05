@@ -4,6 +4,12 @@ import com.meticulouscreations.homesafe.data.IosNotificationTaps
 import com.meticulouscreations.homesafe.data.IosPushToken
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.fitness.IosLiveActivities
+import com.meticulouscreations.homesafe.fitness.IosLiveWorkoutSurface
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkoutPresenter
+import com.meticulouscreations.homesafe.fitness.live.LiveWorkouts
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLink
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLinks
 import com.meticulouscreations.homesafe.ui.components.IosWebRtc
 import com.meticulouscreations.homesafe.ui.components.IosWebRtcPeerFactory
 import com.meticulouscreations.homesafe.weather.data.IosWeatherRefresh
@@ -41,6 +47,49 @@ fun startIosApp() {
 fun startIosApp(webRtc: IosWebRtcPeerFactory?) {
     IosWebRtc.peerFactory = webRtc
     startIosApp()
+}
+
+/**
+ * [startIosApp] with the WebRTC engine and the workout's Live Activity ([IosLiveActivities],
+ * `WorkoutLiveActivities.swift`), both of which live on the Swift side.
+ */
+@Suppress("unused")
+fun startIosApp(webRtc: IosWebRtcPeerFactory?, liveActivities: IosLiveActivities?) {
+    if (liveActivities != null) {
+        LiveWorkoutPresenter.install(IosLiveWorkoutSurface(liveActivities))
+        FitnessDeepLinks.workoutOnScreen = { LiveWorkouts.process.workout.value?.onScreen == true }
+    }
+    startIosApp(webRtc)
+}
+
+/**
+ * A button on the workout's Live Activity, run in the app (`WorkoutRestIntents.swift`): [action]
+ * `skip` skips the rest, `adjust` lengthens it by [seconds] (shortens, below zero). The rest is
+ * the process's own, so the app's page and the activity follow it. False when this process has
+ * no workout to act on (iOS started the app afresh for the button): Swift then changes the
+ * activity by itself.
+ */
+@Suppress("unused")
+fun onWorkoutRestAction(action: String, seconds: Int): Boolean {
+    val hub = LiveWorkouts.process
+    if (hub.workout.value == null) return false
+    when (action) {
+        "skip" -> hub.skipRest()
+        "adjust" -> hub.adjustRest(seconds)
+        else -> return false
+    }
+    return true
+}
+
+/**
+ * A link the app was opened with (SwiftUI's `onOpenURL`): a tap on the workout's Live Activity
+ * arrives this way, as `homesafe://fitness?page=workout`. True when it was one of the app's.
+ */
+@Suppress("unused")
+fun onOpenUrl(url: String): Boolean {
+    val fitness = FitnessDeepLink.fromUri(url) ?: return false
+    FitnessDeepLinks.open(fitness)
+    return true
 }
 
 /**

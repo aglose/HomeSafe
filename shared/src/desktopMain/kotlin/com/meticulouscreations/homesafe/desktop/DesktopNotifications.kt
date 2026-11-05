@@ -4,6 +4,8 @@ import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLink
+import com.meticulouscreations.homesafe.navigation.FitnessDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.PackageDeepLink
@@ -52,6 +54,7 @@ object DesktopNotifications {
         PackageDeepLink.fromUri(link)?.let { return PackageDeepLinks.open(it) }
         ParkingDeepLink.fromUri(link)?.let { return ParkingDeepLinks.open(it) }
         FinanceDeepLink.fromUri(link)?.let { return FinanceDeepLinks.open(it) }
+        FitnessDeepLink.fromUri(link)?.let { return FitnessDeepLinks.open(it) }
         MomentDeepLink.fromUri(link)?.let(MomentDeepLinks::open)
     }
 }
