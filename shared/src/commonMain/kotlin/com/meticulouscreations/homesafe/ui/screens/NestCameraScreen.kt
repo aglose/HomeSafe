@@ -412,8 +412,8 @@ internal fun Modifier.restBox(box: NestVideoRestBox): Modifier = layout { measur
 /**
  * The page under the header: the [video], at rest a box of [boxAspect]'s shape as wide as the page
  * and no taller than it leaves room for over the [footer], which sits under it. As [takeover] goes
- * from 0 to 1 (zoomed) the video's viewport grows down to [bottomInsetPx] above the foot of the
- * page, clear of the floating nav bar, on a [backdrop] that runs to the foot under it, and the
+ * from 0 to 1 (zoomed) the video's viewport grows from that box to the page's width and down to
+ * [bottomInsetPx] above the foot of the page, clear of the floating nav bar, on a [backdrop] that runs to the foot under it, and the
  * footer is pushed off the bottom. Both are read during layout and drawing, so the takeover never
  * recomposes the page.
  */
@@ -446,10 +446,13 @@ internal fun NestVideoAndFooter(
         val rest = nestVideoRestSize(width, height - footer.height, boxAspect)
         restBox.size = rest
         val t = takeover()
+        // At rest the viewport is the video's box, so a crop the zoom rests on shows as it was
+        // framed, even where a tall picture leaves the page wider than the box.
+        val viewportWidth = lerp(rest.width, width, t)
         val viewportHeight = lerp(rest.height, max(rest.height, height - bottomInsetPx), t)
-        val viewport = videoMeasurables.first().measure(Constraints.fixed(width, viewportHeight))
+        val viewport = videoMeasurables.first().measure(Constraints.fixed(viewportWidth, viewportHeight))
         layout(width, height) {
-            viewport.place(0, 0)
+            viewport.place((width - viewportWidth) / 2, 0)
             footer.place(0, lerp(rest.height, max(rest.height, height), t))
         }
     }

@@ -16,6 +16,8 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraCrop
+import com.meticulouscreations.homesafe.ui.components.PinchZoomState
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraCard
@@ -42,10 +44,11 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class CameraCardZoomUiTest {
 
-    private fun tile(name: String) = CameraTile(
+    private fun tile(name: String, crop: CameraCrop = CameraCrop.WHOLE) = CameraTile(
         camera = Camera(name = name, enabled = true),
         streamUrl = null,
         posterUrl = null,
+        crop = crop,
     )
 
     private fun ComposeUiTest.setUpHome(nav: ShellNavigation? = null): CameraCardZoomState {
@@ -58,7 +61,7 @@ class CameraCardZoomUiTest {
                     Box {
                         HomeFeed(
                             everyoneAway = false,
-                            cameras = listOf(tile("front_door"), tile("back_yard")),
+                            cameras = listOf(tile("front_door"), tile("back_yard"), tile("driveway", crop = LOW_CROP)),
                             onAwayBack = {},
                         ) { tile ->
                             CameraCard(
@@ -210,7 +213,28 @@ class CameraCardZoomUiTest {
         assertEquals(1f, state.zoom.scale)
     }
 
+    @Test
+    fun aCroppedCardsLookSettlesBackOntoItsCropNotTheMiddleOfThePicture() = runComposeUiTest {
+        val state = setUpHome()
+        scrollIntoView(onNodeWithTag("card-driveway")).performTouchInput { longClick(center) }
+        mainClock.advanceTimeBy(SETTLE_MS)
+        assertEquals("driveway", state.target?.camera?.name)
+        assertEquals(PinchZoomState.DEFAULT_MAX_SCALE, state.zoom.scale, 0.01f, "2.5 times the crop's 2x, as far as the zoom goes")
+
+        onNodeWithContentDescription("Close").performClick()
+        mainClock.advanceTimeBy(SETTLE_MS)
+
+        assertNull(state.target)
+        // Resting on the crop: twice as close, slid up by a quarter of the picture twice over,
+        // which is half the box. Bounded by the whole overlay, the slide was clamped to nothing.
+        assertEquals(2f, state.zoom.scale, 0.01f)
+        assertEquals(-state.contentSize.height / 2f, state.zoom.offset.y, 1f)
+    }
+
     private companion object {
+        /** Twice as close, low in the picture: what Arrange mode saves for a card framed on a driveway's near end. */
+        val LOW_CROP = CameraCrop(zoom = 2f, centerY = 0.75f)
+
         /** Longer than the lift and the zoom animations plus the frames either side of them. */
         const val SETTLE_MS = 2_000L
     }

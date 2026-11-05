@@ -283,6 +283,34 @@ class PinchZoomStateTest {
         assertEquals(0.75f, state.scale, 0.001f)
     }
 
+    @Test
+    fun anOffCentreCropKeepsItsPlaceInAWindowSmallerThanTheViewport() = runTest {
+        // The Home quick look: a 1600x900 box in a 1600x3000 overlay, resting on a 2x crop low down.
+        val crop = CameraCrop(zoom = 2f, centerY = 0.75f)
+        val box = IntSize(1600, 900)
+        val state = PinchZoomState().apply {
+            viewportSize = IntSize(1600, 3000)
+            contentSize = box
+            window = box
+            restOn(cropAsZoomRest(crop, boxAspect = 16f / 9f, aspect = null, fit = null, onItsSide = false))
+        }
+        // (0.5 - 0.75) x 2 x 900: slid 450 up, as far as the box allows; the overlay alone would centre it.
+        assertEquals(-450f, state.offset.y, 0.5f)
+        assertFalse(state.isZoomed)
+
+        // Zoomed, the window takes the overlay: 2700 tall in 3000, centred.
+        state.transformBy(zoomChange = 1.5f, pan = Offset.Zero, centroid = Offset(800f, 1500f))
+        state.window = IntSize(1600, 3000)
+        assertEquals(0f, state.offset.y, 0.5f)
+
+        // Back to the crop while the window is still the overlay, then the window shrinks to the box.
+        withContext(FrameClock) { state.animateReset() }
+        state.window = IntSize(1600, 1900)
+        state.window = box
+        assertEquals(-450f, state.offset.y, 0.5f, "back where the card shows it")
+        assertFalse(state.isZoomed)
+    }
+
     /** Frames every 16ms of the test's virtual time. */
     private object FrameClock : MonotonicFrameClock {
         private var nanos = 0L

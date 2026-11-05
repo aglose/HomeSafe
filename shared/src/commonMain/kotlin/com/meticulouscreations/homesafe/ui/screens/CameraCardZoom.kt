@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -42,10 +43,10 @@ import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -76,6 +77,7 @@ import homesafe.shared.generated.resources.common_close
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -90,8 +92,9 @@ import org.jetbrains.compose.resources.stringResource
  * A card framed in Arrange mode shows its crop, and the look opens on that same view, but drawn by
  * the zoom resting on the crop ([cropAsZoomRest]) rather than by cutting the picture down, as on a
  * camera's page: pinching out from it reaches the whole picture, every pixel of it, and a drag
- * pans past the crop's edges. Lifted, the look shows the picture around the crop that the card
- * had no room for.
+ * pans past the crop's edges. At rest the look shows the picture through the card's box, so the
+ * crop is framed as it was saved; zoomed, the box grows to the whole overlay ([takeover]), as a
+ * camera page's player takes over its page.
  *
  * The state is shared between the cards, which start the gesture, and [CameraCardZoomOverlay],
  * which draws it. The pinch that opens the layer keeps its pointer stream on the card it began on
@@ -121,6 +124,12 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     /** 0 = the video sits exactly over its card, 1 = it has lifted into the overlay's own frame. */
     val lift = Animatable(0f)
+
+    /**
+     * 0 = the picture shows through the video's 16:9 box, as the card showed it; 1 = zoomed, it
+     * shows through the whole overlay. Follows [PinchZoomState.isZoomed], driven by the overlay.
+     */
+    val takeover = Animatable(0f)
 
     /** The back swipe in progress, 0 to 1, set by the overlay that listens for it. */
     internal var backProgress: () -> Float = { 0f }
@@ -234,18 +243,27 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
     }
 
     /**
-     * The window the overlay shows the picture through, in an overlay [size] across: the card's
-     * bounds with its [cornerRadius] at take-off, growing with the lift to the whole overlay,
-     * square, once the look has lifted.
+     * What the picture shows through in the zoom's frame (the overlay before the lift's
+     * transform), centred in it: the video's 16:9 box, growing to the whole overlay with [takeover].
+     * The zoom's pans are bounded by it ([PinchZoomState.window]).
+     */
+    internal fun zoomWindow(): IntSize {
+        if (contentSize == IntSize.Zero || viewportSize == IntSize.Zero) return viewportSize
+        val t = takeover.value
+        return IntSize(lerp(contentSize.width, viewportSize.width, t), lerp(contentSize.height, viewportSize.height, t))
+    }
+
+    /**
+     * [zoomWindow] as drawn in an overlay [size] across, through the lift: over the card, with
+     * its [cornerRadius], at take-off, and square once the look has lifted.
      */
     internal fun liftClip(size: Size, cornerRadius: Float): Shape {
-        val t = shownLift
-        if (contentSize == IntSize.Zero) return RectangleShape
+        if (contentSize == IntSize.Zero) return WindowShape(Rect.Zero, 0f)
         val frame = liftFrame()
+        val window = zoomWindow()
         val center = Offset(size.width / 2f, size.height / 2f) + frame.translation
-        val half = Offset(contentSize.width * frame.scale / 2f, contentSize.height * frame.scale / 2f)
-        val card = Rect(center - half, center + half)
-        return WindowShape(lerp(card, Rect(Offset.Zero, size), t), cornerRadius * (1f - t))
+        val half = Offset(window.width * frame.scale / 2f, window.height * frame.scale / 2f)
+        return WindowShape(Rect(center - half, center + half), cornerRadius * (1f - shownLift))
     }
 
     private fun begin(tile: CameraTile, cardBoundsInRoot: Rect) {
@@ -280,6 +298,9 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
         withFrameNanos {}
         target = null
         lift.snapTo(0f)
+        // The overlay that drove these has gone: back to the card's box, for the next look's rest.
+        takeover.snapTo(0f)
+        zoom.window = zoomWindow()
         zoom.reset()
     }
 
@@ -329,6 +350,13 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
     // Read here rather than in the effect: the picture's shape may only now have been measured.
     val framing = tile.lookFraming()
     SideEffect { state.zoom.restOn(framing.rest, framing.picture) }
+    // Zoomed, the picture takes the whole overlay; at rest it is back in its box. From a
+    // snapshotFlow, so the pinch's per-frame changes never recompose the overlay.
+    LaunchedEffect(state) {
+        snapshotFlow { state.zoom.isZoomed }.collectLatest { zoomed ->
+            state.takeover.animateTo(if (zoomed) 1f else 0f, tween(ZOOM_TAKEOVER_MS))
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -339,12 +367,19 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
             .onSizeChanged { state.viewportSize = it }
             .pinchZoomGestures(state.zoom, onPinchEnded = onPinchEnded),
     ) {
-        // The window the picture shows through: the card at take-off, rounded as it is, and the
-        // whole overlay once lifted. The zoom rests on the card's crop, so the picture is larger
-        // than the card, and this is what keeps the rest of it out of sight until the look lifts.
+        // The window the picture shows through: the card at take-off, rounded as it is, the
+        // video's box once lifted, and the whole overlay while zoomed. The zoom rests on the
+        // card's crop, so the picture is larger than the box, and this keeps the rest of it out
+        // of sight until a pinch reaches for it. Its size bounds the zoom's pans, set here while
+        // laying out so the picture is placed against it in the same frame.
         Box(
             modifier = Modifier
                 .matchParentSize()
+                .layout { measurable, constraints ->
+                    state.zoom.window = state.zoomWindow()
+                    val placeable = measurable.measure(constraints)
+                    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                }
                 .graphicsLayer {
                     shape = state.liftClip(Size(size.width, size.height), CAMERA_CARD_CORNER_RADIUS.toPx())
                     clip = true

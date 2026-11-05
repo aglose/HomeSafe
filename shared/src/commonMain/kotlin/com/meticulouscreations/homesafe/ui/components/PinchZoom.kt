@@ -93,6 +93,21 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         }
 
     /**
+     * The part of the viewport the content is seen through, centred in it, where that is smaller
+     * than the viewport: null is the whole viewport. For a surface that takes touches over more
+     * than it shows (the Home quick look, which shows the picture through the card's box until it
+     * is zoomed), so the pan stops where the picture ends in what is shown, and a crop the content
+     * rests on keeps its place. Re-clamps as the sizes above do.
+     */
+    internal var window: IntSize? = null
+        set(value) {
+            if (value == field) return
+            val resting = !isZoomed
+            field = value
+            offset = if (resting) restOffset() else offset.clampedFor(scale)
+        }
+
+    /**
      * The picture's size beside the content's box, on each axis (see [restOn]). Snapshot state,
      * as [minScale] is read from it.
      */
@@ -219,8 +234,9 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     }
 
     private fun Offset.clampedFor(scale: Float): Offset {
-        val maxX = ((contentSize.width * picture.width * scale - viewportSize.width) / 2f).coerceAtLeast(0f)
-        val maxY = ((contentSize.height * picture.height * scale - viewportSize.height) / 2f).coerceAtLeast(0f)
+        val shown = window ?: viewportSize
+        val maxX = ((contentSize.width * picture.width * scale - shown.width) / 2f).coerceAtLeast(0f)
+        val maxY = ((contentSize.height * picture.height * scale - shown.height) / 2f).coerceAtLeast(0f)
         return Offset(x.coerceIn(-maxX, maxX), y.coerceIn(-maxY, maxY))
     }
 
