@@ -2048,6 +2048,28 @@ public fun com.meticulouscreations.homesafe.ui.screens.NestCameraScreen(streamNa
     - warmStillUrl: STABLE (class with no mutable properties)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.NestVideoAndFooter(takeover: kotlin.Function0<kotlin.Float>, boxAspect: kotlin.Float, bottomInsetPx: kotlin.Int, restBox: com.meticulouscreations.homesafe.ui.screens.NestVideoRestBox, backdrop: androidx.compose.ui.graphics.Color, video: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, footer: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - takeover: STABLE (function type)
+    - boxAspect: STABLE (primitive type)
+    - bottomInsetPx: STABLE (primitive type)
+    - restBox: STABLE (marked @Stable or @Immutable)
+    - backdrop: STABLE (marked @Stable or @Immutable)
+    - video: STABLE (composable function type)
+    - footer: STABLE (composable function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.NestVideoAndFooterSample(takeover: kotlin.Float, boxAspect: kotlin.Float): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - takeover: STABLE (primitive type)
+    - boxAspect: STABLE (primitive type)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.NotAPersonBar(state: com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState, onUndo: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true

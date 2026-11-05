@@ -33,8 +33,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * Scale and pan for a pinch-zoomable surface, kept within bounds: never smaller than 1x, never
- * larger than [maxScale], and never panned far enough to show an empty edge of the viewport.
+ * Scale and pan for a pinch-zoomable surface, kept within bounds: never smaller than [minScale]
+ * (1x, unless the picture is larger than its box), never larger than [maxScale], and never panned
+ * far enough to show an empty edge of the viewport.
  *
  * Two nodes take part. The *viewport* receives the touches and clips ([Modifier.pinchZoomGestures]);
  * the *content* sits centred inside it and is what grows ([Modifier.pinchZoomContent]). They may be
@@ -48,7 +49,9 @@ import kotlin.math.abs
  *
  * The edges a pan stops at are the picture's: the content's own box unless [restOn] says the
  * picture drawn in it is larger (a picture filling a box of another shape, spilling past it) or
- * smaller (one shown whole between bars).
+ * smaller (one shown whole between bars). A picture larger than its box can also be pinched out
+ * past 1x until the whole of it is in the box ([minScale]): every pixel of a picture filling the
+ * frame, not only those the frame shows.
  */
 @Stable
 class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
@@ -62,6 +65,12 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     /** Where the content sits when nothing has zoomed it. */
     var rest by mutableStateOf(ZoomRest.NONE)
         private set
+
+    /**
+     * The furthest out a pinch goes: 1x, or where the whole picture fits the content's box when it
+     * is larger than that box on some axis (see [restOn]).
+     */
+    val minScale: Float get() = minOf(1f, 1f / picture.width, 1f / picture.height)
 
     /** Whether the content has been moved off its [rest]: pinched, tapped or held closer, or further out. */
     val isZoomed: Boolean get() = abs(scale - rest.scale) > REST_SCALE_TOLERANCE || (offset - restOffset()).getDistance() > REST_OFFSET_TOLERANCE_PX
@@ -84,10 +93,25 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         }
 
     /**
-     * The picture's size beside the content's box, on each axis (see [restOn]). Not snapshot
-     * state: only read where the pan is bounded.
+     * The part of the viewport the content is seen through, centred in it, where that is smaller
+     * than the viewport: null is the whole viewport. For a surface that takes touches over more
+     * than it shows (the Home quick look, which shows the picture through the card's box until it
+     * is zoomed), so the pan stops where the picture ends in what is shown, and a crop the content
+     * rests on keeps its place. Re-clamps as the sizes above do.
      */
-    private var picture: Size = WHOLE_BOX
+    internal var window: IntSize? = null
+        set(value) {
+            if (value == field) return
+            val resting = !isZoomed
+            field = value
+            offset = if (resting) restOffset() else offset.clampedFor(scale)
+        }
+
+    /**
+     * The picture's size beside the content's box, on each axis (see [restOn]). Snapshot state,
+     * as [minScale] is read from it.
+     */
+    private var picture by mutableStateOf(WHOLE_BOX)
 
     /**
      * Rests the content at [rest] from now on, with a [picture] that size beside the content's box
@@ -105,6 +129,7 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
             scale = clamped.scale
             offset = restOffset()
         } else {
+            scale = scale.coerceIn(minScale, maxScale)
             offset = offset.clampedFor(scale)
         }
     }
@@ -120,7 +145,7 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
 
     /** One increment of a pinch: zoom about [centroid] (viewport-local) by [zoomChange], then drag by [pan]. */
     fun transformBy(zoomChange: Float, pan: Offset, centroid: Offset) {
-        val newScale = (scale * zoomChange).coerceIn(1f, maxScale)
+        val newScale = (scale * zoomChange).coerceIn(minScale, maxScale)
         val focal = centroid - viewportSize.center
         // Keep the content point under the fingers where it is, then let the drag move it.
         val newOffset = focal + pan - (focal - offset) * (newScale / scale)
@@ -140,8 +165,11 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         }
     }
 
-    /** Back to the [rest]. */
-    suspend fun animateReset() = animateTo(rest.scale, restOffset())
+    /**
+     * Back to the [rest], wherever that is as the animation ends: the bounds may be shrinking
+     * underneath it (a quick look settling into its card), and the rest's shift is clamped by them.
+     */
+    suspend fun animateReset() = animateTo(rest.scale, ::restOffset)
 
     /** Straight back to the [rest], no animation — for a surface that is about to be shown afresh. */
     fun reset() {
@@ -156,29 +184,36 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
      */
     suspend fun animateZoomIn(centroid: Offset) {
         val closer = (rest.scale * DOUBLE_TAP_SCALE).coerceAtMost(maxScale)
-        animateZoomTo(if (closer - rest.scale > REST_SCALE_TOLERANCE) closer else 1f, centroid)
+        animateZoomTo(if (closer - rest.scale > REST_SCALE_TOLERANCE) closer else minScale, centroid)
     }
 
     /**
-     * The fingers lifted after a pinch: a [rest] closer than 1x is a stop on the way out, so a
-     * pinch let go near its scale settles back onto it rather than leaving the content just off
-     * it. A pinch carried on past it reaches the whole content. Resting at 1x needs no stop: a
-     * pinch outward ends there anyway.
+     * The fingers lifted after a pinch: a [rest] closer than [minScale] is a stop on the way out,
+     * so a pinch let go near its scale settles back onto it rather than leaving the content just
+     * off it. A pinch carried on past it reaches the whole content. Resting as far out as the zoom
+     * goes needs no stop: a pinch outward ends there anyway.
      */
     suspend fun settleNearRest() {
-        if (rest.scale <= 1f || !isZoomed) return
-        if (abs(scale / rest.scale - 1f) <= REST_SNAP_FRACTION) animateReset()
+        if (isZoomed && settlesOnRest) animateReset()
     }
+
+    /** Whether the content is at its [rest], or near enough that letting go settles it there ([settleNearRest]). */
+    val settlesOnRest: Boolean
+        get() = !isZoomed || (rest.scale > minScale + REST_SCALE_TOLERANCE && abs(scale / rest.scale - 1f) <= REST_SNAP_FRACTION)
 
     /** Zooms to [targetScale] with the content under [centroid] (viewport-local) staying put — a double-tap zoom. */
     suspend fun animateZoomTo(targetScale: Float, centroid: Offset) {
-        val newScale = targetScale.coerceIn(1f, maxScale)
+        val newScale = targetScale.coerceIn(minScale, maxScale)
         val focal = centroid - viewportSize.center
         val newOffset = (focal - (focal - offset) * (newScale / scale)).clampedFor(newScale)
-        animateTo(newScale, newOffset)
+        animateTo(newScale) { newOffset }
     }
 
-    private suspend fun animateTo(targetScale: Float, targetOffset: Offset) {
+    /** Whether the viewport and the content have both been laid out, so a gesture lands where it should. */
+    internal val isLaidOut: Boolean get() = viewportSize != IntSize.Zero && contentSize != IntSize.Zero
+
+    /** To [targetScale] and the offset [targetOffset] gives, asked again each frame. */
+    private suspend fun animateTo(targetScale: Float, targetOffset: () -> Offset) {
         val fromScale = scale
         val fromOffset = offset
         var drift = Offset.Zero
@@ -188,7 +223,7 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         try {
             animate(0f, 1f) { t, _ ->
                 scale = fromScale + (targetScale - fromScale) * t
-                val path = fromOffset + (targetOffset - fromOffset) * t
+                val path = fromOffset + (targetOffset() - fromOffset) * t
                 // Clamped per frame: the viewport may be growing underneath the animation. Drift
                 // the clamp cut off is dropped, so dragging back moves the picture straight away.
                 offset = (path + drift + pendingPan).clampedFor(scale)
@@ -206,8 +241,9 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     }
 
     private fun Offset.clampedFor(scale: Float): Offset {
-        val maxX = ((contentSize.width * picture.width * scale - viewportSize.width) / 2f).coerceAtLeast(0f)
-        val maxY = ((contentSize.height * picture.height * scale - viewportSize.height) / 2f).coerceAtLeast(0f)
+        val shown = window ?: viewportSize
+        val maxX = ((contentSize.width * picture.width * scale - shown.width) / 2f).coerceAtLeast(0f)
+        val maxY = ((contentSize.height * picture.height * scale - shown.height) / 2f).coerceAtLeast(0f)
         return Offset(x.coerceIn(-maxX, maxX), y.coerceIn(-maxY, maxY))
     }
 
