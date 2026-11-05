@@ -12,9 +12,14 @@ of it, with the image's own instrument.py; OUT is a folder in the repository, wh
 sees at /work. APKSIM_INSTRUMENT runs another instrument.py instead, such as an apksim installed on
 the Mac (`APKSIM_INSTRUMENT="python3 $APKSIM_SCRIPTS/instrument.py"`, IMAGE unused).
 
-Each module's test APK instruments itself, so it is passed as both APKs. The whole-app journeys
-run in one process (2-3 minutes; one process per test takes over ten), and the end-to-end tests
-one process per test, four at a time, as the Orchestrator does.
+Each module's test APK instruments itself, so it is passed as both APKs. Three suites run at once
+(SUITES_AT_ONCE, a container each), longest first: on a 4-CPU runner one test process keeps one to
+one and a half cores busy, so three fill it, and a fourth only slows the others. The whole-app
+journeys, the longest suite, are split over two processes (instrument.py --shards 2, AndroidJUnitRunner's
+numShards/shardIndex), and the end-to-end tests run in one process: apksim gives every test a fresh
+Application and data folder already, and one process per test cost a JVM start each (~560
+CPU-seconds of the ~1,300 the whole set took). One journey waits for the feed's real 30-second
+poll, which bounds the journeys however they are split.
 
 A test that fails is run once more in a process of its own. If it passes then, it counts as
 flaky: the run still passes, and the job summary and a warning name it, so it is seen and fixed
@@ -24,12 +29,16 @@ which is why.) A test that fails twice, or a suite that crashes, fails the run.
 Writes to OUT a JUnit XML and a log per suite (and per rerun), results.json (every test's outcome,
 for scripts/ci/compare-device-tests.py), and summary.md, which also goes to the job summary.
 """
-import glob, json, os, shlex, subprocess, sys, time
+import concurrent.futures, glob, json, os, shlex, subprocess, sys, time
 import xml.etree.ElementTree as ET
 
 JOURNEYS = "com.meticulouscreations.homesafe.integration"
 # More failures than this in one suite is not a flake: don't spend minutes rerunning them.
 MAX_RERUNS = 10
+# Suites running at the same time; see the module doc.
+SUITES_AT_ONCE = int(os.environ.get("APKSIM_SUITES_AT_ONCE", "3"))
+# Started first, in this order (the longest); the rest follow in the order they are listed.
+LONGEST = ["journeys", "shared", "app", "e2e"]
 
 
 def main():
@@ -54,10 +63,9 @@ def main():
             suites.append((name, apk, apk, []))
     apk = "app/build/outputs/apk/androidTest/app-androidTest.apk"
     suites.append(("app", apk, apk, ["-e", "notPackage", JOURNEYS]))
-    suites.append(("journeys", apk, apk, ["-e", "package", JOURNEYS]))
+    suites.append(("journeys", apk, apk, ["-e", "package", JOURNEYS, "--shards", "2"]))
     suites.append(("e2e", "androidApp/build/outputs/apk/debug/androidApp-debug.apk",
-                   "androidApp/build/outputs/apk/androidTest/debug/androidApp-debug-androidTest.apk",
-                   ["--isolate", "-j", "4"]))
+                   "androidApp/build/outputs/apk/androidTest/debug/androidApp-debug-androidTest.apk", []))
 
     def instrument(name, app, test, args):
         start = time.time()
@@ -72,7 +80,10 @@ def main():
     outcomes = {}  # "class#method" -> passed | failed | flaky | skipped
     rows, failures, flaky = [], [], []
     total = time.time()
-    for name, app, test, args in suites:
+
+    def run_suite(suite):
+        """A suite and the rerun of its failures: (results, rerun, seconds). Runs beside other suites."""
+        name, app, test, args = suite
         results, seconds = instrument(name, app, test, args)
         if not results:
             results = {("(run)", name): ("failed", "no results: see " + name + ".log")}
@@ -91,6 +102,14 @@ def main():
                 results.update({(f"(rerun) {c}", m): v for (c, m), v in broken.items()}
                                or {("(rerun)", name): ("failed", f"the rerun gave no results: see {name}-rerun.log")})
                 rerun = {}
+        print(f"{name}: done [{seconds:.0f} s]", flush=True)
+        return results, rerun, seconds
+
+    order = sorted(suites, key=lambda s: LONGEST.index(s[0]) if s[0] in LONGEST else len(LONGEST))
+    with concurrent.futures.ThreadPoolExecutor(SUITES_AT_ONCE) as pool:
+        done = dict(zip([s[0] for s in order], pool.map(run_suite, order)))
+    for name, app, test, args in suites:  # reported in the usual order, whatever order they finished in
+        results, rerun, seconds = done[name]
         counts = {"passed": 0, "failed": 0, "flaky": 0, "skipped": 0}
         for (c, m), (status, message) in results.items():
             if status == "failed" and rerun.get((c, m), ("failed",))[0] == "passed":

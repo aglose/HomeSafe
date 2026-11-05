@@ -104,9 +104,10 @@ On pull requests and main, CI runs them on [apksim](https://github.com/aglose/ap
 ([`.github/workflows/apksim.yml`](../.github/workflows/apksim.yml), CI's `android-ui` job): Android's framework on the
 JVM, API 36, in apksim's published Linux image (`ghcr.io/aglose/apksim`, pinned to a release in the workflow). The same APKs, built with `assembleAndroidDeviceTest :androidApp:assembleDebug
 :androidApp:assembleDebugAndroidTest`, go to [`scripts/ci/apksim-device-tests.py`](../scripts/ci/apksim-device-tests.py),
-which runs each module's suite, the journeys package in one process, the rest of `:app` (`notPackage`), and the
-end-to-end tests one process per test. A test that fails is run once more on its own; if it passes then, the job
-passes and names it as flaky in a warning and the job summary. A new test needs listing nowhere.
+which runs each module's suite, the journeys package split over two processes (`--shards 2`), the rest of `:app`
+(`notPackage`), and the end-to-end tests in one process, three suites at a time, longest first (a container each; a
+4-CPU runner is full with three). A test that fails is run once more on its own; if it passes then, the job passes and
+names it as flaky in a warning and the job summary. A new test needs listing nowhere.
 
 Every night the emulators run them too
 ([`.github/workflows/device-tests-nightly.yml`](../.github/workflows/device-tests-nightly.yml)), on two API 34

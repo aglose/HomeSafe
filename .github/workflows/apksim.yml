@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      APKSIM_IMAGE: ghcr.io/aglose/apksim:0.5.0
+      APKSIM_IMAGE: ghcr.io/aglose/apksim:0.8.0
     steps:
       - uses: actions/checkout@v7
       # Pulled beside the build, so it is ready when the APKs are.
