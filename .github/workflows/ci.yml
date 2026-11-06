@@ -178,6 +178,19 @@ jobs:
     if: needs.already-tested.outputs.skip != 'true'
     uses: ./.github/workflows/apksim.yml
 
+  # On a main that android-ui skipped (see already-tested), the same Gradle build without the
+  # tests, so main still saves the Gradle cache that pull requests' android-ui restores: same job
+  # in apksim.yml, same workflow, so the same cache key (see build-only there). Without it, they
+  # restored another job's entry and rebuilt most of the app. ci-green and publish-internal don't
+  # wait for it.
+  device-tests-cache:
+    name: Device tests cache
+    needs: already-tested
+    if: needs.already-tested.outputs.skip == 'true'
+    uses: ./.github/workflows/apksim.yml
+    with:
+      build-only: true
+
   # The cold-launch regression gate. Builds the base branch's app and this one's (benchmarkRelease:
   # release bytecode with the fake Frigate's test login), then times both on one emulator,
   # interleaved: process start to first frame, and sign-in to the first live video frame on Home
