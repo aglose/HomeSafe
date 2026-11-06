@@ -5,10 +5,21 @@
 # for), and the nightly run calls it beside the emulators to check the two still agree
 # (device-tests-nightly.yml). apksim is pinned to a release of its published image (APKSIM_IMAGE);
 # a new release can change how apps translate, so move it on purpose.
+#
+# build-only (CI's device-tests-cache job, on a push to main whose pull request already ran the
+# tests): the Gradle build alone, so main still saves this job's Gradle cache. setup-gradle keys it
+# by this job's id (apksim), the calling workflow's name and the matrix, and a pull request's run
+# here first restores the newest entry with all three the same: it has to be CI's run on main that
+# saves it. The nightly's entries carry the nightly's workflow name.
 name: Device tests on apksim
 
 on:
   workflow_call:
+    inputs:
+      build-only:
+        description: Build the test APKs and save the Gradle cache, without running the tests.
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -16,7 +27,7 @@ permissions:
 
 jobs:
   apksim:
-    name: Device tests on apksim (no emulator)
+    name: ${{ inputs.build-only && 'Build the test APKs (Gradle cache for pull requests)' || 'Device tests on apksim (no emulator)' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -25,6 +36,7 @@ jobs:
       - uses: actions/checkout@v7
       # Pulled beside the build, so it is ready when the APKs are.
       - name: Pull apksim's image
+        if: ${{ !inputs.build-only }}
         run: docker pull --quiet "$APKSIM_IMAGE" > pull.log 2>&1 &
       - uses: actions/setup-java@v6
         with:
@@ -40,12 +52,13 @@ jobs:
       # A failure is run once more in a process of its own; one that passes then is reported as
       # flaky (a warning and the summary) rather than failing the job. See the script.
       - name: Device tests
+        if: ${{ !inputs.build-only }}
         run: |
           docker pull --quiet "$APKSIM_IMAGE"
           scripts/ci/apksim-device-tests.py "$APKSIM_IMAGE" apksim-results
 
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: ${{ always() && !inputs.build-only }}
         with:
           name: apksim-results
           path: apksim-results/**

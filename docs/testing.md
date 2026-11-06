@@ -107,7 +107,10 @@ JVM, API 36, in apksim's published Linux image (`ghcr.io/aglose/apksim`, pinned 
 which runs each module's suite, the journeys package split over two processes (`--shards 2`), the rest of `:app`
 (`notPackage`), and the end-to-end tests in one process, three suites at a time, longest first (a container each; a
 4-CPU runner is full with three). A test that fails is run once more on its own; if it passes then, the job passes and
-names it as flaky in a warning and the job summary. A new test needs listing nowhere.
+names it as flaky in a warning and the job summary. A new test needs listing nowhere. On a push to main whose pull request
+already passed them on the same tree, CI skips the tests but still runs the build (`device-tests-cache`, apksim.yml's
+`build-only`). setup-gradle keys the Gradle cache by job and workflow, so a pull request's device tests restore only what
+this job saved on main under CI; with nothing saved there, they restored another job's entry and rebuilt most of the app.
 
 Every night the emulators run them too
 ([`.github/workflows/device-tests-nightly.yml`](../.github/workflows/device-tests-nightly.yml)), on two API 34
