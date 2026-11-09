@@ -43,11 +43,11 @@ jobs:
         with:
           sparse-checkout: scripts/ci/compare-device-tests.py
           sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: android-ui-reports-*
           path: results/emulator
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: apksim-results
           path: results/apksim
