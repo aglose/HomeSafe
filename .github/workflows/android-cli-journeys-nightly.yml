@@ -49,12 +49,12 @@ jobs:
         with:
           sparse-checkout: scripts/ci/compare-journeys.py
           sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: android-cli-journeys-emulator
           path: results/emulator
         continue-on-error: true
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: android-cli-journeys-apksim
           path: results/apksim
