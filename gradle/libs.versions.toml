@@ -61,7 +61,7 @@ ktlintGradle = "14.2.0"
 composeRules = "0.6.8"
 # Compose Preview Screenshot Testing's engine: renders :androidApp's @PreviewTest previews through
 # Layoutlib, as the AGP test suite in androidApp/build.gradle.kts.
-screenshot = "0.0.1-alpha16"
+screenshot = "0.0.1-alpha17"
 
 googleServices = "4.5.0"
 playServicesLocation = "21.4.0"
