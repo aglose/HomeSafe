@@ -44,6 +44,19 @@ class ShellCameraHopTest {
     }
 
     @Test
+    fun theWayBackOpensTheAppOverTheTabItsChipWasOn() {
+        val nav = ShellNavigation()
+        nav.openApp(InnerApp.FINANCE, Offset.Zero, TopLevelRoute.Home)
+        assertNotNull(nav.hopToCameras).invoke()
+
+        // A native tab bar had moved on to Settings without telling the shell.
+        nav.returnToApp(Offset.Zero, TopLevelRoute.Settings)
+
+        assertTrue(nav.isOpen(InnerApp.FINANCE))
+        assertEquals(TopLevelRoute.Settings, nav.appHost)
+    }
+
+    @Test
     fun openingAnAppAnotherWayForgetsTheWayBackAndStartsAfresh() {
         val nav = ShellNavigation()
         nav.openApp(InnerApp.FINANCE, Offset.Zero, TopLevelRoute.Home)

@@ -6,13 +6,18 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.TouchInjectionScope
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.ui.FinanceDetailPill
@@ -67,6 +72,17 @@ class FinanceDetailPillUiTest {
         onNodeWithTag("finance_pill_back").performClick()
         waitForIdle()
         assertEquals(listOf(1), pops)
+    }
+
+    @Test
+    fun aKeyboardReachesTheBackHalfAndEnterOrSpaceGoesBackOneLevel() = runComposeUiTest {
+        setUpPill()
+        onNodeWithTag("finance_pill_back").requestFocus()
+        onNodeWithTag("finance_pill_back").assertIsFocused()
+        onNodeWithTag("finance_pill_back").performKeyInput { pressKey(Key.Enter) }
+        onNodeWithTag("finance_pill_back").performKeyInput { pressKey(Key.Spacebar) }
+        waitForIdle()
+        assertEquals(listOf(1, 1), pops)
     }
 
     @Test

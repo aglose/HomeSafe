@@ -79,12 +79,13 @@ internal fun ReturnToAppChip(nav: ShellNavigation, tab: TopLevelRoute) {
     val lift = if (LocalNativeTabBar.current || isCompactLandscape()) bottomNavClearance() else bottomNavClearance() - 16.dp
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         AnimatedVisibility(
-            visible = app != null && nav.showsBottomNav(tab),
+            // Not beside the sidebar: there the apps are destinations of their own, a click away.
+            visible = app != null && !nav.appsInSidebar && nav.showsBottomNav(tab),
             modifier = Modifier.padding(bottom = lift),
             enter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) + slideInVertically(tween(NAV_TRANSITION_MS, easing = NavEnterEasing)) { it / 2 },
             exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)) + slideOutVertically(tween(NAV_TRANSITION_MS / 2)) { it / 2 },
         ) {
-            ReturnChip(shown, onClick = nav::returnToApp)
+            ReturnChip(shown, onClick = { origin -> nav.returnToApp(origin, tab) })
         }
     }
 }

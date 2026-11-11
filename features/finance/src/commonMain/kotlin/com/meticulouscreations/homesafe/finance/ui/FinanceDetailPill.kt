@@ -9,6 +9,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -46,6 +47,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -144,6 +150,14 @@ fun FinanceDetailPill(
                     .background(if (picked != null) colors.gain.copy(alpha = 0.16f) else Color.Transparent)
                     .handCursor()
                     .testTag("finance_pill_back")
+                    // A keyboard gets the tap: Tab reaches it, and Enter or Space goes up one level. Ahead of the
+                    // semantics below, which would clear the focus it offers.
+                    .onKeyEvent { event ->
+                        val activates = event.key == Key.Enter || event.key == Key.NumPadEnter || event.key == Key.Spacebar
+                        if (activates && event.type == KeyEventType.KeyUp) pop(1)
+                        activates
+                    }
+                    .focusable()
                     .clearAndSetSemantics {
                         role = Role.Button
                         contentDescription = backTo

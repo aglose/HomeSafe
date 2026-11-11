@@ -332,10 +332,14 @@ class ShellNavigation(
             }
         }
 
-    /** Back to the app the cameras were hopped to from, growing from [origin] (where the chip that offers it is), on the page it was left on. */
-    fun returnToApp(origin: Offset) {
+    /**
+     * Back to the app the cameras were hopped to from, growing from [origin] (where the chip that
+     * offers it is), on the page it was left on. It opens over [from], the tab the chip was on:
+     * under a native tab bar that can be another tab than the one last selected here.
+     */
+    fun returnToApp(origin: Offset, from: TopLevelRoute = selectedTab) {
         val which = returnApp ?: return
-        openApp(which, origin, selectedTab)
+        openApp(which, origin, from)
         appResumes = true
     }
 
