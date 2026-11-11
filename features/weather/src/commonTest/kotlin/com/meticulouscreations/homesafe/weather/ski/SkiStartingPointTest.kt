@@ -45,6 +45,15 @@ class SkiStartingPointTest {
     }
 
     @Test
+    fun theBackgroundRefreshStartsFromAnApproximatePosition() = runTest {
+        val h = Harness()
+
+        assertEquals(SkiPoint(45.5234, -122.6762), h.start.approximateOf(SkiOrigin.HERE))
+        assertEquals(1, h.fence.approximateFixes)
+        assertEquals(1, h.fence.fixes)
+    }
+
+    @Test
     fun aMacStartsFromHomeWhicheverWasChosen() = runTest {
         val h = Harness(canLocate = false)
         h.identity.saveCachedHome(HomeLocation(37.0, -122.0, 100.0))

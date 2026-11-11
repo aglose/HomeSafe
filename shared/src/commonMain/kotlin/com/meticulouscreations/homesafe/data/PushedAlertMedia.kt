@@ -1,6 +1,5 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import dev.zacsweers.metro.Inject
@@ -22,20 +21,14 @@ class PushedAlertMedia(
     private val identity: DeviceIdentityStore,
     private val clock: Clock,
 ) {
-    /**
-     * Re-posts [text] — already on screen — with the picture and then the clip of [eventId],
-     * which started at [startEpochSeconds]; see [addAlertMedia]. Returns once [post] has shown the
-     * clip or its last ask has failed, about a minute at most.
-     */
-    suspend fun addTo(text: AlertNotification, eventId: String, startEpochSeconds: Double, post: suspend (AlertNotification) -> Unit) =
-        addAlertMedia(
-            text = text,
-            startEpochSeconds = startEpochSeconds,
-            clock = { clock.now().toEpochMilliseconds() / 1000.0 },
-            thumbnail = { fetch(eventId, "thumbnail.jpg") },
-            previewGif = { fetch(eventId, "preview.gif") },
-            post = post,
-        )
+    /** The picture of [eventId], to re-post a notification already on screen with. */
+    suspend fun picture(eventId: String): ByteArray? = fetch(eventId, "thumbnail.jpg").getOrNull()
+
+    /** Frigate's animated preview of [eventId]: null until it has cut one, which [clipWaitMs] says when to expect. */
+    suspend fun clip(eventId: String): ByteArray? = fetch(eventId, "preview.gif").getOrNull()
+
+    /** How long until the clip of a detection that started at [startEpochSeconds] is worth asking for (see [previewWaitMs]). */
+    fun clipWaitMs(startEpochSeconds: Double): Long = previewWaitMs(startEpochSeconds, clock.now().toEpochMilliseconds() / 1000.0)
 
     private suspend fun fetch(eventId: String, name: String): Result<ByteArray> {
         val deviceId = identity.deviceId()

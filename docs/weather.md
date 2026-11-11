@@ -290,10 +290,12 @@ Nothing is fetched or marked as sent while the OS has notifications switched off
 a notification the OS refuses isn't marked as sent either, so the next check tries it again. The
 check runs:
 
-- **Android**: every half hour or so as WorkManager work (`WeatherCheckWorker`), needing only a
-  network; it survives the app being closed and the phone restarting. It takes a fix if the app
-  has "all the time" location (as automatic presence asks for), and otherwise forecasts for where
-  the phone last was when the app was open.
+- **Android**: every half hour or so as WorkManager work (`WeatherCheckWorker`), needing a
+  network and a battery that isn't low; it survives the app being closed and the phone restarting.
+  It asks where the phone is if the app has "all the time" location (as automatic presence asks
+  for), and otherwise forecasts for where the phone last was when the app was open. The position
+  is an approximate one, from Wi-Fi and cell towers or one another app was given in the last ten
+  minutes: a forecast needs no better, and GPS forty-eight times a day is battery for nothing.
 - **iOS**: as a background app refresh, when iOS grants one, and whenever the weather app is
   opened. iOS decides how often that is, from how the app is used.
 - Whenever the weather app is opened, on any platform with notifications.

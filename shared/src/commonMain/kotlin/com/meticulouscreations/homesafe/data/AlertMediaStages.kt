@@ -27,8 +27,7 @@ internal suspend fun addAlertMedia(
         ?.let { text.copy(thumbnail = it) }
         ?.also { post(it) }
         ?: text
-    val untilComplete = (startEpochSeconds + windowSeconds - clock()).coerceIn(0.0, windowSeconds)
-    delay((untilComplete * 1000).toLong())
+    delay(previewWaitMs(startEpochSeconds, clock(), windowSeconds))
     for (wait in listOf(0L) + retryDelaysMs) {
         delay(wait)
         val gif = previewGif().getOrNull() ?: continue
@@ -36,6 +35,10 @@ internal suspend fun addAlertMedia(
         return
     }
 }
+
+/** How long from [nowEpochSeconds] until the preview of a detection that started at [startEpochSeconds] is complete: nothing, for an old one. */
+internal fun previewWaitMs(startEpochSeconds: Double, nowEpochSeconds: Double, windowSeconds: Double = PREVIEW_WINDOW_SECONDS): Long =
+    ((startEpochSeconds + windowSeconds - nowEpochSeconds).coerceIn(0.0, windowSeconds) * 1000).toLong()
 
 /** Frigate's 20 s preview window, plus a little for its last frames to land. */
 internal const val PREVIEW_WINDOW_SECONDS = 22.0
