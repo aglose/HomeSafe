@@ -201,6 +201,7 @@ data class RelayPackage(
     val url: String? = null,
     val frames: List<String> = emptyList(),
     val timeline: List<RelayPackageEvent> = emptyList(),
+    val destination: String? = null,
 )
 
 @Serializable

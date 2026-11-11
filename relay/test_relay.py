@@ -8698,6 +8698,21 @@ class PackageEmailTest(unittest.TestCase):
         self.assertEqual("refund", self.parse("Amazon <x@amazon.com>", "Your refund for Vitamins", "Order # 113-0000000-0000001\nRefund total $12.00")["stage"])
         self.assertIsNone(self.parse("Amazon <x@amazon.com>", "How refunds work"))
 
+    def test_a_shop_s_label_over_the_address_names_the_town_it_is_going_to(self):
+        florist = "Your order has shipped!\nSHIPPING TO\nPat Example\n12 ELM ST, LAKEVIEW, OR 97630\nBouq in the Package:\n1 Main St | Some Town | CA 90000"
+        self.assertEqual("LAKEVIEW, OR", self.parse("Florist <hello@florist.example>", "Your order has shipped!", florist + "\nOrder # FC0000000-1")["to"])
+        self.assertEqual("LAKEVIEW, OR", relay.package_destination(["Delivered to: Pat Example", "Lakeview, OR 97630-1234"]))
+
+    def test_amazon_s_line_under_the_items_names_the_town(self):
+        self.assertEqual("TOWN, CA", self.parse("Amazon <order-update@amazon.com>", "Delivered 2 items: Hardware, Vitamins", self.AMAZON_DELIVERED)["to"])
+
+    def test_a_shop_s_own_address_at_the_foot_isn_t_where_it_is_going(self):
+        self.assertIsNone(relay.package_destination(["Your order has shipped!", "1 Main St | Some Town | CA 90000", "Unsubscribe"]))
+        self.assertIsNone(relay.package_destination(["Ship to", "Pat Example", "Order, ZZ"]))
+
+    def test_a_town_is_written_to_a_person_as_a_person_would(self):
+        self.assertEqual("Mount Holly, NJ", relay.package_place("MOUNT HOLLY, NJ"))
+
     def test_a_weekday_means_the_next_one(self):
         sent = relay.datetime(2026, 10, 29, 12, tzinfo=relay.timezone.utc)  # A Thursday.
         self.assertEqual({"from": "2026-11-03", "to": "2026-11-03"}, relay.package_expected(["Arriving Tuesday"], "", sent))
@@ -8896,6 +8911,54 @@ class PackagesTest(_ScratchDb):
         relay.package_send = lambda package, plain, masked, plain_data, masked_data: (seen.append(plain_data["package_verdict"]), {"sent": 1})[1]
         self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon")
         self.assertEqual(["confirmed"], seen)
+
+    def at_home(self):
+        """Enough packages to the household's town for it to be home."""
+        for n in range(relay.PACKAGE_HOME_MIN):
+            self.mail("delivered", self.NOW - 30 * 86400 - n, order=f"h{n}", shop="Amazon", to="TOWN, CA", now=self.NOW - 30 * 86400)
+
+    def test_a_gift_delivered_at_somebody_else_s_house_isn_t_looked_for_at_this_door(self):
+        self.at_home()
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.PARCEL])
+        pushed = []
+        relay.package_send = lambda package, plain, masked, plain_data, masked_data: (pushed.append((plain[1], plain_data.get("package_place"), masked[1], masked_data.get("package_place"))), {"sent": 1})[1]
+        package = relay.package_row(self.mail("delivered", self.NOW, order="FC1", shop="Florist", title="Flowers", to="LAKEVIEW, OR"))
+        self.assertEqual((None, None, None), (package["verdict"], package["porch"], package["visit_event"]))
+        self.assertEqual([("Flowers was delivered in Lakeview, OR", "Lakeview, OR", "A surprise has arrived", None)], pushed)
+        shown = relay.package_json(package, "sam", "2026-10-29")
+        self.assertEqual("Lakeview, OR", shown["destination"])
+        relay.package_update(package["id"], surprise=1)
+        self.assertNotIn("destination", relay.package_json(relay.package_row(package["id"]), "alex", "2026-10-29"))
+
+    def test_home_s_own_town_is_at_this_door(self):
+        self.at_home()
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.PARCEL])
+        package = relay.package_row(self.mail("delivered", self.NOW, order="1", shop="Amazon", carrier="amazon", to="TOWN, CA"))
+        self.assertEqual(("confirmed", None), (package["verdict"], relay.package_json(package, "sam", "2026-10-29")["destination"]))
+
+    def test_before_home_is_known_no_town_is_elsewhere(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.PARCEL])
+        package = relay.package_row(self.mail("delivered", self.NOW, order="FC1", shop="Florist", to="LAKEVIEW, OR"))
+        self.assertEqual("confirmed", package["verdict"])
+
+    def test_a_visit_taken_for_a_gift_s_delivery_is_forgotten_once_its_town_is_read(self):
+        self.at_home()
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.PARCEL])
+        package = self.mail("delivered", self.NOW, order="FC1", shop="Florist", message="gift")
+        self.assertEqual("confirmed", relay.package_row(package)["verdict"])
+        self.assertTrue(os.path.exists(os.path.join(relay.PACKAGE_FRAME_DIR, f"{package}_after.jpg")))
+        # The emails are read again by a parser that finds the town.
+        self.mail("delivered", self.NOW, order="FC1", shop="Florist", message="gift", to="LAKEVIEW, OR")
+        row = relay.package_row(package)
+        self.assertEqual((None, None, None, "LAKEVIEW, OR"), (row["verdict"], row["porch"], row["visit_event"], row["dest"]))
+        self.assertFalse(os.path.exists(os.path.join(relay.PACKAGE_FRAME_DIR, f"{package}_after.jpg")))
+        self.assertNotIn("camera_confirmed", [kind for _, kind, _ in relay.with_db(lambda c: c.execute("SELECT at, kind, detail FROM package_events WHERE package_id=?", (package,)).fetchall())])
+
+    def test_a_parcel_with_no_email_isn_t_given_to_a_gift_due_elsewhere_today(self):
+        self.at_home()
+        self.mail("out_for_delivery", self.NOW - 3600, order="FC1", shop="Florist", to="LAKEVIEW, OR", now=self.NOW + 86400)
+        self.visit(appeared=True, look=True, confidence=0.95, what="box", event="v4")
+        self.assertEqual(["camera"], [p["source"] for p in relay.package_rows("verdict='camera_only'")])
 
     def test_a_visit_the_model_saw_nothing_in_is_still_someone_at_the_door(self):
         self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.NOTHING])

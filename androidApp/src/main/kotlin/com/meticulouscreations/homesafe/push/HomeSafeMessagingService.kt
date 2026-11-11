@@ -187,6 +187,14 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
             return if (alert.away) getString(R.string.notif_package_morning_away, count) else count
         }
         val name = alert.name ?: getString(if (alert.masked) R.string.notif_package_surprise else R.string.notif_package_unnamed)
+        // Going to somebody else's house: it gets there, and nothing at this door is about it.
+        alert.place?.let { place ->
+            when (alert.event) {
+                PackageAlert.Event.OUT_FOR_DELIVERY -> return getString(R.string.notif_package_out_elsewhere, name, place)
+                PackageAlert.Event.DELIVERED -> return getString(R.string.notif_package_delivered_elsewhere, name, place)
+                else -> Unit
+            }
+        }
         return when (alert.event) {
             PackageAlert.Event.SHIPPED -> getString(R.string.notif_package_shipped_body, name)
             PackageAlert.Event.OUT_FOR_DELIVERY -> getString(R.string.notif_package_out_body, name)

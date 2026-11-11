@@ -54,6 +54,8 @@
     <string name="packages_status_problem">Problema de entrega</string>
     <string name="packages_status_may_be_gone">Quizá ya no está en el porche</string>
     <string name="packages_status_delivered_at">Entregado · %1$s</string>
+    <string name="packages_status_delivered_in">Entregado en %1$s</string>
+    <string name="packages_status_going_to">%1$s · va a %2$s</string>
     <string name="packages_status_late">Debía llegar: %1$s. ¿Llegó?</string>
     <string name="packages_status_late_plain">Va con retraso</string>
     <string name="packages_status_out">En reparto hoy</string>
@@ -117,10 +119,12 @@
     <string name="packages_detail_total">Total</string>
     <string name="packages_detail_owner">Para</string>
     <string name="packages_detail_left">Dejado</string>
+    <string name="packages_detail_destination">Destino</string>
     <string name="packages_actions">Qué puedes hacer</string>
     <string name="packages_action_track">Seguir en el sitio del transportista</string>
     <string name="packages_action_claim">Informar un problema</string>
     <string name="packages_action_mark_delivered">Ya llegó</string>
+    <string name="packages_action_mark_delivered_elsewhere">Ya se entregó</string>
     <string name="packages_action_surprise">Mantenerlo en sorpresa</string>
     <string name="packages_action_surprise_body">Los demás solo ven que algo viene</string>
     <string name="packages_action_pin">Fijar arriba</string>

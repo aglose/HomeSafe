@@ -145,6 +145,19 @@ class PackagesBoardTest {
     }
 
     @Test
+    fun aGiftGoingToSomebodyElsesHouseIsntGuessedAtAndDoesntTeachTheGuess() {
+        val here = listOf(13, 14, 14, 15).mapIndexed { i, hour -> came(hour, daysAgo = i + 1) }
+        val away = List(4) { came(20, daysAgo = it + 10).copy(destination = "Lakeview, OR") }
+        assertNull(PackagesAnalysis.arrivalGuess(on("coming").copy(carrier = Carrier.AMAZON, destination = "Lakeview, OR"), here, ParcelZone.fixed(0)))
+        val guess = assertNotNull(PackagesAnalysis.arrivalGuess(on("coming").copy(carrier = Carrier.AMAZON), here + away, ParcelZone.fixed(0)))
+        assertEquals(4, guess.basedOn)
+        val insights = PackagesAnalysis.insights(here + away, today, ParcelZone.fixed(0))
+        assertEquals(8, insights.deliveredAll)
+        assertEquals(4, insights.carriers.single().delivered)
+        assertEquals(0, insights.heat.sumOf { it[20] })
+    }
+
+    @Test
     fun theDoorCameraMomentBeatsTheEmailsForWhenItCame() {
         // The email can come hours after the parcel did; the visit is when it came.
         val past = List(4) { came(20, daysAgo = it + 1).copy(visitAt = (today - it - 1) * 86_400L + 11 * 3600) }

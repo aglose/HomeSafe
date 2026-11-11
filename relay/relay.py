@@ -464,6 +464,9 @@ def db() -> sqlite3.Connection:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS package_events_key ON package_events (key)")
     conn.execute("CREATE TABLE IF NOT EXISTS package_phones (device_id TEXT PRIMARY KEY, person TEXT NOT NULL)")
+    # Where a package is going, "TOWN, ST", as its emails say (see `package_destination`).
+    if "dest" not in {row[1] for row in conn.execute("PRAGMA table_info(packages)")}:
+        conn.execute("ALTER TABLE packages ADD COLUMN dest TEXT")
     # The Fitness app's training logs (see "fitness"): a row of a log as the app wrote it, `data` NULL once it is deleted.
     conn.execute(
         "CREATE TABLE IF NOT EXISTS fitness_rows (owner TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, data TEXT, updated REAL NOT NULL, PRIMARY KEY (owner, kind, id))"
@@ -12898,7 +12901,7 @@ PACKAGE_TRACKER_SECONDS = 1800.0
 PACKAGE_MAX_EMAILS = 300
 PACKAGE_FETCH_GAP = 0.25
 # Bump to read every email in the lookback again when they are read differently.
-PACKAGE_PARSER = 1
+PACKAGE_PARSER = 2
 PACKAGE_PARSER_KEY = "package_parser"
 PACKAGE_SYNCED_KEY = "package_synced"
 PACKAGE_FULL_KEY = "package_full_read"
@@ -12999,6 +13002,18 @@ _PACKAGE_DOMAINS = (("amazon.", "Amazon"), ("homedepot", "The Home Depot"), ("ti
                     ("mercari", "Mercari"), ("factor75", "Factor"), ("wayfair", "Wayfair"), ("lowes", "Lowe's"), ("ikea", "IKEA"), ("pokemon", "Pokémon Center"))
 _PACKAGE_CARRIER_DOMAINS = {"ups.com": "ups", "usps.com": "usps", "fedex.com": "fedex", "dhl.com": "dhl", "ontrac.com": "ontrac", "lasership.com": "lasership", "veho.com": "veho", "uniuni.com": "uniuni"}
 _PACKAGE_SHOP_IN_SUBJECT = re.compile(r"^[Yy]our ([A-Z][\w'&-]*(?: [A-Z][\w'&-]*){0,3}?) (?i:order|shipment|package|box|meals)\b")
+# Where a parcel is going: the town and state under a shop's label over the address ("SHIPPING TO",
+# "Delivered to:", "Ship to", "Delivery address"), or Amazon's "Sam - TOWN, CA" under its items. A
+# gift sent from here to somebody else's house names their town, and nothing that happens at this
+# door is its news (see `package_elsewhere`). On 2026-11-11, 400 of the household's shipping emails
+# named a town in about 7 of 10, and every one but a florist's to another state named home's.
+_PACKAGE_TO_LABEL = re.compile(r"^(ship(ping|ped)? to|deliver(ed|ing|y)? to|shipping address|delivery address|send(ing)? to)\b", re.IGNORECASE)
+_PACKAGE_TOWN = re.compile(r"(?:^|,\s*)([A-Za-z][A-Za-z .'-]{1,40}),\s*([A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?$")
+_PACKAGE_AMAZON_TO = re.compile(r"^.{1,40} - ([A-Z][A-Z .'-]{1,40}), ([A-Z]{2})$")
+_PACKAGE_STATES = frozenset("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP".split())
+# A town is home once this many packages have gone there and they are at least this share of those whose town is known.
+PACKAGE_HOME_MIN = 3
+PACKAGE_HOME_SHARE = 0.2
 _PACKAGE_AMAZON_ITEMS = re.compile(r"^(?:ordered|shipped|delivered|out for delivery|arriving)(?: \d{1,3} items?)?:?\s*(?:\d{1,3} items?:?)?\s*(.+)$", re.IGNORECASE)
 PACKAGE_TRACK_URLS = {
     "ups": "https://www.ups.com/track?tracknum={}", "usps": "https://tools.usps.com/go/TrackConfirmAction?tLabels={}", "fedex": "https://www.fedex.com/fedextrack/?trknbr={}",
@@ -13177,6 +13192,56 @@ def package_expected(lines: list[str], subject: str, sent: datetime) -> dict[str
     return None
 
 
+def package_destination(lines: list[str]) -> str | None:
+    """The town a parcel is going to, "LAKEVIEW, OR", from the lines of its email; None when it doesn't say."""
+    def town(line: str, pattern: re.Pattern[str]) -> str | None:
+        found = pattern.search(line) if len(line) < 120 else None
+        if not found or found.group(2) not in _PACKAGE_STATES:
+            return None
+        return f"{' '.join(found.group(1).upper().split())}, {found.group(2)}"
+    for i, line in enumerate(lines):
+        if len(line) < 60 and _PACKAGE_TO_LABEL.match(line):
+            for following in lines[i:i + 6]:
+                if found := town(following, _PACKAGE_TOWN):
+                    return found
+    return next((found for line in lines if (found := town(line, _PACKAGE_AMAZON_TO))), None)
+
+
+def package_place(dest: str) -> str:
+    """ "LAKEVIEW, OR" as it is written to a person: "Lakeview, OR"."""
+    town, _, state = dest.rpartition(", ")
+    return f"{' '.join(word.capitalize() for word in town.split())}, {state}"
+
+
+def package_homes() -> set[str]:
+    """
+    The towns that are home, learned from where the household's packages go: nothing is typed in,
+    and no address is kept anywhere but on the packages. Empty until enough have said.
+    """
+    counts = dict(with_db(lambda c: c.execute("SELECT dest, COUNT(*) FROM packages WHERE dest IS NOT NULL GROUP BY dest").fetchall()))
+    total = sum(counts.values())
+    return {dest for dest, n in counts.items() if n >= PACKAGE_HOME_MIN and n >= total * PACKAGE_HOME_SHARE}
+
+
+def package_elsewhere(package: dict[str, Any], homes: set[str] | None = None) -> bool:
+    """Going to somebody else's house: a town is named, and it isn't home. The door camera, the porch and the morning's list aren't about it."""
+    if not package.get("dest"):
+        return False
+    homes = package_homes() if homes is None else homes
+    return bool(homes) and package["dest"] not in homes
+
+
+def package_forget_camera(package_id: str) -> None:
+    """What the door camera was taken to say of a package that turns out to have gone elsewhere: a visit here was somebody else's."""
+    package_update(package_id, verdict=None, verdict_what=None, verdict_confidence=None, visit_event=None, visit_at=None, porch=None, porch_at=None, porch_by=None)
+    with_db(lambda c: (c.execute("DELETE FROM package_events WHERE package_id=? AND (key LIKE 'camera:%' OR key LIKE 'taken:%' OR key LIKE 'gone:%')", (package_id,)), c.commit()))
+    for name in ("before", "after", "missing_before", "missing_after"):
+        try:
+            os.remove(os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg"))
+        except OSError:
+            pass
+
+
 def package_title(subject: str, domain: str, lines: list[str]) -> str | None:
     """What is in it, as the email has it: Amazon's categories, or the item an eBay subject quotes. Data, not copy."""
     subject = subject.strip()
@@ -13197,6 +13262,7 @@ def parse_package_email(sender: str, subject: str, text: str, sent_at: float, zo
     """
     What one email says about one package, or None when it isn't about a package at all: "stage",
     "tracking", "carrier", "order", "shop", "title", "expected", "signature", "left", "total".
+    "to" is the town it is going to, when the email names one (`package_destination`).
     It reads loosely, since every shop words these its own way: a subject that says something
     happened, from somebody who can vouch for it (a tracking number, an order number, a carrier, or
     "your order"), and not an advert that happens to say "delivered".
@@ -13240,7 +13306,7 @@ def parse_package_email(sender: str, subject: str, text: str, sent_at: float, zo
     return {
         "stage": stage, "tracking": tracking, "carrier": carrier, "order": order, "orders": orders, "shop": package_shop(sender, domain, subject),
         "title": package_title(subject, domain, lines), "expected": package_expected(lines, subject, sent) if stage != "delivered" else None,
-        "signature": bool(_PACKAGE_SIGNATURE.search(body)), "left": left, "total": total,
+        "signature": bool(_PACKAGE_SIGNATURE.search(body)), "left": left, "total": total, "to": package_destination(lines),
     }
 
 
@@ -13259,7 +13325,7 @@ def package_people() -> list[str]:
 
 _PACKAGE_COLUMNS = ("id", "owner", "source", "carrier", "tracking", "order_id", "shop", "title", "nickname", "stage", "stage_at", "expected_from", "expected_to", "window_start", "window_end",
                     "signature", "problem", "problem_at", "left_note", "total", "created", "updated", "delivered_at", "surprise", "pinned", "archived", "deleted", "notes", "return_by", "return_state",
-                    "refund_at", "porch", "porch_at", "porch_by", "verdict", "verdict_what", "verdict_confidence", "verdict_by", "visit_event", "visit_at", "tracker_on", "merged_into")
+                    "refund_at", "porch", "porch_at", "porch_by", "verdict", "verdict_what", "verdict_confidence", "verdict_by", "visit_event", "visit_at", "tracker_on", "merged_into", "dest")
 
 
 def package_row(package_id: str) -> dict[str, Any] | None:
@@ -13416,7 +13482,7 @@ def package_store(mailbox: str, message_id: str, parsed: dict[str, Any], sent_at
         return package_id
     fresh = now - sent_at < PACKAGE_FRESH_SECONDS
     fill: dict[str, Any] = {}
-    for column, field in (("tracking", "tracking"), ("carrier", "carrier"), ("order_id", "order"), ("shop", "shop"), ("title", "title"), ("total", "total"), ("left_note", "left")):
+    for column, field in (("tracking", "tracking"), ("carrier", "carrier"), ("order_id", "order"), ("shop", "shop"), ("title", "title"), ("total", "total"), ("left_note", "left"), ("dest", "to")):
         if parsed.get(field) is not None and not package[column]:
             fill[column] = parsed[field]
     # A carrier's own word for who carries it outranks what a shop's email guessed.
@@ -13434,6 +13500,10 @@ def package_store(mailbox: str, message_id: str, parsed: dict[str, Any], sent_at
         fill.update(expected_from=expected["from"], expected_to=expected["to"], window_start=expected.get("start"), window_end=expected.get("end"))
     if fill:
         package_update(package_id, **fill)
+        # Found to be going elsewhere after a visit here was taken for its delivery (an email read again, say): that was somebody else's.
+        if "dest" in fill and (package["verdict"] or package["porch"]) and not package["verdict_by"] and package_elsewhere({**package, **fill}):
+            package_forget_camera(package_id)
+        package = package_row(package_id) or package
     stage = parsed["stage"]
     package_merge_same_box(package_id, parsed, sent_at)
     if placed and placed[1] == stage:
@@ -13768,6 +13838,9 @@ def package_judge(package_id: str, now: float) -> str | None:
     package = package_row(package_id)
     if package is None or package["verdict_by"] or not package["delivered_at"] or not package_camera_on():
         return package["verdict"] if package else None
+    # Delivered to somebody else's door: whoever came to this one wasn't bringing it.
+    if package_elsewhere(package):
+        return None
     # Left somewhere the door camera doesn't look: nothing to find, and no alarm in not finding it.
     if package["left_note"] and _PACKAGE_NOT_THE_DOOR.search(package["left_note"]):
         return None
@@ -13889,7 +13962,8 @@ def package_unexpected(visit: dict[str, Any], now: float, push: Callable[..., An
     if package_rows("delivered_at BETWEEN ? AND ? AND deleted=0 AND visit_event=?", (visit["start"] - 60, visit["end"] + PACKAGE_AFTER_EMAIL, visit["event"])):
         return None
     day = datetime.fromtimestamp(float(visit["end"]), household_zone() or timezone.utc).date().isoformat()
-    due = package_rows("stage!='delivered' AND deleted=0 AND archived=0 AND (stage='out_for_delivery' OR (expected_from<=? AND expected_to>=?))", (day, day))
+    homes = package_homes()
+    due = [p for p in package_rows("stage!='delivered' AND deleted=0 AND archived=0 AND (stage='out_for_delivery' OR (expected_from<=? AND expected_to>=?))", (day, day)) if not package_elsewhere(p, homes)]
     package_id = due[0]["id"] if len(due) == 1 else None
     if package_id is None:
         package_id = package_id_of("camera", visit["event"])
@@ -13909,9 +13983,10 @@ def package_unexpected(visit: dict[str, Any], now: float, push: Callable[..., An
 def package_merge_camera(now: float) -> None:
     """An email that says delivered, soon after a parcel with no email: they are one package, so the one the camera made goes, and the email's takes its pictures."""
     camera = package_rows("source='camera' AND deleted=0")
+    homes = package_homes() if camera else set()
     for parcel in camera:
         at = float(parcel["delivered_at"] or 0)
-        claimed = package_rows("source!='camera' AND deleted=0 AND delivered_at BETWEEN ? AND ?", (at, at + PACKAGE_CAMERA_MERGE))
+        claimed = [p for p in package_rows("source!='camera' AND deleted=0 AND delivered_at BETWEEN ? AND ?", (at, at + PACKAGE_CAMERA_MERGE)) if not package_elsewhere(p, homes)]
         if not claimed:
             continue
         package = min(claimed, key=lambda p: float(p["delivered_at"]))
@@ -14023,7 +14098,8 @@ def package_nags(now: float, push: Callable[..., Any] | None = None) -> None:
                     package_notify(package["id"], "rain", now, push=push, extra={"package_rain": str(chance)})
     if local.hour == PACKAGE_MORNING_HOUR and state_get("package_morning") != today:
         state_set("package_morning", today)
-        coming = [p for p in active if p["stage"] != "delivered" and (p["stage"] == "out_for_delivery" or (p["expected_from"] and p["expected_from"] <= today <= (p["expected_to"] or "")))]
+        homes = package_homes()
+        coming = [p for p in active if p["stage"] != "delivered" and not package_elsewhere(p, homes) and (p["stage"] == "out_for_delivery" or (p["expected_from"] and p["expected_from"] <= today <= (p["expected_to"] or "")))]
         if coming:
             package_morning(coming, now, push=push)
 
@@ -14051,6 +14127,11 @@ _PACKAGE_PUSH_ENGLISH = {
     "late": ("Did this one come?", "No word of {name} since it was due"),
     "return_closing": ("Return window closing", "{name} can be returned for 3 more days"),
 }
+# The same news of a package going to somebody else's house: it gets there, not here.
+_PACKAGE_PUSH_ELSEWHERE = {
+    "out_for_delivery": ("Out for delivery", "{name} should reach {place} today"),
+    "delivered": ("Delivered", "{name} was delivered in {place}"),
+}
 
 
 def package_label(package: dict[str, Any], masked: bool) -> str:
@@ -14068,11 +14149,15 @@ def package_notify(package_id: str, kind: str, now: float, push: Callable[..., A
     if not package_settings()["notify"].get(group, True):
         return None
     send = push or package_send
-    title, body = _PACKAGE_PUSH_ENGLISH[kind]
+    place = package_place(package["dest"]) if kind in _PACKAGE_PUSH_ELSEWHERE and package_elsewhere(package) else None
+    title, body = _PACKAGE_PUSH_ELSEWHERE[kind] if place else _PACKAGE_PUSH_ENGLISH[kind]
     full = package_label(package, False)
     masked = package_label(package, True)
     shared = {"package": package_id, "package_event": kind, "notif_id": f"package-{package_id}", "package_verdict": package["verdict"] or "", "package_carrier": package["carrier"] or "", **(extra or {})}
-    return send(package, (title, body.format(name=full)), (title, body.format(name=masked)), {**shared, "package_name": full}, {**shared, "package_name": "", "package_masked": "1"})
+    # Where a surprise is going would give it away, so only its owner's phone hears the town.
+    hidden_title, hidden_body = _PACKAGE_PUSH_ENGLISH[kind]
+    return send(package, (title, body.format(name=full, place=place)), (hidden_title, hidden_body.format(name=masked)),
+                {**shared, "package_name": full, **({"package_place": place} if place else {})}, {**shared, "package_name": "", "package_masked": "1"})
 
 
 def package_send(package: dict[str, Any], plain: tuple[str, str], masked: tuple[str, str], plain_data: dict[str, str], masked_data: dict[str, str]) -> dict[str, int]:
@@ -14234,8 +14319,11 @@ def package_frames_of(package_id: str) -> set[str]:
     return {name for name in ("before", "after", "missing_before", "missing_after") if os.path.exists(os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg"))}
 
 
-def package_json(package: dict[str, Any], viewer: str | None, today: str, timeline: list[tuple] | None = None) -> dict[str, Any]:
-    """A package as the app shows it. A surprise that isn't this viewer's says only that one is coming, and when."""
+def package_json(package: dict[str, Any], viewer: str | None, today: str, timeline: list[tuple] | None = None, homes: set[str] | None = None) -> dict[str, Any]:
+    """
+    A package as the app shows it. A surprise that isn't this viewer's says only that one is coming,
+    and when. "destination" is the town it is going to when that isn't home ("Lakeview, OR"), else null.
+    """
     may_see = package_may_see(package, viewer)
     shown = {
         "id": package["id"], "owner": package["owner"], "source": package["source"], "stage": package["stage"], "stage_at": package["stage_at"], "expected_from": package["expected_from"], "expected_to": package["expected_to"],
@@ -14251,7 +14339,7 @@ def package_json(package: dict[str, Any], viewer: str | None, today: str, timeli
         "tracking": package["tracking"], "order_id": package["order_id"], "shop": package["shop"], "title": package["title"], "nickname": package["nickname"], "left_note": package["left_note"], "total": package["total"],
         "notes": package["notes"], "return_by": package["return_by"], "return_state": package["return_state"] or "none", "refund_at": package["refund_at"], "verdict_what": package["verdict_what"],
         "verdict_confidence": package["verdict_confidence"], "visit_event": package["visit_event"], "visit_at": package["visit_at"], "url": package_track_url(package["carrier"], package["tracking"], package["order_id"]),
-        "frames": sorted(package_frames_of(package["id"])),
+        "frames": sorted(package_frames_of(package["id"])), "destination": package_place(package["dest"]) if package_elsewhere(package, homes) else None,
         "timeline": [{"at": at, "kind": kind, "detail": detail} for at, kind, detail in (timeline or [])],
     }
 
@@ -14265,10 +14353,11 @@ def packages_snapshot(viewer: str | None, now: float) -> dict[str, Any]:
     for package_id, at, kind, detail in events:
         timeline.setdefault(package_id, []).append((at, kind, detail))
     rows.sort(key=lambda p: (float(p["updated"] or 0)), reverse=True)
+    homes = package_homes()
     return {
         "viewer": viewer, "people": package_people(), "now": now, "today": today, "mail_on": amazon_on(), "synced": state_get(PACKAGE_SYNCED_KEY), "camera_on": package_camera_on(),
         "camera": CAMERA_NAMES.get(PACKAGE_CAMERA, PACKAGE_CAMERA), "camera_id": PACKAGE_CAMERA, "door_sensor": bool(package_door_ids()), "model_on": bool(OLLAMA), "tracker_on": bool(PACKAGE_17TRACK_KEY),
-        "away": away_since() is not None, "settings": package_settings(), "packages": [package_json(p, viewer, today, timeline.get(p["id"])) for p in rows],
+        "away": away_since() is not None, "settings": package_settings(), "packages": [package_json(p, viewer, today, timeline.get(p["id"]), homes) for p in rows],
     }
 
 

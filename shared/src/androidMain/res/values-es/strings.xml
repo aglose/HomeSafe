@@ -98,6 +98,8 @@
     <string name="notif_package_out_body">%1$s debería llegar hoy</string>
     <string name="notif_package_delivered_title">Entregado</string>
     <string name="notif_package_delivered_body">%1$s ya llegó</string>
+    <string name="notif_package_out_elsewhere">%1$s debería llegar hoy a %2$s</string>
+    <string name="notif_package_delivered_elsewhere">%1$s se entregó en %2$s</string>
     <string name="notif_package_delivered_confirmed">%1$s está en la puerta. La cámara lo vio llegar.</string>
     <string name="notif_package_delivered_seen">%1$s ya llegó. La cámara vio a alguien en la puerta.</string>
     <string name="notif_package_delivered_not_seen">%1$s figura como entregado, pero la cámara no vio a nadie.</string>

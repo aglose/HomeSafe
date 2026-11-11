@@ -54,6 +54,8 @@
     <string name="packages_status_problem">Delivery problem</string>
     <string name="packages_status_may_be_gone">May be gone from the porch</string>
     <string name="packages_status_delivered_at">Delivered · %1$s</string>
+    <string name="packages_status_delivered_in">Delivered in %1$s</string>
+    <string name="packages_status_going_to">%1$s · going to %2$s</string>
     <string name="packages_status_late">Was due %1$s. Did it come?</string>
     <string name="packages_status_late_plain">Running late</string>
     <string name="packages_status_out">Out for delivery today</string>
@@ -117,10 +119,12 @@
     <string name="packages_detail_total">Total</string>
     <string name="packages_detail_owner">For</string>
     <string name="packages_detail_left">Left</string>
+    <string name="packages_detail_destination">Going to</string>
     <string name="packages_actions">What you can do</string>
     <string name="packages_action_track">Track on the carrier's site</string>
     <string name="packages_action_claim">Report a problem</string>
     <string name="packages_action_mark_delivered">It's here</string>
+    <string name="packages_action_mark_delivered_elsewhere">It got there</string>
     <string name="packages_action_surprise">Keep it a surprise</string>
     <string name="packages_action_surprise_body">Anyone else sees only that something is coming</string>
     <string name="packages_action_pin">Pin to the top</string>

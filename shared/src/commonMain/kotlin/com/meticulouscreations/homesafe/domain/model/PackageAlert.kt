@@ -19,6 +19,8 @@ data class PackageAlert(
     val count: Int,
     /** The morning's list: nobody is home. */
     val away: Boolean,
+    /** The town a parcel is going to when that isn't home ("Lakeview, OR"): it gets there, not here. Null for one coming here, or a surprise kept from this phone. */
+    val place: String? = null,
 ) {
     enum class Event { SHIPPED, OUT_FOR_DELIVERY, DELIVERED, PORCH, RAIN, MISSING, CAMERA_ONLY, ATTEMPTED, PROBLEM, SIGNATURE, LATE, RETURN_CLOSING, MORNING }
 
@@ -55,6 +57,7 @@ data class PackageAlert(
                 verdict = values("package_verdict")?.takeIf { it.isNotBlank() },
                 count = values("package_count")?.toIntOrNull() ?: 1,
                 away = values("package_away") == "1",
+                place = values("package_place")?.takeIf { it.isNotBlank() },
             )
         }
     }
