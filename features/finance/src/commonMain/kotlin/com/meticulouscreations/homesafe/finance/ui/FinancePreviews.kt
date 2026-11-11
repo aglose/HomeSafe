@@ -461,7 +461,7 @@ private fun FinanceWalletSheetChartsPagePreview() {
     FinanceStage { WalletTopicScreen(WalletTopic.SHEET_CHARTS, focus = null, FinanceFixtures.state, previewPadding) }
 }
 
-@Preview(widthDp = 412, heightDp = 3100)
+@Preview(widthDp = 412, heightDp = 3000)
 @Composable
 private fun FinanceSheetChartsPreview() {
     FinanceStage {
