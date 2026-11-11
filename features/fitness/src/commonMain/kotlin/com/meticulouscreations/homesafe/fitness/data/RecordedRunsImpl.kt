@@ -44,6 +44,8 @@ class RecordedRunsImpl(private val dao: FitnessRunDao) : RecordedRuns {
         dao.upsertRun(FitnessRecordedRunEntity(run.id, run.startEpochMillis, run.endEpochMillis, run.utcOffsetSeconds, run.meters, run.movingMillis))
     }
 
+    override suspend fun shorten(run: RecordedRun) = dao.shortenRun(run.id, run.endEpochMillis, run.meters, run.movingMillis)
+
     override suspend fun events(id: String): List<RunEvent> = dao.events(id).mapNotNull { row ->
         // A kind this build doesn't know is passed over.
         val kind = RunEventKind.entries.firstOrNull { it.name == row.kind } ?: return@mapNotNull null

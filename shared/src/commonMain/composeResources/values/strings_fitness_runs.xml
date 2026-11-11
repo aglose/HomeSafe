@@ -93,6 +93,7 @@
     <string name="fitness_run_discard_confirm">Tap again to throw it away</string>
     <!-- Under a run recorded in the app -->
     <string name="fitness_run_recorded">Recorded on this phone</string>
+    <string name="fitness_run_ended_for_you">Ended for you where the running stopped: it went on being recorded for %1$s after.</string>
     <string name="fitness_run_delete">Delete run</string>
     <string name="fitness_run_delete_confirm">Tap again to delete for good</string>
 

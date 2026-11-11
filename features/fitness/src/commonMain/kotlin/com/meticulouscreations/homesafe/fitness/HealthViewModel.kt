@@ -20,6 +20,7 @@ import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
 import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunDetail
+import com.meticulouscreations.homesafe.fitness.domain.RunEnds
 import com.meticulouscreations.homesafe.fitness.domain.RunRecord
 import com.meticulouscreations.homesafe.fitness.domain.RunRecorder
 import com.meticulouscreations.homesafe.fitness.domain.RunTrack
@@ -132,6 +133,10 @@ data class HealthUiState(
  * is kept on the device: it is the store's, and is asked for again. What was read goes to the
  * server ([HealthUpload]), for this login's devices with no store, which read it through a
  * [HealthSource] of their own ([HealthAvailability.REMOTE]) and so come through here the same way.
+ *
+ * A run recorded here that was left recording after it was over is ended where the running stopped
+ * ([settleRuns]): the recorder does that by the phone's positions when the run is finished, and
+ * here it is held against the heart and the band's own session once those have been read.
  */
 @Inject
 @ViewModelKey
@@ -158,6 +163,10 @@ class HealthViewModel(
     private var opening: Job? = null
     private var following: Job? = null
     private var sending: Job? = null
+    private var settling: Job? = null
+
+    /** The recorded runs whose ends have been looked at, each with what there was to tell by ([settleKey]). */
+    private val settled = HashSet<String>()
 
     /** The store shares nothing, and the server has been told so since it last shared anything. */
     private var cleared = false
@@ -187,6 +196,7 @@ class HealthViewModel(
                     recordedRuns.runs.collect {
                         recorded = it
                         rebuildRuns()
+                        settleRuns()
                     }
                 }
                 launch {
@@ -306,15 +316,60 @@ class HealthViewModel(
         _uiState.value.detail?.runId?.let { open -> if (_uiState.value.runs.run(open) == null) closeRun() }
     }
 
-    /** A run recorded here, worked out again from what was recorded, with the heart a band took through it where that is shared. */
+    /**
+     * Ends the runs recorded here where the running stopped, for those left recording after ([RunEnds]): by
+     * their positions, by the band's session of the same run, and (for a run of the last [HEART_DAYS]) by the
+     * heart through it. Each is looked at once for what there is to tell by, and again when there is more: a
+     * band's readings come a quarter of an hour or more after the run. A run only ever gets shorter, so two
+     * devices doing this come to the same end.
+     */
+    private fun settleRuns() {
+        if (settling?.isActive == true) return
+        val at = clock.now().epochSeconds
+        val state = _uiState.value
+        val shared = state.access == HealthAccess.ON
+        val worn = if (shared) held.runs.orEmpty() else emptyList()
+        val heartShared = shared && HealthKind.HEART_RATE in state.granted
+
+        fun wornThrough(run: RecordedRun): List<LongRange> {
+            val start = run.startEpochMillis / 1_000
+            val end = run.endEpochMillis / 1_000
+            // A band's session that was mostly inside the recording was this run, however long the recording went on.
+            return worn.filter { (minOf(it.endEpochSeconds, end) - maxOf(it.startEpochSeconds, start)) * 2 > it.endEpochSeconds - it.startEpochSeconds }
+                .map { it.startEpochSeconds..it.endEpochSeconds }
+        }
+
+        fun settleKey(run: RecordedRun): String {
+            val age = at - run.endEpochMillis / 1_000
+            // A run just finished is looked at again every quarter of an hour for a day: its heart is still coming.
+            return "${run.id}/${run.endEpochMillis}/$shared/${wornThrough(run).size}/${if (age < SECONDS_PER_DAY) at / RESETTLE_SECONDS else 0}"
+        }
+
+        val todo = recorded.filter { it.endEpochMillis - it.startEpochMillis >= RunEnds.TAIL_MILLIS && settleKey(it) !in settled }
+        if (todo.isEmpty()) return
+        settling = viewModelScope.launch {
+            for (run in todo) {
+                val events = attempt { recordedRuns.events(run.id) } ?: continue
+                val recent = at - run.endEpochMillis / 1_000 < HEART_DAYS * SECONDS_PER_DAY
+                val heart = if (heartShared && recent) attempt { source.heartRate(run.startEpochMillis / 1_000, run.endEpochMillis / 1_000) }.orEmpty() else emptyList()
+                RunEnds.settled(run, events, heart, wornThrough(run))?.let { shorter -> attempt { recordedRuns.shorten(shorter) } }
+                settled += settleKey(run)
+            }
+        }
+    }
+
+    /** A run recorded here, worked out again from what was recorded up to its end, with the heart a band took through it where that is shared. */
     private suspend fun recordedTrack(run: Run, granted: Set<HealthKind>): RunTrack {
-        val events = attempt { recordedRuns.events(run.id) }.orEmpty()
+        val all = attempt { recordedRuns.events(run.id) }.orEmpty()
+        // The run's end is kept to the millisecond and shown to the second.
+        val events = RunEnds.upTo(run.endEpochSeconds * 1_000 + 999, all)
+        val recordedOn = ((all.maxOfOrNull { it.epochMillis } ?: 0) / 1_000 - run.endEpochSeconds).takeIf { it >= RunEnds.TAIL_MILLIS / 1_000 } ?: 0
         val heart = if (_uiState.value.access == HealthAccess.ON && HealthKind.HEART_RATE in granted) {
             attempt { source.heartRate(run.startEpochSeconds, run.endEpochSeconds) }.orEmpty()
         } else {
             emptyList()
         }
-        return RunTracker.replay(run.startEpochSeconds * 1_000, events).track(heart)
+        return RunTracker.replay(run.startEpochSeconds * 1_000, events).track(heart).copy(recordedOnSeconds = recordedOn)
     }
 
     private fun redrawDetail() {
@@ -444,6 +499,7 @@ class HealthViewModel(
 
                 else -> redrawDetail()
             }
+            settleRuns()
         }
     }
 
@@ -484,6 +540,12 @@ class HealthViewModel(
 
         /** How far back sleep and the heart's readings are read: the baseline readiness is held against, and a night or two to spare. */
         const val BODY_DAYS = ReadinessScore.BASELINE_DAYS + 2L
+
+        /** A run's heart is held against its end for this many days after it; an older run's end is told by its positions and the band's session. */
+        const val HEART_DAYS = 14L
+
+        /** A run of the last day has its end looked at again this often, as the band's readings come in. */
+        const val RESETTLE_SECONDS = 900L
 
         /** How far back runs are read: the weeks the runs page adds up, and as far again to scroll through. */
         const val RUN_DAYS = Runs.WEEKS * 7L * 2

@@ -138,6 +138,9 @@ class RunTracker(private val startEpochMillis: Long) {
 
     val route: List<RoutePoint> get() = routePoints
 
+    /** How far the last steps counted went, those that ended after [sinceMillis]: no further back than [PACE_WINDOW_MILLIS] twice over. */
+    fun metersSince(sinceMillis: Long): Double = recent.sumOf { (at, step) -> if (at > sinceMillis) step else 0.0 }
+
     /** The stretches of distance so far, at least [SPAN_MILLIS] each but the last. */
     val distance: List<DistanceSpan> get() = spans + listOfNotNull(pendingSpan())
 
@@ -358,7 +361,8 @@ enum class RecorderProblem {
 /**
  * Records a run with the phone's GPS: one at a time, kept as it goes, so a run the app was
  * stopped in the middle of is still there (ended where its positions stopped) the next time it
- * is opened.
+ * is opened. A run left recording ends itself once the phone has gone nowhere for half an hour,
+ * and any run is kept as ending where the running did ([RunEnds]).
  */
 interface RunRecorder {
     val isSupported: Boolean
@@ -393,6 +397,12 @@ interface RecordedRuns {
     suspend fun append(id: String, events: List<RunEvent>)
 
     suspend fun finish(run: RecordedRun)
+
+    /**
+     * Ends a finished run earlier, as [run] has it: it was left recording after it was over ([RunEnds]).
+     * What was recorded after its end is kept. Nothing when the run has gone since.
+     */
+    suspend fun shorten(run: RecordedRun)
 
     suspend fun events(id: String): List<RunEvent>
 

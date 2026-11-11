@@ -88,6 +88,44 @@ class RunRecorderImplTest {
     }
 
     @Test
+    fun aRunNobodyEndedEndsItselfWhereTheRunningStopped() = runRecorderTest { h ->
+        h.recorder.start()
+        runCurrent()
+        run(h, 600)
+        // Home, and the phone put down still recording: the GPS goes on saying where it is.
+        repeat(31 * 60) {
+            advanceTimeBy(1_000)
+            h.at(1_800.0)
+            runCurrent()
+        }
+        assertNull(h.recorder.recording.value)
+        assertFalse(h.location.following)
+        val kept = h.runs.runs.first().single()
+        assertEquals(1_800.0, kept.meters, 5.0)
+        assertEquals(600_000.0, kept.movingMillis.toDouble(), 15_000.0)
+        assertEquals(START + 600_000.0, kept.endEpochMillis.toDouble(), 15_000.0)
+        // What came after is still written down.
+        assertTrue(h.runs.events(kept.id).last().epochMillis > kept.endEpochMillis + 29 * 60_000)
+    }
+
+    @Test
+    fun aRunFinishedLongAfterItWasOverIsKeptAsTheRunItWas() = runRecorderTest { h ->
+        h.recorder.start()
+        runCurrent()
+        run(h, 600)
+        repeat(10 * 60) {
+            advanceTimeBy(1_000)
+            h.at(1_800.0)
+            runCurrent()
+        }
+        h.recorder.finish()
+        runCurrent()
+        val kept = h.runs.runs.first().single()
+        assertEquals(600_000.0, kept.movingMillis.toDouble(), 15_000.0)
+        assertEquals(1_800.0, kept.meters, 5.0)
+    }
+
+    @Test
     fun aRunIsRecordedAndKept() = runRecorderTest { h ->
         h.recorder.start()
         runCurrent()

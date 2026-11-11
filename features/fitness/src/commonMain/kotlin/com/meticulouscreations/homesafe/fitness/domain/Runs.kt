@@ -126,6 +126,8 @@ data class RunDetail(
     val heart: List<HealthSample> = emptyList(),
     val summary: HeartSummary? = null,
     val route: List<RoutePoint> = emptyList(),
+    /** How long the recording went on after the run was over, for one ended where the running stopped ([RunEnds]); 0 otherwise. */
+    val recordedOnSeconds: Long = 0,
 )
 
 object Runs {
@@ -364,5 +366,6 @@ object Runs {
         heart = track.heart.filter { it.value.roundToInt() in HeartZones.PLAUSIBLE }.sortedBy { it.epochSeconds },
         summary = bounds?.let { heartSummary(track.heart, it, run.endEpochSeconds) },
         route = track.route,
+        recordedOnSeconds = track.recordedOnSeconds,
     )
 }
