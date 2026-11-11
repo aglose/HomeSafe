@@ -77,6 +77,18 @@ class ShellCameraHopTest {
     }
 
     @Test
+    fun wideningIntoTheSidebarForgetsTheWayBackForGood() {
+        val nav = ShellNavigation()
+        nav.openApp(InnerApp.FINANCE, Offset.Zero, TopLevelRoute.Home)
+        assertNotNull(nav.hopToCameras).invoke()
+
+        nav.useSidebar(true)
+        nav.useSidebar(false)
+
+        assertNull(nav.returnApp)
+    }
+
+    @Test
     fun thereIsNoHopBeforeSignInOrBesideASidebar() {
         assertNull(ShellNavigation().apply { camerasReachable = false }.hopToCameras)
         assertNull(ShellNavigation().apply { useSidebar(true) }.hopToCameras)

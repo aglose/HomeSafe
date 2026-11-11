@@ -7,6 +7,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.TouchInjectionScope
@@ -42,7 +46,7 @@ class FinanceDetailPillUiTest {
         setContent {
             FrigatePreview {
                 CompositionLocalProvider(LocalFinancePalette provides FinancePalette()) {
-                    Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().pointerInput(Unit) { takeAwayLifts() }) {
                         FinanceDetailPill(
                             trail = listOf("Bank sync", "Sheet sync", "Wallet"),
                             onPop = { pops += it },
@@ -52,6 +56,16 @@ class FinanceDetailPillUiTest {
                     }
                 }
             }
+        }
+    }
+
+    // Whether a lift is taken from the pill before it sees it, as the system does when it takes a gesture away.
+    private var taking = false
+
+    private suspend fun PointerInputScope.takeAwayLifts() = awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (taking) event.changes.forEach { if (it.changedToUp()) it.consume() }
         }
     }
 
@@ -116,6 +130,23 @@ class FinanceDetailPillUiTest {
         setUpPill()
         // Past the trail's far edge and the leeway beside it.
         holdAndSlide { Offset(310.dp.toPx(), centerY) }
+        assertEquals(emptyList(), pops)
+    }
+
+    @Test
+    fun aHoldThatIsTakenAwayPutsTheTrailBackAndGoesNowhere() = runComposeUiTest {
+        setUpPill()
+        onNodeWithTag("finance_pill_back").performTouchInput { down(center) }
+        mainClock.advanceTimeBy(1_000)
+        waitForIdle()
+        onNodeWithTag("finance_pill_trail").assertIsDisplayed()
+        // The gesture is taken away: the pill sees the lift already consumed.
+        taking = true
+        onNodeWithTag("finance_pill_back").performTouchInput { up() }
+        // Long enough for the trail to have folded away.
+        mainClock.advanceTimeBy(1_000)
+        waitForIdle()
+        onNodeWithTag("finance_pill_trail").assertDoesNotExist()
         assertEquals(emptyList(), pops)
     }
 

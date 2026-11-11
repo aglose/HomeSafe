@@ -218,6 +218,9 @@ class ShellNavigation(
         val requestedPackage = packageLink
         if (sidebar) {
             drawerOpen = false
+            // The way back to an app is for the narrow layout: beside a sidebar the apps are a click
+            // away, and one picked there (natively, on an iPad) never passes through [openApp].
+            returnApp = null
             val open = app.takeIf { appOpen }
             closeApp()
             appsInSidebar = true

@@ -205,6 +205,9 @@ fun FinanceDetailPill(
                                 while (true) {
                                     val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
                                     if (!change.pressed) {
+                                        // Taken away rather than let go (Android sends that as an up
+                                        // already consumed): the trail is put away and nothing is picked.
+                                        if (change.isConsumed) break
                                         change.consume()
                                         val level = held
                                         if (level != null && level != STRAYED) {
