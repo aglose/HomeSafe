@@ -66,8 +66,10 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         if (isStopped) return Result.success()
         // Muted while the picture was on its way: nothing more comes, the clip included.
         if (muted()) return Result.success()
-        // Kept for the clip's run, which shows it beside the clip; an older alert's, of the same visit, is not left for it.
-        keepPicture(text.id, picture)
+        // Kept for the clip's run, which shows it beside the clip. Under this run's own id, which only its clip is told: a
+        // later alert of the same visit keeps its own, and neither's runs can read or remove the other's.
+        val kept = id.toString()
+        keepPicture(kept, picture)
         if (picture != null) {
             AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = picture))
             Log.i(TAG, "alert ${text.id}: picture added")
@@ -77,7 +79,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             .setInitialDelay(media.clipWaitMs(start), TimeUnit.MILLISECONDS)
             .setBackoffCriteria(BackoffPolicy.LINEAR, CLIP_RETRY_STEP_MS, TimeUnit.MILLISECONDS)
             .setConstraints(CONNECTED)
-            .setInputData(Data.Builder().putAll(inputData).putBoolean(KEY_CLIP, true).build())
+            .setInputData(Data.Builder().putAll(inputData).putBoolean(KEY_CLIP, true).putString(KEY_KEPT_PICTURE, kept).build())
             .build()
         // A later alert of the same visit replaces this one's clip with its own, as it does the picture.
         WorkManager.getInstance(applicationContext).enqueueUniqueWork(clipWorkName(text.id), ExistingWorkPolicy.REPLACE, request)
@@ -92,33 +94,36 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         if (clip == null && runAttemptCount < CLIP_RETRIES) return Result.retry()
         // The picture is the notification's icon beside the clip: the one its own run kept, so the notification never
         // loses a picture it already shows; asked for again only if that run got none.
-        val picture = clip?.let { keptPicture(text.id) ?: media.picture(eventId) }
-        // Replaced while the two were on their way: the newer alert's runs have the kept picture now.
+        val kept = inputData.getString(KEY_KEPT_PICTURE)
+        val picture = clip?.let { kept?.let(::keptPicture) ?: media.picture(eventId) }
+        // Stopped while the two were on their way (replaced, or the network went): the kept picture stays for a run that comes again.
         if (isStopped) return Result.success()
-        keepPicture(text.id, null)
-        // No clip after the last ask, or muted meanwhile: the clip doesn't come.
-        if (clip == null || muted()) return Result.success()
-        AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = picture, animation = clip))
-        Log.i(TAG, "alert ${text.id}: clip added")
+        // No clip after the last ask, or muted meanwhile: the clip doesn't come. Otherwise it plays, and a run stopped
+        // while it does is cancelled there, before the kept picture goes, so one that comes again still has it.
+        if (clip != null && !muted()) {
+            AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = picture, animation = clip))
+            Log.i(TAG, "alert ${text.id}: clip added")
+        }
+        kept?.let { keepPicture(it, null) }
         return Result.success()
     }
 
     /**
-     * The picture between the two runs: a few kilobytes in the cache directory, under the notification's id. Null forgets
+     * The picture between the two runs: a few kilobytes in the cache directory, under the picture run's id. Null forgets
      * it. One whose clip run never came (replaced work, a reinstall) is swept here once it is [KEPT_PICTURE_MAX_AGE_MS] old.
      */
-    private fun keepPicture(id: String, picture: ByteArray?) {
+    private fun keepPicture(key: String, picture: ByteArray?) {
         runCatching {
             val directory = File(applicationContext.cacheDir, KEPT_PICTURES).apply { mkdirs() }
             val oldest = System.currentTimeMillis() - KEPT_PICTURE_MAX_AGE_MS
             directory.listFiles()?.filter { it.lastModified() < oldest }?.forEach { it.delete() }
-            val file = File(directory, keptPictureName(id))
+            val file = File(directory, keptPictureName(key))
             if (picture != null) file.writeBytes(picture) else file.delete()
         }
     }
 
-    private fun keptPicture(id: String): ByteArray? =
-        runCatching { File(File(applicationContext.cacheDir, KEPT_PICTURES), keptPictureName(id)).takeIf { it.isFile }?.readBytes() }.getOrNull()
+    private fun keptPicture(key: String): ByteArray? =
+        runCatching { File(File(applicationContext.cacheDir, KEPT_PICTURES), keptPictureName(key)).takeIf { it.isFile }?.readBytes() }.getOrNull()
 
     companion object {
         private const val TAG = "HomeSafeAlertMedia"
@@ -151,8 +156,11 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private const val KEPT_PICTURES = "alert-pictures"
         private const val KEPT_PICTURE_MAX_AGE_MS = 60 * 60_000L
 
-        /** A file name from a notification id, which is the relay's and may hold anything. */
-        private fun keptPictureName(id: String) = UUID.nameUUIDFromBytes(id.toByteArray()).toString()
+        /** The clip run's input: the name its picture was kept under. */
+        private const val KEY_KEPT_PICTURE = "kept_picture"
+
+        /** A file name from a key that came through work data: never a path. */
+        private fun keptPictureName(key: String) = UUID.nameUUIDFromBytes(key.toByteArray()).toString()
 
         fun enqueue(context: Context, text: AlertNotification, eventId: String, startEpochSeconds: Double) {
             val input: Data = workDataOf(
