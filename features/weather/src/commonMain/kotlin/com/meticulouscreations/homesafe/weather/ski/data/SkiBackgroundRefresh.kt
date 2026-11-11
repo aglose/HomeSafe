@@ -44,7 +44,7 @@ class SkiBackgroundRefreshImpl(
         // Resorts may have gone from the list since.
         val next = saved.takeIf { it in plan.resorts.indices } ?: 0
 
-        val from = withTimeoutOrNull(attemptMillis) { start.of(plan.origin) }
+        val from = withTimeoutOrNull(attemptMillis) { start.approximateOf(plan.origin) }
         if (next == 0) {
             plan.resorts.map { it.regionSlug }.distinct().forEach { region -> withTimeoutOrNull(attemptMillis) { repository.reports(region) } }
         }

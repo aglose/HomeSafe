@@ -79,4 +79,7 @@ interface SkiStartingPoint {
     suspend fun requestAccess() = Unit
 
     suspend fun of(origin: SkiOrigin): SkiPoint?
+
+    /** Like [of], but a cached, approximate fix will do for "where I am now": for the background refresh, which mustn't switch the GPS on. */
+    suspend fun approximateOf(origin: SkiOrigin): SkiPoint? = of(origin)
 }

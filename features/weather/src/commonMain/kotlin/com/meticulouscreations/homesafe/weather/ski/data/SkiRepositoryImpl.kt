@@ -390,9 +390,13 @@ class SkiStartingPointImpl(
         if (locator.isSupported) suspendRunCatching { locator.requestAccess() }
     }
 
-    override suspend fun of(origin: SkiOrigin): SkiPoint? {
+    override suspend fun of(origin: SkiOrigin): SkiPoint? = of(origin, approximate = false)
+
+    override suspend fun approximateOf(origin: SkiOrigin): SkiPoint? = of(origin, approximate = true)
+
+    private suspend fun of(origin: SkiOrigin, approximate: Boolean): SkiPoint? {
         if (origin == SkiOrigin.HERE) {
-            suspendRunCatching { locator.locate() }.getOrNull()?.let { return SkiPoint(it.latitude, it.longitude) }
+            suspendRunCatching { locator.locate(approximate) }.getOrNull()?.let { return SkiPoint(it.latitude, it.longitude) }
         }
         suspendRunCatching { identity.cachedHome() }.getOrNull()?.let { return SkiPoint(it.latitude, it.longitude) }
         suspendRunCatching { locator.remembered() }.getOrNull()?.let { return SkiPoint(it.latitude, it.longitude) }
