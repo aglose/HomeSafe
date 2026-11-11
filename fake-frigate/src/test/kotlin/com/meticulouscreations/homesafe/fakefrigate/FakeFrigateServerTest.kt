@@ -38,6 +38,27 @@ class FakeFrigateServerTest {
         return Response(status, text, setCookie)
     }
 
+    /** A GET's status and raw body, for the video the server sends. */
+    private fun fetch(path: String, cookie: String? = null): Pair<Int, ByteArray> {
+        val connection = URI("${server.baseUrl}$path").toURL().openConnection() as HttpURLConnection
+        cookie?.let { connection.setRequestProperty("Cookie", it) }
+        val status = connection.responseCode
+        val bytes = (if (status < 400) connection.inputStream else connection.errorStream)?.use { it.readBytes() } ?: ByteArray(0)
+        return status to bytes
+    }
+
+    /** How many boxes of [type] an MP4 holds at its top level. */
+    private fun ByteArray.topLevelBoxes(type: String): Int {
+        var at = 0
+        var count = 0
+        while (at + 8 <= size) {
+            if (String(this, at + 4, 4, Charsets.ISO_8859_1) == type) count++
+            at += java.nio.ByteBuffer.wrap(this, at, 4).int
+        }
+        assertEquals(size, at, "the boxes add up to the file")
+        return count
+    }
+
     private fun signIn(user: FakeUser = FakeFrigateState.ADMIN): String {
         val response = call("POST", "/api/login", """{"user":"${user.username}","password":"${user.password}"}""")
         assertEquals(200, response.status)
@@ -116,6 +137,69 @@ class FakeFrigateServerTest {
         val now = System.currentTimeMillis() / 1000.0
         val body = call("GET", "/api/front_door/recordings?after=${now - 3 * 3600}&before=$now", cookie = cookie).body
         assertTrue(body.split("start_time").size - 1 >= 170, "three hours of one-minute segments")
+    }
+
+    @Test
+    fun aStretchOfRecordingDownloadsAsAnMp4OfThatLength() {
+        val cookie = signIn()
+        val end = System.currentTimeMillis() / 1000 - 60
+        val (status, clip) = fetch("/api/front_door/start/${end - 20}.000/end/$end.000/clip.mp4", cookie)
+        assertEquals(200, status)
+        assertEquals(1, clip.topLevelBoxes("ftyp"))
+        assertEquals(1, clip.topLevelBoxes("moov"))
+        // Two seconds a fragment.
+        assertEquals(10, clip.topLevelBoxes("moof"))
+        assertEquals(10, clip.topLevelBoxes("mdat"))
+        // Fragments are numbered from one and stamped two seconds (20,000 ticks) apart.
+        val second = FakeVideo.fragment(1)
+        val third = FakeVideo.fragment(2)
+        val differing = second.indices.filter { second[it] != third[it] }
+        assertTrue(differing.isNotEmpty() && differing.size <= 4, "only the number and the time differ: $differing")
+    }
+
+    @Test
+    fun aStretchOfRecordingPlaysAsAnHlsPlaylistWithItsSegmentsBesideIt() {
+        val cookie = signIn()
+        val end = System.currentTimeMillis() / 1000 - 60
+        val folder = "/vod/driveway/start/${end - 9}.000/end/$end.000"
+        val playlist = call("GET", "$folder/index.m3u8", cookie = cookie)
+        assertEquals(200, playlist.status)
+        assertContains(playlist.body, "#EXT-X-MAP:URI=\"init.mp4\"")
+        assertEquals(listOf("seg-0.m4s", "seg-1.m4s", "seg-2.m4s", "seg-3.m4s", "seg-4.m4s"), playlist.body.lines().filter { it.endsWith(".m4s") })
+        assertContains(playlist.body, "#EXT-X-ENDLIST")
+        val (initStatus, init) = fetch("$folder/init.mp4", cookie)
+        assertEquals(200, initStatus)
+        assertEquals(1, init.topLevelBoxes("moov"))
+        val (segmentStatus, segment) = fetch("$folder/seg-4.m4s", cookie)
+        assertEquals(200, segmentStatus)
+        assertEquals(1, segment.topLevelBoxes("moof"))
+        assertEquals(404, fetch("$folder/seg-5.m4s", cookie).first, "nothing past the playlist's end")
+    }
+
+    @Test
+    fun aDetectionsClipPlaysAndDownloadsForAsLongAsItLasted() {
+        val cookie = signIn()
+        // The driveway's car was there for two minutes.
+        val car = server.state.events.first { it.subLabel == "sarahs_tesla" }
+        val playlist = call("GET", "/vod/event/${car.id}/index.m3u8", cookie = cookie)
+        assertEquals(200, playlist.status)
+        assertEquals(60, playlist.body.lines().count { it.endsWith(".m4s") })
+        val (status, clip) = fetch("/api/events/${car.id}/clip.mp4", cookie)
+        assertEquals(200, status)
+        assertEquals(60, clip.topLevelBoxes("moof"))
+        assertEquals(404, fetch("/api/events/no-such-event/clip.mp4", cookie).first)
+    }
+
+    @Test
+    fun videoNeedsASessionAndSomethingRecorded() {
+        val end = System.currentTimeMillis() / 1000 - 60
+        val clip = "/api/front_door/start/${end - 20}.000/end/$end.000/clip.mp4"
+        assertEquals(401, fetch(clip).first)
+        val cookie = signIn()
+        // Long before the six hours the household has on disk.
+        assertEquals(404, fetch("/api/front_door/start/1000.000/end/1020.000/clip.mp4", cookie).first)
+        assertEquals(404, fetch("/vod/front_door/start/1000.000/end/1020.000/index.m3u8", cookie).first)
+        assertEquals(404, fetch("/api/garage/start/${end - 20}.000/end/$end.000/clip.mp4", cookie).first, "no such camera")
     }
 
     @Test

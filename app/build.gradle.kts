@@ -122,7 +122,7 @@ kotlin {
         getByName("desktopTest").kotlin.srcDir("src/integrationTest/kotlin")
         getByName("desktopTest").dependencies {
             implementation(project(":fake-frigate"))
-            // FFmpeg's natives, which the players load (and the fake has no video for, so they only try).
+            // FFmpeg's natives, which the players load to play the fake's recordings.
             runtimeOnly(libs.ffmpeg.get().toString() + ":" + bytedecoHostPlatform())
             runtimeOnly(libs.javacpp.get().toString() + ":" + bytedecoHostPlatform())
             implementation(libs.compose.uiTestJunit4)

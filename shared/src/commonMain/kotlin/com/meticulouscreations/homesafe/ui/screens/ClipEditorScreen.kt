@@ -84,6 +84,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -621,6 +622,7 @@ private fun PreviewStage(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(12.dp)
+                            .testTag(CLIP_PLAYHEAD_TEST_TAG)
                             .clip(RoundedCornerShape(8.dp))
                             .background(LocalFrigateExtraColors.current.glassFill)
                             .padding(horizontal = 10.dp, vertical = 4.dp),
@@ -1085,6 +1087,9 @@ private const val FRAME_PREVIEW_DEBOUNCE_MS = 150L
 
 /** A detection "is in the clip" if the clip covers it to within this much at either end. */
 private const val HOLD_TOLERANCE_SECONDS = 0.5
+
+/** The clock time over the preview's corner, which follows the frame that is playing: what a test watches to see the clip play. */
+const val CLIP_PLAYHEAD_TEST_TAG = "clip_playhead"
 
 private const val SAVED_BANNER_MS = 2_500L
 private const val SHIMMER_MS = 1_300

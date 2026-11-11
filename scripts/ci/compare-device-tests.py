@@ -13,7 +13,11 @@ XML files). Pull requests are gated on apksim alone, so this is where a differen
 - a test that ran on one side only (the emulator is API 34, apksim API 36, so an SDK-suppressed
   test can be one of these; a test apksim never found is a gap in what pull requests check).
 
-Prints a markdown report (also to the job summary) and exits 1 if it lists anything.
+A test that skipped itself on apksim and ran on the emulator is listed too, but is no difference:
+the test says apksim can't run it yet (the clip journeys, which need a download that is fetched
+and a video decoder), and the emulator is where it is checked.
+
+Prints a markdown report (also to the job summary) and exits 1 if it lists a difference.
 """
 import glob, json, os, sys
 import xml.etree.ElementTree as ET
@@ -73,7 +77,7 @@ def main():
         ("Flaky on apksim (failed, then passed in a process of its own)",
          [f"{short(k)}: emulator {emulator.get(k, 'did not run it')}" for k, s in sorted(apksim.items()) if s == "flaky"]),
         ("Ran on the emulator only", [short(k) for k, s in sorted(emulator.items())
-                                      if ran(s) and not ran(apksim.get(k, ""))]),
+                                      if ran(s) and not ran(apksim.get(k, "")) and apksim.get(k) != "skipped"]),
         ("Ran on apksim only", [short(k) for k, s in sorted(apksim.items())
                                 if ran(s) and not ran(emulator.get(k, ""))]),
     ]
@@ -91,7 +95,11 @@ def main():
             if len(items) > 50:
                 lines.append(f"- … and {len(items) - 50} more")
     if not found:
-        lines += ["", "They agree: every test ran on both and passed on both."]
+        lines += ["", "They agree: every test that ran on both passed on both."]
+    skipped = [f"{short(k)}: emulator {s}" for k, s in sorted(emulator.items()) if ran(s) and apksim.get(k) == "skipped"]
+    if skipped:
+        lines += ["", f"**Skipped itself on apksim, checked on the emulator only** ({len(skipped)})", ""]
+        lines += [f"- {item}" for item in skipped]
     report = "\n".join(lines) + "\n"
     print(report)
     if os.environ.get("GITHUB_STEP_SUMMARY"):

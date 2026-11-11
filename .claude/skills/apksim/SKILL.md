@@ -45,7 +45,7 @@ use the `homesafe-signin` credentials or the autofill file.
 ## Sign in to the fake Frigate
 
 ```bash
-./gradlew :fake-frigate:run --args="--port 8971 --host ::1 --advertise localhost"   # in the background
+./gradlew :fake-frigate:run --args="--port 8971 --host 127.0.0.1 --advertise localhost"   # in the background
 ```
 
 Then sign in to `http://localhost:8971` as `admin` / `correct-horse` (`viewer` / `just-looking` is
@@ -53,10 +53,11 @@ read-only; `--quiet` gives cameras with no history). apksim reaches the Mac's ow
 directly: there is no `10.0.2.2` (that is the emulator's alias; the CLI journeys type it, and
 their runner rewrites it to `localhost` on apksim).
 
-Why `::1` and `localhost`: apksim before 0.4.0 refused `127.0.0.1` under `--no-network`
-("Operation not permitted") and let `localhost` (`::1`) through, so this works on every version.
-From 0.4.0 the whole loopback is allowed and `127.0.0.1` works too. Leaving `--no-network` off is
-never the answer: then the LAN route above is open.
+Why `127.0.0.1` and `localhost`: the app's API client reaches `localhost` on either loopback
+address, but the video player (Media3's HTTP stack) connects to `127.0.0.1` for it, so with the
+fake on `::1` alone every recording and clip says "Couldn't play this clip". apksim before 0.4.0
+refused `127.0.0.1` under `--no-network` ("Operation not permitted"): upgrade rather than bind
+`::1`. Leaving `--no-network` off is never the answer: then the LAN route above is open.
 
 The household fake has three cameras: Front Door, Driveway, Back Yard. Anything else on Home
 (a "Doorbell", say) is left over in the app's saved data, not the fake: see "App data".
@@ -97,7 +98,7 @@ adb shell apksim quit
   hide the keyboard quits the app. The drawn keyboard is in neither `screencap` nor
   `android layout`'s windows: only the page moving up shows it.
 - The CLI journeys in `androidApp/src/journeysTest` run on apksim, an instance per journey:
-  `APKSIM=apksim scripts/run-android-cli-journeys.sh` with the fake Frigate on `::1` (above).
+  `APKSIM=apksim scripts/run-android-cli-journeys.sh` with the fake Frigate running (above).
   docs/testing.md has the rest.
 
 ## App data
@@ -143,4 +144,9 @@ apksim --instrument $A -e class com.meticulouscreations.homesafe.uitest.MomentsF
 - For how one composable looks in one state, `scripts/preview` (the `ui-previews` skill) is faster
   and needs no sign-in; use apksim for flows, navigation, Back, the keyboard and real data from the
   fake Frigate.
+- Clips play, but can't be saved. The fake Frigate serves real video, and the app run by hand
+  decodes it on a Mac (`adb shell apksim video` counts the pictures). Saving one never finishes:
+  apksim's DownloadManager is Robolectric's, which notes the download and doesn't fetch it. In
+  test runs (`--instrument`) no video decoder is listed either, so `ClipJourneyTest` skips itself
+  on apksim and is checked on CI's emulator (docs/testing.md, "Clips, end to end").
 - iOS is not covered: build the iOS app only when asked or when the change is iOS-specific.

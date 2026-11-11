@@ -51,8 +51,11 @@ data class RecordedRequest(
  *
  * Anything the app asks for that isn't modelled answers 404 and is listed in [unhandled], which is
  * the first place to look when a journey stalls. Images (snapshots, thumbnails, face and crop
- * files) are all one tiny PNG; live video (go2rtc, port 1984) and the push relay (port 8787) are
- * deliberately absent, so the app exercises its "unavailable" paths for those.
+ * files) are all one tiny PNG. Recorded video is real ([FakeVideo]): a camera's recordings and a
+ * detection's clip play as HLS (`/vod/…/index.m3u8`) and download as an MP4 (`…/clip.mp4`) of the
+ * length asked for, wherever [state] holds recordings for it. Live video (go2rtc, port 1984) and
+ * the push relay (port 8787) are deliberately absent, so the app exercises its "unavailable"
+ * paths for those.
  */
 class FakeFrigateServer(val state: FakeFrigateState = FakeFrigateState.household()) : AutoCloseable {
 
@@ -154,6 +157,8 @@ class FakeFrigateServer(val state: FakeFrigateState = FakeFrigateState.household
 
             is Reply.Image -> call.respondBytes(PIXEL_PNG, ContentType.Image.PNG, HttpStatusCode.OK)
 
+            is Reply.Bytes -> call.respondBytes(reply.bytes, reply.type, HttpStatusCode.OK)
+
             Reply.NotFound -> {
                 notFound += request
                 call.respondText("""{"message":"Not found"}""", ContentType.Application.Json, HttpStatusCode.NotFound)
@@ -180,6 +185,7 @@ class FakeFrigateServer(val state: FakeFrigateState = FakeFrigateState.household
     private sealed interface Reply {
         data class Body(val body: JsonElement, val status: HttpStatusCode = HttpStatusCode.OK) : Reply
         data object Image : Reply
+        class Bytes(val bytes: ByteArray, val type: ContentType) : Reply
         data object NotFound : Reply
     }
 
@@ -221,12 +227,57 @@ class FakeFrigateServer(val state: FakeFrigateState = FakeFrigateState.household
                 )
             }
 
+            get && segments[0] == "vod" -> vod(segments)
+
+            // GET /api/<camera>/start/<epoch>/end/<epoch>/clip.mp4: a stretch of a camera's recording as one file.
+            get && segments.size == 7 && segments[0] == "api" && segments[2] == "start" && segments[4] == "end" && segments[6] == "clip.mp4" ->
+                recordedSeconds(segments[1], segments[3], segments[5])?.let { Reply.Bytes(FakeVideo.clip(it), ContentType.Video.MP4) } ?: Reply.NotFound
+
+            // GET /api/events/<id>/clip.mp4: a detection's clip as one file.
+            get && segments.size == 4 && segments[0] == "api" && segments[1] == "events" && segments[3] == "clip.mp4" ->
+                clipSeconds(segments[2])?.let { Reply.Bytes(FakeVideo.clip(it), ContentType.Video.MP4) } ?: Reply.NotFound
+
             segments.getOrNull(1) == "faces" -> adminOnly(user) { faces(request, segments) }
 
             segments.getOrNull(1) == "classification" -> adminOnly(user) { classification(request, segments) }
 
             else -> Reply.NotFound
         }
+    }
+
+    /**
+     * `/vod/<camera>/start/<epoch>/end/<epoch>/<file>` and `/vod/event/<id>/<file>`: the HLS
+     * playlist of a stretch of recording or of a detection's clip, and the `init.mp4` and
+     * `seg-<n>.m4s` it names beside it.
+     */
+    private fun vod(segments: List<String>): Reply {
+        val seconds = when {
+            segments.size == 7 && segments[2] == "start" && segments[4] == "end" -> recordedSeconds(segments[1], segments[3], segments[5])
+            segments.size == 4 && segments[1] == "event" -> clipSeconds(segments[2])
+            else -> null
+        } ?: return Reply.NotFound
+        val file = segments.last()
+        val segment = FakeVideo.segmentIndex(file)
+        return when {
+            file == "index.m3u8" -> Reply.Bytes(FakeVideo.playlist(seconds).toByteArray(), HLS_PLAYLIST)
+            file == FakeVideo.INIT_NAME -> Reply.Bytes(FakeVideo.init, ContentType.Video.MP4)
+            segment != null && segment < FakeVideo.fragmentCount(seconds) -> Reply.Bytes(FakeVideo.fragment(segment), ContentType.Video.MP4)
+            else -> Reply.NotFound
+        }
+    }
+
+    /** How long [start]..[end] of [camera]'s recording is, or null when it's no span of time or nothing of it was recorded. */
+    private fun recordedSeconds(camera: String, start: String, end: String): Double? {
+        val from = start.toDoubleOrNull() ?: return null
+        val to = end.toDoubleOrNull() ?: return null
+        if (to <= from || state.recordings.none { it.camera == camera && it.endTime > from && it.startTime < to }) return null
+        return to - from
+    }
+
+    /** How long the clip of the detection [eventId] runs (one still going on gets [ONGOING_CLIP_SECONDS]), or null when it has none. */
+    private fun clipSeconds(eventId: String): Double? {
+        val event = state.events.firstOrNull { it.id == eventId }?.takeIf { it.hasClip } ?: return null
+        return event.endTime?.let { (it - event.startTime).coerceAtLeast(FakeVideo.FRAGMENT_SECONDS.toDouble()) } ?: ONGOING_CLIP_SECONDS
     }
 
     private fun adminOnly(user: FakeUser, block: () -> Reply): Reply =
@@ -387,6 +438,11 @@ class FakeFrigateServer(val state: FakeFrigateState = FakeFrigateState.household
         const val SESSION_COOKIE = "frigate_token"
 
         private const val POLL_MILLIS = 25L
+
+        private val HLS_PLAYLIST = ContentType.parse("application/vnd.apple.mpegurl")
+
+        /** The clip of a detection that hasn't ended yet: what has been recorded of it so far. */
+        private const val ONGOING_CLIP_SECONDS = 10.0
 
         /** A 1×1 PNG: every image the app loads, so Coil has something real to decode. */
         private val PIXEL_PNG: ByteArray = Base64.getDecoder().decode(

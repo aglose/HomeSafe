@@ -16,7 +16,7 @@
 #
 # Needs: adb, the Android CLI (`android`), Claude Code (`claude`) signed in (or
 # CLAUDE_CODE_OAUTH_TOKEN set, as on CI), and the fake Frigate at FRIGATE_URL as the app sees it:
-# http://localhost:8971 on apksim (bound to ::1), http://10.0.2.2:8971 on an emulator. See
+# http://localhost:8971 on apksim (bound to 127.0.0.1), http://10.0.2.2:8971 on an emulator. See
 # docs/testing.md.
 set -uo pipefail
 
