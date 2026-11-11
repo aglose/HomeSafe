@@ -89,6 +89,19 @@ class ShellCameraHopTest {
     }
 
     @Test
+    fun aHostPuttingTheAppsInItsOwnSidebarForgetsTheWayBackToo() {
+        val nav = ShellNavigation()
+        nav.openApp(InnerApp.FINANCE, Offset.Zero, TopLevelRoute.Home)
+        assertNotNull(nav.hopToCameras).invoke()
+
+        // An iPad's native sidebar sets this itself, without going through useSidebar.
+        nav.appsInSidebar = true
+        nav.appsInSidebar = false
+
+        assertNull(nav.returnApp)
+    }
+
+    @Test
     fun thereIsNoHopBeforeSignInOrBesideASidebar() {
         assertNull(ShellNavigation().apply { camerasReachable = false }.hopToCameras)
         assertNull(ShellNavigation().apply { useSidebar(true) }.hopToCameras)

@@ -209,8 +209,9 @@ fun FinanceDetailPill(
                                         // already consumed): the trail is put away and nothing is picked.
                                         if (change.isConsumed) break
                                         change.consume()
-                                        val level = held
-                                        if (level != null && level != STRAYED) {
+                                        // Where it was let go, which need not be where it was last seen held.
+                                        val level = levelAt(change.position)
+                                        if (level != STRAYED) {
                                             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                             pop(level + 1)
                                         }

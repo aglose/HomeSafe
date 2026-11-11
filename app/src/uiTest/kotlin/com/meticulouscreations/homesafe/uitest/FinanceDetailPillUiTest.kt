@@ -134,6 +134,30 @@ class FinanceDetailPillUiTest {
     }
 
     @Test
+    fun theLevelIsTheOneUnderTheLiftNotTheLastOneSeenHeld() = runComposeUiTest {
+        setUpPill()
+        // Held on the second row, then lifted from the third with no move in between.
+        onNodeWithTag("finance_pill_back").performTouchInput {
+            down(center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            moveTo(Offset(centerX, -(20.dp + 48.dp * 1.5f).toPx()))
+            updatePointerTo(0, Offset(centerX, -(20.dp + 48.dp * 2.5f).toPx()))
+            up()
+        }
+        waitForIdle()
+        // And lifted from off to the side, having last been seen on the trail.
+        onNodeWithTag("finance_pill_back").performTouchInput {
+            down(center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            moveTo(Offset(centerX, -(20.dp + 48.dp * 1.5f).toPx()))
+            updatePointerTo(0, Offset(310.dp.toPx(), centerY))
+            up()
+        }
+        waitForIdle()
+        assertEquals(listOf(3), pops)
+    }
+
+    @Test
     fun aHoldThatIsTakenAwayPutsTheTrailBackAndGoesNowhere() = runComposeUiTest {
         setUpPill()
         onNodeWithTag("finance_pill_back").performTouchInput { down(center) }
