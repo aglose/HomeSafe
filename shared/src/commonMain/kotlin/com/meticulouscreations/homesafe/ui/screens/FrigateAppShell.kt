@@ -293,8 +293,61 @@ class ShellNavigation(
     var fitnessWorkoutAsked by mutableStateOf(false)
         private set
 
+    /**
+     * Whether there are cameras under the apps to hop to ([hopToCameras]): not before sign-in,
+     * where the drawer's apps open over the sign-in screen.
+     */
+    var camerasReachable by mutableStateOf(true)
+
+    /**
+     * The app that was left for the cameras by its own camera button ([hopToCameras]), which the
+     * shell offers the way back to (ReturnToAppChip) until it is taken, another app is opened, or
+     * it has waited long enough to be forgotten ([forgetReturn]).
+     */
+    var returnApp by mutableStateOf<InnerApp?>(null)
+        private set
+
+    /** Whether the app that is up was come back to ([returnToApp]), so it opens on the page it was left on rather than afresh. */
+    var appResumes by mutableStateOf(false)
+        private set
+
+    /**
+     * Straight from an app, however deep in it, to the cameras: the app closes and Home comes up
+     * at its list, with the way back kept ([returnApp]). Null where that can't be offered: before
+     * sign-in ([camerasReachable]), or where the apps are destinations beside the tabs
+     * ([appsInSidebar]) and the sidebar already has the cameras a click away.
+     */
+    val hopToCameras: (() -> Unit)?
+        get() = if (!camerasReachable || appsInSidebar) {
+            null
+        } else {
+            {
+                if (appOpen) {
+                    val from = app
+                    closeApp()
+                    returnApp = from
+                    popToRoot(TopLevelRoute.Home)
+                    showTab(TopLevelRoute.Home)
+                }
+            }
+        }
+
+    /** Back to the app the cameras were hopped to from, growing from [origin] (where the chip that offers it is), on the page it was left on. */
+    fun returnToApp(origin: Offset) {
+        val which = returnApp ?: return
+        openApp(which, origin, selectedTab)
+        appResumes = true
+    }
+
+    /** The way back is no longer on offer. */
+    fun forgetReturn() {
+        returnApp = null
+    }
+
     fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null, weatherLink: WeatherDeepLink? = null, packageLink: PackageDeepLink? = null) {
         app = which
+        returnApp = null
+        appResumes = false
         this.financeTab = financeTab.takeIf { which == InnerApp.FINANCE }
         this.weatherLink = weatherLink.takeIf { which == InnerApp.WEATHER }
         this.packageLink = packageLink.takeIf { which == InnerApp.PACKAGES }
@@ -863,6 +916,7 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 @Suppress("ktlint:compose:modifier-missing-check")
 @Composable
 private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, tab: TopLevelRoute) {
+    ReturnToAppChip(nav, tab)
     CardZoomOverlay(nav, cardZoom)
     LocalShellApps.current(nav, tab)
 }

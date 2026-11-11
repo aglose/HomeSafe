@@ -698,7 +698,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.FilterChips(budget: com.
     - onSelect: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.finance.ui.FinanceApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, requestedTab: com.meticulouscreations.homesafe.finance.ui.FinanceTab?, onShowRequestedTab: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+public fun com.meticulouscreations.homesafe.finance.ui.FinanceApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, requestedTab: com.meticulouscreations.homesafe.finance.ui.FinanceTab?, onShowRequestedTab: kotlin.Function0<kotlin.Unit>, onCameras: kotlin.Function0<kotlin.Unit>?, resume: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -707,9 +707,11 @@ public fun com.meticulouscreations.homesafe.finance.ui.FinanceApp(onClose: kotli
     - active: STABLE (primitive type)
     - requestedTab: STABLE (class with no mutable properties)
     - onShowRequestedTab: STABLE (function type)
+    - onCameras: STABLE (function type)
+    - resume: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.FinanceAppContent(onClose: kotlin.Function0<kotlin.Unit>, active: kotlin.Boolean, requestedTab: com.meticulouscreations.homesafe.finance.ui.FinanceTab?, onShowRequestedTab: kotlin.Function0<kotlin.Unit>, offline: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.FinanceAppContent(onClose: kotlin.Function0<kotlin.Unit>, active: kotlin.Boolean, requestedTab: com.meticulouscreations.homesafe.finance.ui.FinanceTab?, onShowRequestedTab: kotlin.Function0<kotlin.Unit>, offline: kotlin.Boolean, onCameras: kotlin.Function0<kotlin.Unit>?, resume: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -718,6 +720,8 @@ private fun com.meticulouscreations.homesafe.finance.ui.FinanceAppContent(onClos
     - requestedTab: STABLE (class with no mutable properties)
     - onShowRequestedTab: STABLE (function type)
     - offline: STABLE (primitive type)
+    - onCameras: STABLE (function type)
+    - resume: STABLE (primitive type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -760,6 +764,17 @@ internal fun com.meticulouscreations.homesafe.finance.ui.FinanceDeskStage(conten
   restartable: true
   params:
     - content: STABLE (composable function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.finance.ui.FinanceDetailPill(trail: kotlin.collections.List<kotlin.String>, onPop: kotlin.Function1<@[ParameterName(name = \, onCameras: kotlin.Function0<kotlin.Unit>?, modifier: androidx.compose.ui.Modifier, scrubbing: kotlin.Int?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - trail: RUNTIME (requires runtime check)
+    - onPop: STABLE (function type)
+    - onCameras: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - scrubbing: STABLE (class with no mutable properties)
 
 @Composable
 public fun com.meticulouscreations.homesafe.finance.ui.FinanceDrawerCard(finance: com.meticulouscreations.homesafe.finance.FinanceUiState, locked: kotlin.Boolean, onOpen: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -1381,6 +1396,15 @@ internal fun com.meticulouscreations.homesafe.finance.ui.PillButton(text: kotlin
     - text: STABLE (String is immutable)
     - color: STABLE (marked @Stable or @Immutable)
     - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.PillTrail(trail: kotlin.collections.List<kotlin.String>, picked: kotlin.Int?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - trail: RUNTIME (requires runtime check)
+    - picked: STABLE (class with no mutable properties)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable

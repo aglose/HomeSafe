@@ -2389,6 +2389,23 @@ private fun com.meticulouscreations.homesafe.ui.screens.RelayAlertPolicy(): kotl
   params:
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.ReturnChip(app: com.meticulouscreations.homesafe.ui.screens.InnerApp, onClick: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - app: STABLE (class with no mutable properties)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.ReturnToAppChip(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.RoutineRow(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, clipsOpen: kotlin.Boolean, player: com.meticulouscreations.homesafe.ui.screens.ClipPlayerState, onToggleClips: kotlin.Function0<kotlin.Unit>, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onClipEnd: kotlin.Function0<kotlin.Unit>, onClipPauseToggle: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
