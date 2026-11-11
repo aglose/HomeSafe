@@ -11,7 +11,9 @@ scripts/preview --list                        # every preview
 scripts/preview --all                         # everything, once, before you finish
 ```
 
-Add or adjust a `@Preview` for the state you changed; every one is drawn, nothing to register. The
+Add or adjust a `@Preview` for the state you changed; every one is drawn, nothing to register. A
+preview taller than 3000dp is refused by the renderer (`heightDp` exceeds maximum allowed): draw a
+longer page in two pictures, as the Budget page's previews do. The
 `ui-previews` skill has the rest: the fallback if the server breaks, and what to do in a sandbox
 that can't build.
 

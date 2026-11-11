@@ -324,10 +324,14 @@ object BudgetFixtures {
     )
 }
 
+/**
+ * The page from its top, or from the item at [from]: the renderer draws nothing taller than
+ * 3000dp and the page is longer, so what lies below that is drawn in a picture of its own.
+ */
 @Composable
-private fun BudgetPreview(state: BudgetUiState) {
+private fun BudgetPreview(state: BudgetUiState, from: Int = 0) {
     FinanceStage {
-        BudgetScreen(state, rememberLazyListState(), previewPadding, onTag = { _, _, _ -> }, onTagLine = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
+        BudgetScreen(state, rememberLazyListState(initialFirstVisibleItemIndex = from), previewPadding, onTag = { _, _, _ -> }, onTagLine = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
     }
 }
 
@@ -350,12 +354,22 @@ private fun FinanceDeskBudgetLookingBackPreview() {
     BudgetDeskPreview(BudgetFixtures.lookingBack)
 }
 
-@Preview(name = "Budget · on pace", widthDp = 412, heightDp = 3400)
-@Preview(name = "Budget · on pace, in Spanish", widthDp = 412, heightDp = 3400, locale = "es")
+@Preview(name = "Budget · on pace", widthDp = 412, heightDp = 3000)
+@Preview(name = "Budget · on pace, in Spanish", widthDp = 412, heightDp = 3000, locale = "es")
 @Composable
 private fun FinanceBudgetPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.onPace))
 }
+
+// The page's lower half: [ON_PACE_WHO] is where "Who spent what" starts in this fixture's list.
+@Preview(name = "Budget · on pace, from who spent what", widthDp = 412, heightDp = 3000)
+@Preview(name = "Budget · on pace, from who spent what, in Spanish", widthDp = 412, heightDp = 3000, locale = "es")
+@Composable
+private fun FinanceBudgetLowerPreview() {
+    BudgetPreview(BudgetFixtures.state(BudgetFixtures.onPace), from = ON_PACE_WHO)
+}
+
+private const val ON_PACE_WHO = 17
 
 @Preview(name = "Budget · September beside October", widthDp = 412, heightDp = 1700)
 @Preview(name = "Budget · September beside October, in Spanish", widthDp = 412, heightDp = 1700, locale = "es")
@@ -364,13 +378,13 @@ private fun FinanceBudgetLookingBackPreview() {
     BudgetPreview(BudgetFixtures.lookingBack)
 }
 
-@Preview(name = "Budget · with Amazon orders", widthDp = 412, heightDp = 3700)
+@Preview(name = "Budget · with Amazon orders", widthDp = 412, heightDp = 3000)
 @Composable
 private fun FinanceBudgetAmazonScreenPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.withAmazon))
 }
 
-@Preview(name = "Budget · with recurring charges", widthDp = 412, heightDp = 4300)
+@Preview(name = "Budget · with recurring charges", widthDp = 412, heightDp = 3000)
 @Composable
 private fun FinanceBudgetRecurringScreenPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.withRecurring))
