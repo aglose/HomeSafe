@@ -184,7 +184,7 @@ private fun FinanceBankSyncFillPreview() {
     BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.filled, loading = false))
 }
 
-@Preview(name = "Bank sync · stock plan", widthDp = 412, heightDp = 3200)
+@Preview(name = "Bank sync · stock plan", widthDp = 412, heightDp = 3000)
 @Composable
 private fun FinanceBankSyncStockPlanPreview() {
     BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.vesting, loading = false))
