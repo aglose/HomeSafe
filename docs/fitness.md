@@ -540,24 +540,26 @@ allowed, and the runs page says so where it isn't. A run is then:
   for you where the running stopped*. A run nobody finishes at all ends itself once the phone has
   gone nowhere for half an hour (or the run has stood paused that long), which also stops the GPS.
   Where the running stopped is told half a minute at a time:
-  - by the **phone's positions**: ground covered at a jog or better (15:00 a mile; for a run that
-    was a walk all the way, six tenths of its own usual speed), and no faster than 7 m/s, which is
-    a car. A stop of under five minutes is part of the run. Running after a longer stop counts
+  - by the **phone's positions**: ground covered at a jog or better (15:00 a mile; for a
+    recording with hardly any jogging in it, a walk, six tenths of its own usual speed), and no
+    faster than 7 m/s, which is a car. A stop of under five minutes is part of the run. Running after a longer stop counts
     when there are two minutes of it. Slowing to a walk and stopping is the end of the run, for
     two minutes at most: the walk home isn't;
   - by the **heart**, once the band's readings are in Health Connect: ground covered at a
-    runner's speed with the heart down under three quarters of what it ran at is a ride home,
-    unless the band's own session says it was still the run;
+    runner's speed with the heart down under three quarters of what it ran at (through the first
+    ten minutes of going) is a ride home, unless the band's own session says it was still the run;
   - by the **band's session** of the same run: with no heart to tell by, ground covered more than
     two minutes after the band stopped isn't the run. Where the phone had no position at all, the
-    band's session says whether it was still going, or the heart alone.
+    band's session says whether it was still going, or the heart alone; with neither, nothing
+    says the running had stopped, and the run isn't cut there.
 
   The recorder does this by the positions when the run is finished. The heart and the band's
   session are held against it when Health Connect is next read (`HealthViewModel.settleRuns`),
   again every quarter of an hour through the run's first day as the band syncs, and that is also
   what puts right a run recorded before any of this. A run only ever gets shorter, and nothing
   recorded is thrown away: the run is worked out from its events up to its end, and the rest stay
-  where they are. There is no putting a shortened run back from the app yet.
+  where they are, down to a last one saying when the recording was finished. Between devices the
+  earlier of two ends stands (`FitnessLogSyncImpl`). There is no putting a shortened run back from the app yet.
 - **One run for the process**: the run being recorded is held for the whole process
   (`LiveRun`), not by the app graph. Android builds the graph again with the Activity (left
   with Back and opened again mid-run, say) without stopping the old one, so the recorder on the

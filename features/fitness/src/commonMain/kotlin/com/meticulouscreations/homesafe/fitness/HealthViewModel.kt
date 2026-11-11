@@ -196,6 +196,7 @@ class HealthViewModel(
                     recordedRuns.runs.collect {
                         recorded = it
                         rebuildRuns()
+                        rereadIfEnded()
                         settleRuns()
                     }
                 }
@@ -275,9 +276,16 @@ class HealthViewModel(
         _uiState.update { it.copy(detail = null) }
         opening = viewModelScope.launch {
             // A run whose track can't be read still opens, on its totals alone.
-            val track = if (record != null) attempt { source.track(record) } ?: RunTrack() else recordedTrack(run, granted)
-            openTrack = OpenTrack(id, track, granted)
-            _uiState.update { it.copy(detail = Runs.detail(run, track, bounds)) }
+            var of = run
+            var track = if (record != null) attempt { source.track(record) } ?: RunTrack() else recordedTrack(of, granted)
+            // A run recorded here may have been ended earlier while its track was read: the track is the run's as it now stands.
+            while (record == null) {
+                val now = _uiState.value.runs.run(id)?.takeIf { it.endEpochSeconds != of.endEpochSeconds } ?: break
+                of = now
+                track = recordedTrack(of, granted)
+            }
+            openTrack = OpenTrack(id, track, granted, of.endEpochSeconds)
+            _uiState.update { it.copy(detail = Runs.detail(_uiState.value.runs.run(id) ?: of, track, bounds)) }
         }
     }
 
@@ -342,7 +350,7 @@ class HealthViewModel(
         fun settleKey(run: RecordedRun): String {
             val age = at - run.endEpochMillis / 1_000
             // A run just finished is looked at again every quarter of an hour for a day: its heart is still coming.
-            return "${run.id}/${run.endEpochMillis}/$shared/${wornThrough(run).size}/${if (age < SECONDS_PER_DAY) at / RESETTLE_SECONDS else 0}"
+            return "${run.id}/${run.endEpochMillis}/$shared/$heartShared/${wornThrough(run)}/${if (age < SECONDS_PER_DAY) at / RESETTLE_SECONDS else 0}"
         }
 
         val todo = recorded.filter { it.endEpochMillis - it.startEpochMillis >= RunEnds.TAIL_MILLIS && settleKey(it) !in settled }
@@ -363,6 +371,7 @@ class HealthViewModel(
         val all = attempt { recordedRuns.events(run.id) }.orEmpty()
         // The run's end is kept to the millisecond and shown to the second.
         val events = RunEnds.upTo(run.endEpochSeconds * 1_000 + 999, all)
+        // How long the recording went on: to where it was finished, or for one from before that was written down, to its last position.
         val recordedOn = ((all.maxOfOrNull { it.epochMillis } ?: 0) / 1_000 - run.endEpochSeconds).takeIf { it >= RunEnds.TAIL_MILLIS / 1_000 } ?: 0
         val heart = if (_uiState.value.access == HealthAccess.ON && HealthKind.HEART_RATE in granted) {
             attempt { source.heartRate(run.startEpochSeconds, run.endEpochSeconds) }.orEmpty()
@@ -370,6 +379,13 @@ class HealthViewModel(
             emptyList()
         }
         return RunTracker.replay(run.startEpochSeconds * 1_000, events).track(heart).copy(recordedOnSeconds = recordedOn)
+    }
+
+    /** The open run was recorded here and has been ended earlier since its track was read: its route, splits and heart are read again up to where it now ends. */
+    private fun rereadIfEnded() {
+        val open = openTrack ?: return
+        val run = _uiState.value.runs.run(open.id)?.takeIf { it.recorded } ?: return
+        if (run.endEpochSeconds != open.endEpochSeconds) rereadOpenTrack(open, open.granted)
     }
 
     private fun redrawDetail() {
@@ -389,7 +405,7 @@ class HealthViewModel(
             heart = if (HealthKind.HEART_RATE in granted) open.track.heart else emptyList(),
             distance = if (run.recorded || HealthKind.DISTANCE in granted) open.track.distance else emptyList(),
         )
-        openTrack = OpenTrack(open.id, kept, granted)
+        openTrack = OpenTrack(open.id, kept, granted, open.endEpochSeconds)
         redrawDetail()
         val record = records[open.id]
         if (record == null && !run.recorded) return
@@ -397,9 +413,11 @@ class HealthViewModel(
         opening = viewModelScope.launch {
             val track = if (record != null) attempt { source.track(record) } ?: return@launch else recordedTrack(run, granted)
             val still = openTrack?.takeIf { it.id == open.id } ?: return@launch
-            // A route the user handed over when asked isn't in what the store gives unasked.
-            openTrack = still.copy(track = track.copy(route = track.route.ifEmpty { still.track.route }))
+            // A route the user handed over when asked isn't in what the store gives unasked. A run recorded here has its own, up to its end.
+            openTrack = still.copy(track = if (run.recorded) track else track.copy(route = track.route.ifEmpty { still.track.route }), endEpochSeconds = run.endEpochSeconds)
             redrawDetail()
+            // Ended earlier again while that was read.
+            rereadIfEnded()
         }
     }
 
@@ -581,4 +599,4 @@ private data class Readings(
 )
 
 /** The open run's track, and what was shared when it was read: read under other permissions, it is read again. */
-private data class OpenTrack(val id: String, val track: RunTrack, val granted: Set<HealthKind>)
+private data class OpenTrack(val id: String, val track: RunTrack, val granted: Set<HealthKind>, val endEpochSeconds: Long)

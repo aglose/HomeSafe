@@ -8,16 +8,17 @@ import kotlin.math.roundToInt
  * ([BIN_MILLIS]) at a time:
  *
  * - **the phone's positions**: ground covered at the run's own pace, or not. The pace asked for
- *   is a jog's (15:00 a mile), or for a run that was a walk all the way, six tenths of its usual
- *   speed; faster than [FASTEST_METERS_PER_SECOND] is a car;
+ *   is a jog's (15:00 a mile), or for a recording with hardly any jogging in it (a walk), six
+ *   tenths of its usual speed; faster than [FASTEST_METERS_PER_SECOND] is a car;
  * - **the heart**, where a band's readings cover it: ground covered at a running pace with the
- *   heart settled (under [HEART_UP] of what it ran at) is a ride home, unless a band says it was
- *   still a run;
+ *   heart settled (under [HEART_UP] of what it ran at through the run's first ten minutes of
+ *   going) is a ride home, unless a band says it was still a run;
  * - **a band's own session** of the same run, read from the health store: with no heart to tell
  *   by, ground covered after the band had stopped (and [WORN_GRACE_SECONDS]) isn't the run.
  *
- * Where the phone had no position at all, the band's session says, or the heart alone; with
- * neither, nothing was being run.
+ * Where the phone had no position at all, the band's session says, or the heart alone. With
+ * neither there is nothing to say the running had stopped, and the run isn't cut there: only
+ * standing still, a pause, a settled heart or a band's session ending is taken for the end.
  *
  * The run is then over where its last stretch of running ended, and the runner had slowed to a
  * stop (for [SLOWING_MILLIS] at most: the walk home isn't the run). A stop of under [GAP_MILLIS] is
@@ -46,8 +47,15 @@ object RunEnds {
     /** Slower than this isn't going anywhere: the GPS wandering, or pottering about. */
     private const val LEAST_METERS_PER_SECOND = 0.5
 
-    /** A run that never reached a jog is judged by this share of its own usual speed. */
+    /** A recording with hardly any jogging in it is judged by this share of its own usual speed. */
     private const val OWN_PACE_SHARE = 0.6
+
+    /** It has jogging in it from this many half minutes at a jog or better, when they are also [JOGGED_SHARE] of all it was going for. */
+    private const val LEAST_JOGGED_BINS = 6
+    private const val JOGGED_SHARE = 0.25
+
+    /** What the heart ran at is taken from this many half minutes of going, from the start: the run comes first, whatever was recorded after. */
+    private const val HEART_BASELINE_BINS = 20
 
     /** The heart is still up while it is over this share of what it ran at. */
     const val HEART_UP = 0.75
@@ -99,7 +107,10 @@ object RunEnds {
         val speeds = DoubleArray(count) { bin -> (binEnd(bin) - binStart(bin)).takeIf { it > 0 }?.let { meters[bin] * 1_000 / it } ?: 0.0 }
         val going = speeds.filter { it >= LEAST_METERS_PER_SECOND && it <= FASTEST_METERS_PER_SECOND }.sorted()
         if (going.isEmpty()) return null
-        val least = minOf(JOG_METERS_PER_SECOND, going[going.size / 2] * OWN_PACE_SHARE)
+        // A run with a long walk after it is still judged as a run: its own usual speed is only gone by where there was hardly any jogging.
+        val jogged = going.count { it >= JOG_METERS_PER_SECOND }
+        val isRun = jogged >= LEAST_JOGGED_BINS && jogged >= going.size * JOGGED_SHARE
+        val least = if (isRun) JOG_METERS_PER_SECOND else minOf(JOG_METERS_PER_SECOND, going[going.size / 2] * OWN_PACE_SHARE)
 
         val located = BooleanArray(count)
         for (event in within) {
@@ -125,11 +136,15 @@ object RunEnds {
             val inWorn = if (wornFrom != null && wornTo != null) binStart(bin) / 1_000 <= wornTo && binEnd(bin) / 1_000 >= wornFrom else null
             when {
                 paused[bin] -> false
+
                 moving[bin] -> !(heartUp == false && inWorn != true) && !(heartUp == null && inWorn == false)
+
                 located[bin] -> false
-                // No position to tell by: the band's session if there is one, else the heart alone.
+
+                // No position to tell by: the band's session if there is one, else the heart alone. With neither, nothing says it had stopped.
                 inWorn != null -> inWorn && heartUp != false
-                else -> heartUp == true
+
+                else -> heartUp != false
             }
         }
 
@@ -184,7 +199,7 @@ object RunEnds {
             sums[bin] += sample.value
             readings[bin]++
         }
-        val ranAt = (0 until count).filter { moving[it] && readings[it] > 0 }.map { sums[it] / readings[it] }.sorted()
+        val ranAt = (0 until count).filter { moving[it] && readings[it] > 0 }.take(HEART_BASELINE_BINS).map { sums[it] / readings[it] }.sorted()
         if (ranAt.size < LEAST_HEART_BINS) return null
         val floor = ranAt[ranAt.size / 2] * HEART_UP
         return Array(count) { bin -> if (readings[bin] > 0) sums[bin] / readings[bin] >= floor else null }

@@ -145,6 +145,8 @@ class RunRecorderImpl internal constructor(
         session = null
         current.job?.cancel()
         if (keep) {
+            // When the recording stopped, which the last position doesn't say if the GPS had gone by then.
+            record(current, RunEvent(RunEventKind.FINISH, at), at)
             flush(current, at)
             runs.finish(settled(current.tracker.finished(current.id, at, current.utcOffsetSeconds)))
         } else {

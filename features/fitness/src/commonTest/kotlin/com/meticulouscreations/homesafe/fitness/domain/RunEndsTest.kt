@@ -72,6 +72,19 @@ class RunEndsTest {
     }
 
     @Test
+    fun aWalkHomeLongerThanTheRunIsStillNotTheRun() {
+        val events = going(3.0, 0, 1_200, 0.0) + going(1.3, 1_200, 2_400, 3_600.0)
+        assertOverAt(1_200 + RunEnds.SLOWING_MILLIS / 1_000, RunEnds.inferred(start, at(3_600), events))
+    }
+
+    @Test
+    fun aRideLongerThanTheRunIsToldByTheHeartTheRunBeganAt() {
+        val events = going(3.0, 0, 1_200, 0.0) + going(5.0, 1_200, 2_400, 3_600.0)
+        val heart = heart(0, 1_200, 165.0) + heart(1_200, 3_600, 95.0)
+        assertOverAt(1_200, RunEnds.inferred(start, at(3_600), events, heart), within = 30)
+    }
+
+    @Test
     fun aWalkRecordedAsOneIsKeptToWhereTheWalkingStopped() {
         // Never a jog's pace: judged by its own, so the walk itself stays.
         val events = going(1.4, 0, 1_800, 0.0) + standing(1_800, 1_200, 2_520.0)
@@ -108,7 +121,8 @@ class RunEndsTest {
     fun whereTheGpsWasLostTheBandAndTheHeartSay() {
         // Ten minutes with positions, then none at all: the run went on to twenty by the band, and was left recording to fifty.
         val events = going(3.0, 0, 600, 0.0)
-        assertOverAt(600, RunEnds.inferred(start, at(3_000), events), within = 30)
+        // With nothing else to tell by, nothing says the running stopped where the positions did: it stands.
+        assertNull(RunEnds.inferred(start, at(3_000), events))
         val worn = listOf(start / 1_000..start / 1_000 + 1_200)
         assertOverAt(1_200 + RunEnds.WORN_GRACE_SECONDS, RunEnds.inferred(start, at(3_000), events, worn = worn), within = 31)
         val through = heart(0, 1_500, 160.0) + heart(1_500, 3_000, 90.0)

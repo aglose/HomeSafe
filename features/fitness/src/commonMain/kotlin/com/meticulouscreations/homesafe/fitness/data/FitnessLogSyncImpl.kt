@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.fitness.data
 
+import com.meticulouscreations.homesafe.data.FitnessRecordedRunEntity
 import com.meticulouscreations.homesafe.data.FitnessRunDao
 import com.meticulouscreations.homesafe.data.FitnessSyncDao
 import com.meticulouscreations.homesafe.data.FitnessSyncRowEntity
@@ -338,7 +339,13 @@ class FitnessLogSyncImpl(
             for (key in runKeys) {
                 val id = FitnessSyncRows.idOf(key)
                 val row = data[key]
-                if (row == null) runs.removeRun(id) else FitnessSyncRows.run(id, row).let { (run, events) -> runs.writeRun(run, events) }
+                if (row == null) {
+                    runs.removeRun(id)
+                } else {
+                    val (run, events) = FitnessSyncRows.run(id, row)
+                    // A run only ever gets shorter (`RunEnds`): the earlier of two ends stands, here and, once this one is sent, there.
+                    if (!endsEarlier(runs.run(id), run)) runs.writeRun(run, events)
+                }
             }
         }
 
@@ -352,6 +359,13 @@ class FitnessLogSyncImpl(
     }
 
     private companion object {
+        /** Whether [mine] is the same finished run as [theirs], ended earlier. */
+        fun endsEarlier(mine: FitnessRecordedRunEntity?, theirs: FitnessRecordedRunEntity): Boolean {
+            val myEnd = mine?.endEpochMillis ?: return false
+            val theirEnd = theirs.endEpochMillis ?: return false
+            return mine.startEpochMillis == theirs.startEpochMillis && myEnd < theirEnd
+        }
+
         /** A change is sent once things have been quiet this long: the sets of a workout's minute go together. */
         const val SETTLE_MS = 2_000L
 

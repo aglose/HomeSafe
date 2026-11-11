@@ -15,7 +15,14 @@ import kotlin.math.sqrt
 data class GpsFix(val epochMillis: Long, val latitude: Double, val longitude: Double, val accuracyMeters: Double)
 
 /** What happened while a run was recorded. */
-enum class RunEventKind { FIX, PAUSE, RESUME }
+enum class RunEventKind {
+    FIX,
+    PAUSE,
+    RESUME,
+
+    /** The recording was ended here: by the runner, or by itself. Says how long it went on, whatever the GPS was doing by then. */
+    FINISH,
+}
 
 /**
  * One thing that happened while a run was recorded, in order: a position, or the runner pausing
@@ -183,6 +190,8 @@ class RunTracker(private val startEpochMillis: Long) {
             }
 
             RunEventKind.FIX -> event.fix?.let(::take)
+
+            RunEventKind.FINISH -> Unit
         }
     }
 

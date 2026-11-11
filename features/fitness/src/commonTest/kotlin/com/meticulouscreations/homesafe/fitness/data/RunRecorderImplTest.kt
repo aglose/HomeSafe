@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.fitness.domain.GpsSignal
 import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
 import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.RunEvent
+import com.meticulouscreations.homesafe.fitness.domain.RunEventKind
 import com.meticulouscreations.homesafe.fitness.domain.RunLocation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -145,8 +146,10 @@ class RunRecorderImplTest {
         val kept = h.runs.runs.first().single()
         assertEquals(300.0, kept.meters, 1.0)
         assertEquals(100_000, kept.movingMillis)
-        // Every position was written down, to work the run out again from.
-        assertEquals(101, h.runs.events(kept.id).size)
+        // Every position was written down, to work the run out again from, and then when it was finished.
+        val events = h.runs.events(kept.id)
+        assertEquals(101, events.count { it.kind == RunEventKind.FIX })
+        assertEquals(RunEvent(RunEventKind.FINISH, kept.endEpochMillis), events.last())
     }
 
     @Test
