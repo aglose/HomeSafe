@@ -486,6 +486,11 @@ class PushMessageTest(unittest.TestCase):
         self.assertNotIn("sound", aps)
         self.assertEqual("passive", aps["interruption-level"])
         self.assertEqual("r0", message["apns"]["headers"]["apns-collapse-id"])
+        self.assertEqual("normal", message["android"]["priority"], "it alerts nobody, so it doesn't wake the phone out of Doze")
+
+    def test_a_quiet_push_with_nobody_home_still_wakes_the_phone(self):
+        message = relay.push_message("tok", "Front Yard", "Person · 2 alerts", {**self.DATA, "notif_id": "r0", "silent": "1", "away": "1"}, away=True)["message"]
+        self.assertEqual("high", message["android"]["priority"])
 
     def test_a_push_outside_a_visit_collapses_by_its_own_review(self):
         message = relay.push_message("tok", "Front Yard", "Person in the driveway", self.DATA)["message"]

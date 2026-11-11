@@ -638,9 +638,14 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     A push that is one more alert in a visit already on the phone (see `Visits`) carries the
     visit's `notif_id` and `silent: "1"`: Android replaces that visit's notification without
     alerting again, and iOS collapses it onto the same banner (`apns-collapse-id`), passively.
+    On Android it also travels at normal priority (see below).
     """
     headers, aps = apns_parts(title, body, data, away)
-    android: dict[str, Any] = {"priority": "high"}
+    # High priority wakes a phone out of Doze there and then, which is what an alert is for and what
+    # costs its battery. A quiet push (a visit's follow-up, the summary, a door's repeat, a car that
+    # moved) changes a notification without alerting, so it can wait for the phone's next waking;
+    # never one sent with nobody home.
+    android: dict[str, Any] = {"priority": "normal" if data.get("silent") == "1" and not away else "high"}
     # News with a date on it (`push_until`): not worth delivering once that has passed.
     if data.get("push_until"):
         android["ttl"] = f"{max(0, int(float(data['push_until']) - time.time()))}s"

@@ -54,6 +54,10 @@ twenty times between 12:39 and 13:37 on the 28th without moving.
   person on that camera before it has been empty of people for `YARD_QUIET_SECONDS` (600) lands on
   the same notification silently — "Person on the front lawn · 3 sightings". A review still in
   progress keeps the yard busy.
+- **Priority.** A push that sounds goes to Android at high priority, which wakes a phone out of
+  Doze there and then. One that is `silent=1` (a visit's follow-up, the summary, a door's repeat, a
+  car that moved) goes at normal priority and may wait for the phone's next waking, since it alerts
+  nobody; unless nobody is home, when everything is high.
 - **Folding.** A person in the same review as a household car that arrived, left or moved, or who
   turns up within `FOLD_SECONDS` (180) of one arriving, is its driver or passenger. They keep the
   yard busy but don't sound. A car coming or going with no name yet holds the person for up to

@@ -216,6 +216,11 @@ how all of the above but the Mac's island is shown. Refused, the workout carries
 A workout left in progress when the app was stopped is followed again as soon as the app starts,
 not only once the fitness app is opened, so its notification and Live Activity come back on their
 own. One left open past eight hours is taken off them, as it is no longer the one in progress.
+On Android, where showing it keeps the app running, one nobody has touched for an hour (no set
+logged, no rest, the app not in front) is taken off sooner, and the heart sensor's link is let go
+with it: a workout forgotten in a pocket would otherwise hold the phone awake until those eight
+hours were up. It is still open, and its notification comes back when the app is opened. While it
+is up, a new heart reading alone redraws the notification at most every ten seconds.
 
 **Not yet tried on a real phone**: the Live Update and its service have been built and are tested
 through the shared code, and the Live Activity builds and draws in its previews, but neither has
@@ -255,6 +260,11 @@ Service, and connects over that same link when one does. (Other linked devices, 
 key for one, are asked too: a lookup of services the phone already has on file, nothing more.)
 `adb logcat -s HomeSafeHeartRate` says which way the band was found: *Heard a heart-rate sensor*
 from a scan, *Already linked to a heart-rate sensor* from a link.
+
+A look lasts fifteen seconds. One that hears nothing is followed by a rest (five seconds, doubling
+to a minute) before the next, so a band that isn't there (left at home, flat) doesn't keep the
+radio scanning for as long as the sensor is wanted; one that comes back is found within about a
+minute.
 
 ### Zones
 

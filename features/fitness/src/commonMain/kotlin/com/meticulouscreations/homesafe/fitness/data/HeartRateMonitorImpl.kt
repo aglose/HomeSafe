@@ -109,17 +109,28 @@ class HeartRateMonitorImpl(
     private suspend fun hold(sensor: HeartSensor, ask: Boolean) {
         var known = sensor
         var failures = 0
+        var misses = 0
         var everLinked = false
         while (true) {
-            if (!ready(ask && !everLinked && failures == 0)) return
-            _state.value = if (everLinked || failures > 0) HeartSensorState.Lost(known) else HeartSensorState.Scanning(known)
+            if (!ready(ask && !everLinked && failures == 0 && misses == 0)) return
+            _state.value = if (everLinked || failures > 0 || misses > 0) HeartSensorState.Lost(known) else HeartSensorState.Scanning(known)
+            // Looked for in short spells with a rest between: a sensor that isn't there (left at home, flat, switched off)
+            // would otherwise keep the radio scanning flat out for as long as it is wanted, which can be a whole workout.
+            var unheard = false
             val seen = try {
-                find(known)
+                withTimeoutOrNull(SCAN_MILLIS) { find(known) }.also { unheard = it == null }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 null
             }
+            if (unheard) {
+                misses++
+                _state.value = HeartSensorState.Lost(known)
+                delay(restAfterMiss(misses))
+                continue
+            }
+            misses = 0
             val reached = if (seen != null) session(seen) else Reach.NOTHING
             if (reached != Reach.NOTHING) {
                 // It may have come back at a new address under its old name; that is where it is now.
@@ -214,6 +225,14 @@ class HeartRateMonitorImpl(
         const val SILENCE_MILLIS = 12_000L
 
         const val ADDRESS_GRACE_MILLIS = 6_000L
+
+        /** How long one look for the sensor lasts. A sensor that is on advertises several times a second; one linked elsewhere is probed as the scan starts. */
+        const val SCAN_MILLIS = 15_000L
+        private const val MISS_REST_MILLIS = 5_000L
+        private const val MISS_REST_MAX_MILLIS = 60_000L
+
+        /** The rest after a look that heard nothing: five seconds, doubling to a minute, so a sensor that comes back is found within about that. */
+        fun restAfterMiss(misses: Int): Long = (MISS_REST_MILLIS shl (misses - 1).coerceIn(0, 4)).coerceAtMost(MISS_REST_MAX_MILLIS)
         const val RADIO_POLL_MILLIS = 3_000L
         private const val RETRY_MILLIS = 2_000L
         private const val RETRY_MAX_MILLIS = 30_000L

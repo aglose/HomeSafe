@@ -190,6 +190,21 @@ class FinanceAccessImplTest {
     }
 
     @Test
+    fun aServerFoundGoneIsNotAskedWhileTheAppIsOffScreen() = subject("https://box.ts.net") {
+        connection.answers = false
+        access.serverUnanswered()
+        AppVisibility.update(false)
+        testScheduler.advanceTimeBy(16_000)
+        val asked = connection.checks
+        testScheduler.advanceTimeBy(10 * 60_000)
+        assertEquals(asked, connection.checks, "in a pocket, nobody is waiting on it")
+
+        AppVisibility.update(true)
+        testScheduler.runCurrent()
+        assertEquals(asked + 1, connection.checks, "picked up again, it is asked at once")
+    }
+
+    @Test
     fun withNoSignInThereIsNoServerToAsk() = subject(url = null) {
         access.serverUnanswered()
         assertEquals(0, connection.checks)

@@ -78,7 +78,7 @@ class LiveWorkoutsTest {
 
     // ---- The presenter ----------------------------------------------------------------------------
 
-    private class RecordingSurface : LiveWorkoutSurface {
+    private class RecordingSurface(override val keepsAppRunning: Boolean = false) : LiveWorkoutSurface {
         val shown = mutableListOf<Pair<LiveWorkout, LiveWorkoutWords>>()
         var ended = 0
 
@@ -145,5 +145,64 @@ class LiveWorkoutsTest {
         runCurrent()
         advanceTimeBy(chest.copy(startedAtEpochMillis = 0).staleAtEpochMillis + 1)
         assertEquals(1, surface.ended)
+    }
+
+    @Test
+    fun aWorkoutNobodyTouchesIsTakenOffASurfaceThatKeepsTheAppRunning_andComesBackWithTheApp() = runTest {
+        val hub = LiveWorkouts()
+        val surface = RecordingSurface(keepsAppRunning = true)
+        LiveWorkoutPresenter(hub, surface, clock(), keys).start(backgroundScope)
+        val open = chest.copy(startedAtEpochMillis = 0)
+        hub.show(open)
+        runCurrent()
+        assertTrue(hub.keepsAppRunning)
+
+        // The heart reads on, every second: that is nobody doing anything, and puts nothing off.
+        repeat(10) { minute ->
+            advanceTimeBy(LiveWorkoutPresenter.IDLE_MILLIS / 10)
+            hub.show(open.copy(heart = LiveHeart(100 + minute)))
+            runCurrent()
+        }
+        assertEquals(1, surface.ended)
+        assertEquals(false, hub.keepsAppRunning, "the heart sensor's link is let go of with it")
+        val shownByThen = surface.shown.size
+        hub.show(open.copy(heart = LiveHeart(140)))
+        runCurrent()
+        assertEquals(shownByThen, surface.shown.size, "a reading that arrives afterwards doesn't bring it back")
+
+        // Opened again, it is the workout in progress as before, and stays while the app is in front.
+        hub.show(open.copy(onScreen = true))
+        runCurrent()
+        assertEquals(shownByThen + 1, surface.shown.size)
+        advanceTimeBy(LiveWorkoutPresenter.IDLE_MILLIS * 2)
+        assertEquals(1, surface.ended)
+    }
+
+    @Test
+    fun aSetLoggedStartsTheHourAgain() = runTest {
+        val hub = LiveWorkouts()
+        val surface = RecordingSurface(keepsAppRunning = true)
+        LiveWorkoutPresenter(hub, surface, clock(), keys).start(backgroundScope)
+        val open = chest.copy(startedAtEpochMillis = 0)
+        hub.show(open)
+        runCurrent()
+        advanceTimeBy(LiveWorkoutPresenter.IDLE_MILLIS - 1_000)
+        hub.show(open.copy(sets = 1))
+        runCurrent()
+        advanceTimeBy(LiveWorkoutPresenter.IDLE_MILLIS - 1_000)
+        assertEquals(0, surface.ended)
+        advanceTimeBy(2_000)
+        assertEquals(1, surface.ended)
+    }
+
+    @Test
+    fun aSurfaceThatDoesNotKeepTheAppRunningShowsAnUntouchedWorkoutForAsLongAsItCounts() = runTest {
+        val hub = LiveWorkouts()
+        val surface = RecordingSurface()
+        LiveWorkoutPresenter(hub, surface, clock(), keys).start(backgroundScope)
+        hub.show(chest.copy(startedAtEpochMillis = 0))
+        runCurrent()
+        advanceTimeBy(LiveWorkoutPresenter.IDLE_MILLIS * 3)
+        assertEquals(0, surface.ended)
     }
 }

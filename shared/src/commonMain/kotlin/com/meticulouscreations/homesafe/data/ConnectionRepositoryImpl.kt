@@ -145,6 +145,9 @@ class ConnectionRepositoryImpl(
     /** Serializes sign-ins so a user-driven connect and a network-driven route switch can't interleave. */
     private val signInMutex = Mutex()
 
+    /** Whether the app is on screen, as [onAppVisibilityChanged] was last told; true until it is told otherwise. */
+    private val visible = MutableStateFlow(true)
+
     /** When the app last left the foreground, or null while it is on screen (or has never left). */
     private var backgroundedAtMillis: Long? = null
 
@@ -264,6 +267,7 @@ class ConnectionRepositoryImpl(
     }
 
     override fun onAppVisibilityChanged(visible: Boolean) {
+        this.visible.value = visible
         if (!visible) {
             backgroundedAtMillis = clock.now().toEpochMilliseconds()
             return
@@ -548,7 +552,24 @@ class ConnectionRepositoryImpl(
      * until it succeeds or the next network change supersedes it.
      */
     private suspend fun refreshRoute(verifySession: Boolean) {
-        while (!checkRoute(verifySession)) delay(routeRetryMs)
+        var failures = 0
+        while (!checkRoute(verifySession)) awaitRouteRetry(++failures)
+    }
+
+    /**
+     * The wait before try number [failures] + 1. On screen, [routeRetryMs] every time: someone is
+     * looking at "can't reach the server" and wants it gone the moment it can be. Off screen the
+     * wait doubles from there up to [BACKGROUND_ROUTE_RETRY_MAX_MS]: the first tries still catch
+     * Tailscale coming up after leaving home (a push's picture is fetched over this route), and a
+     * server that stays gone isn't asked every ten seconds from a pocket for hours. Coming back
+     * on screen ends the wait at once.
+     */
+    private suspend fun awaitRouteRetry(failures: Int) {
+        if (visible.value) {
+            delay(routeRetryMs)
+            return
+        }
+        withTimeoutOrNull(backgroundRouteRetryMs(routeRetryMs, failures)) { visible.first { it } }
     }
 
     /**
@@ -652,3 +673,10 @@ class ConnectionRepositoryImpl(
         const val REVALIDATE_AFTER_BACKGROUND_MS = 15_000L
     }
 }
+
+/** The longest the app waits between looks for a server it can't reach, while it is off screen. */
+internal const val BACKGROUND_ROUTE_RETRY_MAX_MS = 5 * 60_000L
+
+/** [retryMs] doubled for each failure after the first, up to [BACKGROUND_ROUTE_RETRY_MAX_MS] (or [retryMs] itself, where that is longer). */
+internal fun backgroundRouteRetryMs(retryMs: Long, failures: Int): Long =
+    if (retryMs >= BACKGROUND_ROUTE_RETRY_MAX_MS) retryMs else (retryMs shl (failures - 1).coerceIn(0, 16)).coerceAtMost(BACKGROUND_ROUTE_RETRY_MAX_MS)

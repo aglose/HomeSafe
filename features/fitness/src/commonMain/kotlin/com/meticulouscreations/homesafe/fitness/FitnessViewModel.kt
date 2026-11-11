@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -268,6 +269,8 @@ class FitnessViewModel(
                 if (workout !== UNREAD) live.show(workout)
             }
         }
+        // The app kept running for a workout, or no longer: the heart sensor is held through the one and let go after it.
+        viewModelScope.launch { live.keepsAppRunningChanges.drop(1).collect { syncHeartLink() } }
         // A workout left in progress (the app stopped, the Activity built again) is followed from the start, so that its
         // notification comes back without the fitness app having to be opened first.
         viewModelScope.launch {
