@@ -14,6 +14,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.GeofencingRequest
@@ -132,11 +133,33 @@ private class AndroidGeofenceMonitor(
         }
     }
 
-    private suspend fun fusedLocation(): GeoPoint? = withTimeoutOrNull(FIX_TIMEOUT_MS) {
+    /**
+     * Wi-Fi and cell towers rather than GPS, and a position another app was given in the last
+     * [APPROXIMATE_MAX_AGE_MS] answers without a fix at all. Without Play Services, the last
+     * position any provider knew, however old: taking a new one there would mean GPS.
+     */
+    override suspend fun approximateLocation(): GeoPoint? {
+        val access = currentAccess().also { _access.value = it }
+        if (access == LocationAccess.NOT_ASKED || access == LocationAccess.DENIED) return null
+        val request = CurrentLocationRequest.Builder()
+            .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+            .setMaxUpdateAgeMillis(APPROXIMATE_MAX_AGE_MS)
+            .setDurationMillis(FIX_TIMEOUT_MS)
+            .build()
+        return try {
+            fusedLocation(request) ?: lastKnownLocation()
+        } catch (_: SecurityException) {
+            null
+        }
+    }
+
+    private suspend fun fusedLocation(
+        request: CurrentLocationRequest = CurrentLocationRequest.Builder().setPriority(Priority.PRIORITY_HIGH_ACCURACY).build(),
+    ): GeoPoint? = withTimeoutOrNull(FIX_TIMEOUT_MS) {
         val fused = LocationServices.getFusedLocationProviderClient(context)
         suspendCancellableCoroutine { continuation ->
             val cancel = CancellationTokenSource()
-            fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancel.token)
+            fused.getCurrentLocation(request, cancel.token)
                 .addOnSuccessListener { location -> continuation.resume(location?.toGeoPoint()) }
                 .addOnFailureListener { continuation.resume(null) }
                 .addOnCanceledListener { continuation.resume(null) }
@@ -209,6 +232,9 @@ private class AndroidGeofenceMonitor(
         const val PROMPT_TIMEOUT_MS = 120_000L
         const val POLL_MS = 500L
         const val FIX_TIMEOUT_MS = 15_000L
+
+        /** How old a position may be and still answer [approximateLocation]: a forecast doesn't change in ten minutes' travel. */
+        const val APPROXIMATE_MAX_AGE_MS = 10 * 60_000L
     }
 }
 

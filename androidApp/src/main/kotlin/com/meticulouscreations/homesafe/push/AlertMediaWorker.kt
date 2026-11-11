@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.push
 
 import android.content.Context
 import android.util.Log
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.Data
@@ -15,16 +16,23 @@ import androidx.work.workDataOf
 import com.meticulouscreations.homesafe.data.AlertNotificationPoster
 import com.meticulouscreations.homesafe.data.BackgroundGraph
 import com.meticulouscreations.homesafe.data.NotificationMuteStore
+import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import java.util.concurrent.TimeUnit
 
 /**
- * Adds a pushed notification's picture, then its clip (see `PushedAlertMedia.addTo`). A worker
- * rather than a coroutine in the messaging service because the clip can't be asked for until
- * Frigate's preview window has passed — some 20 s after the detection, often after the service
- * has stopped and Android has frozen the process. Expedited, since a picture that turns up
- * minutes later is no use; out of expedited quota it runs as ordinary work instead.
+ * Adds a pushed notification's picture, then its clip (see `PushedAlertMedia`), as two runs of
+ * this worker. The clip can't be asked for until Frigate's preview window has passed, some 20 s
+ * after the detection, and may take a minute more to appear: waiting that out inside one run
+ * kept the phone awake for it, dozens of times a day. So the first run fetches the picture and
+ * is over in a second or two, and schedules the second for when the clip is due; a clip that
+ * isn't there yet is asked for again after WorkManager's backoff, with nothing held in between.
+ *
+ * The picture's run is expedited, since a picture that turns up minutes later is no use; out of
+ * expedited quota it runs as ordinary work instead. The clip's can't be (delayed work never is),
+ * so on a phone that is idle it arrives when Android next lets work run.
  */
 class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -45,12 +53,35 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             offerNotAPerson = input.getBoolean(KEY_OFFER_NOT_A_PERSON, false),
             subject = MomentCategory.entries.firstOrNull { it.name == input.getString(KEY_SUBJECT) } ?: MomentCategory.ALL,
         )
-        BackgroundGraph.get(applicationContext).pushedAlertMedia.addTo(text, eventId, start) { stage ->
-            // The clip comes up to a minute after the picture; muted in between, it doesn't come.
-            if (NotificationMuteStore.isMuted(applicationContext)) return@addTo
-            AlertNotificationPoster.show(applicationContext, stage)
-            Log.i(TAG, "alert ${text.id}: ${if (stage.animation != null) "clip" else "picture"} added")
+        val media = BackgroundGraph.get(applicationContext).pushedAlertMedia
+        return if (input.getBoolean(KEY_CLIP, false)) addClip(media, text, eventId) else addPicture(media, text, eventId, start)
+    }
+
+    private suspend fun addPicture(media: PushedAlertMedia, text: AlertNotification, eventId: String, start: Double): Result {
+        media.picture(eventId)?.let {
+            AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = it))
+            Log.i(TAG, "alert ${text.id}: picture added")
         }
+        // With or without its picture: the clip's run reads the picture again, and a text-only notification still gets its clip.
+        val request = OneTimeWorkRequestBuilder<AlertMediaWorker>()
+            .setInitialDelay(media.clipWaitMs(start), TimeUnit.MILLISECONDS)
+            .setBackoffCriteria(BackoffPolicy.LINEAR, CLIP_RETRY_STEP_MS, TimeUnit.MILLISECONDS)
+            .setConstraints(CONNECTED)
+            .setInputData(Data.Builder().putAll(inputData).putBoolean(KEY_CLIP, true).build())
+            .build()
+        // A later alert of the same visit replaces this one's clip with its own, as it does the picture.
+        WorkManager.getInstance(applicationContext).enqueueUniqueWork(clipWorkName(text.id), ExistingWorkPolicy.REPLACE, request)
+        return Result.success()
+    }
+
+    /** One ask per run. Not there yet: again after 10 s, 20 s and 30 s (Android may stretch those), which is as long as it usually takes. */
+    private suspend fun addClip(media: PushedAlertMedia, text: AlertNotification, eventId: String): Result {
+        val clip = media.clip(eventId) ?: return if (runAttemptCount < CLIP_RETRIES) Result.retry() else Result.success()
+        // Muted while this waited its turn: the clip doesn't come.
+        if (NotificationMuteStore.isMuted(applicationContext)) return Result.success()
+        // The picture is the notification's icon beside the clip; a few kilobytes, read again rather than kept between runs.
+        AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = media.picture(eventId), animation = clip))
+        Log.i(TAG, "alert ${text.id}: clip added")
         return Result.success()
     }
 
@@ -71,6 +102,17 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         /** Where a tap opens: the visit's start, which may be well before this alert's own ([KEY_START]). */
         private const val KEY_TARGET_START = "target_start"
 
+        /** Set on the second run, which adds the clip; the first adds the picture. */
+        private const val KEY_CLIP = "clip"
+
+        /** How many more times a clip that isn't there is asked for, and the step its waits grow by (WorkManager's shortest). */
+        private const val CLIP_RETRIES = 3
+        private const val CLIP_RETRY_STEP_MS = 10_000L
+
+        private val CONNECTED = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+
+        private fun clipWorkName(id: String) = "alert-clip-$id"
+
         fun enqueue(context: Context, text: AlertNotification, eventId: String, startEpochSeconds: Double) {
             val input: Data = workDataOf(
                 KEY_ID to text.id,
@@ -88,11 +130,14 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             )
             val request = OneTimeWorkRequestBuilder<AlertMediaWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setConstraints(CONNECTED)
                 .setInputData(input)
                 .build()
             // A later alert of the same visit (or a repeat push) restarts its media with the newest picture rather than running twice.
-            WorkManager.getInstance(context).enqueueUniqueWork("alert-media-${text.id}", ExistingWorkPolicy.REPLACE, request)
+            // The older alert's clip, if still waiting, goes too: its picture's run schedules the newer one.
+            val work = WorkManager.getInstance(context)
+            work.cancelUniqueWork(clipWorkName(text.id))
+            work.enqueueUniqueWork("alert-media-${text.id}", ExistingWorkPolicy.REPLACE, request)
         }
     }
 }

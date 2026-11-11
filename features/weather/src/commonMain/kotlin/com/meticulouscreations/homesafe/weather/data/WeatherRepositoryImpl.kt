@@ -289,15 +289,18 @@ class WeatherLocator(
      * One fix at a time, and a fix a few seconds old answers the next asker: the app opening asks
      * twice at once (for its first page and for its notifications), and a platform's location
      * manager has one slot for the answer.
+     *
+     * [approximate] is for the look taken with the app closed, every half hour all day: near
+     * enough for a forecast, and no GPS switched on for it (see [GeofenceMonitor.approximateLocation]).
      */
-    suspend fun locate(): Place? = fixing.withLock {
+    suspend fun locate(approximate: Boolean = false): Place? = fixing.withLock {
         lastFix?.takeIf { it.first.elapsedNow() < FIX_GOOD_FOR }?.let { return@withLock it.second }
-        fix()?.also { lastFix = TimeSource.Monotonic.markNow() to it }
+        fix(approximate)?.also { lastFix = TimeSource.Monotonic.markNow() to it }
     }
 
-    private suspend fun fix(): Place? {
+    private suspend fun fix(approximate: Boolean): Place? {
         if (!monitor.isSupported) return null
-        val point = monitor.currentLocation() ?: return null
+        val point = (if (approximate) monitor.approximateLocation() else monitor.currentLocation()) ?: return null
         val known = preferences.observe().first().lastKnown
         // Not moved far enough to be somewhere with another name: keep the one in hand.
         val name = if (known != null && known.name.isNotBlank() && abs(known.latitude - point.latitude) < 0.03 && abs(known.longitude - point.longitude) < 0.03) {

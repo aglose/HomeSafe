@@ -41,6 +41,13 @@ interface GeofenceMonitor {
     /** One fix of where the phone is right now, or null if it can't get one. Needs at least [LocationAccess.WHILE_IN_USE]. */
     suspend fun currentLocation(): GeoPoint?
 
+    /**
+     * Roughly where the phone is, to within a few streets and a few minutes, for an asker that needs
+     * no better (a forecast) and asks with the screen off: no GPS is switched on for it where the
+     * platform can answer without. The same as [currentLocation] where it can't tell the two apart.
+     */
+    suspend fun approximateLocation(): GeoPoint? = currentLocation()
+
     /** Watches [home], replacing any earlier fence; null stops watching. Needs [LocationAccess.ALWAYS] to be useful. */
     fun watch(home: HomeLocation?)
 }

@@ -103,6 +103,21 @@ class WeatherLocatorTest {
     }
 
     @Test
+    fun anApproximateAskTakesNoPreciseFix() = runTest {
+        val h = Harness()
+        assertEquals(45.5234, h.locator.locate(approximate = true)?.latitude)
+        assertEquals(1, h.fence.approximateFixes)
+        assertEquals(1, h.fence.fixes)
+    }
+
+    @Test
+    fun aPreciseAskIsNotAnsweredApproximately() = runTest {
+        val h = Harness()
+        h.locator.locate()
+        assertEquals(0, h.fence.approximateFixes)
+    }
+
+    @Test
     fun twoAskersAtOnceShareOneFix() = runTest {
         val h = Harness()
         val both = coroutineScope { listOf(async { h.locator.locate() }, async { h.locator.locate() }).awaitAll() }

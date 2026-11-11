@@ -315,11 +315,13 @@ private class AndroidWeatherCheckScheduler(private val context: Context) : Weath
                 work.cancelUniqueWork(WORK_NAME)
                 return
             }
+            // Not on a battery that is nearly flat: the look costs a position and a forecast, and what is left is for the phone.
             val request = PeriodicWorkRequestBuilder<WeatherCheckWorker>(30, TimeUnit.MINUTES)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).build())
                 .build()
-            // KEEP: called on every launch, and the job already scheduled must not have its clock reset each time.
-            work.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+            // UPDATE: called on every launch. The job already scheduled keeps its clock and takes these constraints,
+            // which KEEP would leave as they were when an older build first scheduled it.
+            work.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
         }.onFailure { Log.w(TAG, "couldn't schedule the weather check: ${it.message}") }
     }
 

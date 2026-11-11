@@ -277,7 +277,7 @@ class WeatherAlertCheck(
     )
 
     private suspend fun place(): Place? =
-        runCatching { locator.locate() }.getOrNull()
+        runCatching { locator.locate(approximate = true) }.getOrNull()
             ?: locator.remembered()?.let { remembered -> runCatching { locator.named(remembered) }.getOrDefault(remembered) }
             ?: places.observe().first().firstOrNull()
 

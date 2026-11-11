@@ -72,6 +72,14 @@ internal class FakeGeofence(access: LocationAccess = LocationAccess.WHILE_IN_USE
         accessRequests++
     }
 
+    /** How many of [fixes] asked only for [approximateLocation]. */
+    var approximateFixes = 0
+
+    override suspend fun approximateLocation(): GeoPoint? {
+        approximateFixes++
+        return currentLocation()
+    }
+
     override suspend fun currentLocation(): GeoPoint? {
         fixes++
         failure?.let { throw it }
