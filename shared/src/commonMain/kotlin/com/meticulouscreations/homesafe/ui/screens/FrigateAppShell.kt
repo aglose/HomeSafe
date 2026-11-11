@@ -192,8 +192,17 @@ class ShellNavigation(
      * iPad's sidebar, where each is a tab beside Home (see `IosShell.kt`). The drawer then has
      * nothing to offer, so the shell shows no way to it, and [openApp] asks the host to go to the
      * app ([onAppSelected]) instead of growing it over the shell.
+     *
+     * Becoming so forgets the way back to an app ([returnApp]): that is for the narrow layout, and
+     * an app picked beside a sidebar (natively, on an iPad) never passes through [openApp].
      */
-    var appsInSidebar by mutableStateOf(false)
+    var appsInSidebar: Boolean
+        get() = appsInSidebarState
+        set(value) {
+            if (value) returnApp = null
+            appsInSidebarState = value
+        }
+    private var appsInSidebarState by mutableStateOf(false)
 
     /**
      * Where the shell draws the sidebar itself ([showsSidebar]): the app from the drawer that is
@@ -218,9 +227,6 @@ class ShellNavigation(
         val requestedPackage = packageLink
         if (sidebar) {
             drawerOpen = false
-            // The way back to an app is for the narrow layout: beside a sidebar the apps are a click
-            // away, and one picked there (natively, on an iPad) never passes through [openApp].
-            returnApp = null
             val open = app.takeIf { appOpen }
             closeApp()
             appsInSidebar = true
