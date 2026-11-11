@@ -20,6 +20,8 @@ import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import java.io.File
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
@@ -64,11 +66,13 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         if (isStopped) return Result.success()
         // Muted while the picture was on its way: nothing more comes, the clip included.
         if (muted()) return Result.success()
+        // Kept for the clip's run, which shows it beside the clip; an older alert's, of the same visit, is not left for it.
+        keepPicture(text.id, picture)
         if (picture != null) {
             AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = picture))
             Log.i(TAG, "alert ${text.id}: picture added")
         }
-        // With or without its picture: the clip's run reads the picture again, and a text-only notification still gets its clip.
+        // With or without its picture: a text-only notification still gets its clip.
         val request = OneTimeWorkRequestBuilder<AlertMediaWorker>()
             .setInitialDelay(media.clipWaitMs(start), TimeUnit.MILLISECONDS)
             .setBackoffCriteria(BackoffPolicy.LINEAR, CLIP_RETRY_STEP_MS, TimeUnit.MILLISECONDS)
@@ -84,15 +88,37 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
 
     /** One ask per run. Not there yet: again after 10 s, 20 s and 30 s (Android may stretch those), which is as long as it usually takes. */
     private suspend fun addClip(media: PushedAlertMedia, text: AlertNotification, eventId: String): Result {
-        val clip = media.clip(eventId) ?: return if (runAttemptCount < CLIP_RETRIES) Result.retry() else Result.success()
-        // The picture is the notification's icon beside the clip; a few kilobytes, read again rather than kept between runs.
-        val picture = media.picture(eventId)
-        // Replaced, or muted, while the two were on their way: the clip doesn't come.
-        if (isStopped || muted()) return Result.success()
+        val clip = media.clip(eventId)
+        if (clip == null && runAttemptCount < CLIP_RETRIES) return Result.retry()
+        // The picture is the notification's icon beside the clip: the one its own run kept, so the notification never
+        // loses a picture it already shows; asked for again only if that run got none.
+        val picture = clip?.let { keptPicture(text.id) ?: media.picture(eventId) }
+        // Replaced while the two were on their way: the newer alert's runs have the kept picture now.
+        if (isStopped) return Result.success()
+        keepPicture(text.id, null)
+        // No clip after the last ask, or muted meanwhile: the clip doesn't come.
+        if (clip == null || muted()) return Result.success()
         AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = picture, animation = clip))
         Log.i(TAG, "alert ${text.id}: clip added")
         return Result.success()
     }
+
+    /**
+     * The picture between the two runs: a few kilobytes in the cache directory, under the notification's id. Null forgets
+     * it. One whose clip run never came (replaced work, a reinstall) is swept here once it is [KEPT_PICTURE_MAX_AGE_MS] old.
+     */
+    private fun keepPicture(id: String, picture: ByteArray?) {
+        runCatching {
+            val directory = File(applicationContext.cacheDir, KEPT_PICTURES).apply { mkdirs() }
+            val oldest = System.currentTimeMillis() - KEPT_PICTURE_MAX_AGE_MS
+            directory.listFiles()?.filter { it.lastModified() < oldest }?.forEach { it.delete() }
+            val file = File(directory, keptPictureName(id))
+            if (picture != null) file.writeBytes(picture) else file.delete()
+        }
+    }
+
+    private fun keptPicture(id: String): ByteArray? =
+        runCatching { File(File(applicationContext.cacheDir, KEPT_PICTURES), keptPictureName(id)).takeIf { it.isFile }?.readBytes() }.getOrNull()
 
     companion object {
         private const val TAG = "HomeSafeAlertMedia"
@@ -121,6 +147,12 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private val CONNECTED = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
         private fun clipWorkName(id: String) = "alert-clip-$id"
+
+        private const val KEPT_PICTURES = "alert-pictures"
+        private const val KEPT_PICTURE_MAX_AGE_MS = 60 * 60_000L
+
+        /** A file name from a notification id, which is the relay's and may hold anything. */
+        private fun keptPictureName(id: String) = UUID.nameUUIDFromBytes(id.toByteArray()).toString()
 
         fun enqueue(context: Context, text: AlertNotification, eventId: String, startEpochSeconds: Double) {
             val input: Data = workDataOf(
