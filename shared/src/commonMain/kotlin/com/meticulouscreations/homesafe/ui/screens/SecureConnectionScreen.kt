@@ -189,7 +189,8 @@ fun SecureConnectionScreen(
     // skeleton below waits for an actual sign-in — Connect pressed, or the scan passed.
     val isConnecting = uiState is ConnectUiState.Connecting || uiState is ConnectUiState.AwaitingBiometrics
     // The drawer and the app opened from it, as the shell has them, before there is a shell.
-    val apps = remember { ShellNavigation() }
+    // No cameras under the apps yet, so none of them offers the hop to them.
+    val apps = remember { ShellNavigation().apply { camerasReachable = false } }
     val appsUp = apps.drawerOpen || apps.appOpen
     // A weather notification's tap opens the weather app here rather than waiting on a sign-in
     // that may not be possible; taken here first, the shell finds nothing left to open.

@@ -15,6 +15,10 @@
     <string name="finance_title_glossary">Jargon buster</string>
     <string name="finance_title_sheet_sync">Sheet sync</string>
     <string name="finance_close">Close finance</string>
+    <!-- The pill at the foot of a pushed page. %1$s is the page or tab Back lands on, e.g. "Wallet". -->
+    <string name="finance_pill_back_to">Back to %1$s</string>
+    <!-- The pill's other half: leaves for the live cameras. -->
+    <string name="finance_pill_cameras">Cameras</string>
     <string name="finance_refreshing">Refreshing</string>
     <string name="finance_refresh">Refresh</string>
     <!-- Under the title while the server can't be reached: what is on screen is the copy the device kept. -->
