@@ -222,6 +222,13 @@ interface FitnessRunDao {
     @Upsert
     suspend fun upsertRun(run: FitnessRecordedRunEntity)
 
+    /**
+     * Ends a finished run earlier, at [endEpochMillis], with what it comes to by then. What was recorded after
+     * stays, and is passed over. Nothing for a run that has gone since, or that is still being recorded.
+     */
+    @Query("UPDATE FitnessRecordedRunEntity SET endEpochMillis = :endEpochMillis, meters = :meters, movingMillis = :movingMillis WHERE id = :id AND endEpochMillis > :endEpochMillis")
+    suspend fun shortenRun(id: String, endEpochMillis: Long, meters: Double, movingMillis: Long)
+
     @Query("SELECT * FROM FitnessRunEventEntity WHERE runId = :runId ORDER BY seq")
     suspend fun events(runId: String): List<FitnessRunEventEntity>
 
@@ -267,6 +274,12 @@ class InMemoryFitnessRunDao : FitnessRunDao {
 
     override suspend fun upsertRun(run: FitnessRecordedRunEntity) {
         runs.update { current -> current.filter { it.id != run.id } + run }
+    }
+
+    override suspend fun shortenRun(id: String, endEpochMillis: Long, meters: Double, movingMillis: Long) {
+        runs.update { current ->
+            current.map { if (it.id == id && (it.endEpochMillis ?: 0) > endEpochMillis) it.copy(endEpochMillis = endEpochMillis, meters = meters, movingMillis = movingMillis) else it }
+        }
     }
 
     override suspend fun events(runId: String): List<FitnessRunEventEntity> = events.value.filter { it.runId == runId }.sortedBy { it.seq }

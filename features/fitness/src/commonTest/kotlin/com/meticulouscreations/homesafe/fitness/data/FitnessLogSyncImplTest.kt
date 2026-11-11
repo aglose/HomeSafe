@@ -502,6 +502,29 @@ class FitnessLogSyncImplTest {
     }
 
     @Test
+    fun ofTwoEndsGivenTheSameRunTheEarlierStandsWhicheverIsSentLast() = runTest {
+        for (phoneFirst in listOf(true, false)) {
+            val relay = FakeRelay()
+            val phone = install(relay)
+            phone.runDao.writeRun(run("r1"), events("r1"))
+            phone.sync.syncNow()
+            val tablet = install(relay)
+            tablet.sync.syncNow()
+            // Each ends the run where it takes the running to have stopped: the phone two minutes earlier than the tablet.
+            phone.runDao.shortenRun("r1", 1_000 + 300_000, 900.0, 300_000)
+            tablet.runDao.shortenRun("r1", 1_000 + 420_000, 1_200.0, 420_000)
+            val order = if (phoneFirst) listOf(phone, tablet) else listOf(tablet, phone)
+            repeat(3) { order.forEach { it.sync.syncNow() } }
+            for (install in order) {
+                val held = install.runDao.run("r1")
+                assertEquals(1_000 + 300_000L, held?.endEpochMillis, "phone first: $phoneFirst")
+                assertEquals(900.0, held?.meters)
+                assertEquals(3, install.runDao.events("r1").size)
+            }
+        }
+    }
+
+    @Test
     fun aRunStillBeingRecordedStaysHereUntilItIsFinished() = runTest {
         val relay = FakeRelay()
         val phone = install(relay)

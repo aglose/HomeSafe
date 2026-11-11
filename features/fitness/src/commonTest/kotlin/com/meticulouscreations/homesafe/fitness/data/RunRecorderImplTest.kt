@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.fitness.domain.GpsSignal
 import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
 import com.meticulouscreations.homesafe.fitness.domain.Recording
 import com.meticulouscreations.homesafe.fitness.domain.RunEvent
+import com.meticulouscreations.homesafe.fitness.domain.RunEventKind
 import com.meticulouscreations.homesafe.fitness.domain.RunLocation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -88,6 +89,44 @@ class RunRecorderImplTest {
     }
 
     @Test
+    fun aRunNobodyEndedEndsItselfWhereTheRunningStopped() = runRecorderTest { h ->
+        h.recorder.start()
+        runCurrent()
+        run(h, 600)
+        // Home, and the phone put down still recording: the GPS goes on saying where it is.
+        repeat(31 * 60) {
+            advanceTimeBy(1_000)
+            h.at(1_800.0)
+            runCurrent()
+        }
+        assertNull(h.recorder.recording.value)
+        assertFalse(h.location.following)
+        val kept = h.runs.runs.first().single()
+        assertEquals(1_800.0, kept.meters, 5.0)
+        assertEquals(600_000.0, kept.movingMillis.toDouble(), 15_000.0)
+        assertEquals(START + 600_000.0, kept.endEpochMillis.toDouble(), 15_000.0)
+        // What came after is still written down.
+        assertTrue(h.runs.events(kept.id).last().epochMillis > kept.endEpochMillis + 29 * 60_000)
+    }
+
+    @Test
+    fun aRunFinishedLongAfterItWasOverIsKeptAsTheRunItWas() = runRecorderTest { h ->
+        h.recorder.start()
+        runCurrent()
+        run(h, 600)
+        repeat(10 * 60) {
+            advanceTimeBy(1_000)
+            h.at(1_800.0)
+            runCurrent()
+        }
+        h.recorder.finish()
+        runCurrent()
+        val kept = h.runs.runs.first().single()
+        assertEquals(600_000.0, kept.movingMillis.toDouble(), 15_000.0)
+        assertEquals(1_800.0, kept.meters, 5.0)
+    }
+
+    @Test
     fun aRunIsRecordedAndKept() = runRecorderTest { h ->
         h.recorder.start()
         runCurrent()
@@ -107,8 +146,10 @@ class RunRecorderImplTest {
         val kept = h.runs.runs.first().single()
         assertEquals(300.0, kept.meters, 1.0)
         assertEquals(100_000, kept.movingMillis)
-        // Every position was written down, to work the run out again from.
-        assertEquals(101, h.runs.events(kept.id).size)
+        // Every position was written down, to work the run out again from, and then when it was finished.
+        val events = h.runs.events(kept.id)
+        assertEquals(101, events.count { it.kind == RunEventKind.FIX })
+        assertEquals(RunEvent(RunEventKind.FINISH, kept.endEpochMillis), events.last())
     }
 
     @Test

@@ -281,6 +281,14 @@ private fun FitnessRunPreview() {
     }
 }
 
+/** A run left recording for 35 minutes after it was over: its page says it was ended where the running stopped. */
+@Preview(widthDp = 412, heightDp = 520)
+@Composable
+private fun FitnessRunEndedForYouPreview() {
+    val health = HealthFixtures.connected(opened = "run-1").let { it.copy(detail = it.detail?.copy(recordedOnSeconds = 2_130)) }
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Run("run-1"), heart = FitnessFixtures.heartAtRest(), health = health) }
+}
+
 /** The same made-up block of streets for every tile, for a preview's route to have a map under it. */
 private object StreetTiles : MapTileSource {
     private val block by lazy {

@@ -540,6 +540,30 @@ class HealthViewModelTest {
     }
 
     @Test
+    fun aRunLeftRecordingIsEndedWhereTheRunningStoppedAndItsPageSaysSo() = runHealthTest { h ->
+        h.source.allowed = emptySet()
+        // Twenty-five minutes of running, and then the phone lay still for forty more before the run was finished.
+        val startAt = NOW - 7_200
+        val ran = (0..300).map { i -> RunEvent.of(GpsFix((startAt + i * 5) * 1_000, 45.0 + i * 15.0 / 111_195.0, -93.0, 5.0)) }
+        val lay = (301..780).map { i -> RunEvent.of(GpsFix((startAt + i * 5) * 1_000, 45.0 + 4_500.0 / 111_195.0, -93.0, 5.0)) }
+        h.recordedRuns.begin("app-1", startAt * 1_000, 0)
+        h.recordedRuns.append("app-1", ran + lay)
+        h.recordedRuns.finish(RunTracker.replay(startAt * 1_000, ran + lay).finished("app-1", (startAt + 3_900) * 1_000, 0))
+        open(h)
+        val run = assertNotNull(h.state.runs.run("app-1"))
+        assertEquals(1_500.0, run.seconds.toDouble(), 15.0)
+        assertEquals(4_500.0, run.meters, 10.0)
+        // Nothing recorded was thrown away.
+        assertEquals(781, h.recordedRuns.events("app-1").size)
+        h.vm.openRun("app-1")
+        runCurrent()
+        val detail = assertNotNull(h.state.detail)
+        assertEquals(2_400.0, detail.recordedOnSeconds.toDouble(), 15.0)
+        // The route is the run's, and its splits end with it.
+        assertEquals(2, detail.splits.count { it.whole })
+    }
+
+    @Test
     fun theBandsSessionOfARunRecordedHereIsTheSameRunAndLendsItsHeart() = runHealthTest { h ->
         fill(h.source)
         h.source.allowed = everything

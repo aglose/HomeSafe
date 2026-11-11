@@ -92,6 +92,7 @@ import homesafe.shared.generated.resources.fitness_run_badge_longest
 import homesafe.shared.generated.resources.fitness_run_bpm
 import homesafe.shared.generated.resources.fitness_run_delete
 import homesafe.shared.generated.resources.fitness_run_delete_confirm
+import homesafe.shared.generated.resources.fitness_run_ended_for_you
 import homesafe.shared.generated.resources.fitness_run_feet
 import homesafe.shared.generated.resources.fitness_run_heart
 import homesafe.shared.generated.resources.fitness_run_heart_described
@@ -496,6 +497,14 @@ internal fun RunScreen(
                     style = type.body,
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 6.dp).testTag("fitness_run_not_counted"),
+                )
+            }
+            if (detail != null && detail.recordedOnSeconds > 0) {
+                Text(
+                    stringResource(Res.string.fitness_run_ended_for_you, FitnessFormat.duration(detail.recordedOnSeconds).resolve()),
+                    style = type.body,
+                    color = colors.textMuted,
+                    modifier = Modifier.padding(top = 6.dp).testTag("fitness_run_ended_for_you"),
                 )
             }
         }

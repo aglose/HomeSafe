@@ -109,6 +109,8 @@ data class RunTrack(
     val distance: List<DistanceSpan> = emptyList(),
     val route: List<RoutePoint> = emptyList(),
     val pauses: List<Pause> = emptyList(),
+    /** How long a run recorded here went on being recorded after it was over ([RunEnds]); 0 for one that ended when it was ended. */
+    val recordedOnSeconds: Long = 0,
 )
 
 /**

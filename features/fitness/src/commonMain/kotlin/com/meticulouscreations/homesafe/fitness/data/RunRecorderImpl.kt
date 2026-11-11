@@ -1,9 +1,11 @@
 package com.meticulouscreations.homesafe.fitness.data
 
 import com.meticulouscreations.homesafe.fitness.data.LiveRun.Session
+import com.meticulouscreations.homesafe.fitness.domain.RecordedRun
 import com.meticulouscreations.homesafe.fitness.domain.RecordedRuns
 import com.meticulouscreations.homesafe.fitness.domain.RecorderProblem
 import com.meticulouscreations.homesafe.fitness.domain.Recording
+import com.meticulouscreations.homesafe.fitness.domain.RunEnds
 import com.meticulouscreations.homesafe.fitness.domain.RunEvent
 import com.meticulouscreations.homesafe.fitness.domain.RunEventKind
 import com.meticulouscreations.homesafe.fitness.domain.RunLocation
@@ -31,6 +33,12 @@ import kotlin.time.Clock
  * goes: what happened is written every [FLUSH_MILLIS] or so, so a run the app was stopped in the
  * middle of loses a few seconds at most. Such a run is finished, where its positions stopped,
  * when the app next starts; one that never got anywhere is thrown away.
+ *
+ * A run nobody ended ends itself: once the phone has gone nowhere for [IDLE_END_MILLIS] (or the
+ * run has stood paused that long) it is finished, so the GPS isn't kept on all night. And however
+ * a run is finished, it is kept as ending where the running did ([RunEnds]), by the phone's
+ * positions alone here; the heart and a band's session are held against it once they have been
+ * read (`HealthViewModel`).
  *
  * The run itself is the process's ([LiveRun.process]), not the app graph's: Android builds the
  * graph again with the Activity (left with Back and opened again mid-run, say) without stopping
@@ -95,7 +103,7 @@ class RunRecorderImpl internal constructor(
                 val id = "app-$at"
                 val offset = localUtcOffsetSeconds(at / 1_000.0)
                 runs.begin(id, at, offset)
-                val started = Session(id, RunTracker(at), offset, lastFlushAt = at)
+                val started = Session(id, RunTracker(at), offset, lastFlushAt = at, lastTravelAt = at)
                 session = started
                 publish(started, at)
                 started.job = appScope.launch { follow(started) }
@@ -127,19 +135,28 @@ class RunRecorderImpl internal constructor(
         appScope.launch {
             lock.withLock {
                 val current = session ?: return@withLock
-                session = null
-                current.job?.cancel()
-                val at = now()
-                if (keep) {
-                    flush(current, at)
-                    runs.finish(current.tracker.finished(current.id, at, current.utcOffsetSeconds))
-                } else {
-                    runs.delete(current.id)
-                }
-                live.recording.value = null
+                close(current, keep, now())
             }
         }
     }
+
+    /** Ends [current] at [at]. Under the lock, and never from the run's own job, which this stops. */
+    private suspend fun close(current: Session, keep: Boolean, at: Long) {
+        session = null
+        current.job?.cancel()
+        if (keep) {
+            // When the recording stopped, which the last position doesn't say if the GPS had gone by then.
+            record(current, RunEvent(RunEventKind.FINISH, at), at)
+            flush(current, at)
+            runs.finish(settled(current.tracker.finished(current.id, at, current.utcOffsetSeconds)))
+        } else {
+            runs.delete(current.id)
+        }
+        live.recording.value = null
+    }
+
+    /** [run] as it is kept: ended where the running did, when it was left recording long after. */
+    private suspend fun settled(run: RecordedRun): RecordedRun = RunEnds.settled(run, runs.events(run.id)) ?: run
 
     /** Takes the GPS's positions into [current] for as long as it is the run, and keeps its time and signal fresh on screen. */
     private suspend fun follow(current: Session) = coroutineScope {
@@ -151,6 +168,12 @@ class RunRecorderImpl internal constructor(
                     val at = now()
                     if (at - current.lastFlushAt >= FLUSH_MILLIS) flush(current, at)
                     publish(current, at)
+                    if (!current.tracker.paused && current.tracker.metersSince(at - TRAVEL_WINDOW_MILLIS) >= LEAST_TRAVEL_METERS) current.lastTravelAt = at
+                    if (at - current.lastTravelAt >= IDLE_END_MILLIS && !current.ending) {
+                        // Nobody is running this any more. Ended from outside this job, which ending it stops.
+                        current.ending = true
+                        appScope.launch { lock.withLock { if (session === current) close(current, keep = true, now()) } }
+                    }
                 }
             }
         }
@@ -194,7 +217,7 @@ class RunRecorderImpl internal constructor(
                 continue
             }
             val endedAt = events.maxOf { it.epochMillis }
-            runs.finish(tracker.finished(id, endedAt, runs.offsetOf(id) ?: localUtcOffsetSeconds(startedAt / 1_000.0)))
+            runs.finish(settled(tracker.finished(id, endedAt, runs.offsetOf(id) ?: localUtcOffsetSeconds(startedAt / 1_000.0))))
         }
     }
 
@@ -210,6 +233,13 @@ class RunRecorderImpl internal constructor(
 
         /** A run cut short by the app stopping is kept only if it got this far. */
         const val LEAST_KEPT_METERS = 50.0
+
+        /** A run that has gone nowhere for this long, or stood paused for it, was forgotten: it ends itself. */
+        const val IDLE_END_MILLIS = 30 * 60_000L
+
+        /** Going somewhere is this far in [TRAVEL_WINDOW_MILLIS]: a slow walk, and more than the GPS wanders standing still. */
+        const val LEAST_TRAVEL_METERS = 20.0
+        const val TRAVEL_WINDOW_MILLIS = 30_000L
     }
 }
 
@@ -226,6 +256,9 @@ internal class LiveRun {
         val tracker: RunTracker,
         val utcOffsetSeconds: Int,
         var lastFlushAt: Long,
+        /** When the phone was last going somewhere. */
+        var lastTravelAt: Long,
+        var ending: Boolean = false,
         val pending: MutableList<RunEvent> = ArrayList(),
         var job: Job? = null,
     )
