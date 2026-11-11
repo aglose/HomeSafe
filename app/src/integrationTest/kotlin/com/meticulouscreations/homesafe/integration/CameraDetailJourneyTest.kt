@@ -115,8 +115,8 @@ class CameraDetailJourneyTest {
 
         video.performTouchInput { doubleClick(Offset(width * 0.15f, centerY)) }
         awaitText("10 seconds")
-        // Into the recording: the player is sent to the server's playlist of it. (The fake has no
-        // video to serve, so that is as far as this can follow it.)
+        // Into the recording: the player is sent to the server's playlist of it. (Whether it then
+        // plays is ClipJourneyTest's to check, on a device that decodes video.)
         server.awaitRequest(description = "the front door's recording playlist") { it.path.startsWith("/vod/front_door/") }
 
         // While that is still up, each further tap on the same side is another ten.

@@ -28,6 +28,10 @@ The integration journeys, the end-to-end tests and the Android CLI journeys all 
 - Events, recordings, stats and profile.
 - The face library and the custom classifiers.
 
+- Recorded video, for real (`FakeVideo`): a camera's recordings and a detection's clip as HLS (`/vod/…/index.m3u8`)
+  and as a downloadable MP4 (`…/clip.mp4`), of the length asked for, wherever the state holds recordings. It is one
+  two-second H.264 test card repeated, so a player decodes it and a saved clip is as long as the one cut.
+
 It deliberately has no live video (go2rtc) and no push relay, so the app runs its "unavailable" paths for those.
 Every snapshot and thumbnail it serves is the same 1×1 image.
 
@@ -78,6 +82,23 @@ fun turningDetectionOffIsSavedOnTheServer() = runAppJourney {
   it provides `LocalCompactLandscape`, which the layouts read in place of the window's own shape. A screen-level
   test does the same with `CompositionLocalProvider(LocalCompactLandscape provides true)`. A real device rotating
   under the real Activity — which must not recreate it — is `AppE2eTest`'s.
+
+## Clips, end to end
+
+`ClipJourneyTest` (`app/src/androidDeviceTest`, Android only) takes a clip all the way: cut in the editor, saved,
+found in the phone's Downloads as an ordinary MP4 of the right length whose every frame decodes; and a detection's
+clip played to its end in Moments and downloaded. Playing and saving are separate journeys, because apksim can't run
+them yet and each then skips itself with the reason:
+
+- its `DownloadManager` is Robolectric's, which notes a download and never fetches it, so a save stays "Saving";
+- its test runs list no video decoder (the app run by hand on a Mac does decode, with VideoToolbox; the Linux image
+  has no decoder at all).
+
+So they are checked on an emulator: by the **Clip journeys on an emulator** workflow
+([`clip-tests.yml`](../.github/workflows/clip-tests.yml)) on a pull request that touches clips, the player or the
+fake's video (and by hand from the Actions tab), and every night with the rest of the device tests. That workflow
+fails if a journey skips itself there. The nightly comparison lists a test that skipped itself on apksim under its
+own heading and doesn't count it as a difference.
 
 Fakes that the tests of more than one module use (a fake web, a fake server connection, a clock moved by
 hand) live in `:testing`, which only `commonTest` source sets depend on.
@@ -186,7 +207,7 @@ one, the Back that hides the keyboard quits the app). To run them on the Mac:
 1. Install the [Android CLI](https://developer.android.com/tools/agents/android-cli). The script installs the skill it needs.
 2. Install Claude Code and sign in (`claude`).
 3. Build the debug APK (`./gradlew :androidApp:assembleDebug`).
-4. Start the fake Frigate on `::1`: `./gradlew :fake-frigate:run --args="--port 8971 --host ::1 --advertise localhost"`.
+4. Start the fake Frigate: `./gradlew :fake-frigate:run --args="--port 8971 --host 127.0.0.1 --advertise localhost"`.
 5. Run `APKSIM=apksim scripts/run-android-cli-journeys.sh` to run them all, or pass journey files to run a subset.
 
 The journeys type the emulator's address for the fake Frigate, `http://10.0.2.2:8971`; the script gives the agent a

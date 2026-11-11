@@ -35,16 +35,19 @@ standard adb device, and runs a device-test class in seconds. The `apksim` skill
 brew tap aglose/apksim && brew install apksim
 apksim --control auto --adb auto --no-network androidApp/build/outputs/apk/debug/androidApp-debug.apk
 adb connect localhost:PORT     # PORT from that instance's ~/.apksim/tmp/<pid>/adb.port; then adb shell input/screencap/logcat, adb shell apksim nodes
-./gradlew :fake-frigate:run --args="--port 8971 --host ::1 --advertise localhost"   # sign in at http://localhost:8971
+./gradlew :fake-frigate:run --args="--port 8971 --host 127.0.0.1 --advertise localhost"   # sign in at http://localhost:8971
 apksim --instrument X-androidTest.apk -e class a.B#test X-androidTest.apk   # one device test, ~4 s
 ```
 
 Sign in only to the fake Frigate (`admin` / `correct-horse`), never the real server; keep
 `--no-network` on so the debug build's compiled-in LAN address can't reach it. Use apksim 0.4.0 or
-later (`brew upgrade --cask apksim`): older ones refuse `127.0.0.1` under it, which is why the fake
-binds `::1`. The tests run
+later (`brew upgrade --cask apksim`): older ones refuse `127.0.0.1` under it. The fake binds
+`127.0.0.1` and not `::1`, because the video player connects there for `localhost` and a clip
+won't play otherwise. The tests run
 Robolectric-style on API 36 with a simulated clock: keep the emulator for `startup-perf`, and use
-`scripts/preview` for preview-level checks. CI gates pull requests on the same test APKs in
+`scripts/preview` for preview-level checks. apksim plays a clip in the app but can't save one (its
+DownloadManager never fetches), so the clip journeys skip themselves there and run on CI's emulator
+([docs/testing.md](docs/testing.md), "Clips, end to end"). CI gates pull requests on the same test APKs in
 apksim's Linux image; the emulators run them nightly, and any difference goes in an issue
 ([docs/testing.md](docs/testing.md)).
 

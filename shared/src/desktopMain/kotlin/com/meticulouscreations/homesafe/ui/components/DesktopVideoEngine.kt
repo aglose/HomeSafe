@@ -139,6 +139,9 @@ internal class DesktopVideoEngine(val key: String?) {
         } else {
             outgoing.set(NO_SESSION)
             coldStartGeneration++
+            // What the last source's decoder said is not about this one: a recording's numbers
+            // stayed up over a live stream that hadn't joined yet.
+            stats = null
         }
         stalled = false
         positionMs = (next as? VideoSource.Recording)?.startPositionMs ?: 0L
