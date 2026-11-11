@@ -58,8 +58,14 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
     }
 
     private suspend fun addPicture(media: PushedAlertMedia, text: AlertNotification, eventId: String, start: Double): Result {
-        media.picture(eventId)?.let {
-            AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = it))
+        val picture = media.picture(eventId)
+        // Replaced by a later alert of the same visit while the picture was on its way (a cancelled request reads as no
+        // picture): that alert's run posts its own and schedules its own clip, and this one must not put its clip in the way.
+        if (isStopped) return Result.success()
+        // Muted while the picture was on its way: nothing more comes, the clip included.
+        if (muted()) return Result.success()
+        if (picture != null) {
+            AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = picture))
             Log.i(TAG, "alert ${text.id}: picture added")
         }
         // With or without its picture: the clip's run reads the picture again, and a text-only notification still gets its clip.
@@ -74,13 +80,16 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         return Result.success()
     }
 
+    private fun muted() = NotificationMuteStore.isMuted(applicationContext)
+
     /** One ask per run. Not there yet: again after 10 s, 20 s and 30 s (Android may stretch those), which is as long as it usually takes. */
     private suspend fun addClip(media: PushedAlertMedia, text: AlertNotification, eventId: String): Result {
         val clip = media.clip(eventId) ?: return if (runAttemptCount < CLIP_RETRIES) Result.retry() else Result.success()
-        // Muted while this waited its turn: the clip doesn't come.
-        if (NotificationMuteStore.isMuted(applicationContext)) return Result.success()
         // The picture is the notification's icon beside the clip; a few kilobytes, read again rather than kept between runs.
-        AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = media.picture(eventId), animation = clip))
+        val picture = media.picture(eventId)
+        // Replaced, or muted, while the two were on their way: the clip doesn't come.
+        if (isStopped || muted()) return Result.success()
+        AlertNotificationPoster.show(applicationContext, text.copy(thumbnail = picture, animation = clip))
         Log.i(TAG, "alert ${text.id}: clip added")
         return Result.success()
     }

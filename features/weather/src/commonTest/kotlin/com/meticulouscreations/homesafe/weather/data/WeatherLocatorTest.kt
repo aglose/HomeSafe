@@ -111,6 +111,25 @@ class WeatherLocatorTest {
     }
 
     @Test
+    fun anApproximateFixInHandDoesNotAnswerAPreciseAsk() = runTest {
+        val h = Harness()
+        h.locator.locate(approximate = true)
+        h.fence.here = GeoPoint(47.6062, -122.3321)
+        assertEquals(47.6062, h.locator.locate()?.latitude)
+        assertEquals(1, h.fence.approximateFixes)
+        assertEquals(2, h.fence.fixes)
+    }
+
+    @Test
+    fun aPreciseFixInHandAnswersAnApproximateAsk() = runTest {
+        val h = Harness()
+        val first = h.locator.locate()
+        assertEquals(first, h.locator.locate(approximate = true))
+        assertEquals(0, h.fence.approximateFixes)
+        assertEquals(1, h.fence.fixes)
+    }
+
+    @Test
     fun aPreciseAskIsNotAnsweredApproximately() = runTest {
         val h = Harness()
         h.locator.locate()

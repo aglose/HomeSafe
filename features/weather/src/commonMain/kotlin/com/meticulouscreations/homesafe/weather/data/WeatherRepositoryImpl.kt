@@ -282,7 +282,10 @@ class WeatherLocator(
     }
 
     private val fixing = Mutex()
-    private var lastFix: Pair<TimeSource.Monotonic.ValueTimeMark, Place>? = null
+    private var lastFix: Fix? = null
+
+    /** A fix in hand: when it was taken, and whether it was only an approximate one, which answers no asker that wants better. */
+    private class Fix(val at: TimeSource.Monotonic.ValueTimeMark, val place: Place, val approximate: Boolean)
 
     /**
      * Where the phone is now, as the app's "current" place, or null without permission or a fix.
@@ -292,10 +295,11 @@ class WeatherLocator(
      *
      * [approximate] is for the look taken with the app closed, every half hour all day: near
      * enough for a forecast, and no GPS switched on for it (see [GeofenceMonitor.approximateLocation]).
+     * A fix in hand from such a look answers only another like it; a precise one answers either.
      */
     suspend fun locate(approximate: Boolean = false): Place? = fixing.withLock {
-        lastFix?.takeIf { it.first.elapsedNow() < FIX_GOOD_FOR }?.let { return@withLock it.second }
-        fix(approximate)?.also { lastFix = TimeSource.Monotonic.markNow() to it }
+        lastFix?.takeIf { it.at.elapsedNow() < FIX_GOOD_FOR && (approximate || !it.approximate) }?.let { return@withLock it.place }
+        fix(approximate)?.also { lastFix = Fix(TimeSource.Monotonic.markNow(), it, approximate) }
     }
 
     private suspend fun fix(approximate: Boolean): Place? {
