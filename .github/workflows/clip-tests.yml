@@ -21,6 +21,8 @@ on:
       - shared/src/**/*Clip*
       - shared/src/**/MomentsScreen.kt
       - shared/src/**/MomentsViewModel.kt
+      - shared/src/**/MomentsRepositoryImpl.kt
+      - shared/src/**/CameraStreamPlayer*.kt
       - shared/src/**/RecordingsRepositoryImpl.kt
       - shared/src/**/FrigateSession.kt
       - shared/src/androidMain/**/ui/components/**

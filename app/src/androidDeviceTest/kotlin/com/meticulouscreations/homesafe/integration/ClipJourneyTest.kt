@@ -64,9 +64,10 @@ class ClipJourneyTest {
             awaitRequest("a segment of that playlist") { it.isVod("back_yard") && it.path.endsWith(".m4s") }
             awaitPlayheadMoving()
 
-            // Ten seconds, from one of the length chips: the new selection plays from its start.
+            // Ten seconds, from one of the length chips: the new selection plays from its start,
+            // through those ten seconds and no further, and round again.
             press(hasContentDescription(TEN_SECONDS), "the 10s length chip")
-            awaitPlayheadMoving()
+            awaitPlayheadLooping(seconds = 10)
             assertFalse(exists(hasText("Couldn't play this recording")), "the recording plays")
         }
     }
@@ -111,8 +112,11 @@ class ClipJourneyTest {
             awaitNode(hasClickLabel("Pause clip"), "the open clip, playing")
             awaitRequest("the clip's playlist") { it.path == "/vod/event/${visitor.id}/index.m3u8" }
             awaitRequest("the clip's last segment") { it.path == "/vod/event/${visitor.id}/seg-2.m4s" }
-            awaitNode(hasClickLabel("Play clip"), "the open clip, at rest on its last frame", PLAY_WAIT)
+            // The picture stops offering to pause. (Every unopened card offers "Play clip" too,
+            // so that label showing says nothing about this one.)
+            awaitGone(hasClickLabel("Pause clip"), "the open clip, still playing", PLAY_WAIT)
             assertFalse(exists(hasText("Couldn't play this clip")), "the clip plays")
+            assertTrue(exists(hasContentDescription("Play full screen")), "the clip is still open, at rest on its last frame")
         }
     }
 
@@ -194,12 +198,37 @@ class ClipJourneyTest {
     private fun AppJourney.awaitPlayheadMoving() {
         val seen = mutableSetOf<String>()
         awaitUntil("the editor's playhead to move on as the clip plays (saw $seen)", PLAY_WAIT) {
-            ui.onAllNodes(hasTestTag(CLIP_PLAYHEAD_TEST_TAG)).fetchSemanticsNodes().firstOrNull()
-                ?.config?.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text
-                ?.let { seen += it }
+            playheadLabel()?.let { seen += it }
             seen.size >= 3
         }
     }
+
+    /**
+     * Follows the clock over the preview, second by second, until it goes back to a time it has
+     * already shown after most of a [seconds]-long run: the selection played through and came
+     * round to its start. Then the run must not have been longer than the selection, which it
+     * would be if the preview were still playing the clip the editor first proposed. (A step
+     * back after only a second or two is a seek settling, and is waited past.)
+     */
+    private fun AppJourney.awaitPlayheadLooping(seconds: Int) {
+        val shown = mutableListOf<String>()
+        var looped = false
+        awaitUntil("the editor's playhead to play $seconds seconds and come round to the start (showed $shown)", LOOP_WAIT) {
+            val label = playheadLabel()
+            if (label != null && label != shown.lastOrNull()) {
+                if (label in shown && shown.toSet().size >= seconds - LOOP_SLACK_SECONDS) looped = true
+                shown += label
+            }
+            looped
+        }
+        val run = shown.toSet().size
+        assertTrue(run <= seconds + 2, "the preview played $run different seconds before coming round, of a $seconds-second selection: $shown")
+    }
+
+    /** The clock time over the editor's preview, or null while it isn't up. */
+    private fun AppJourney.playheadLabel(): String? =
+        ui.onAllNodes(hasTestTag(CLIP_PLAYHEAD_TEST_TAG)).fetchSemanticsNodes().firstOrNull()
+            ?.config?.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text
 
     /** Through the control's own click action: the editor's chips scroll sideways, and a card's button may sit under the floating nav. */
     private fun AppJourney.press(matcher: SemanticsMatcher, description: String) {
@@ -307,6 +336,12 @@ class ClipJourneyTest {
 
         /** A player's first frames, or a short clip played through, on a slow emulator. */
         val PLAY_WAIT = 40.seconds
+
+        /** A ten-second selection played through, with time for a slow emulator to start it. */
+        val LOOP_WAIT = 60.seconds
+
+        /** How many of a selection's seconds a slow emulator may skip over without the run counting as too short to be one. */
+        const val LOOP_SLACK_SECONDS = 4
 
         /** DownloadManager picking the download up, fetching it, and the rewrite into Downloads. */
         val SAVE_WAIT = 60.seconds

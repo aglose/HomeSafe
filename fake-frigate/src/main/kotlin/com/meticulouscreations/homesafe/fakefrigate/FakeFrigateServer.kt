@@ -266,12 +266,21 @@ class FakeFrigateServer(val state: FakeFrigateState = FakeFrigateState.household
         }
     }
 
-    /** How long [start]..[end] of [camera]'s recording is, or null when it's no span of time or nothing of it was recorded. */
+    /**
+     * How much of [start]..[end] [camera] recorded, or null when it's no span of time or nothing
+     * of it was recorded. Only what is on disk counts, as on Frigate: a gap between two segments
+     * isn't in the playlist or the clip, which is how the app maps a playback position to a time
+     * (`RecordingPlaylist`). To the millisecond, so a sum of doubles this size can't tip a whole
+     * span into one fragment more.
+     */
     private fun recordedSeconds(camera: String, start: String, end: String): Double? {
         val from = start.toDoubleOrNull() ?: return null
         val to = end.toDoubleOrNull() ?: return null
-        if (to <= from || state.recordings.none { it.camera == camera && it.endTime > from && it.startTime < to }) return null
-        return to - from
+        val recorded = state.recordings
+            .filter { it.camera == camera }
+            .sumOf { (minOf(it.endTime, to) - maxOf(it.startTime, from)).coerceAtLeast(0.0) }
+        val seconds = Math.round(recorded * MILLIS) / MILLIS
+        return seconds.takeIf { it > 0.0 }
     }
 
     /** How long the clip of the detection [eventId] runs (one still going on gets [ONGOING_CLIP_SECONDS]), or null when it has none. */
@@ -438,6 +447,8 @@ class FakeFrigateServer(val state: FakeFrigateState = FakeFrigateState.household
         const val SESSION_COOKIE = "frigate_token"
 
         private const val POLL_MILLIS = 25L
+
+        private const val MILLIS = 1_000.0
 
         private val HLS_PLAYLIST = ContentType.parse("application/vnd.apple.mpegurl")
 

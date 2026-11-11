@@ -191,6 +191,23 @@ class FakeFrigateServerTest {
     }
 
     @Test
+    fun aGapInTheRecordingIsLeftOutOfThePlaylistAndTheClip() {
+        // Twenty seconds on disk, thirty missing, then ten more: a minute's span holds thirty seconds of video.
+        server.state.edit {
+            recordings.clear()
+            recordings += FakeRecording("front_door", 1_000.0, 1_020.0, motion = 0, objects = 0)
+            recordings += FakeRecording("front_door", 1_050.0, 1_060.0, motion = 0, objects = 0)
+        }
+        val cookie = signIn()
+        val playlist = call("GET", "/vod/front_door/start/1000.000/end/1060.000/index.m3u8", cookie = cookie)
+        assertEquals(15, playlist.body.lines().count { it.endsWith(".m4s") })
+        assertEquals(15, fetch("/api/front_door/start/1000.000/end/1060.000/clip.mp4", cookie).second.topLevelBoxes("moof"))
+        // A span that starts and ends inside segments takes only its share of each.
+        assertEquals(6, fetch("/api/front_door/start/1010.000/end/1052.000/clip.mp4", cookie).second.topLevelBoxes("moof"))
+        assertEquals(404, fetch("/api/front_door/start/1025.000/end/1045.000/clip.mp4", cookie).first, "nothing but the gap")
+    }
+
+    @Test
     fun videoNeedsASessionAndSomethingRecorded() {
         val end = System.currentTimeMillis() / 1000 - 60
         val clip = "/api/front_door/start/${end - 20}.000/end/$end.000/clip.mp4"
