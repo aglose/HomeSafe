@@ -178,6 +178,10 @@ internal sealed interface FinanceDetail {
  * With no connection to the server it opens on what the device kept, behind a lock: the
  * fingerprint or face prompt comes up with it, and none of the app is composed until that is
  * passed (see `FinanceAccess`). Closing the app locks it again.
+ *
+ * [onCameras] is the way straight to the cameras from a page however deep (the pill's other half,
+ * see [FinanceDetailPill]); null where there is nowhere to hop to. The page it was on is kept
+ * ([FinanceParkedPage]) and comes back when the app is next opened with [resume].
  */
 @Composable
 fun FinanceApp(
@@ -186,6 +190,8 @@ fun FinanceApp(
     active: Boolean = true,
     requestedTab: FinanceTab? = null,
     onShowRequestedTab: () -> Unit = {},
+    onCameras: (() -> Unit)? = null,
+    resume: Boolean = false,
 ) {
     val lockViewModel: FinanceLockViewModel = metroViewModel()
     val lock by lockViewModel.uiState.collectAsStateWithLifecycle()
@@ -208,7 +214,7 @@ fun FinanceApp(
             FinanceLockScreen(lock, onUnlock = lockViewModel::unlock, onClose = onClose, modifier = modifier)
         }
     } else {
-        FinanceAppContent(onClose, active, requestedTab, onShowRequestedTab, offline = lock.offline, modifier = modifier)
+        FinanceAppContent(onClose, active, requestedTab, onShowRequestedTab, offline = lock.offline, onCameras = onCameras, resume = resume, modifier = modifier)
     }
 }
 
@@ -221,6 +227,8 @@ private fun FinanceAppContent(
     requestedTab: FinanceTab?,
     onShowRequestedTab: () -> Unit,
     offline: Boolean,
+    onCameras: (() -> Unit)?,
+    resume: Boolean,
     modifier: Modifier = Modifier,
 ) {
     // The activity's instance, the one the drawer's teaser shares.
@@ -232,8 +240,11 @@ private fun FinanceAppContent(
     val budgetViewModel: BudgetViewModel = metroViewModel()
     val budgetState by budgetViewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { budgetViewModel.refresh() }
-    var tab by rememberSaveable { mutableStateOf(FinanceTab.WALLET) }
-    val details = remember { mutableStateListOf<FinanceDetail>() }
+    // Where a hop to the cameras left the app, if this opening is the way back from it. Taken either
+    // way, so an opening from the drawer later starts afresh.
+    val parked = remember { FinanceParkedPage.take().takeIf { resume } }
+    var tab by rememberSaveable { mutableStateOf(parked?.tab ?: FinanceTab.WALLET) }
+    val details = remember { mutableStateListOf<FinanceDetail>().apply { parked?.let { addAll(it.details) } } }
     // Here rather than in the bars, which go while a page is open.
     AssistantScreenContext { "Finance app, ${tab.name.lowercase()} tab" + (details.lastOrNull()?.let { ", $it page open" } ?: "") }
     val listStates = FinanceTab.entries.associateWith { rememberLazyListState() }
@@ -326,7 +337,8 @@ private fun FinanceAppContent(
                     bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 32.dp else 104.dp,
                 )
             }
-            val detailPadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + 32.dp)
+            // Clear of the pill that stands where the tabs' nav was (see FinanceDetailPill).
+            val detailPadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + if (sideNav || inSidebar) 32.dp else 104.dp)
             val deskDetailPadding = if (desk) padding else detailPadding
             val pullState = rememberPullToRefreshState()
 
@@ -514,6 +526,27 @@ private fun FinanceAppContent(
                 exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
             ) {
                 FinanceBottomNav(tab, onPickTab)
+            }
+            // With a page open the way back takes the nav's place, under the thumb: back one level, or,
+            // held, to any level beneath; and straight to the cameras.
+            AnimatedVisibility(
+                visible = details.isNotEmpty() && !sideNav && !inSidebar,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it },
+                exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
+            ) {
+                // Nearest first, ending with the tab: every level Back can land on.
+                val trail = details.dropLast(1).asReversed().map { titleOf(it) } + stringResource(tab.label)
+                FinanceDetailPill(
+                    trail = trail,
+                    onPop = { levels -> repeat(levels.coerceAtMost(details.size)) { details.removeAt(details.lastIndex) } },
+                    onCameras = onCameras?.let { hop ->
+                        {
+                            FinanceParkedPage.park(tab, details.toList())
+                            hop()
+                        }
+                    },
+                )
             }
             AnimatedVisibility(
                 visible = details.isEmpty() && sideNav && !inSidebar,
@@ -709,6 +742,23 @@ private fun RefreshButton(refreshing: Boolean, onRefresh: () -> Unit, modifier: 
             }
         }
     }
+}
+
+/**
+ * The page the app was on when its pill's camera button was pressed, kept while the app is away
+ * so the way back lands on it rather than on the Wallet. Outside the composition because the app
+ * leaves it in between; taken by the next opening, whichever way that comes.
+ */
+internal object FinanceParkedPage {
+    class Page(val tab: FinanceTab, val details: List<FinanceDetail>)
+
+    private var page: Page? = null
+
+    fun park(tab: FinanceTab, details: List<FinanceDetail>) {
+        page = Page(tab, details)
+    }
+
+    fun take(): Page? = page.also { page = null }
 }
 
 /** Finance's tabs as the shell's sidebar lists them, under its row (see publishAppSections). */

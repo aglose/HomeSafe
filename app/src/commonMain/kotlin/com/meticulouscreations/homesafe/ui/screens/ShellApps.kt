@@ -145,6 +145,8 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
                     active = nav.appOpen,
                     requestedTab = nav.financeTab,
                     onShowRequestedTab = nav::onFinanceTabShown,
+                    onCameras = nav.hopToCameras,
+                    resume = nav.appResumes,
                 )
 
                 InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
