@@ -131,9 +131,9 @@ import homesafe.shared.generated.resources.packages_claim_share
 import homesafe.shared.generated.resources.packages_claim_share_title
 import homesafe.shared.generated.resources.packages_copy
 import homesafe.shared.generated.resources.packages_detail_carrier
+import homesafe.shared.generated.resources.packages_detail_destination
 import homesafe.shared.generated.resources.packages_detail_left
 import homesafe.shared.generated.resources.packages_detail_order
-import homesafe.shared.generated.resources.packages_detail_destination
 import homesafe.shared.generated.resources.packages_detail_owner
 import homesafe.shared.generated.resources.packages_detail_shop
 import homesafe.shared.generated.resources.packages_detail_total
@@ -262,7 +262,7 @@ internal fun ParcelScreen(state: PackagesUiState, id: String, padding: PaddingVa
             )
         }
         if (parcel.delivered && !parcel.masked) CameraProofCard(parcel, snapshot.cameraName, today, zone, actions)
-        if (parcel.delivered && !parcel.masked) PorchCard(parcel, today, zone, snapshot.doorSensor, actions)
+        if (parcel.delivered && !parcel.masked && !parcel.elsewhere) PorchCard(parcel, today, zone, snapshot.doorSensor, actions)
         if (!parcel.masked) {
             DetailsCard(parcel)
             ActionsCard(parcel, today, snapshot.people, snapshot.viewer, actions, onClaim)

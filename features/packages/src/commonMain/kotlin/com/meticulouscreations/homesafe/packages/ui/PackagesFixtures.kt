@@ -64,6 +64,7 @@ internal object PackagesFixtures {
         timeline = listOf(ParcelEvent(at(0, 10), "delivered"), ParcelEvent(at(0, 12), "may_be_gone")),
     )
     val cameraOnly = Parcel(id = "cam", owner = "", stage = ParcelStage.DELIVERED, stageAt = at(0, 11), createdAt = at(0, 11), updatedAt = at(0, 11), deliveredAt = at(0, 11), verdict = CameraVerdict.CAMERA_ONLY, verdictWhat = "box", verdictConfidence = 0.95, visitAt = at(0, 11), porch = PorchState.ON_PORCH, porchAt = at(0, 11), frames = listOf("after", "before"), fromCamera = true)
+
     /** Flowers sent to somebody else's house: nothing at this door is its news. */
     val elsewhere = Parcel(
         id = "away", owner = "sam", stage = ParcelStage.SHIPPED, stageAt = at(1, 15), createdAt = at(2, 9), updatedAt = at(1, 15), carrier = Carrier.FEDEX, tracking = "123456789013", orderId = "FC0000000-1", shop = "Florist",

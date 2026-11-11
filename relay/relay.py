@@ -13201,7 +13201,8 @@ def package_destination(lines: list[str]) -> str | None:
         return f"{' '.join(found.group(1).upper().split())}, {found.group(2)}"
     for i, line in enumerate(lines):
         if len(line) < 60 and _PACKAGE_TO_LABEL.match(line):
-            for following in lines[i:i + 6]:
+            # "Ship to Lakeview, OR 97630" on one line: the town is what follows the label.
+            for following in [_PACKAGE_TO_LABEL.sub("", line).lstrip(" :-"), *lines[i + 1:i + 6]]:
                 if found := town(following, _PACKAGE_TOWN):
                     return found
     return next((found for line in lines if (found := town(line, _PACKAGE_AMAZON_TO))), None)
@@ -13232,7 +13233,21 @@ def package_elsewhere(package: dict[str, Any], homes: set[str] | None = None) ->
 
 
 def package_forget_camera(package_id: str) -> None:
-    """What the door camera was taken to say of a package that turns out to have gone elsewhere: a visit here was somebody else's."""
+    """
+    What the door camera was taken to say of a package that turns out to have gone elsewhere: a visit
+    here was somebody else's. A delivery only the camera said happened goes too, back to what the
+    emails or a person last said of it.
+    """
+    package = package_row(package_id)
+    if package and package["verdict"] == "camera_only" and package["stage"] == "delivered":
+        said = with_db(lambda c: c.execute(
+            "SELECT kind, at FROM package_events WHERE package_id=? AND (key LIKE 'mail:%' OR key LIKE 'marked:%') AND kind IN ('ordered','shipped','out_for_delivery','delivered','marked_delivered') ORDER BY at DESC LIMIT 1",
+            (package_id,),
+        ).fetchone())
+        if not said:
+            package_update(package_id, stage="ordered", stage_at=package["created"], delivered_at=None)
+        elif said[0] not in ("delivered", "marked_delivered"):
+            package_update(package_id, stage=said[0], stage_at=said[1], delivered_at=None)
     package_update(package_id, verdict=None, verdict_what=None, verdict_confidence=None, visit_event=None, visit_at=None, porch=None, porch_at=None, porch_by=None)
     with_db(lambda c: (c.execute("DELETE FROM package_events WHERE package_id=? AND (key LIKE 'camera:%' OR key LIKE 'taken:%' OR key LIKE 'gone:%')", (package_id,)), c.commit()))
     for name in ("before", "after", "missing_before", "missing_after"):
@@ -13240,6 +13255,21 @@ def package_forget_camera(package_id: str) -> None:
             os.remove(os.path.join(PACKAGE_FRAME_DIR, f"{package_id}_{name}.jpg"))
         except OSError:
             pass
+
+
+def package_reconcile_elsewhere(package_id: str | None = None) -> None:
+    """
+    Forgets what the door camera was taken to say of packages that turn out to be going elsewhere:
+    when a package's town is read, and again whenever home may have been learned since (a whole
+    mailbox read again names the towns before it knows which is home). What a person said stays.
+    """
+    homes = package_homes()
+    if not homes:
+        return
+    where = "dest IS NOT NULL AND verdict_by IS NULL AND (verdict IS NOT NULL OR porch IS NOT NULL)" + (" AND id=?" if package_id else "")
+    for package in package_rows(where, (package_id,) if package_id else ()):
+        if package_elsewhere(package, homes):
+            package_forget_camera(package["id"])
 
 
 def package_title(subject: str, domain: str, lines: list[str]) -> str | None:
@@ -13501,8 +13531,8 @@ def package_store(mailbox: str, message_id: str, parsed: dict[str, Any], sent_at
     if fill:
         package_update(package_id, **fill)
         # Found to be going elsewhere after a visit here was taken for its delivery (an email read again, say): that was somebody else's.
-        if "dest" in fill and (package["verdict"] or package["porch"]) and not package["verdict_by"] and package_elsewhere({**package, **fill}):
-            package_forget_camera(package_id)
+        if "dest" in fill:
+            package_reconcile_elsewhere(package_id)
         package = package_row(package_id) or package
     stage = parsed["stage"]
     package_merge_same_box(package_id, parsed, sent_at)
@@ -13637,6 +13667,7 @@ def package_sync(now: float | None = None, full: bool | None = None) -> None:
             except Exception as e:
                 log.warning("packages: couldn't read %s: %s", mailbox, e)
                 failed.append(mailbox)
+        package_reconcile_elsewhere()
         if whole:
             state_set(PACKAGE_FULL_KEY, now)
         state_set(PACKAGE_SYNCED_KEY, {"at": now, "emails": read, "failed": failed})
@@ -14484,7 +14515,8 @@ def patch_package(package_id: str, body: PackagePatch, request: Request, device:
     if body.return_state in PACKAGE_RETURN_STATES:
         fields["return_state"] = body.return_state
         package_log(package_id, now, f"return_{body.return_state}", key=f"return:{body.return_state}:{now:.0f}")
-    if body.porch in ("inside", "porch"):
+    elsewhere = package_elsewhere(package)
+    if body.porch in ("inside", "porch") and not elsewhere:
         fields.update(porch=body.porch, porch_at=now, porch_by=viewer or "someone")
         package_log(package_id, now, "taken_in" if body.porch == "inside" else "still_out", viewer, key=f"porch:{body.porch}:{now:.0f}")
     if body.camera == "yes":
@@ -14493,7 +14525,9 @@ def patch_package(package_id: str, body: PackagePatch, request: Request, device:
         fields.update(verdict="not_seen", verdict_by=viewer or "someone", porch=None)
     if body.stage == "delivered" and package["stage"] != "delivered":
         # Whoever says so has it, or knows where it is: not one for the porch watch.
-        package_update(package_id, stage="delivered", stage_at=now, delivered_at=now, updated=now, problem=None, problem_at=None, porch="inside", porch_at=now, porch_by=viewer or "someone")
+        # One that went to somebody else's house was never on this porch.
+        porch = {"porch": None, "porch_at": None, "porch_by": None} if elsewhere else {"porch": "inside", "porch_at": now, "porch_by": viewer or "someone"}
+        package_update(package_id, stage="delivered", stage_at=now, delivered_at=now, updated=now, problem=None, problem_at=None, **porch)
         package_log(package_id, now, "marked_delivered", viewer, key=f"marked:{now:.0f}")
     if fields:
         package_update(package_id, **fields)

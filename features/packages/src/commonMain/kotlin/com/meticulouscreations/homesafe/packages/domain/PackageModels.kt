@@ -103,6 +103,12 @@ data class Parcel(
 
     /** Going to somebody else's house: nothing at this door is its news. */
     val elsewhere: Boolean get() = destination != null
+
+    /**
+     * Whether this door's record may learn from it: not one going elsewhere, and not a surprise kept
+     * from this phone, whose town isn't told either, so it may be somebody else's house's.
+     */
+    val countsAtThisDoor: Boolean get() = !elsewhere && !masked
     val needsAttention: Boolean get() = problem != null || porch == PorchState.MAY_BE_GONE || (late && !delivered) || (signature && !delivered)
 
     fun hasFrames(after: Boolean = true): Boolean = (if (after) "after" else "before") in frames

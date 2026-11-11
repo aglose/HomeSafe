@@ -201,7 +201,7 @@ object PackagesAnalysis {
     /** When a parcel on its way will probably come, or null when its carrier hasn't come here often enough to say. */
     fun arrivalGuess(parcel: Parcel, parcels: List<Parcel>, zone: ParcelZone): ArrivalGuess? {
         if (parcel.delivered || parcel.elsewhere) return null
-        val past = parcels.filter { it.delivered && !it.elsewhere && it.deliveredAt != null && it.carrier == parcel.carrier && it.verdict != CameraVerdict.CAMERA_ONLY }
+        val past = parcels.filter { it.delivered && it.countsAtThisDoor && it.deliveredAt != null && it.carrier == parcel.carrier && it.verdict != CameraVerdict.CAMERA_ONLY }
             .map { localHour(it.visitAt ?: it.deliveredAt!!, zone) }
         if (past.size < GUESS_MIN) return null
         val (mid, spread) = usualHours(past) ?: return null
@@ -217,7 +217,7 @@ object PackagesAnalysis {
         val last = if (month == 1) inMonth(year - 1, 12) else inMonth(year, month - 1)
         val thisYear = delivered.filter { dateOf(it).first == year }
         // When carriers come, and how they do, is about this door: a gift delivered to somebody else's house isn't.
-        val here = delivered.filter { !it.elsewhere }
+        val here = delivered.filter { it.countsAtThisDoor }
         val heat = List(7) { MutableList(24) { 0 } }
         here.forEach { parcel ->
             val at = parcel.visitAt ?: parcel.deliveredAt!!

@@ -8702,6 +8702,8 @@ class PackageEmailTest(unittest.TestCase):
         florist = "Your order has shipped!\nSHIPPING TO\nPat Example\n12 ELM ST, LAKEVIEW, OR 97630\nBouq in the Package:\n1 Main St | Some Town | CA 90000"
         self.assertEqual("LAKEVIEW, OR", self.parse("Florist <hello@florist.example>", "Your order has shipped!", florist + "\nOrder # FC0000000-1")["to"])
         self.assertEqual("LAKEVIEW, OR", relay.package_destination(["Delivered to: Pat Example", "Lakeview, OR 97630-1234"]))
+        self.assertEqual("LAKEVIEW, OR", relay.package_destination(["Ship to Lakeview, OR 97630", "Thanks for your order"]))
+        self.assertEqual("LAKEVIEW, OR", relay.package_destination(["Shipping to: Lakeview, OR"]))
 
     def test_amazon_s_line_under_the_items_names_the_town(self):
         self.assertEqual("TOWN, CA", self.parse("Amazon <order-update@amazon.com>", "Delivered 2 items: Hardware, Vitamins", self.AMAZON_DELIVERED)["to"])
@@ -8953,6 +8955,45 @@ class PackagesTest(_ScratchDb):
         self.assertEqual((None, None, None, "LAKEVIEW, OR"), (row["verdict"], row["porch"], row["visit_event"], row["dest"]))
         self.assertFalse(os.path.exists(os.path.join(relay.PACKAGE_FRAME_DIR, f"{package}_after.jpg")))
         self.assertNotIn("camera_confirmed", [kind for _, kind, _ in relay.with_db(lambda c: c.execute("SELECT at, kind, detail FROM package_events WHERE package_id=?", (package,)).fetchall())])
+
+    def test_a_gift_read_before_home_was_known_is_forgotten_by_the_door_once_it_is(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.PARCEL])
+        package = self.mail("delivered", self.NOW, order="FC1", shop="Florist", to="LAKEVIEW, OR")
+        self.assertEqual("confirmed", relay.package_row(package)["verdict"])
+        self.at_home()
+        relay.package_reconcile_elsewhere()
+        row = relay.package_row(package)
+        self.assertEqual((None, None, None), (row["verdict"], row["porch"], row["visit_event"]))
+
+    def test_what_a_person_said_of_a_gift_stays_once_its_town_is_known(self):
+        self.camera(self.event(self.NOW - 90, self.NOW - 75), answers=[self.PARCEL])
+        package = self.mail("delivered", self.NOW, order="FC1", shop="Florist", to="LAKEVIEW, OR")
+        relay.package_update(package, verdict="not_seen", verdict_by="sam")
+        self.at_home()
+        relay.package_reconcile_elsewhere()
+        self.assertEqual(("not_seen", "sam"), (relay.package_row(package)["verdict"], relay.package_row(package)["verdict_by"]))
+
+    def test_a_delivery_only_the_camera_said_happened_is_undone_when_the_parcel_was_going_elsewhere(self):
+        self.at_home()
+        package = self.mail("out_for_delivery", self.NOW - 3600, order="FC1", shop="Florist", message="ofd", now=self.NOW + 86400)
+        self.visit(appeared=True, look=True, confidence=0.95, what="box", event="v4")
+        row = relay.package_row(package)
+        self.assertEqual(("delivered", "camera_only"), (row["stage"], row["verdict"]))
+        # The same email, read again by a parser that finds the town.
+        self.mail("out_for_delivery", self.NOW - 3600, order="FC1", shop="Florist", message="ofd", to="LAKEVIEW, OR", now=self.NOW + 86400)
+        row = relay.package_row(package)
+        self.assertEqual(("out_for_delivery", None, None, None), (row["stage"], row["delivered_at"], row["verdict"], row["porch"]))
+
+    def test_saying_a_gift_got_there_puts_nothing_on_this_porch(self):
+        self.at_home()
+        package = self.mail("shipped", self.NOW - 3600, order="FC1", shop="Florist", to="LAKEVIEW, OR")
+        saved, relay.require_frigate_session = relay.require_frigate_session, lambda request: "sam"
+        self.addCleanup(setattr, relay, "require_frigate_session", saved)
+        relay.patch_package(package, types.SimpleNamespace(nickname=None, notes=None, owner=None, surprise=None, pinned=None, archived=None, return_by=None, return_state=None, porch=None, camera=None, stage="delivered"), object(), None)
+        row = relay.package_row(package)
+        self.assertEqual(("delivered", None, None), (row["stage"], row["porch"], row["porch_by"]))
+        relay.patch_package(package, types.SimpleNamespace(nickname=None, notes=None, owner=None, surprise=None, pinned=None, archived=None, return_by=None, return_state=None, porch="porch", camera=None, stage=None), object(), None)
+        self.assertIsNone(relay.package_row(package)["porch"])
 
     def test_a_parcel_with_no_email_isn_t_given_to_a_gift_due_elsewhere_today(self):
         self.at_home()

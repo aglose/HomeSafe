@@ -244,11 +244,17 @@ internal fun parcelName(parcel: Parcel): String = when {
 @Composable
 internal fun parcelStatus(parcel: Parcel, today: Int, zone: ParcelZone): String = when {
     parcel.problem == ParcelProblem.ATTEMPTED -> stringResource(Res.string.packages_status_attempted)
+
     parcel.problem == ParcelProblem.EXCEPTION -> stringResource(Res.string.packages_status_problem)
+
     parcel.porch == PorchState.MAY_BE_GONE -> stringResource(Res.string.packages_status_may_be_gone)
+
     parcel.delivered && parcel.destination != null -> stringResource(Res.string.packages_status_delivered_in, parcel.destination)
+
     parcel.delivered -> parcel.deliveredAt?.let { stringResource(Res.string.packages_status_delivered_at, momentText(it, today, zone)) } ?: stringResource(Res.string.packages_stage_delivered)
+
     parcel.late -> parcel.expectedToDay?.let { stringResource(Res.string.packages_status_late, dateText(it)) } ?: stringResource(Res.string.packages_status_late_plain)
+
     else -> (promiseText(parcel, today) ?: stringResource(stageName(parcel.stage))).let { status ->
         // A gift on its way to somebody else's house: its day is theirs, not this door's.
         parcel.destination?.let { stringResource(Res.string.packages_status_going_to, status, it) } ?: status
