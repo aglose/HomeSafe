@@ -324,14 +324,10 @@ object BudgetFixtures {
     )
 }
 
-/**
- * The page from its top, or from the item at [from]: the renderer draws nothing taller than
- * 3000dp and the page is longer, so what lies below that is drawn in a picture of its own.
- */
 @Composable
-private fun BudgetPreview(state: BudgetUiState, from: Int = 0) {
+private fun BudgetPreview(state: BudgetUiState) {
     FinanceStage {
-        BudgetScreen(state, rememberLazyListState(initialFirstVisibleItemIndex = from), previewPadding, onTag = { _, _, _ -> }, onTagLine = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
+        BudgetScreen(state, rememberLazyListState(), previewPadding, onTag = { _, _, _ -> }, onTagLine = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
     }
 }
 
@@ -361,12 +357,15 @@ private fun FinanceBudgetPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.onPace))
 }
 
-// The page's lower half: [ON_PACE_WHO] is where "Who spent what" starts in this fixture's list.
+// The renderer draws nothing taller than 3000dp and the page is longer, so its lower half is a
+// picture of its own: [ON_PACE_WHO] is where "Who spent what" starts in this fixture's list.
 @Preview(name = "Budget · on pace, from who spent what", widthDp = 412, heightDp = 3000)
 @Preview(name = "Budget · on pace, from who spent what, in Spanish", widthDp = 412, heightDp = 3000, locale = "es")
 @Composable
 private fun FinanceBudgetLowerPreview() {
-    BudgetPreview(BudgetFixtures.state(BudgetFixtures.onPace), from = ON_PACE_WHO)
+    FinanceStage {
+        BudgetScreen(BudgetFixtures.state(BudgetFixtures.onPace), rememberLazyListState(initialFirstVisibleItemIndex = ON_PACE_WHO), previewPadding, onTag = { _, _, _ -> }, onTagLine = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
+    }
 }
 
 private const val ON_PACE_WHO = 17
