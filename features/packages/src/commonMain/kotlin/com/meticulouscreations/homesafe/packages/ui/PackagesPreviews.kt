@@ -72,6 +72,12 @@ private fun PackagesParcelOnTheWayPreview() {
     FrigateTheme { PackagesAppContent(PackagesFixtures.state(), PackagesActions(), initialPage = PackagesPage.Detail(PackagesFixtures.outToday.id)) }
 }
 
+@Preview(widthDp = 412, heightDp = 1700)
+@Composable
+private fun PackagesParcelElsewherePreview() {
+    FrigateTheme { PackagesAppContent(PackagesFixtures.state(), PackagesActions(), initialPage = PackagesPage.Detail(PackagesFixtures.elsewhere.id)) }
+}
+
 @Preview(widthDp = 412, heightDp = 2100)
 @Composable
 private fun PackagesParcelMayBeGonePreview() {

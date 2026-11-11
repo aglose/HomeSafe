@@ -39,7 +39,8 @@ class PackagesRelayMappingTest {
             "refund_at": null, "verdict_what": "box", "verdict_confidence": 0.95, "visit_event": "1.2-abc", "visit_at": 1793299900.0, "url": "https://www.ups.com/track?tracknum=1Z",
             "frames": ["after", "before"], "timeline": [{"at": 1793300000.0, "kind": "delivered", "detail": "Left at front door"}]},
            {"id": "b", "owner": "alex", "source": "email", "stage": "shipped", "signature": false, "surprise": true, "masked": true, "pinned": false, "archived": false, "late": false, "carrier": "fedex"},
-           {"id": "c", "owner": "", "source": "camera", "stage": "delivered", "verdict": "camera_only", "porch": "missing", "problem": "attempted", "carrier": "veho", "return_state": "none", "signature": false, "surprise": false, "masked": false, "pinned": false, "archived": false, "late": false}
+           {"id": "c", "owner": "", "source": "camera", "stage": "delivered", "verdict": "camera_only", "porch": "missing", "problem": "attempted", "carrier": "veho", "return_state": "none", "signature": false, "surprise": false, "masked": false, "pinned": false, "archived": false, "late": false},
+           {"id": "d", "owner": "sam", "source": "email", "stage": "shipped", "signature": false, "surprise": false, "masked": false, "pinned": false, "archived": false, "late": false, "carrier": "fedex", "destination": "Lakeview, OR"}
          ]}
     """.trimIndent()
 
@@ -61,6 +62,14 @@ class PackagesRelayMappingTest {
         assertTrue(s.settings.wants("delivered"))
         assertTrue(s.settings.wants("something_new"))
         assertEquals(true, s.settings.hideNew["sam"])
+    }
+
+    @Test
+    fun aParcelGoingElsewhereSaysWhere() {
+        val parcels = snapshot.parcels.associateBy { it.id }
+        assertEquals("Lakeview, OR", parcels.getValue("d").destination)
+        assertTrue(parcels.getValue("d").elsewhere)
+        assertFalse(parcels.getValue("a").elsewhere)
     }
 
     @Test

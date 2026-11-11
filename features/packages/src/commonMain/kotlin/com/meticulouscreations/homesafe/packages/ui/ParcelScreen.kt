@@ -116,6 +116,7 @@ import homesafe.shared.generated.resources.packages_action_archive
 import homesafe.shared.generated.resources.packages_action_claim
 import homesafe.shared.generated.resources.packages_action_forget
 import homesafe.shared.generated.resources.packages_action_mark_delivered
+import homesafe.shared.generated.resources.packages_action_mark_delivered_elsewhere
 import homesafe.shared.generated.resources.packages_action_owner
 import homesafe.shared.generated.resources.packages_action_pin
 import homesafe.shared.generated.resources.packages_action_surprise
@@ -130,6 +131,7 @@ import homesafe.shared.generated.resources.packages_claim_share
 import homesafe.shared.generated.resources.packages_claim_share_title
 import homesafe.shared.generated.resources.packages_copy
 import homesafe.shared.generated.resources.packages_detail_carrier
+import homesafe.shared.generated.resources.packages_detail_destination
 import homesafe.shared.generated.resources.packages_detail_left
 import homesafe.shared.generated.resources.packages_detail_order
 import homesafe.shared.generated.resources.packages_detail_owner
@@ -260,7 +262,7 @@ internal fun ParcelScreen(state: PackagesUiState, id: String, padding: PaddingVa
             )
         }
         if (parcel.delivered && !parcel.masked) CameraProofCard(parcel, snapshot.cameraName, today, zone, actions)
-        if (parcel.delivered && !parcel.masked) PorchCard(parcel, today, zone, snapshot.doorSensor, actions)
+        if (parcel.delivered && !parcel.masked && !parcel.elsewhere) PorchCard(parcel, today, zone, snapshot.doorSensor, actions)
         if (!parcel.masked) {
             DetailsCard(parcel)
             ActionsCard(parcel, today, snapshot.people, snapshot.viewer, actions, onClaim)
@@ -617,6 +619,7 @@ private fun DetailsCard(parcel: Parcel) {
         parcel.orderId?.let { DetailRow(stringResource(Res.string.packages_detail_order), it, copyable = true) }
         parcel.total?.let { DetailRow(stringResource(Res.string.packages_detail_total), PackagesFormat.money(it)) }
         if (parcel.owner.isNotBlank()) DetailRow(stringResource(Res.string.packages_detail_owner), PackagesFormat.person(parcel.owner))
+        parcel.destination?.let { DetailRow(stringResource(Res.string.packages_detail_destination), it) }
         parcel.leftNote?.let { DetailRow(stringResource(Res.string.packages_detail_left), it) }
     }
 }
@@ -635,7 +638,7 @@ private fun ActionsCard(parcel: Parcel, today: Int, people: List<String>, viewer
                 PackagesButton(stringResource(Res.string.packages_action_claim), onClaim, Modifier.fillMaxWidth().testTag("parcel_claim"), icon = Icons.Filled.ReportProblem, tint = colors.warn, primary = false)
             }
             if (!parcel.delivered) {
-                PackagesButton(stringResource(Res.string.packages_action_mark_delivered), { actions.onChange(parcel.id, ParcelChange(markDelivered = true)) }, Modifier.fillMaxWidth(), icon = Icons.Filled.Check, tint = colors.good, primary = false)
+                PackagesButton(stringResource(if (parcel.elsewhere) Res.string.packages_action_mark_delivered_elsewhere else Res.string.packages_action_mark_delivered), { actions.onChange(parcel.id, ParcelChange(markDelivered = true)) }, Modifier.fillMaxWidth(), icon = Icons.Filled.Check, tint = colors.good, primary = false)
             }
             // Only its owner can hide a thing: anyone else would be hiding it from themselves, with no way back.
             if (viewer != null && (parcel.owner == viewer || parcel.owner.isBlank())) {

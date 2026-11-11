@@ -96,8 +96,19 @@ data class Parcel(
     val timeline: List<ParcelEvent> = emptyList(),
     /** The camera made this one up from what it saw: no email has claimed it yet. */
     val fromCamera: Boolean = false,
+    /** The town it is going to when that isn't home ("Lakeview, OR"), as its emails say: a gift sent to somebody else's house. Null for one coming here, or not known. */
+    val destination: String? = null,
 ) {
     val delivered: Boolean get() = stage == ParcelStage.DELIVERED
+
+    /** Going to somebody else's house: nothing at this door is its news. */
+    val elsewhere: Boolean get() = destination != null
+
+    /**
+     * Whether this door's record may learn from it: not one going elsewhere, and not a surprise kept
+     * from this phone, whose town isn't told either, so it may be somebody else's house's.
+     */
+    val countsAtThisDoor: Boolean get() = !elsewhere && !masked
     val needsAttention: Boolean get() = problem != null || porch == PorchState.MAY_BE_GONE || (late && !delivered) || (signature && !delivered)
 
     fun hasFrames(after: Boolean = true): Boolean = (if (after) "after" else "before") in frames

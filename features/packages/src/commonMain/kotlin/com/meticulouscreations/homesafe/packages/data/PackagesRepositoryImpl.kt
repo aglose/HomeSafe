@@ -268,4 +268,5 @@ internal fun RelayPackage.toParcel() = Parcel(
     frames = frames,
     timeline = timeline.map { ParcelEvent(it.at.toLong(), it.kind, it.detail) },
     fromCamera = source == "camera",
+    destination = destination,
 )

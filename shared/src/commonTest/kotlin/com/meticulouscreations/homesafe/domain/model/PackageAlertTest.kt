@@ -17,6 +17,13 @@ class PackageAlertTest {
     }
 
     @Test
+    fun aDeliveryToSomebodyElsesHouseSaysWhere() {
+        val alert = alert("package" to "a", "package_event" to "delivered", "package_name" to "Flowers", "package_place" to "Lakeview, OR")
+        assertEquals("Lakeview, OR", alert?.place)
+        assertNull(alert("package" to "a", "package_event" to "delivered", "package_name" to "Socks")?.place)
+    }
+
+    @Test
     fun aSurpriseKeptFromThisPhoneHasNoName() {
         val alert = alert("package" to "a", "package_event" to "out_for_delivery", "package_name" to "", "package_masked" to "1")
         assertNull(alert?.name)

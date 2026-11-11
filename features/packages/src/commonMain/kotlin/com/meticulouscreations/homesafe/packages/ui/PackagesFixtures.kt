@@ -64,6 +64,12 @@ internal object PackagesFixtures {
         timeline = listOf(ParcelEvent(at(0, 10), "delivered"), ParcelEvent(at(0, 12), "may_be_gone")),
     )
     val cameraOnly = Parcel(id = "cam", owner = "", stage = ParcelStage.DELIVERED, stageAt = at(0, 11), createdAt = at(0, 11), updatedAt = at(0, 11), deliveredAt = at(0, 11), verdict = CameraVerdict.CAMERA_ONLY, verdictWhat = "box", verdictConfidence = 0.95, visitAt = at(0, 11), porch = PorchState.ON_PORCH, porchAt = at(0, 11), frames = listOf("after", "before"), fromCamera = true)
+
+    /** Flowers sent to somebody else's house: nothing at this door is its news. */
+    val elsewhere = Parcel(
+        id = "away", owner = "sam", stage = ParcelStage.SHIPPED, stageAt = at(1, 15), createdAt = at(2, 9), updatedAt = at(1, 15), carrier = Carrier.FEDEX, tracking = "123456789013", orderId = "FC0000000-1", shop = "Florist",
+        expectedFromDay = today, expectedToDay = today, destination = "Lakeview, OR", timeline = listOf(ParcelEvent(at(1, 15), "shipped")),
+    )
     val returning = Parcel(id = "ret", owner = "alex", stage = ParcelStage.DELIVERED, stageAt = at(9, 15), createdAt = at(12, 9), updatedAt = at(1, 9), carrier = Carrier.AMAZON, orderId = "113-0000000-0000007", shop = "Amazon", title = "Dresses", deliveredAt = at(9, 15), porch = PorchState.INSIDE, porchBy = "door", verdict = CameraVerdict.SEEN, returnByDay = today + 21, returnState = ReturnState.SENT)
     val closing = Parcel(id = "closing", owner = "sam", stage = ParcelStage.DELIVERED, stageAt = at(27, 14), createdAt = at(30, 9), updatedAt = at(27, 14), carrier = Carrier.AMAZON, orderId = "113-0000000-0000008", shop = "Amazon", title = "Standing desk mat", deliveredAt = at(27, 14), porch = PorchState.INSIDE, porchBy = "sam", returnByDay = today + 3, total = 72.5)
 
@@ -90,7 +96,7 @@ internal object PackagesFixtures {
         )
     }
 
-    val parcels: List<Parcel> = listOf(attempted, late, mayBeGone, atDoor, cameraOnly, outToday, tomorrow, surpriseKept, surpriseMine, later, notSeen, returning, closing) + history
+    val parcels: List<Parcel> = listOf(attempted, late, mayBeGone, atDoor, cameraOnly, outToday, elsewhere, tomorrow, surpriseKept, surpriseMine, later, notSeen, returning, closing) + history
 
     val snapshot = PackagesSnapshot(
         parcels = parcels, viewer = "sam", people = listOf("alex", "sam"), nowEpochSeconds = now, today = today, mailOn = true, syncedAt = now - 90, cameraOn = true, cameraName = "Front Door", cameraId = "front_door",

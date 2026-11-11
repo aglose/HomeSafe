@@ -132,6 +132,8 @@
     <string name="notif_package_out_body">%1$s should arrive today</string>
     <string name="notif_package_delivered_title">Delivered</string>
     <string name="notif_package_delivered_body">%1$s has arrived</string>
+    <string name="notif_package_out_elsewhere">%1$s should reach %2$s today</string>
+    <string name="notif_package_delivered_elsewhere">%1$s was delivered in %2$s</string>
     <string name="notif_package_delivered_confirmed">%1$s is at the door. The camera saw it land.</string>
     <string name="notif_package_delivered_seen">%1$s has arrived. The camera saw someone at the door.</string>
     <string name="notif_package_delivered_not_seen">%1$s is marked delivered, but the door camera saw nobody.</string>

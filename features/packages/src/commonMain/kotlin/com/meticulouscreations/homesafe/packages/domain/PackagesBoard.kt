@@ -200,8 +200,8 @@ object PackagesAnalysis {
 
     /** When a parcel on its way will probably come, or null when its carrier hasn't come here often enough to say. */
     fun arrivalGuess(parcel: Parcel, parcels: List<Parcel>, zone: ParcelZone): ArrivalGuess? {
-        if (parcel.delivered) return null
-        val past = parcels.filter { it.delivered && it.deliveredAt != null && it.carrier == parcel.carrier && it.verdict != CameraVerdict.CAMERA_ONLY }
+        if (parcel.delivered || parcel.elsewhere) return null
+        val past = parcels.filter { it.delivered && it.countsAtThisDoor && it.deliveredAt != null && it.carrier == parcel.carrier && it.verdict != CameraVerdict.CAMERA_ONLY }
             .map { localHour(it.visitAt ?: it.deliveredAt!!, zone) }
         if (past.size < GUESS_MIN) return null
         val (mid, spread) = usualHours(past) ?: return null
@@ -216,13 +216,15 @@ object PackagesAnalysis {
         val thisMonth = inMonth(year, month)
         val last = if (month == 1) inMonth(year - 1, 12) else inMonth(year, month - 1)
         val thisYear = delivered.filter { dateOf(it).first == year }
+        // When carriers come, and how they do, is about this door: a gift delivered to somebody else's house isn't.
+        val here = delivered.filter { it.countsAtThisDoor }
         val heat = List(7) { MutableList(24) { 0 } }
-        delivered.forEach { parcel ->
+        here.forEach { parcel ->
             val at = parcel.visitAt ?: parcel.deliveredAt!!
             heat[ParcelDays.weekday(localDay(at, zone))][localHour(at, zone)]++
         }
         // One the camera made up has no carrier to rate.
-        val carriers = delivered.filter { !it.fromCamera }.groupBy { it.carrier }.map { (carrier, group) ->
+        val carriers = here.filter { !it.fromCamera }.groupBy { it.carrier }.map { (carrier, group) ->
             val promised = group.filter { it.expectedToDay != null }
             val onTime = promised.count { localDay(it.deliveredAt!!, zone) <= it.expectedToDay!! }
             val hours = group.map { localHour(it.visitAt ?: it.deliveredAt!!, zone) }
@@ -253,9 +255,9 @@ object PackagesAnalysis {
             carriers = carriers,
             heat = heat,
             heatMax = heat.maxOf { it.max() },
-            busiestWeekday = busiestWeekday.takeIf { delivered.isNotEmpty() },
+            busiestWeekday = busiestWeekday.takeIf { here.isNotEmpty() },
             // Said together with the day ("most often on Friday, around 5 PM"), so it is that day's hour.
-            busiestHour = busiestWeekday?.let { day -> heat[day].indices.maxByOrNull { heat[day][it] } }.takeIf { delivered.isNotEmpty() },
+            busiestHour = busiestWeekday?.let { day -> heat[day].indices.maxByOrNull { heat[day][it] } }.takeIf { here.isNotEmpty() },
             perPerson = delivered.filter { it.owner.isNotBlank() }.groupingBy { it.owner }.eachCount().toList().sortedByDescending { it.second },
             topShops = delivered.mapNotNull { it.shop }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second }.take(6),
             months = months,
