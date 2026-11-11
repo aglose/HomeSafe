@@ -38,6 +38,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -76,11 +78,15 @@ class SkiRepositoryImplTest {
 
     private inner class Web(keys: HouseholdKeys = InMemoryHouseholdKeys(), private val answer: suspend (HttpRequestData) -> Answer) {
         val asked = mutableListOf<HttpRequestData>()
+
+        // The repository asks for several files at once and the engine answers on its own threads:
+        // two requests noted at the same moment could lose one of them.
+        private val noting = Mutex()
         val dao = InMemorySkiDao()
         val clock = MutableClock(1_000_000)
         val client = HttpClient(
             MockEngine { request ->
-                asked += request
+                noting.withLock { asked += request }
                 val reply = answer(request)
                 when {
                     reply.status != HttpStatusCode.OK -> respondError(reply.status)
