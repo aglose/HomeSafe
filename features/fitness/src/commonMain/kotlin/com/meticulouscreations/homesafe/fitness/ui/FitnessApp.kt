@@ -58,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -849,15 +850,34 @@ private fun rememberWorkoutAwake(sets: Int, rest: RestTimer?, touchedAt: () -> L
     val awake = remember { mutableStateOf(true) }
     val restEnds = rest?.endsAtEpochMillis
     val lastTouch by rememberUpdatedState(touchedAt)
+    val activity = remember { mutableStateOf<WorkoutActivity?>(null) }
+    val heldSets = remember { mutableIntStateOf(sets) }
     LaunchedEffect(sets, restEnds) {
-        val changedAt = Clock.System.now().toEpochMilliseconds()
+        val now = Clock.System.now().toEpochMilliseconds()
+        val current = nextWorkoutActivity(activity.value, setsChanged = sets != heldSets.intValue, restEndsAt = restEnds, nowMillis = now)
+        heldSets.intValue = sets
+        activity.value = current
         snapshotFlow { lastTouch() }.collectLatest { touched ->
             awake.value = true
-            delay((workoutAwakeUntil(maxOf(changedAt, touched), restEnds) - Clock.System.now().toEpochMilliseconds()).coerceAtLeast(0))
+            delay((workoutAwakeUntil(maxOf(current.changedAt, touched), current.restEndsAt) - Clock.System.now().toEpochMilliseconds()).coerceAtLeast(0))
             awake.value = false
         }
     }
     return awake
+}
+
+/** The last thing that happened in a workout, for [workoutAwakeUntil]: when, and when the rest it began (if any) ends. */
+internal data class WorkoutActivity(val changedAt: Long, val restEndsAt: Long?)
+
+/**
+ * What happened when the workout's sets or rest changed at [nowMillis]. A rest that had already run
+ * out being let go of (the app does it some minutes after, with nobody there) is nothing happening:
+ * [before] stands, with its rest's end. Anything else (a set, a rest begun, changed or skipped) is.
+ */
+internal fun nextWorkoutActivity(before: WorkoutActivity?, setsChanged: Boolean, restEndsAt: Long?, nowMillis: Long): WorkoutActivity {
+    val endedRest = before?.restEndsAt
+    val letGoOfAnEndedRest = before != null && !setsChanged && restEndsAt == null && endedRest != null && endedRest <= nowMillis
+    return if (letGoOfAnEndedRest) before else WorkoutActivity(nowMillis, restEndsAt)
 }
 
 /** Until when the screen stays on for a workout in which something last happened at [lastActiveMillis], with a rest ending at [restEndsAtMillis] if one counts. */

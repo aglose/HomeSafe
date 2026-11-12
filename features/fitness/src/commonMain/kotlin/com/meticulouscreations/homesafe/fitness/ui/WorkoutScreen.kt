@@ -548,6 +548,8 @@ internal fun RestBar(
                     track = colors.surfaceRaised,
                     modifier = Modifier.matchParentSize(),
                     thickness = 0.2f,
+                    // Full and gold once the rest is over, and still: nothing about it moves through the linger.
+                    running = !over,
                 )
             }
             Spacer(Modifier.width(12.dp))
