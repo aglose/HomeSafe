@@ -35,16 +35,15 @@ import kotlin.time.Duration.Companion.seconds
  * Clips, all the way through with real video: cut one in the editor, save it, find it in the
  * phone's Downloads and play it; and play a detection's clip in Moments and download that. The
  * fake Frigate serves real H.264 for this (`FakeVideo`), so the app's own player decodes the HLS
- * playlists, Android's DownloadManager fetches the MP4, and the rewrite into Downloads
+ * playlists, the app's own HTTP client fetches the MP4, and the rewrite into Downloads
  * (`saveClipToDownloads`) runs on a fragmented file, as Frigate's are.
  *
  * Android only, unlike the journeys in `src/integrationTest`: the file is looked for where
  * Android puts it, and the desktop's downloader would save into the Downloads folder of whoever
  * runs the tests and open a Finder window on it.
  *
- * Playing and saving are journeys of their own because apksim can't yet do all of it, and a test
- * that can't run there says so and is skipped rather than failing (see [assumeVideoDecodes] and
- * [assumeDownloadsAreFetched]). An emulator or a phone runs every one.
+ * apksim can't decode video in a test run yet, so there each journey says so and is skipped
+ * rather than failing (see [assumeVideoDecodes]). An emulator or a phone runs every one.
  */
 @OptIn(ExperimentalTestApi::class)
 class ClipJourneyTest {
@@ -74,7 +73,7 @@ class ClipJourneyTest {
 
     @Test
     fun aClipCutInTheEditorIsSavedToDownloadsAsAVideoThatPlays() {
-        assumeDownloadsAreFetched()
+        assumeVideoDecodes()
         runAppJourney {
             openEditor()
             // Ten seconds, from one of the length chips: a different clip from the one the editor proposed.
@@ -122,7 +121,7 @@ class ClipJourneyTest {
 
     @Test
     fun aDetectionsClipDownloadsAsAVideoThatPlays() {
-        assumeDownloadsAreFetched()
+        assumeVideoDecodes()
         val visitor = shortVisit()
         runAppJourney(FakeFrigateState.household().apply { events += visitor }) {
             val moments = MomentsRobot(this)
@@ -171,14 +170,6 @@ class ClipJourneyTest {
             !codec.isEncoder && codec.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }
         }
         assumeTrue("No H.264 decoder on this apksim host, so clips can't play here", decodes || !ON_APKSIM)
-    }
-
-    /**
-     * Skips the test on apksim: its DownloadManager is Robolectric's, which notes a download and
-     * never fetches it, so a save there stays "Saving" for good. A phone or an emulator runs it.
-     */
-    private fun assumeDownloadsAreFetched() {
-        assumeTrue("apksim's DownloadManager doesn't fetch, so a clip can't be saved here", !ON_APKSIM)
     }
 
     /**
@@ -343,7 +334,7 @@ class ClipJourneyTest {
         /** How many of a selection's seconds a slow emulator may skip over without the run counting as too short to be one. */
         const val LOOP_SLACK_SECONDS = 4
 
-        /** DownloadManager picking the download up, fetching it, and the rewrite into Downloads. */
+        /** Fetching the clip and the rewrite into Downloads. */
         val SAVE_WAIT = 60.seconds
         val DECODE_WAIT = 30.seconds
         const val CODEC_POLL_MICROS = 10_000L
