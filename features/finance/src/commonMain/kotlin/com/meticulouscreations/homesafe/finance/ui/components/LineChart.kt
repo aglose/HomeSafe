@@ -46,6 +46,7 @@ import com.meticulouscreations.homesafe.finance.domain.ChartShader
 import com.meticulouscreations.homesafe.finance.domain.LineSharpness
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
+import com.meticulouscreations.homesafe.ui.components.rememberOnScreen
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -172,7 +173,9 @@ fun LineChart(
         }
     }
     // The aurora drifts, so it needs a frame clock; everything else is still unless live.
-    val clock = rememberShaderClock(running = live || (style.shader == ChartShader.AURORA && fillShader != null))
+    // And only while some of the chart is on screen.
+    val seen = rememberOnScreen()
+    val clock = rememberShaderClock(running = seen.visible && (live || (style.shader == ChartShader.AURORA && fillShader != null)))
 
     // Puts the hairline at the point nearest [x] across a chart [w] wide, and says which it is.
     fun scrubTo(x: Float, w: Float) {
@@ -191,6 +194,7 @@ fun LineChart(
 
     Canvas(
         modifier
+            .then(seen.modifier)
             .semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription }
             // One gesture handler for the chart's life, reading the data as it stands: new data
             // landing mid-scrub (the day's chart refreshes every minute) mustn't cancel the

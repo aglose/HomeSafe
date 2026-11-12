@@ -6,7 +6,6 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -36,7 +35,8 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.ui.LocalFitnessShaders
 import com.meticulouscreations.homesafe.tracing.traceInstant
-import com.meticulouscreations.homesafe.ui.components.frameGridSlot
+import com.meticulouscreations.homesafe.ui.components.awaitNextGridFrame
+import com.meticulouscreations.homesafe.ui.components.rememberOnScreen
 import kotlin.math.min
 
 /** Where a shader's clock stands in a preview, which draws one frame: far enough in for everything to be on screen. */
@@ -57,23 +57,14 @@ internal fun rememberFitnessClock(running: Boolean = true, frameSeconds: Float =
     val time = remember { mutableFloatStateOf(STILL_SECONDS) }
     LaunchedEffect(running, still, frameSeconds) {
         if (!running || still) return@LaunchedEffect
-        // An infinite animation's frames, so anything waiting for animations to settle doesn't wait on this.
-        var last = withInfiniteAnimationFrameNanos { it }
-        var lastSlot = frameGridSlot(last, frameSeconds)
-        var owed = 0f
+        // On the frames every other clock with this step moves on in, and asleep between them (see awaitNextGridFrame):
+        // an infinite animation's frames, so anything waiting for animations to settle doesn't wait on this.
+        var last = awaitNextGridFrame(frameSeconds)
         while (true) {
-            withInfiniteAnimationFrameNanos { now ->
-                owed += ((now - last) / 1e9f).coerceIn(0f, 0.1f)
-                last = now
-                // On the frames every other clock with this step moves on too (see frameGridSlot).
-                val slot = frameGridSlot(now, frameSeconds)
-                if (slot != lastSlot) {
-                    lastSlot = slot
-                    time.floatValue = (time.floatValue + owed) % 600f
-                    traceInstant("fitness.shaderClock")
-                    owed = 0f
-                }
-            }
+            val now = awaitNextGridFrame(frameSeconds, last)
+            time.floatValue = (time.floatValue + ((now - last) / 1e9f).coerceIn(0f, 0.1f)) % 600f
+            traceInstant("fitness.shaderClock")
+            last = now
         }
     }
     return time
@@ -154,9 +145,11 @@ internal fun FiberField(
     val animatedEnergy by animateFloatAsState(energy.coerceIn(0f, 1f), tween(500), label = "fiberEnergy")
     // Sixty a second while a finger stirs the fibres (it drags them round); otherwise the slow
     // step, like every other surface at rest.
-    val time = rememberFitnessClock(running, frameSeconds = if (touches?.stirring == true) FIBER_FRAME_SECONDS else SLOW_FRAME_SECONDS)
+    // Still while scrolled away: the fibres are a card's, in a list.
+    val seen = rememberOnScreen()
+    val time = rememberFitnessClock(running && seen.visible, frameSeconds = if (touches?.stirring == true) FIBER_FRAME_SECONDS else SLOW_FRAME_SECONDS)
     Box(
-        modifier.ownLayer().drawBehind {
+        modifier.then(seen.modifier).ownLayer().drawBehind {
             val now = time.floatValue
             touches?.tick(now)
             if (shader != null) {
@@ -333,8 +326,9 @@ internal fun PlasmaRing(
     running: Boolean = true,
 ) {
     val shader = rememberShader(RING_SHADER)
-    val time = rememberFitnessClock(running, frameSeconds = SLOW_FRAME_SECONDS)
-    Canvas(modifier.ownLayer()) {
+    val seen = rememberOnScreen()
+    val time = rememberFitnessClock(running && seen.visible, frameSeconds = SLOW_FRAME_SECONDS)
+    Canvas(modifier.then(seen.modifier).ownLayer()) {
         val filled = level().coerceIn(0f, 1f)
         if (shader != null) {
             shader.setUniform("size", size.width, size.height)

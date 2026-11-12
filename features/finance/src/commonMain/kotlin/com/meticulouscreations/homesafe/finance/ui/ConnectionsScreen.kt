@@ -65,6 +65,7 @@ import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.components.rememberOnScreen
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_connections_entry_body
 import homesafe.shared.generated.resources.fin_connections_entry_eyebrow
@@ -259,10 +260,11 @@ internal fun ConnectionsScreen(state: FinanceUiState, contentPadding: PaddingVal
 @Composable
 private fun EconomyMapView(state: FinanceUiState, selected: String, highlight: EconLink?, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
-    val time = rememberShaderClock()
+    val seen = rememberOnScreen()
+    val time = rememberShaderClock(running = seen.visible)
     val active = highlight?.let { setOf(it.from, it.to) } ?: setOf(selected)
     val density = LocalDensity.current
-    BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(0.75f)) {
+    BoxWithConstraints(modifier.then(seen.modifier).fillMaxWidth().aspectRatio(0.75f)) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         Canvas(Modifier.fillMaxSize()) {

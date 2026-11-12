@@ -1,6 +1,5 @@
 package com.meticulouscreations.homesafe.weather.ui.sky
 
-import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -26,7 +25,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.meticulouscreations.homesafe.tracing.traceInstant
-import com.meticulouscreations.homesafe.ui.components.frameGridSlot
+import com.meticulouscreations.homesafe.ui.components.awaitNextGridFrame
 import com.meticulouscreations.homesafe.weather.ui.LocalWeatherShaders
 import com.meticulouscreations.homesafe.weather.ui.shader.CELESTIAL_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.CLOUD_SHADER
@@ -83,24 +82,17 @@ fun WeatherSky(
     val ticking = held == null && running && lifecycle.isAtLeast(Lifecycle.State.STARTED)
     LaunchedEffect(animator, ticking) {
         if (!ticking) return@LaunchedEffect
-        // An infinite animation's frames: anything that waits for animations to settle (a UI
-        // test's idling) knows this one never will.
-        var last = withInfiniteAnimationFrameNanos { it }
-        var lastSlot = frameGridSlot(last, animator.frameSeconds)
+        // Not every frame the display offers: cloud drifts and the sun creeps, and at thirty frames a
+        // second they look as they do at a hundred and twenty for a quarter of the shading. The frames
+        // between are the cards' alone (see the layer below), and this asks for none of them. Which
+        // frames: the ones every other clock with this step moves on in (see awaitNextGridFrame). An
+        // infinite animation's frames: a UI test's idling knows this one never settles.
+        var last = awaitNextGridFrame(animator.frameSeconds)
         while (true) {
-            withInfiniteAnimationFrameNanos { now ->
-                // Not every frame the display offers: cloud drifts and the sun creeps, and at thirty
-                // frames a second they look as they do at a hundred and twenty for a quarter of the
-                // shading. The frames between are the cards' alone (see the layer below). Which
-                // frames: the ones every other clock with this step moves on in (see frameGridSlot).
-                val slot = frameGridSlot(now, animator.frameSeconds)
-                if (slot != lastSlot) {
-                    lastSlot = slot
-                    animator.step(((now - last) / 1e9f).coerceIn(0f, 0.1f))
-                    traceInstant("weather.sky")
-                    last = now
-                }
-            }
+            val now = awaitNextGridFrame(animator.frameSeconds, last)
+            animator.step(((now - last) / 1e9f).coerceIn(0f, 0.1f))
+            traceInstant("weather.sky")
+            last = now
         }
     }
     val unit = LocalDensity.current.density

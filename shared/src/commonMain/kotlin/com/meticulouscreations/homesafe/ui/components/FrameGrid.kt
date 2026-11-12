@@ -4,8 +4,14 @@ import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.platform.LocalInspectionMode
 import kotlinx.coroutines.delay
 import kotlin.math.PI
@@ -92,6 +98,23 @@ fun cycleAt(frameNanos: Long, periodMillis: Int): Float {
     val period = periodMillis * 1_000_000L
     return (frameNanos % period).toFloat() / period
 }
+
+/**
+ * Whether any of what [modifier] is put on shows on screen (one pixel's worth will do), for an
+ * animation that needn't run while scrolled away or covered. Starts true, so the first frame is
+ * drawn moving.
+ */
+@Stable
+class OnScreen internal constructor() {
+    var visible by mutableStateOf(true)
+        private set
+
+    val modifier: Modifier = Modifier.onVisibilityChanged(minFractionVisible = 0.01f) { visible = it }
+}
+
+/** An [OnScreen] for this place in the composition. */
+@Composable
+fun rememberOnScreen(): OnScreen = remember { OnScreen() }
 
 /** Thirty steps a second: a pulse, a breath or a sweep looks the same as at the display's own rate. */
 const val SLOW_ANIMATION_STEPS_PER_SECOND = 30
