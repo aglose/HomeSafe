@@ -80,9 +80,9 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
     /** Whether the foreground service is up and the notification is its. */
     private var serviceUp = false
 
-    /** What the notification last showed, and when its heart last changed (elapsed realtime). */
+    /** What the notification last showed, and when it was posted (elapsed realtime). */
     private var posted: Shown? = null
-    private var heartPostedAt = 0L
+    private var postedAt = 0L
 
     init {
         WorkoutNotifications.createChannels(app)
@@ -132,7 +132,7 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
         }
     }
 
-    /** How long [current] waits before it is posted: nothing, unless all that is new in it is the heart and the heart was posted under [HEART_EVERY_MILLIS] ago. */
+    /** How long [current] waits before it is posted: nothing, unless all that is new in it is the heart and the notification was posted under [HEART_EVERY_MILLIS] ago. */
     private fun heartWaitMillis(current: Shown, elapsedNow: Long): Long {
         val before = posted?.workout ?: return 0
         val workout = current.workout
@@ -142,11 +142,13 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
         if (phase == LivePhase.REST_OVER && announced != workout.rest?.endsAtEpochMillis) return 0
         // A heart that appears or goes (the sensor linked, or lost) is news; one that only reads differently is not.
         val onlyTheHeart = before.heart != null && workout.heart != null && before.copy(heart = workout.heart) == workout
-        return if (onlyTheHeart) (heartPostedAt + HEART_EVERY_MILLIS - elapsedNow).coerceAtLeast(0) else 0
+        return if (onlyTheHeart) (postedAt + HEART_EVERY_MILLIS - elapsedNow).coerceAtLeast(0) else 0
     }
 
     private fun post(current: Shown, now: Long) {
-        if (posted?.workout?.heart != current.workout.heart) heartPostedAt = SystemClock.elapsedRealtime()
+        // Every post, whatever changed in it: a reading that comes back to the one shown is still a post, and the next
+        // heart-only change waits its ten seconds from it.
+        postedAt = SystemClock.elapsedRealtime()
         posted = current
         try {
             manager.notify(WorkoutNotifications.ONGOING_ID, WorkoutNotifications.ongoing(app, current.workout, current.words, now))
