@@ -40,7 +40,8 @@ interface LiveWorkoutSurface {
  *
  * It also does what would otherwise need a screen: a rest that ran out a while ago is let go of
  * ([REST_LINGER_MILLIS], as the workout's page does), and a workout left open past the point it
- * counts as in progress is taken off the surface.
+ * counts as in progress is taken off the surface, as is one left untouched for [IDLE_MILLIS]
+ * where the surface keeps the app running for it.
  */
 class LiveWorkoutPresenter(
     private val hub: LiveWorkouts,
@@ -53,22 +54,44 @@ class LiveWorkoutPresenter(
     fun start(scope: CoroutineScope): Job = scope.launch {
         launch { forgetRestsThatRanOut() }
         var showing = false
+        // The workout as last handed over, but for its heart, and when it last differed: a set logged, a rest begun or
+        // ended, the app brought in front or left. The heart alone, read every second, is nobody doing anything.
+        var picture: LiveWorkout? = null
+        var activeAt = 0L
+        fun end() {
+            if (showing) surface.end()
+            showing = false
+            // Nothing keeps the app running for a workout that isn't shown: the heart sensor's link is let go of with it.
+            hub.keepsAppRunning = false
+        }
         hub.workout.collectLatest { workout ->
             if (workout == null) {
-                if (showing) surface.end()
-                showing = false
+                picture = null
+                end()
+                return@collectLatest
+            }
+            val now = clock.now().toEpochMilliseconds()
+            val keeps = surface.keepsAppRunning
+            val untimed = workout.copy(heart = null)
+            if (untimed != picture) {
+                picture = untimed
+                activeAt = now
+            }
+            // Left open this long, it stops being the workout in progress; the app closes it the next time it reads the log.
+            // And where showing it keeps the app running, with the phone's radios and this process awake for it, a workout
+            // nobody has touched for [IDLE_MILLIS] is taken off sooner. It is still open, and comes back with the app.
+            val endAt = if (keeps && !workout.onScreen) minOf(workout.staleAtEpochMillis, activeAt + IDLE_MILLIS) else workout.staleAtEpochMillis
+            if (now >= endAt) {
+                end()
                 return@collectLatest
             }
             val words = LiveWorkoutWords.load(LiveWorkoutLines.of(workout), labels ?: LiveWorkoutLabels.load(text).also { labels = it }, text)
             // Asked each time: on Android it turns on as soon as a permission it needs is given.
-            hub.keepsAppRunning = surface.keepsAppRunning
+            hub.keepsAppRunning = keeps
             surface.show(workout, words)
             showing = true
-            // Left open this long, it stops being the workout in progress; the app closes it the next time it reads the log.
-            val stale = workout.staleAtEpochMillis - clock.now().toEpochMilliseconds()
-            delay(stale.coerceAtLeast(0))
-            surface.end()
-            showing = false
+            delay(endAt - now)
+            end()
         }
     }
 
@@ -83,6 +106,13 @@ class LiveWorkoutPresenter(
     companion object {
         /** How long a rest that ran out goes on saying so, as the workout's own page does. */
         const val REST_LINGER_MILLIS = 5 * 60_000L
+
+        /**
+         * How long a workout nobody has touched (no set, no rest, the app not in front) is still shown where showing it
+         * keeps the app running. Long enough for a stretch on a treadmill between lifts; short of the eight hours a
+         * workout forgotten in a pocket would otherwise hold the phone for.
+         */
+        const val IDLE_MILLIS = 60 * 60_000L
 
         private var installed: LiveWorkoutSurface? = null
 

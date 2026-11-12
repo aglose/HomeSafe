@@ -37,7 +37,15 @@ class LiveWorkouts {
      * Whether, while a workout is shown, the platform keeps the app running with its screen away
      * (Android's foreground service): kept by [LiveWorkoutPresenter] as it hands the workout over.
      */
-    var keepsAppRunning: Boolean = false
+    var keepsAppRunning: Boolean
+        get() = _keepsAppRunning.value
+        set(value) {
+            _keepsAppRunning.value = value
+        }
+    private val _keepsAppRunning = MutableStateFlow(false)
+
+    /** [keepsAppRunning] as it changes: the heart-rate link held through a workout is let go of when it stops. */
+    val keepsAppRunningChanges: StateFlow<Boolean> = _keepsAppRunning.asStateFlow()
 
     /**
      * The workout open now, as the app sees it, without its rest; null once there is none. The

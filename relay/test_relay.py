@@ -486,6 +486,18 @@ class PushMessageTest(unittest.TestCase):
         self.assertNotIn("sound", aps)
         self.assertEqual("passive", aps["interruption-level"])
         self.assertEqual("r0", message["apns"]["headers"]["apns-collapse-id"])
+        self.assertEqual("normal", message["android"]["priority"], "it alerts nobody, so it doesn't wake the phone out of Doze")
+
+    def test_every_push_says_when_it_was_sent_so_the_app_can_drop_one_that_lands_out_of_order(self):
+        before = int(time.time() * 1000)
+        first = relay.push_message("tok", "Kia has moved", "", {"notif_id": "parking-kia", "silent": "1"})["message"]["data"]
+        second = relay.push_message("tok", "Move Kia now", "", {"notif_id": "parking-kia"})["message"]["data"]
+        self.assertGreaterEqual(int(first["sent_at"]), before)
+        self.assertGreaterEqual(int(second["sent_at"]), int(first["sent_at"]))
+
+    def test_a_quiet_push_with_nobody_home_still_wakes_the_phone(self):
+        message = relay.push_message("tok", "Front Yard", "Person · 2 alerts", {**self.DATA, "notif_id": "r0", "silent": "1", "away": "1"}, away=True)["message"]
+        self.assertEqual("high", message["android"]["priority"])
 
     def test_a_push_outside_a_visit_collapses_by_its_own_review(self):
         message = relay.push_message("tok", "Front Yard", "Person in the driveway", self.DATA)["message"]
