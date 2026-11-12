@@ -33,17 +33,18 @@ interface FitnessLogSync {
 
     /**
      * Keeps in step for as long as this is running, which is while the log is on screen: at once,
-     * soon after each change here, and now and then to hear of changes elsewhere. What was changed
-     * last still goes after it stops.
+     * soon after each change here, and now and then to hear of changes elsewhere; [often] (the app
+     * itself open, rather than only its card in the drawer) hears more often. What was changed last
+     * still goes after it stops.
      */
-    suspend fun follow()
+    suspend fun follow(often: Boolean = true)
 }
 
 /** For previews, and for a view model's tests that aren't about this. */
 object NoFitnessLogSync : FitnessLogSync {
     override val status: StateFlow<FitnessSyncStatus> = MutableStateFlow(FitnessSyncStatus.SIGNED_OUT)
 
-    override suspend fun follow() = Unit
+    override suspend fun follow(often: Boolean) = Unit
 }
 
 /**

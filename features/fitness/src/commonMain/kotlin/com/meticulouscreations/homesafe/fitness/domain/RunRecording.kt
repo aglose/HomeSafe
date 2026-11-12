@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -341,8 +342,10 @@ interface RunLocation {
     /**
      * Positions for as long as this is collected, about one a second. Meanwhile the app keeps
      * running when the screen goes off, with an ongoing notification saying what [notify] last said.
+     * While [paused] says so, they may come seldom and rough: the run isn't moving on, and only the
+     * signal and a forgotten run's ending need any.
      */
-    fun fixes(): Flow<GpsFix>
+    fun fixes(paused: Flow<Boolean> = flowOf(false)): Flow<GpsFix>
 
     /** What the ongoing notification says while [fixes] is collected. */
     fun notify(recording: Recording)
@@ -356,7 +359,7 @@ object UnsupportedRunLocation : RunLocation {
 
     override suspend fun requestPermission() = false
 
-    override fun fixes(): Flow<GpsFix> = emptyFlow()
+    override fun fixes(paused: Flow<Boolean>): Flow<GpsFix> = emptyFlow()
 
     override fun notify(recording: Recording) = Unit
 }

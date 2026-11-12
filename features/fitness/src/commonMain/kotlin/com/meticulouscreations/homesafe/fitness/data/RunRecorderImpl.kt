@@ -122,6 +122,7 @@ class RunRecorderImpl internal constructor(
                 val at = now()
                 record(current, RunEvent(kind, at), at)
                 flush(current, at)
+                current.paused.value = current.tracker.paused
                 publish(current, at)
             }
         }
@@ -177,7 +178,7 @@ class RunRecorderImpl internal constructor(
                 }
             }
         }
-        location.fixes().collect { fix ->
+        location.fixes(current.paused).collect { fix ->
             lock.withLock {
                 if (session !== current) return@withLock
                 val at = now()
@@ -258,6 +259,8 @@ internal class LiveRun {
         var lastFlushAt: Long,
         /** When the phone was last going somewhere. */
         var lastTravelAt: Long,
+        /** Whether the run stands paused, for the GPS, which can take it easy meanwhile. */
+        val paused: MutableStateFlow<Boolean> = MutableStateFlow(false),
         var ending: Boolean = false,
         val pending: MutableList<RunEvent> = ArrayList(),
         var job: Job? = null,

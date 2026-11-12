@@ -11,10 +11,12 @@ import com.meticulouscreations.homesafe.fitness.domain.RunLocation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -51,7 +53,13 @@ class RunRecorderImplTest {
             return allowed
         }
 
-        override fun fixes(): Flow<GpsFix> = positions.receiveAsFlow().onStart { following = true }.onCompletion { following = false }
+        /** What the recorder last said of the run standing paused, while it follows the GPS. */
+        var paused: Boolean? = null
+
+        override fun fixes(paused: Flow<Boolean>): Flow<GpsFix> = channelFlow {
+            launch { paused.collect { this@FakeLocation.paused = it } }
+            positions.receiveAsFlow().collect { send(it) }
+        }.onStart { following = true }.onCompletion { following = false }
 
         override fun notify(recording: Recording) {
             notified += recording
@@ -170,6 +178,21 @@ class RunRecorderImplTest {
         val kept = h.runs.runs.first().single()
         assertEquals(120_000, kept.movingMillis, "moving time")
         assertEquals(360.0, kept.meters, 2.0)
+    }
+
+    @Test
+    fun theGpsIsToldWhileTheRunStandsPaused() = runRecorderTest { h ->
+        h.recorder.start()
+        runCurrent()
+        run(h, 10)
+        assertEquals(false, h.location.paused)
+        h.recorder.pause()
+        runCurrent()
+        assertEquals(true, h.location.paused, "the GPS can take it easy meanwhile")
+        h.recorder.resume()
+        runCurrent()
+        assertEquals(false, h.location.paused)
+        assertTrue(h.location.following, "the same GPS session throughout: it isn't started again")
     }
 
     @Test

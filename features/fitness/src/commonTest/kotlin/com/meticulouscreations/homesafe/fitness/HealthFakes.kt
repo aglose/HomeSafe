@@ -216,7 +216,11 @@ class FakeFitnessLogSync : FitnessLogSync {
     override val status = MutableStateFlow(FitnessSyncStatus.SIGNED_OUT)
     var following = 0
 
-    override suspend fun follow() {
+    /** What the followers asked for, newest last: whether each wanted to hear often. */
+    val asked = mutableListOf<Boolean>()
+
+    override suspend fun follow(often: Boolean) {
+        asked += often
         following++
         try {
             awaitCancellation()

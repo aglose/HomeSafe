@@ -301,8 +301,11 @@ where the app is kept running for it** (on Android, the workout's foreground ser
 another app comes in front, the link is let go, and it is found again (a few seconds) on coming
 back. So that a workout isn't cut off
 by the screen timing out between sets, the screen is kept on while a workout is open and the app
-is in front (`KeepScreenOn`: the view's flag on Android, the idle timer on iOS); it times out as
-usual everywhere else, and locking the phone still lets the link go. Zone alerts therefore only
+is in front (`KeepScreenOn`: the view's flag on Android, the idle timer on iOS), for as long as
+something is happening in it: through a rest counting, and for ten minutes after the last set,
+rest or touch of the app. After that it times out as it would anywhere, so a workout forgotten on a
+bench doesn't hold the screen on for hours. It times out as usual everywhere else, and locking the
+phone still lets the link go. Zone alerts therefore only
 happen with the app in front. Time in zone counts only time the sensor was really reporting: a
 gap of more than five seconds between readings adds nothing, so a workout done mostly with the
 screen off will show a short "recorded" time, not a wrong one.
@@ -517,8 +520,10 @@ allowed, and the runs page says so where it isn't. A run is then:
 - **With the screen off**: a foreground service of the location type keeps the app running,
   with an ongoing notification of the time (ticking by itself) and the distance. A tap on it
   brings the app back. Only the location "while using the app" is asked for: a foreground
-  service started from a tap may go on using it with the screen off. Nothing runs once the run
-  is finished.
+  service started from a tap may go on using it with the screen off. While the run stands paused
+  the GPS is asked for a rough position every fifteen seconds instead of a precise one each second
+  (the service stays up, as it couldn't be started again with the screen off), so the first
+  position or two after **Resume** may be rougher. Nothing runs once the run is finished.
 - **Measured** (`RunTracker`): fused location at its highest accuracy, about once a second. A
   position less sure than 30 m is passed over; a step under about half how sure the two
   positions are (never under 3 m) is the GPS wandering about someone standing still and waits
@@ -658,7 +663,8 @@ go this way: [it is a copy that is replaced whole](#on-another-device).
 
 **How it stays in step** (`FitnessLogSyncImpl`, and `fitness_sync` in `relay/relay.py`). While the
 log is on screen, a pass runs at once, two seconds after each change here, and every thirty
-seconds to hear of changes elsewhere; one more goes as it leaves the screen. A pass compares the
+seconds to hear of changes elsewhere (every two minutes while only the drawer's card is up); one
+more goes as it leaves the screen. A pass compares the
 log as it stands with what the server last had (`FitnessSyncDao`), sends the difference, and writes
 in what has changed elsewhere since the place it last got to. Nothing is recorded when a change is
 made, so nothing that changes the log can forget to, and a pass killed at any point just happens

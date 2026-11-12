@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -66,6 +65,8 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
 import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.components.SLOW_ANIMATION_STEPS_PER_SECOND
+import com.meticulouscreations.homesafe.ui.components.awaitNextGridFrame
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_heart_bpm
 import homesafe.shared.generated.resources.fitness_heart_described
@@ -290,12 +291,11 @@ private fun PulsingHeart(bpm: Int?, tint: Color, modifier: Modifier = Modifier) 
             return@LaunchedEffect
         }
         var last = 0L
-        // An infinite animation's frames, as the rest timer's are: nothing waiting for animations to settle waits on a heartbeat.
+        // Thirty steps a second, ten or more to a beat even at a sprint's rate, rather than the display's every frame.
         while (true) {
-            withInfiniteAnimationFrameNanos { now ->
-                if (last != 0L) phase.floatValue = (phase.floatValue + (now - last) / 1e9f * (rate ?: 60) / 60f) % 1f
-                last = now
-            }
+            val now = awaitNextGridFrame(1f / SLOW_ANIMATION_STEPS_PER_SECOND, last)
+            if (last != 0L) phase.floatValue = (phase.floatValue + (now - last) / 1e9f * (rate ?: 60) / 60f) % 1f
+            last = now
         }
     }
     Box(

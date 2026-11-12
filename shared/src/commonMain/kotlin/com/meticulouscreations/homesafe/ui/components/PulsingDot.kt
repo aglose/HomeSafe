@@ -1,11 +1,5 @@
 package com.meticulouscreations.homesafe.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,8 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -33,33 +25,29 @@ fun PulsingDot(
     size: Dp = 8.dp,
     pulsing: Boolean = true,
 ) {
-    // The animated value is kept as a State and read only inside graphicsLayer's draw-phase
-    // lambda. Reading it here (`by animateFloat(...)`) would recompose this composable — and
-    // re-run its whole modifier chain — on every animation frame, for every dot on screen
-    // (one per camera card on Home). Deferring the read costs one draw invalidation per frame instead.
-    val alpha: State<Float> = if (pulsing) {
-        val transition = rememberInfiniteTransition(label = "pulsing-dot")
-        transition.animateFloat(
-            initialValue = 1f,
-            targetValue = 0.4f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1000),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulsing-dot-alpha",
-        )
-    } else {
-        OPAQUE
-    }
+    // The frame clock is kept as a State and read only inside graphicsLayer's draw-phase lambda.
+    // Reading it here would recompose this composable — and re-run its whole modifier chain — on
+    // every step, for every dot on screen (one per camera card on Home). Deferring the read costs
+    // one draw a step instead, at thirty a second rather than the display's 60 or 120: a slow fade
+    // looks the same, and Home with a dozen live cards draws a quarter as often on a 120 Hz phone.
+    // Every dot takes its phase from the same clock, so a screenful pulse together.
+    val clock = rememberSteppedFrameNanos(running = pulsing)
     Box(
         modifier
             .size(size)
-            .graphicsLayer { this.alpha = alpha.value }
+            .graphicsLayer { this.alpha = if (pulsing) pulseAlpha(clock.longValue) else 1f }
             .background(color, CircleShape),
     )
 }
 
-private val OPAQUE: State<Float> = mutableStateOf(1f)
+/** The dot's opacity at [frameNanos]: full, down to [PULSE_DIM_ALPHA] and back over [PULSE_PERIOD_MS]. */
+internal fun pulseAlpha(frameNanos: Long): Float = 1f - (1f - PULSE_DIM_ALPHA) * breathAt(frameNanos, PULSE_PERIOD_MS)
+
+/** One fade out and back in. */
+private const val PULSE_PERIOD_MS = 2_000
+
+/** How far the dot fades at the bottom of its pulse. */
+private const val PULSE_DIM_ALPHA = 0.4f
 
 /**
  * Three dots with a bright spot travelling along them, in place of a [PulsingDot] while there is
@@ -67,8 +55,8 @@ private val OPAQUE: State<Float> = mutableStateOf(1f)
  * three dots taking their turn say "still working on it", which is the difference the camera
  * cards' status pill needs to draw.
  *
- * Like [PulsingDot], the animated value is read only inside `graphicsLayer`'s draw lambda, so a
- * card full of these costs one draw invalidation a frame rather than a recomposition.
+ * Like [PulsingDot], the clock is read only inside `graphicsLayer`'s draw lambda, so a card full of
+ * these costs one draw a step rather than a recomposition.
  */
 @Composable
 fun BufferingDots(
@@ -76,16 +64,8 @@ fun BufferingDots(
     modifier: Modifier = Modifier,
     dotSize: Dp = 5.dp,
 ) {
-    val transition = rememberInfiniteTransition(label = "buffering-dots")
-    // Runs 0..DOT_COUNT so the phase is directly the index the bright spot is over.
-    val phase = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = DOT_COUNT.toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = BUFFERING_CYCLE_MS, easing = LinearEasing),
-        ),
-        label = "buffering-dots-phase",
-    )
+    // Stepped thirty times a second, as PulsingDot is. The phase runs 0..DOT_COUNT so it is directly the index the bright spot is over.
+    val clock = rememberSteppedFrameNanos()
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(dotSize / 2),
@@ -94,7 +74,7 @@ fun BufferingDots(
             Box(
                 Modifier
                     .size(dotSize)
-                    .graphicsLayer { alpha = bufferingDotAlpha(phase.value, index) }
+                    .graphicsLayer { alpha = bufferingDotAlpha(cycleAt(clock.longValue, BUFFERING_CYCLE_MS) * DOT_COUNT, index) }
                     .background(color, CircleShape),
             )
         }

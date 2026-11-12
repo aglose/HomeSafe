@@ -65,20 +65,27 @@ interface MapTileSource {
 
 private val OpenStreetMapOnly: StateFlow<BaseMap?> = MutableStateFlow(BaseMap.OpenStreetMap)
 
-/** How often [requestUntilArrived] asks again for the base map's tiles that haven't come. */
+/** How soon [requestUntilArrived] first asks again for the base map's tiles that haven't come. */
 const val BASE_TILE_RETRY_MS = 5_000L
 
+/** The longest [requestUntilArrived] waits between asks. */
+const val BASE_TILE_RETRY_MAX_MS = 60_000L
+
 /**
- * Asks for the base map's [urls] (see [MapTileSource.request]), and asks again every
- * [BASE_TILE_RETRY_MS] while any of them hasn't arrived: a tile a slow network dropped would
- * otherwise stay a hole in the map until the view moved. Returns once they are all in; the map
- * cancels it when the view moves on to other tiles.
+ * Asks for the base map's [urls] (see [MapTileSource.request]), and asks again while any of them
+ * hasn't arrived: a tile a slow network dropped would otherwise stay a hole in the map until the view
+ * moved. The first ask again is [BASE_TILE_RETRY_MS] after, and each wait after that twice the last,
+ * up to [BASE_TILE_RETRY_MAX_MS]: with no network at all, a screenful of tiles asked for every five
+ * seconds for as long as the map is up is the radio woken for nothing. Returns once they are all in;
+ * the map cancels it when the view moves on to other tiles.
  */
 suspend fun MapTileSource.requestUntilArrived(urls: List<String>, scope: CoroutineScope, keep: Boolean) {
+    var wait = BASE_TILE_RETRY_MS
     while (true) {
         request(urls, scope, keep)
-        delay(BASE_TILE_RETRY_MS)
+        delay(wait)
         if (urls.all { image(it) != null }) return
+        wait = (wait * 2).coerceAtMost(BASE_TILE_RETRY_MAX_MS)
     }
 }
 

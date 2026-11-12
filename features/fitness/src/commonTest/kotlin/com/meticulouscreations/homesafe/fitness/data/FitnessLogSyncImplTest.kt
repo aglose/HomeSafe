@@ -898,6 +898,34 @@ class FitnessLogSyncImplTest {
     }
 
     @Test
+    fun withOnlyTheDrawersCardOnScreenItHearsLessOften() = runTest(StandardTestDispatcher()) {
+        val relay = FakeRelay()
+        val phone = install(relay)
+        val card = launch { phone.sync.follow(often = false) }
+        // Past the pass at once and the one the log's first reading settles into.
+        advanceTimeBy(3_000)
+        runCurrent()
+        val asked = relay.requests
+        advanceTimeBy(58_000)
+        runCurrent()
+        assertEquals(asked, relay.requests, "not every half minute")
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertTrue(relay.requests > asked, "but every two")
+
+        // The app opened over it: at once, and every half minute again.
+        val app = launch { phone.sync.follow(often = true) }
+        runCurrent()
+        val opened = relay.requests
+        assertTrue(opened > asked)
+        advanceTimeBy(31_000)
+        runCurrent()
+        assertTrue(relay.requests > opened)
+        app.cancel()
+        card.cancel()
+    }
+
+    @Test
     fun twoFollowersAreOneFollowing() = runTest(StandardTestDispatcher()) {
         val relay = FakeRelay()
         val phone = install(relay)

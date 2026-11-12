@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -66,32 +67,41 @@ class FitnessLogSyncImpl(
     override val status: StateFlow<FitnessSyncStatus> = _status.asStateFlow()
 
     private val followers = MutableStateFlow(0)
+
+    /** How many of [followers] want to hear often: the app itself is open. */
+    private val oftenFollowers = MutableStateFlow(0)
     private val passes = Mutex()
 
     init {
         appScope.launch {
-            followers.map { it > 0 }.distinctUntilChanged().dropWhile { !it }.collectLatest { following ->
-                // Off screen, what was last changed still goes: the change's own wait was cut short.
-                if (following) keepInStep() else syncNow()
-            }
+            combine(followers, oftenFollowers) { all, often -> if (all == 0) null else often > 0 }
+                .distinctUntilChanged()
+                .dropWhile { it == null }
+                .collectLatest { often ->
+                    // Off screen, what was last changed still goes: the change's own wait was cut short.
+                    if (often != null) keepInStep(if (often) HEAR_EVERY_MS else DRAWER_HEAR_EVERY_MS) else syncNow()
+                }
         }
     }
 
-    override suspend fun follow() {
+    override suspend fun follow(often: Boolean) {
+        // The often one first, and gone last: a follower that never wanted to hear often is never seen to.
+        if (often) oftenFollowers.update { it + 1 }
         followers.update { it + 1 }
         try {
             awaitCancellation()
         } finally {
             followers.update { it - 1 }
+            if (often) oftenFollowers.update { it - 1 }
         }
     }
 
     @OptIn(FlowPreview::class)
-    private suspend fun keepInStep() {
+    private suspend fun keepInStep(hearEveryMs: Long) {
         val everyWhile = flow {
             while (true) {
                 emit(Unit)
-                delay(HEAR_EVERY_MS)
+                delay(hearEveryMs)
             }
         }
         val changedHere = merge(
@@ -369,8 +379,11 @@ class FitnessLogSyncImpl(
         /** A change is sent once things have been quiet this long: the sets of a workout's minute go together. */
         const val SETTLE_MS = 2_000L
 
-        /** How often to hear of changes elsewhere, while the log is on screen. */
+        /** How often to hear of changes elsewhere, while the app itself is on screen. */
         const val HEAR_EVERY_MS = 30_000L
+
+        /** …and while only its card in the drawer is: a summary, and changes made here still go at once. */
+        const val DRAWER_HEAR_EVERY_MS = 120_000L
 
         const val BATCH_BYTES = 256_000
         const val BATCH_ROWS = 2_000

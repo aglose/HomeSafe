@@ -1,11 +1,5 @@
 package com.meticulouscreations.homesafe.charging.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,7 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,6 +39,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.charging.ChargingUiState
+import com.meticulouscreations.homesafe.ui.components.cycleAt
+import com.meticulouscreations.homesafe.ui.components.rememberSteppedFrameNanos
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.charging_drawer_charging
 import homesafe.shared.generated.resources.charging_drawer_detail
@@ -118,18 +113,15 @@ fun ChargingDrawerCard(charging: ChargingUiState, animated: Boolean, onOpen: (Of
 }
 
 /**
- * Green current down three wires. It only reads the animation in the draw phase, so the card doesn't
- * recompose as it runs, and stops altogether when not [running].
+ * Green current down three wires. It only reads the clock in the draw phase, so the card doesn't
+ * recompose as it runs; it moves thirty times a second, which a slow current looks the same at; and
+ * it stops altogether when not [running].
  */
 @Composable
 internal fun ChargingWires(running: Boolean, modifier: Modifier = Modifier) {
-    val still = remember { mutableFloatStateOf(0.3f) }
-    val phase = if (running) {
-        rememberInfiniteTransition(label = "chargingWires").animateFloat(0f, 1f, infiniteRepeatable(tween(4_000, easing = LinearEasing), RepeatMode.Restart), label = "current")
-    } else {
-        still
-    }
+    val clock = rememberSteppedFrameNanos(running = running)
     Canvas(modifier) {
+        val phase = if (running) cycleAt(clock.longValue, WIRES_CYCLE_MS) else STILL_PHASE
         drawRect(Brush.linearGradient(listOf(Color(0xFF07211A), Color(0xFF0C3B2B), Color(0xFF06140F)), Offset.Zero, Offset(size.width, size.height)))
         val strokes = listOf(0.28f to 0.5f, 0.55f to 0.8f, 0.82f to 0.35f)
         strokes.forEachIndexed { index, (height, alpha) ->
@@ -141,7 +133,7 @@ internal fun ChargingWires(running: Boolean, modifier: Modifier = Modifier) {
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, Color(0x2A4CE08A), style = Stroke(1.5.dp.toPx()))
-            val at = (phase.value + index * 0.31f) % 1f
+            val at = (phase + index * 0.31f) % 1f
             val headX = size.width * at
             val headY = size.height * height + sin((at * 2 + index * 0.4f) * PI.toFloat()) * size.height * 0.08f
             drawCircle(Brush.radialGradient(listOf(Color(0xFF4CE08A).copy(alpha = alpha), Color.Transparent), Offset(headX, headY), 42.dp.toPx()), 42.dp.toPx(), Offset(headX, headY))
@@ -149,3 +141,9 @@ internal fun ChargingWires(running: Boolean, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** One trip of the current along the wires. */
+private const val WIRES_CYCLE_MS = 4_000
+
+/** Where the current sits when the wires aren't running. */
+private const val STILL_PHASE = 0.3f

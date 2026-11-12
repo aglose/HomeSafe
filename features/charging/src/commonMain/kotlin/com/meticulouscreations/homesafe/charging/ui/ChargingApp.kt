@@ -215,7 +215,7 @@ fun ChargingAppContent(
             }
 
             if (!state.loaded) {
-                ChargingWaiting(state, actions)
+                ChargingWaiting(state, actions, animated = active)
             } else {
                 val target: Any = page ?: tab
                 // Which way the stack last moved, for the slide's direction; outside the snapshot system since it only steers an animation.
@@ -290,10 +290,11 @@ fun ChargingAppContent(
 
 /** Nothing from the relay yet: that it is being asked, or why it can't be. */
 @Composable
-private fun ChargingWaiting(state: ChargingUiState, actions: ChargingActions) {
+private fun ChargingWaiting(state: ChargingUiState, actions: ChargingActions, animated: Boolean) {
     val colors = ChargingTheme.colors
     Box(Modifier.fillMaxSize()) {
-        ChargingWires(running = true, Modifier.matchParentSize())
+        // Still once the app is out of sight: with the relay out of reach, this page can be up for a long time.
+        ChargingWires(running = animated, Modifier.matchParentSize())
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, colors.background))))
         Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val error = state.error

@@ -57,6 +57,9 @@ private const val TAG = "HomeSafeRun"
 /** About one position a second, as a running watch takes them. */
 private const val FIX_INTERVAL_MILLIS = 1_000L
 
+/** While a run stands paused: enough to keep its signal shown and to end one that was forgotten. */
+private const val PAUSED_FIX_INTERVAL_MILLIS = 15_000L
+
 /** A position that says nothing of how sure it is, taken as this unsure. */
 private const val UNKNOWN_ACCURACY_METERS = 50.0
 
@@ -110,7 +113,7 @@ private class AndroidRunLocation(private val context: Context, activity: Fragmen
     }
 
     @SuppressLint("MissingPermission")
-    override fun fixes(): Flow<GpsFix> = callbackFlow {
+    override fun fixes(paused: Flow<Boolean>): Flow<GpsFix> = callbackFlow {
         val service = Intent(context, RunRecordingService::class.java)
         try {
             ContextCompat.startForegroundService(context, service)
@@ -128,15 +131,26 @@ private class AndroidRunLocation(private val context: Context, activity: Fragmen
                 }
             }
         }
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, FIX_INTERVAL_MILLIS)
-            .setMinUpdateIntervalMillis(FIX_INTERVAL_MILLIS / 2)
-            .setWaitForAccurateLocation(false)
-            .build()
-        try {
-            client.requestLocationUpdates(request, callback, Looper.getMainLooper())
-            Log.i(TAG, "Following the GPS")
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Location was taken away", e)
+        // Running, the GPS once a second. Paused, Wi-Fi and cell towers now and then: the run isn't moving on, and the
+        // signal shown and a forgotten run's ending need no better. Asked again on the same callback, which replaces the
+        // last request; the foreground service stays up throughout, as it couldn't be started again with the screen off.
+        launch {
+            paused.distinctUntilChanged().collect { still ->
+                val request = if (still) {
+                    LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, PAUSED_FIX_INTERVAL_MILLIS).build()
+                } else {
+                    LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, FIX_INTERVAL_MILLIS)
+                        .setMinUpdateIntervalMillis(FIX_INTERVAL_MILLIS / 2)
+                        .setWaitForAccurateLocation(false)
+                        .build()
+                }
+                try {
+                    client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+                    Log.i(TAG, if (still) "Following the GPS loosely: paused" else "Following the GPS")
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Location was taken away", e)
+                }
+            }
         }
         awaitClose {
             client.removeLocationUpdates(callback)
