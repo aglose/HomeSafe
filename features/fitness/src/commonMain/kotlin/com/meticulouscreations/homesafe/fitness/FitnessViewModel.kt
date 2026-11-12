@@ -229,6 +229,9 @@ class FitnessViewModel(
     private var log = FitnessLog()
     private var follow: Job? = null
     private var keepingInStep: Job? = null
+
+    /** Whether [keepingInStep] hears often (the app itself open) or now and then (only the drawer's card). */
+    private var keepingOften = false
     private var tick: Job? = null
     private var starting: Job? = null
     private var importing: Job? = null
@@ -289,7 +292,14 @@ class FitnessViewModel(
             keepingInStep = null
             return
         }
-        if (keepingInStep == null) keepingInStep = viewModelScope.launch { logSync.follow() }
+        // Heard from often with the app open; now and then with only its card in the drawer. The new follower first, so
+        // there is never a moment with none, which would end the following and start it again.
+        if (keepingInStep == null || keepingOften != full) {
+            val before = keepingInStep
+            keepingOften = full
+            keepingInStep = viewModelScope.launch { logSync.follow(often = full) }
+            before?.cancel()
+        }
         followLog()
         if (!full) return
         tick = viewModelScope.launch {

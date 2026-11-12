@@ -5,7 +5,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -98,6 +97,8 @@ import com.meticulouscreations.homesafe.fitness.ui.movement.FigureSize
 import com.meticulouscreations.homesafe.fitness.ui.movement.NearestFigureNote
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.components.SLOW_ANIMATION_STEPS_PER_SECOND
+import com.meticulouscreations.homesafe.ui.components.awaitNextGridFrame
 import com.meticulouscreations.homesafe.ui.rememberKeyboardClearance
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_close
@@ -547,6 +548,8 @@ internal fun RestBar(
                     track = colors.surfaceRaised,
                     modifier = Modifier.matchParentSize(),
                     thickness = 0.2f,
+                    // Full and gold once the rest is over, and still: nothing about it moves through the linger.
+                    running = !over,
                 )
             }
             Spacer(Modifier.width(12.dp))
@@ -578,8 +581,10 @@ private fun RestNudge(text: String, label: String, onClick: () -> Unit) {
 }
 
 /**
- * The seconds left of [rest], read off the real clock every frame. In a preview there is one
- * frame and no clock worth reading, so it is what was left at [fallbackNowMillis].
+ * The seconds left of [rest], read off the real clock thirty times a second (smooth enough for the
+ * ring draining), until it has run out; then it stays at what it was, and nothing about the rest
+ * moves again. In a preview there is one frame and no clock worth reading, so it is what was left
+ * at [fallbackNowMillis].
  */
 @Composable
 private fun rememberRestSeconds(rest: RestTimer, fallbackNowMillis: Long): FloatState {
@@ -587,9 +592,10 @@ private fun rememberRestSeconds(rest: RestTimer, fallbackNowMillis: Long): Float
     val seconds = remember(rest) { mutableFloatStateOf((rest.endsAtEpochMillis - fallbackNowMillis) / 1000f) }
     LaunchedEffect(rest, still) {
         if (still) return@LaunchedEffect
-        // An infinite animation's frames, so anything waiting for animations to settle doesn't wait on the countdown.
-        while (true) {
-            withInfiniteAnimationFrameNanos { seconds.floatValue = (rest.endsAtEpochMillis - Clock.System.now().toEpochMilliseconds()) / 1000f }
+        var last = 0L
+        while (seconds.floatValue > 0f) {
+            last = awaitNextGridFrame(1f / SLOW_ANIMATION_STEPS_PER_SECOND, last)
+            seconds.floatValue = (rest.endsAtEpochMillis - Clock.System.now().toEpochMilliseconds()) / 1000f
         }
     }
     return seconds

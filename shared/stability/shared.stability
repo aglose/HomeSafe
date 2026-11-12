@@ -472,6 +472,14 @@ public fun com.meticulouscreations.homesafe.ui.components.rememberShareText(): k
   params:
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.components.rememberSteppedFrameNanos(running: kotlin.Boolean, stepsPerSecond: kotlin.Int): androidx.compose.runtime.LongState
+  skippable: false
+  restartable: false
+  params:
+    - running: STABLE (primitive type)
+    - stepsPerSecond: STABLE (primitive type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.isCompactLandscape(): kotlin.Boolean
   skippable: false
   restartable: false

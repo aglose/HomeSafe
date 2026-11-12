@@ -3,12 +3,8 @@ package com.meticulouscreations.homesafe.fitness.ui
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -43,9 +39,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +60,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.Role
@@ -79,6 +78,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.domain.Rung
 import com.meticulouscreations.homesafe.ui.WithTooltip
+import com.meticulouscreations.homesafe.ui.components.breathAt
+import com.meticulouscreations.homesafe.ui.components.rememberSteppedFrameNanos
 import com.meticulouscreations.homesafe.ui.handCursor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -337,15 +338,18 @@ internal fun LadderChart(
     val still = LocalInspectionMode.current
     val rise = remember { Animatable(if (still) 1f else 0f) }
     LaunchedEffect(rungs.size) { if (!still) rise.animateTo(1f, tween(500 + rungs.size * 70, easing = FastOutSlowInEasing)) }
-    // Only a chart with a target has anything that breathes; read while drawing, so the chart isn't composed again each frame.
-    val breath = if (targetWeight != null && targetReps != null) {
-        rememberInfiniteTransition(label = "ladder").animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ladderBreath")
-    } else {
-        null
-    }
+    // Only a chart with a target has anything that breathes, and only while some of it is on screen. Read while drawing,
+    // so the chart isn't composed again each step.
+    val breathes = targetWeight != null && targetReps != null
+    var onScreen by remember { mutableStateOf(true) }
+    val clock = rememberSteppedFrameNanos(running = breathes && onScreen)
     val labelStyle = type.micro.copy(letterSpacing = TextStyle.Default.letterSpacing)
 
-    Canvas(modifier.semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription }) {
+    Canvas(
+        modifier
+            .onVisibilityChanged(minFractionVisible = 0.01f) { onScreen = it }
+            .semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription },
+    ) {
         if (rungs.isEmpty()) return@Canvas
         val foot = if (labels) 18.dp.toPx() else 0f
         val head = if (labels) 16.dp.toPx() else 0f
@@ -379,7 +383,7 @@ internal fun LadderChart(
             }
             if (isTarget && targetReps != null) {
                 val goal = area * targetReps / top
-                val glow = 0.45f + 0.55f * (breath?.value ?: 1f)
+                val glow = 0.45f + 0.55f * (if (breathes) breathAt(clock.longValue, LADDER_BREATH_MS) else 1f)
                 drawRoundRect(
                     colors.gold.copy(alpha = glow),
                     Offset(x, base - goal),
@@ -429,3 +433,6 @@ internal fun Stat(value: String, label: String, modifier: Modifier = Modifier, c
         Text(label, style = FitnessTheme.type.label, color = FitnessTheme.colors.textFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
+
+/** One breath of the target's rung, in and out. */
+private const val LADDER_BREATH_MS = 2_800

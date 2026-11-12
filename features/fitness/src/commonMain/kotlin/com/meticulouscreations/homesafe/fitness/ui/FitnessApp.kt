@@ -56,7 +56,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +67,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -72,6 +76,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.testTag
@@ -90,6 +96,7 @@ import com.meticulouscreations.homesafe.fitness.HealthUiState
 import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RecordFlash
+import com.meticulouscreations.homesafe.fitness.RestTimer
 import com.meticulouscreations.homesafe.fitness.WorkoutSession
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
@@ -138,9 +145,11 @@ import homesafe.shared.generated.resources.fitness_title_import_copy
 import homesafe.shared.generated.resources.fitness_title_session
 import homesafe.shared.generated.resources.fitness_workout_title
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.time.Clock
 
 /** The fitness app's four tabs, in nav order. */
 enum class FitnessTab(val label: StringResource, val icon: ImageVector) {
@@ -384,15 +393,31 @@ fun FitnessAppContent(
             pages.clear()
             tab = FitnessTab.entries[index]
         }
-        BoxWithConstraints(modifier.fillMaxSize().background(palette.background).testTag("fitness_app")) {
+        // When the app was last touched, for keeping the screen on through a workout (see rememberWorkoutAwake). Watched
+        // on the way down, before anything inside takes the touch, and never consumed.
+        val touchedAt = remember { mutableLongStateOf(0L) }
+        BoxWithConstraints(
+            modifier.fillMaxSize().background(palette.background).testTag("fitness_app").pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        val now = Clock.System.now().toEpochMilliseconds()
+                        // Once a second is plenty: a scroll is many events a frame.
+                        if (now - touchedAt.longValue >= 1_000) touchedAt.longValue = now
+                    }
+                }
+            },
+        ) {
             // Centred at a readable width in a wide window (a desktop's, a tablet's): see appPageGutter.
             val gutter = appPageGutter(maxWidth)
             val tabPadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + if (inSidebar) 28.dp else 108.dp)
             val pagePadding = PaddingValues(start = gutter, end = gutter, top = top, bottom = nav.calculateBottomPadding() + 28.dp)
             val page = pages.lastOrNull()
             val workout = state.workout
-            // A workout is read between sets with the phone put down: the screen stays on while one is open and the app is up.
-            if (active && workout != null && !LocalInspectionMode.current) KeepScreenOn()
+            // A workout is read between sets with the phone put down: the screen stays on while one is open and the app is up,
+            // for as long as anything is happening in it.
+            val awake by rememberWorkoutAwake(workout?.setCount ?: 0, state.rest) { touchedAt.longValue }
+            if (active && workout != null && awake && !LocalInspectionMode.current) KeepScreenOn()
             // What has been added to the open workout from off its shelves, kept up here above the pages: opening one of
             // those exercises' own pages and coming back must not lose it.
             var pulled by rememberSaveable(workout?.workout?.id) { mutableStateOf(emptyList<String>()) }
@@ -810,3 +835,54 @@ private fun RecordCelebration(flash: RecordFlash?, phase: PhaseKind, onDismiss: 
 
 /** Fitness's tabs as the shell's sidebar lists them, under its row (see publishAppSections). */
 private val FITNESS_SECTIONS = FitnessTab.entries.map { AppSection(it.label, it.icon) }
+
+/**
+ * Whether the screen stays on for the workout open: true from when anything last happened in it (a
+ * set logged, a rest begun or ended, the app touched at all) until [WORKOUT_AWAKE_MILLIS] after
+ * that, and through a rest counting; then false, and the phone dims and locks as it would anywhere,
+ * so a workout forgotten on a bench doesn't hold its screen on for hours.
+ *
+ * [touchedAt], when the app was last touched, is read only here, off the composition, so a touch
+ * costs no recomposition of the app.
+ */
+@Composable
+private fun rememberWorkoutAwake(sets: Int, rest: RestTimer?, touchedAt: () -> Long): State<Boolean> {
+    val awake = remember { mutableStateOf(true) }
+    val restEnds = rest?.endsAtEpochMillis
+    val lastTouch by rememberUpdatedState(touchedAt)
+    val activity = remember { mutableStateOf<WorkoutActivity?>(null) }
+    val heldSets = remember { mutableIntStateOf(sets) }
+    LaunchedEffect(sets, restEnds) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        val current = nextWorkoutActivity(activity.value, setsChanged = sets != heldSets.intValue, restEndsAt = restEnds, nowMillis = now)
+        heldSets.intValue = sets
+        activity.value = current
+        snapshotFlow { lastTouch() }.collectLatest { touched ->
+            awake.value = true
+            delay((workoutAwakeUntil(maxOf(current.changedAt, touched), current.restEndsAt) - Clock.System.now().toEpochMilliseconds()).coerceAtLeast(0))
+            awake.value = false
+        }
+    }
+    return awake
+}
+
+/** The last thing that happened in a workout, for [workoutAwakeUntil]: when, and when the rest it began (if any) ends. */
+internal data class WorkoutActivity(val changedAt: Long, val restEndsAt: Long?)
+
+/**
+ * What happened when the workout's sets or rest changed at [nowMillis]. A rest that had already run
+ * out being let go of (the app does it some minutes after, with nobody there) is nothing happening:
+ * [before] stands, with its rest's end. Anything else (a set, a rest begun, changed or skipped) is.
+ */
+internal fun nextWorkoutActivity(before: WorkoutActivity?, setsChanged: Boolean, restEndsAt: Long?, nowMillis: Long): WorkoutActivity {
+    val endedRest = before?.restEndsAt
+    val letGoOfAnEndedRest = before != null && !setsChanged && restEndsAt == null && endedRest != null && endedRest <= nowMillis
+    return if (letGoOfAnEndedRest) before else WorkoutActivity(nowMillis, restEndsAt)
+}
+
+/** Until when the screen stays on for a workout in which something last happened at [lastActiveMillis], with a rest ending at [restEndsAtMillis] if one counts. */
+internal fun workoutAwakeUntil(lastActiveMillis: Long, restEndsAtMillis: Long?): Long =
+    maxOf(lastActiveMillis, restEndsAtMillis ?: lastActiveMillis) + WORKOUT_AWAKE_MILLIS
+
+/** How long the screen stays on through a workout after the last thing that happened in it. Longer than any rest between sets. */
+internal const val WORKOUT_AWAKE_MILLIS = 10 * 60_000L

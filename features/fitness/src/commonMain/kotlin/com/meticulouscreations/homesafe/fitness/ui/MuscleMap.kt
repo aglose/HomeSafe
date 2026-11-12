@@ -2,15 +2,14 @@ package com.meticulouscreations.homesafe.fitness.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -19,12 +18,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.MuscleVolume
 import com.meticulouscreations.homesafe.fitness.domain.VolumeStatus
+import com.meticulouscreations.homesafe.ui.components.breathAt
+import com.meticulouscreations.homesafe.ui.components.rememberSteppedFrameNanos
 
 /** A muscle's place on the figure, in the figure's own units (100 wide, 220 tall): an oval, or a rounded slab when [slab]. */
 private class Region(val muscle: Muscle, val cx: Float, val cy: Float, val rx: Float, val ry: Float, val slab: Boolean = false)
@@ -68,10 +70,17 @@ internal fun MuscleMap(volumes: List<MuscleVolume>, modifier: Modifier = Modifie
     val still = LocalInspectionMode.current
     val reveal = remember { Animatable(if (still) 1f else 0f) }
     LaunchedEffect(Unit) { if (!still) reveal.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }
-    // Read while drawing, so the map isn't composed again each frame.
-    val breath = rememberInfiniteTransition(label = "muscles").animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "muscleBreath")
+    // Read while drawing, so the map isn't composed again each step; and only while some of it is on screen, since the
+    // whole canvas is drawn again each time.
+    var onScreen by remember { mutableStateOf(true) }
+    val clock = rememberSteppedFrameNanos(running = onScreen)
 
-    Canvas(modifier.semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription }) {
+    Canvas(
+        modifier
+            .onVisibilityChanged(minFractionVisible = 0.01f) { onScreen = it }
+            .semantics { if (contentDescription.isNotEmpty()) this.contentDescription = contentDescription },
+    ) {
+        val breath = breathAt(clock.longValue, MUSCLE_BREATH_MS)
         // Two figures side by side with a gap, as large as the space allows.
         val gap = size.width * 0.06f
         val unit = minOf((size.width - gap) / 2 / FIGURE_WIDTH, size.height / FIGURE_HEIGHT)
@@ -80,9 +89,9 @@ internal fun MuscleMap(volumes: List<MuscleVolume>, modifier: Modifier = Modifie
         val top = (size.height - FIGURE_HEIGHT * unit) / 2
         listOf(FRONT to Offset(left, top), BACK to Offset(left + figureWidth + gap, top)).forEachIndexed { figure, (regions, origin) ->
             silhouette(origin, unit, colors.surfaceRaised)
-            if (figure == 1) traps(origin, unit, tone(byMuscle[Muscle.TRAPS], colors, reveal.value, breath.value, order = 0f))
+            if (figure == 1) traps(origin, unit, tone(byMuscle[Muscle.TRAPS], colors, reveal.value, breath, order = 0f))
             regions.forEachIndexed { i, region ->
-                val color = tone(byMuscle[region.muscle], colors, reveal.value, breath.value, order = i / regions.size.toFloat())
+                val color = tone(byMuscle[region.muscle], colors, reveal.value, breath, order = i / regions.size.toFloat())
                 val center = origin + Offset(region.cx * unit, region.cy * unit)
                 val half = Size(region.rx * unit, region.ry * unit)
                 if (region.slab) {
@@ -146,3 +155,6 @@ private fun DrawScope.silhouette(origin: Offset, unit: Float, color: Color) {
     both(38f, 194f, 8.6f, 24f)
     both(38f, 216f, 7f, 4f)
 }
+
+/** One breath of the muscles on target, in and out. */
+private const val MUSCLE_BREATH_MS = 3_600

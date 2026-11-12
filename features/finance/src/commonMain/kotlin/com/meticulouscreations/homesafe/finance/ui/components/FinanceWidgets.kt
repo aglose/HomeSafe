@@ -4,14 +4,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -71,6 +66,8 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
 import com.meticulouscreations.homesafe.finance.ui.LocalFinanceDesk
+import com.meticulouscreations.homesafe.ui.components.cycleAt
+import com.meticulouscreations.homesafe.ui.components.rememberSteppedFrameNanos
 import com.meticulouscreations.homesafe.ui.handCursor
 import kotlinx.coroutines.CoroutineScope
 import kotlin.math.abs
@@ -397,17 +394,19 @@ fun Meter(fraction: Float, color: Color, modifier: Modifier = Modifier, height: 
     }
 }
 
-/** A loading placeholder with a highlight sweeping across it. */
+/**
+ * A loading placeholder with a highlight sweeping across it, thirty steps a second (with the server
+ * out of reach a page can wait on one for a long time, and a sweep looks the same at that rate).
+ */
 @Composable
 fun Shimmer(modifier: Modifier = Modifier, corner: Dp = 10.dp) {
-    val transition = rememberInfiniteTransition(label = "shimmer")
     // Kept as the state and read while drawing, so the sweep redraws the placeholder without recomposing it.
-    val x = transition.animateFloat(-1f, 2f, infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Restart), label = "shimmerX")
+    val clock = rememberSteppedFrameNanos()
     val base = FinanceTheme.colors.surfaceRaised
     val glint = FinanceTheme.colors.hairline
     Canvas(modifier.clip(RoundedCornerShape(corner))) {
         drawRect(base)
-        val cx = size.width * x.value
+        val cx = size.width * (cycleAt(clock.longValue, SHIMMER_SWEEP_MS) * 3f - 1f)
         drawRect(Brush.linearGradient(listOf(Color.Transparent, glint, Color.Transparent), start = Offset(cx - size.width * 0.4f, 0f), end = Offset(cx + size.width * 0.4f, size.height)))
     }
 }
@@ -447,3 +446,6 @@ fun rememberEntrance(settled: Float): Animatable<Float, AnimationVector1D> {
 fun EntranceEffect(key: Any?, block: suspend CoroutineScope.() -> Unit) {
     if (!LocalInspectionMode.current) LaunchedEffect(key, block = block)
 }
+
+/** One sweep of a placeholder's highlight across it. */
+private const val SHIMMER_SWEEP_MS = 1_300
