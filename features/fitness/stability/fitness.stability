@@ -1295,6 +1295,15 @@ private fun com.meticulouscreations.homesafe.fitness.ui.rememberTicking(stillAt:
     - stillAt: STABLE (primitive type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.rememberWorkoutAwake(sets: kotlin.Int, rest: com.meticulouscreations.homesafe.fitness.RestTimer?, touchedAt: kotlin.Function0<kotlin.Long>): androidx.compose.runtime.State<kotlin.Boolean>
+  skippable: false
+  restartable: false
+  params:
+    - sets: STABLE (primitive type)
+    - rest: STABLE (marked @Stable or @Immutable)
+    - touchedAt: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.runLine(run: com.meticulouscreations.homesafe.fitness.domain.Run): kotlin.String
   skippable: false
   restartable: false
