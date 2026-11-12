@@ -45,8 +45,8 @@ later (`brew upgrade --cask apksim`): older ones refuse `127.0.0.1` under it. Th
 `127.0.0.1` and not `::1`, because the video player connects there for `localhost` and a clip
 won't play otherwise. The tests run
 Robolectric-style on API 36 with a simulated clock: keep the emulator for `startup-perf`, and use
-`scripts/preview` for preview-level checks. apksim plays a clip in the app but can't save one (its
-DownloadManager never fetches), so the clip journeys skip themselves there and run on CI's emulator
+`scripts/preview` for preview-level checks. apksim plays a clip in the app and fetches one to save, but its media store
+refuses a file in Downloads and its test runs list no video decoder, so the clip journeys skip themselves there and run on CI's emulator
 ([docs/testing.md](docs/testing.md), "Clips, end to end"). CI gates pull requests on the same test APKs in
 apksim's Linux image; the emulators run them nightly, and any difference goes in an issue
 ([docs/testing.md](docs/testing.md)).

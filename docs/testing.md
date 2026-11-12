@@ -87,12 +87,10 @@ fun turningDetectionOffIsSavedOnTheServer() = runAppJourney {
 
 `ClipJourneyTest` (`app/src/androidDeviceTest`, Android only) takes a clip all the way: cut in the editor, saved,
 found in the phone's Downloads as an ordinary MP4 of the right length whose every frame decodes; and a detection's
-clip played to its end in Moments and downloaded. Playing and saving are separate journeys, because apksim can't run
-them yet and each then skips itself with the reason:
-
-- its `DownloadManager` is Robolectric's, which notes a download and never fetches it, so a save stays "Saving";
-- its test runs list no video decoder (the app run by hand on a Mac does decode, with VideoToolbox; the Linux image
-  has no decoder at all).
+clip played to its end in Moments and downloaded. apksim can't run them yet, and each then skips itself with the
+reason: its test runs list no video decoder (the app run by hand on a Mac does decode, with VideoToolbox; the Linux
+image has no decoder at all). A save couldn't finish there either: apksim's media store (Robolectric's) refuses a
+file in Downloads.
 
 So they are checked on an emulator: by the **Clip journeys on an emulator** workflow
 ([`clip-tests.yml`](../.github/workflows/clip-tests.yml)) on a pull request that touches clips, the player or the

@@ -49,13 +49,7 @@
     <string name="error_no_location">Couldn't get this phone's location</string>
 
     <!-- Saving a clip to the device -->
-    <string name="download_cancelled">The download was cancelled</string>
     <string name="download_frigate_refused">Frigate answered %1$s for the clip</string>
-    <string name="download_no_space">Not enough space on the phone</string>
-    <string name="download_file_exists">A file with this name is already in Downloads</string>
-    <string name="download_connection_lost">Lost the connection to the server</string>
-    <string name="download_too_many_redirects">The server redirected the download too many times</string>
-    <string name="download_failed_code">Download failed (%1$s)</string>
     <string name="download_write_failed">Couldn't save the clip on this device</string>
     <string name="download_unavailable_desktop">Downloading clips isn't available on desktop</string>
     <string name="download_unavailable_platform">Downloading clips isn't available on this platform</string>

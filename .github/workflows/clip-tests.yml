@@ -3,8 +3,8 @@
 # download that. The fake Frigate serves real H.264 for them.
 #
 # On an emulator, and not only with the device tests on apksim (apksim.yml), because apksim can't
-# run them yet: its DownloadManager notes a download and never fetches it, and its test runs list
-# no video decoder, so there the four journeys skip themselves and say why. Until apksim can, this
+# run them yet: its test runs list no video decoder (and its media store refuses a file in
+# Downloads), so there the four journeys skip themselves and say why. Until apksim can, this
 # is where a pull request that touches clips, the player or the fake's video has them checked; the
 # nightly emulator run (device-tests-nightly.yml) has them with everything else.
 #

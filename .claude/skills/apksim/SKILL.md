@@ -144,9 +144,10 @@ apksim --instrument $A -e class com.meticulouscreations.homesafe.uitest.MomentsF
 - For how one composable looks in one state, `scripts/preview` (the `ui-previews` skill) is faster
   and needs no sign-in; use apksim for flows, navigation, Back, the keyboard and real data from the
   fake Frigate.
-- Clips play, but can't be saved. The fake Frigate serves real video, and the app run by hand
-  decodes it on a Mac (`adb shell apksim video` counts the pictures). Saving one never finishes:
-  apksim's DownloadManager is Robolectric's, which notes the download and doesn't fetch it. In
-  test runs (`--instrument`) no video decoder is listed either, so `ClipJourneyTest` skips itself
+- Clips play, and a save fetches the clip but can't finish. The fake Frigate serves real video,
+  and the app run by hand decodes it on a Mac (`adb shell apksim video` counts the pictures). A save
+  fetches the clip with the app's own HTTP client, then fails putting it in Downloads: apksim's media
+  store is Robolectric's, which takes only DCIM, Movies and Pictures (logcat `ClipDownloader`). In test
+  runs (`--instrument`) no video decoder is listed, so `ClipJourneyTest` skips itself
   on apksim and is checked on CI's emulator (docs/testing.md, "Clips, end to end").
 - iOS is not covered: build the iOS app only when asked or when the change is iOS-specific.
