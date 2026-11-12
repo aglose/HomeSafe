@@ -47,13 +47,7 @@
     <string name="error_no_car_box">Frigate no guardó ningún recuadro para este auto</string>
     <string name="error_no_location">No se pudo obtener la ubicación de este teléfono</string>
 
-    <string name="download_cancelled">Se canceló la descarga</string>
     <string name="download_frigate_refused">Frigate respondió %1$s para el clip</string>
-    <string name="download_no_space">No hay suficiente espacio en el teléfono</string>
-    <string name="download_file_exists">Ya hay un archivo con este nombre en Descargas</string>
-    <string name="download_connection_lost">Se perdió la conexión con el servidor</string>
-    <string name="download_too_many_redirects">El servidor redirigió la descarga demasiadas veces</string>
-    <string name="download_failed_code">Error en la descarga (%1$s)</string>
     <string name="download_write_failed">No se pudo guardar el clip en este dispositivo</string>
     <string name="download_unavailable_desktop">La descarga de clips no está disponible en la computadora</string>
     <string name="download_unavailable_platform">La descarga de clips no está disponible en esta plataforma</string>

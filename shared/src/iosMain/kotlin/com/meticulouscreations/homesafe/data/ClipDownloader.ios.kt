@@ -37,7 +37,7 @@ import platform.posix.fwrite
 
 /**
  * iOS has no public "Downloads" folder a third-party app can write into the way Android's
- * [android.app.DownloadManager] does, so this fetches the clip itself (via the app's shared,
+ * MediaStore Downloads collection is, so this fetches the clip itself (via the app's shared,
  * already-authenticated [httpClient]) and hands it to the system share sheet — "Save Video" /
  * "Save to Files" from there is the iOS equivalent of downloading it.
  *

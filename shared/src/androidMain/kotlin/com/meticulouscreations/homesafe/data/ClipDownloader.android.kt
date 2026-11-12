@@ -1,49 +1,54 @@
 package com.meticulouscreations.homesafe.data
 
-import android.app.DownloadManager
 import android.content.Context
-import android.net.Uri
-import androidx.core.net.toUri
+import android.util.Log
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
+import com.meticulouscreations.homesafe.network.requireSuccess
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.download_cancelled
-import homesafe.shared.generated.resources.download_connection_lost
-import homesafe.shared.generated.resources.download_failed_code
-import homesafe.shared.generated.resources.download_file_exists
 import homesafe.shared.generated.resources.download_frigate_refused
-import homesafe.shared.generated.resources.download_no_space
-import homesafe.shared.generated.resources.download_too_many_redirects
 import homesafe.shared.generated.resources.download_write_failed
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeoutConfig
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.contentLength
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 /**
- * Hands the clip off to Android's own [DownloadManager] rather than fetching it in-process:
- * that gets a system download notification and resilience across the app being backgrounded,
- * for free. It lands in the app's own external files first, not Downloads, because Frigate's
- * clip is a fragmented MP4 that other apps can't attach; [saveClipToDownloads] rewrites it into
- * the public Downloads collection (no storage permission needed since scoped storage) and the
- * download's own entry, file and notification are then removed.
+ * Fetches the clip with the app's shared, already-authenticated [httpClient] into the app's
+ * cache, then [saveClipToDownloads] rewrites it into the public Downloads collection (Frigate's
+ * clip is a fragmented MP4 other apps can't attach; no storage permission needed since scoped
+ * storage) and the cached copy is deleted.
  *
- * How it's getting on is read by polling the download's row rather than waiting on
- * [DownloadManager.ACTION_DOWNLOAD_COMPLETE]: that broadcast comes from the downloads provider,
- * another app, so a receiver registered not-exported (as Android 14+ asks of anything that
- * isn't meant for other apps) may never hear it — leaving the caller saving forever. Polling
- * also gives the progress the broadcast can't.
+ * Not Android's `DownloadManager`, which this used to hand the URL to: from Android 17 a
+ * connection to the local network needs `ACCESS_LOCAL_NETWORK`, which this app holds and the
+ * system downloads provider (another app) does not. At home, where the server's address is a
+ * LAN one, its connections were dropped on the phone and it sat retrying, the clip "saving" for
+ * minutes, while the same address worked from the app. Fetching in-process goes out on the
+ * app's own permission and route, as iOS and the desktop already do, and a connection that
+ * can't be made fails within [CONNECT_TIMEOUT_MS] with a message instead of waiting forever.
+ *
+ * The response is streamed to the file a chunk at a time (a clip can run to hundreds of
+ * megabytes), with the shared client's request timeout lifted for this one call: Frigate cutting
+ * a long clip before it sends a byte can take longer than that. A stalled connection is still
+ * caught by the socket timeout.
  */
-private class AndroidClipDownloader(private val context: Context) : ClipDownloader {
-    private val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+private class AndroidClipDownloader(private val context: Context, private val httpClient: HttpClient) : ClipDownloader {
 
     override suspend fun download(
         url: String,
@@ -51,9 +56,12 @@ private class AndroidClipDownloader(private val context: Context) : ClipDownload
         fileName: String,
         onProgress: (ClipDownloadProgress) -> Unit,
     ): Result<Unit> {
-        val result = runCatching { downloadAndSave(url, headers, fileName, onProgress) }
-        // The save outlives a cancelled caller, but its result mustn't: a newer download may
-        // already be showing where this one's "Downloaded" would land.
+        // A caller that goes away (the moments page closed) still gets the clip into Downloads,
+        // as it did when the system downloaded it; only the waiting is abandoned. The timeouts
+        // bound how long it can run on.
+        val result = withContext(NonCancellable) { runCatching { downloadAndSave(url, headers, fileName, onProgress) } }
+        // But its result mustn't reach a cancelled caller: a newer download may already be
+        // showing where this one's "Downloaded" would land.
         currentCoroutineContext().ensureActive()
         return result
     }
@@ -64,135 +72,93 @@ private class AndroidClipDownloader(private val context: Context) : ClipDownload
         fileName: String,
         onProgress: (ClipDownloadProgress) -> Unit,
     ) {
-        val staging = withContext(Dispatchers.IO) { stagingFile(fileName) }
-        val request = DownloadManager.Request(url.toUri())
-            .setTitle(fileName)
-            // Only while it runs: the finished file moves to Downloads and this entry is removed.
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-            .setDestinationUri(Uri.fromFile(staging))
-            .setMimeType("video/mp4")
-        headers.forEach { (key, value) -> request.addRequestHeader(key, value) }
-
-        val downloadId = downloadManager.enqueue(request)
         onProgress(ClipDownloadProgress.Preparing)
-        // A caller that goes away (the moments page closed) still gets the clip into Downloads,
-        // as it did when DownloadManager wrote it there itself; only the waiting is abandoned.
-        withContext(NonCancellable) {
-            try {
-                awaitCompletion(downloadId, onProgress)
-                withContext(Dispatchers.IO) {
-                    try {
-                        saveClipToDownloads(context.contentResolver, staging, fileName)
-                    } catch (e: Exception) {
-                        throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't save $fileName to Downloads: ${e.message}")
+        val staging = withContext(Dispatchers.IO) { stagingFile(fileName) }
+        try {
+            httpClient.prepareGet(url) {
+                headers.forEach { (key, value) -> header(key, value) }
+                timeout {
+                    requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                    connectTimeoutMillis = CONNECT_TIMEOUT_MS
+                    socketTimeoutMillis = SOCKET_TIMEOUT_MS
+                }
+            }.execute { response ->
+                response.requireSuccess(Res.string.download_frigate_refused)
+                writeToFile(staging, response.bodyAsChannel(), response.contentLength(), onProgress)
+            }
+            withContext(Dispatchers.IO) {
+                try {
+                    saveClipToDownloads(context.contentResolver, staging, fileName)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Couldn't save $fileName to Downloads", e)
+                    throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't save $fileName to Downloads: ${e.message}")
+                }
+            }
+        } finally {
+            withContext(Dispatchers.IO) { staging.delete() }
+        }
+    }
+
+    private suspend fun writeToFile(file: File, body: ByteReadChannel, totalBytes: Long?, onProgress: (ClipDownloadProgress) -> Unit) = withContext(Dispatchers.IO) {
+        try {
+            file.outputStream().buffered().use { out ->
+                val buffer = ByteArray(DOWNLOAD_CHUNK_BYTES)
+                var received = 0L
+                var last: ClipDownloadProgress = ClipDownloadProgress.Preparing
+                while (true) {
+                    val read = body.readAvailable(buffer, 0, buffer.size)
+                    if (read < 0) break
+                    if (read == 0) continue
+                    out.write(buffer, 0, read)
+                    received += read
+                    val fraction = totalBytes?.takeIf { it > 0L }?.let { (received.toDouble() / it).toFloat().coerceIn(0f, 1f) }
+                    // A percent at a time: a chunk per call would recompose the ring for nothing.
+                    val progress = ClipDownloadProgress.Downloading(fraction?.let { (it * PERCENT).toInt() / PERCENT })
+                    if (progress != last) {
+                        last = progress
+                        onProgress(progress)
                     }
                 }
-            } finally {
-                // Takes the staged file and the notification with it.
-                downloadManager.remove(downloadId)
-                withContext(Dispatchers.IO) { staging.delete() }
             }
+        } catch (e: IOException) {
+            // A connection that dropped mid-body is the network's to explain, not the disk's.
+            if (body.isClosedForRead && body.closedCause != null) throw e
+            Log.w(TAG, "Couldn't write the clip to $file", e)
+            throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't write the clip to $file: ${e.message}")
         }
     }
 
     /**
-     * A fresh file in the app's external files for [fileName] to download into. DownloadManager
-     * only writes to external storage, and this part of it is the app's own and never scanned
-     * into the gallery. Anything left from a download the process died during is swept away,
-     * once it's old and no download still waiting or running (a paused one, offline) writes it.
+     * A fresh file in the app's cache for [fileName] to arrive in. Anything a download the
+     * process died during left behind is swept away once it is old enough that nothing still
+     * writes it.
      */
     private fun stagingFile(fileName: String): File {
-        val root = context.getExternalFilesDir(null)
-            ?: throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "No external storage")
-        val dir = File(root, STAGING_DIR)
+        val dir = File(context.cacheDir, STAGING_DIR)
         dir.mkdirs()
-        unfinishedDownloadPaths()?.let { inUse ->
-            val stale = System.currentTimeMillis() - STAGED_FILE_MAX_AGE_MS
-            dir.listFiles()
-                ?.filter { it.lastModified() < stale && it.absolutePath !in inUse }
-                ?.forEach { it.delete() }
-        }
+        val stale = System.currentTimeMillis() - STAGED_FILE_MAX_AGE_MS
+        dir.listFiles()?.filter { it.lastModified() < stale }?.forEach { it.delete() }
         return File(dir, "${UUID.randomUUID()}-$fileName")
     }
-
-    /**
-     * Where this app's pending, running and paused downloads are writing, or null when one of
-     * them doesn't say, in which case nothing is safe to sweep.
-     */
-    private fun unfinishedDownloadPaths(): Set<String>? {
-        val unfinished = DownloadManager.STATUS_PENDING or DownloadManager.STATUS_RUNNING or DownloadManager.STATUS_PAUSED
-        return downloadManager.query(DownloadManager.Query().setFilterByStatus(unfinished)).use { cursor ->
-            val column = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)
-            val paths = mutableSetOf<String>()
-            while (cursor.moveToNext()) {
-                val path = cursor.getString(column)?.toUri()?.path ?: return@use null
-                paths += File(path).absolutePath
-            }
-            paths
-        }
-    }
-
-    /**
-     * Follows [downloadId] until [DownloadManager] finishes it, failing if it didn't succeed. It
-     * runs to the end even for a cancelled caller (see [downloadAndSave]), so the clip still lands.
-     */
-    private suspend fun awaitCompletion(downloadId: Long, onProgress: (ClipDownloadProgress) -> Unit) {
-        var last: ClipDownloadProgress = ClipDownloadProgress.Preparing
-        while (true) {
-            val row = withContext(Dispatchers.IO) { query(downloadId) }
-                // Gone: cancelled from its notification, or cleared from the Downloads app.
-                ?: throw LocalizedException(UiText.of(Res.string.download_cancelled), technical = "Download cancelled")
-            when (row.status) {
-                DownloadManager.STATUS_SUCCESSFUL -> return
-                DownloadManager.STATUS_FAILED -> throw failure(row.reason)
-            }
-            val progress = when {
-                row.bytesSoFar <= 0L -> ClipDownloadProgress.Preparing
-                row.totalBytes > 0L -> ClipDownloadProgress.Downloading((row.bytesSoFar.toDouble() / row.totalBytes).toFloat().coerceIn(0f, 1f))
-                else -> ClipDownloadProgress.Downloading(fraction = null)
-            }
-            if (progress != last) {
-                last = progress
-                onProgress(progress)
-            }
-            delay(POLL_INTERVAL_MS)
-        }
-    }
-
-    private fun query(downloadId: Long): DownloadRow? =
-        downloadManager.query(DownloadManager.Query().setFilterById(downloadId)).use { cursor ->
-            if (!cursor.moveToFirst()) return@use null
-            DownloadRow(
-                status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)),
-                reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)),
-                bytesSoFar = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
-                totalBytes = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
-            )
-        }
-
-    /** [reason] is the HTTP status for a server's refusal, or one of [DownloadManager]'s ERROR_ codes. */
-    private fun failure(reason: Int): LocalizedException {
-        val text = when (reason) {
-            in 400..599 -> UiText.of(Res.string.download_frigate_refused, reason.toString())
-            DownloadManager.ERROR_INSUFFICIENT_SPACE -> UiText.of(Res.string.download_no_space)
-            DownloadManager.ERROR_FILE_ALREADY_EXISTS -> UiText.of(Res.string.download_file_exists)
-            DownloadManager.ERROR_HTTP_DATA_ERROR -> UiText.of(Res.string.download_connection_lost)
-            DownloadManager.ERROR_TOO_MANY_REDIRECTS -> UiText.of(Res.string.download_too_many_redirects)
-            else -> UiText.of(Res.string.download_failed_code, reason.toString())
-        }
-        return LocalizedException(text, technical = "Download failed ($reason)")
-    }
-
-    private class DownloadRow(val status: Int, val reason: Int, val bytesSoFar: Long, val totalBytes: Long)
 }
 
-/** Often enough for a progress ring to move smoothly; a query is one small row. */
-private const val POLL_INTERVAL_MS = 500L
+private const val TAG = "ClipDownloader"
 
 private const val STAGING_DIR = "clip-downloads"
 
 /** Old enough that no download still running could own it. */
 private const val STAGED_FILE_MAX_AGE_MS = 24L * 60 * 60 * 1000
 
+/** How much of the clip is held in memory at once on its way to the file. */
+private const val DOWNLOAD_CHUNK_BYTES = 256 * 1024
+
+private const val PERCENT = 100f
+
+/** How long to wait for the server to answer the connection before saying it can't be reached. */
+private const val CONNECT_TIMEOUT_MS = 15_000L
+
+/** How long the connection may go quiet (Frigate still cutting, or the network gone) before the save gives up. */
+private const val SOCKET_TIMEOUT_MS = 120_000L
+
 actual fun createClipDownloader(platformContext: PlatformContext, httpClient: HttpClient): ClipDownloader =
-    AndroidClipDownloader(platformContext.context.applicationContext)
+    AndroidClipDownloader(platformContext.context.applicationContext, httpClient)

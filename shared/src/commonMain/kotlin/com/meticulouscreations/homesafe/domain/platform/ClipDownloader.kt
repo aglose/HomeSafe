@@ -1,10 +1,10 @@
 package com.meticulouscreations.homesafe.domain.platform
 
 /**
- * Saves a detection's clip to the device so it's available outside the app. Neither mobile
- * platform lets a third-party app just write into a shared "Downloads" folder the same way:
- * Android's `DownloadManager` can, but iOS has no public equivalent, so the iOS implementation
- * fetches the clip itself and hands it to the share sheet (Save Video / Save to Files) instead.
+ * Saves a clip to the device so it's available outside the app: into Downloads on Android (through
+ * MediaStore) and on a Mac, and on iOS, which has no shared Downloads folder an app can write
+ * into, to the share sheet (Save Video / Save to Files). Each fetches the clip itself with the
+ * app's own HTTP client.
  *
  * A domain-level port; each platform supplies the implementation from the data layer (see `createClipDownloader`).
  */
