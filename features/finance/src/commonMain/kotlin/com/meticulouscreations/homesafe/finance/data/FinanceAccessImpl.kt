@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -118,9 +119,12 @@ class FinanceAccessImpl(
         if (connectionRepository.activeConnection.value == null || connected() || recheck?.isActive == true) return
         // Nothing else is certain to look again (no network changed, the app didn't leave the
         // screen), and while the server is known to be gone the finance app doesn't ask it either.
+        // Only while the app is being looked at: put down, it is locked and shows nothing, and a
+        // phone in a pocket has no reason to ask a server that isn't there four times a minute.
         recheck = appScope.launch {
             while (connectionRepository.activeConnection.value != null && connectionRepository.serverUnreachable.value) {
                 delay(RECHECK_MS)
+                AppVisibility.inForeground.first { it }
                 connectionRepository.checkServer()
             }
             settle()

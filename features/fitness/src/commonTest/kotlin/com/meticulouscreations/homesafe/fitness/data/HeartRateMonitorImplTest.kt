@@ -311,6 +311,40 @@ class HeartRateMonitorImplTest {
     }
 
     @Test
+    fun aSensorThatIsNotThereIsLookedForInSpellsWithLongerAndLongerRests() = runMonitorTest { h ->
+        h.monitor.follow(TEST_BAND)
+        runCurrent()
+        assertEquals(1, h.link.scanning)
+
+        // One look lasts so long and no longer: the radio isn't left scanning for a band left at home.
+        advanceTimeBy(HeartRateMonitorImpl.SCAN_MILLIS)
+        runCurrent()
+        assertEquals(0, h.link.scanning)
+        assertEquals(HeartSensorState.Lost(TEST_BAND), h.state)
+
+        advanceTimeBy(HeartRateMonitorImpl.restAfterMiss(1))
+        runCurrent()
+        assertEquals(2, h.link.scans)
+        assertEquals(1, h.link.scanning)
+
+        // An hour of it: mostly rest.
+        advanceTimeBy(60 * 60_000L)
+        runCurrent()
+        assertTrue(h.link.scans in 40..60, "about one look every 75 s once the rests are a minute: ${h.link.scans}")
+
+        // And it is still found when it turns up.
+        while (h.link.scanning == 0) advanceTimeBy(1_000)
+        h.link.advertise(TEST_BAND)
+        runCurrent()
+        assertEquals(listOf(TEST_BAND.address), h.link.connections)
+    }
+
+    @Test
+    fun theRestAfterALookThatHeardNothingDoublesAndStopsAtAMinute() {
+        assertEquals(listOf(5_000L, 5_000L, 10_000L, 20_000L, 40_000L, 60_000L, 60_000L), listOf(0, 1, 2, 3, 4, 5, 12).map(HeartRateMonitorImpl::restAfterMiss))
+    }
+
+    @Test
     fun theWaitBetweenAttemptsDoublesAndStopsAtHalfAMinute() {
         assertEquals(listOf(2_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L), listOf(0, 1, 2, 3, 4, 5, 12).map(HeartRateMonitorImpl::retryDelay))
     }

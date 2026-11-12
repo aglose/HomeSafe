@@ -51,6 +51,8 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         // Muted, the relay is told to push nothing here; this covers what was already on its way.
         if (NotificationMuteStore.isMuted(applicationContext)) return
+        // A quiet push may have waited out the phone's sleep and landed after a newer one for the same notification.
+        if (PushOrder.isStale(applicationContext, message.data["notif_id"], message.data["sent_at"]?.toLongOrNull())) return
         if (BudgetAlert.isBudget { message.data[it] }) return showBudgetAlert(message)
         if (DoorAlert.isDoor { message.data[it] }) return showDoorAlert(message)
         if (PackageAlert.isPackage { message.data[it] }) return showPackageAlert(message)

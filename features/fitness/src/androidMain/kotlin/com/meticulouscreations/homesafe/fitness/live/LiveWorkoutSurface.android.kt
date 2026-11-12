@@ -14,6 +14,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
@@ -79,6 +80,10 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
     /** Whether the foreground service is up and the notification is its. */
     private var serviceUp = false
 
+    /** What the notification last showed, and when it was posted (elapsed realtime). */
+    private var posted: Shown? = null
+    private var postedAt = 0L
+
     init {
         WorkoutNotifications.createChannels(app)
         scope.launch { follow() }
@@ -105,6 +110,11 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
                 return@collectLatest
             }
             startService()
+            // A heart reading comes every second, and each would post the notification again, through the whole workout.
+            // Outside a rest (which redraws each second anyway) a change that is only the heart waits its turn; the wait is
+            // to a fixed moment, so the readings that keep replacing this one don't put it off.
+            val wait = heartWaitMillis(current, SystemClock.elapsedRealtime())
+            if (wait > 0) delay(wait)
             while (true) {
                 val now = System.currentTimeMillis()
                 val phase = current.workout.phase(now)
@@ -122,7 +132,24 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
         }
     }
 
+    /** How long [current] waits before it is posted: nothing, unless all that is new in it is the heart and the notification was posted under [HEART_EVERY_MILLIS] ago. */
+    private fun heartWaitMillis(current: Shown, elapsedNow: Long): Long {
+        val before = posted?.workout ?: return 0
+        val workout = current.workout
+        val phase = workout.phase(System.currentTimeMillis())
+        if (phase == LivePhase.RESTING) return 0
+        // The rest has just run out and nobody has been told: a reading that arrives on that second must not put the buzz off.
+        if (phase == LivePhase.REST_OVER && announced != workout.rest?.endsAtEpochMillis) return 0
+        // A heart that appears or goes (the sensor linked, or lost) is news; one that only reads differently is not.
+        val onlyTheHeart = before.heart != null && workout.heart != null && before.copy(heart = workout.heart) == workout
+        return if (onlyTheHeart) (postedAt + HEART_EVERY_MILLIS - elapsedNow).coerceAtLeast(0) else 0
+    }
+
     private fun post(current: Shown, now: Long) {
+        // Every post, whatever changed in it: a reading that comes back to the one shown is still a post, and the next
+        // heart-only change waits its ten seconds from it.
+        postedAt = SystemClock.elapsedRealtime()
+        posted = current
         try {
             manager.notify(WorkoutNotifications.ONGOING_ID, WorkoutNotifications.ongoing(app, current.workout, current.words, now))
         } catch (e: SecurityException) {
@@ -169,6 +196,7 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
     }
 
     private fun stop() {
+        posted = null
         releaseWake()
         if (serviceUp) app.stopService(Intent(app, WorkoutSessionService::class.java))
         serviceUp = false
@@ -194,6 +222,9 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
 
     private companion object {
         const val TICK_MILLIS = 1_000L
+
+        /** How often, at most, the notification is posted again for nothing but a new heart reading. */
+        const val HEART_EVERY_MILLIS = 10_000L
         const val WAKE_MARGIN_MILLIS = 10_000L
 
         /** A rest is at most some minutes; the phone is never held awake longer than this for one. */
