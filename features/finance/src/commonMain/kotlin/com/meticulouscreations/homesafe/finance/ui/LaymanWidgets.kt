@@ -53,6 +53,7 @@ import com.meticulouscreations.homesafe.finance.domain.StressScore
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
 import com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.components.rememberOnScreen
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.layman_standing_title
 import homesafe.shared.generated.resources.layman_stress_calm
@@ -80,9 +81,10 @@ import kotlin.math.sin
 @Composable
 internal fun WeatherGlyph(weather: Weather, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val colors = FinanceTheme.colors
-    val time = rememberShaderClock()
+    val seen = rememberOnScreen()
+    val time = rememberShaderClock(running = seen.visible)
     val label = stringResource(weather.label)
-    Canvas(modifier.size(size).clearAndSetSemantics { contentDescription = label }) {
+    Canvas(modifier.then(seen.modifier).size(size).clearAndSetSemantics { contentDescription = label }) {
         val t = time.value
         when (weather) {
             Weather.SUNNY -> drawSun(colors.accent, center, this.size.minDimension * 0.22f, t)

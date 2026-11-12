@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,7 +30,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
 import com.meticulouscreations.homesafe.tracing.traceInstant
-import com.meticulouscreations.homesafe.ui.components.frameGridSlot
+import com.meticulouscreations.homesafe.ui.components.awaitNextGridFrame
+import com.meticulouscreations.homesafe.ui.components.rememberOnScreen
 import kotlin.math.min
 
 /**
@@ -46,24 +46,14 @@ internal fun rememberShaderClock(running: Boolean = true, frameSeconds: Float = 
     val time = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(running, frameSeconds) {
         if (!running) return@LaunchedEffect
-        // An infinite animation's frames, so a UI test's idling (and anything else that waits for
-        // animations to settle) knows this one never will and doesn't wait on it.
-        var last = withInfiniteAnimationFrameNanos { it }
-        var lastSlot = frameGridSlot(last, frameSeconds)
-        var owed = 0f
+        // On the frames every other clock with this step moves on in, and asleep between them (see awaitNextGridFrame):
+        // an infinite animation's frames, so a UI test's idling doesn't wait on it.
+        var last = awaitNextGridFrame(frameSeconds)
         while (true) {
-            withInfiniteAnimationFrameNanos { now ->
-                owed += ((now - last) / 1e9f).coerceIn(0f, 0.1f)
-                last = now
-                // On the frames every other clock with this step moves on too (see frameGridSlot).
-                val slot = frameGridSlot(now, frameSeconds)
-                if (slot != lastSlot) {
-                    lastSlot = slot
-                    time.floatValue += owed
-                    traceInstant("finance.shaderClock")
-                    owed = 0f
-                }
-            }
+            val now = awaitNextGridFrame(frameSeconds, last)
+            time.floatValue += ((now - last) / 1e9f).coerceIn(0f, 0.1f)
+            traceInstant("finance.shaderClock")
+            last = now
         }
     }
     return time
@@ -79,9 +69,11 @@ internal fun AuroraBackground(tint: Color, modifier: Modifier = Modifier, second
     val animatedTint by animateColorAsState(tint, tween(600), label = "auroraTint")
     val animatedSecondary by animateColorAsState(secondary, tween(600), label = "auroraTint2")
     val animatedIntensity by animateFloatAsState(intensity, tween(900), label = "auroraIntensity")
-    val time = rememberShaderClock()
+    // Still while scrolled away: it sits behind a page's hero number, at the top.
+    val seen = rememberOnScreen()
+    val time = rememberShaderClock(running = seen.visible)
     Box(
-        modifier.drawBehind {
+        modifier.then(seen.modifier).drawBehind {
             if (shader != null) {
                 shader.setUniform("size", size.width, size.height)
                 shader.setUniform("time", time.value)
@@ -112,8 +104,9 @@ internal fun StressRing(level: Float, modifier: Modifier = Modifier) {
     val shader = remember { financeShaderOrNull(STRESS_RING_SHADER) }
     val colors = FinanceTheme.colors
     val animated by animateFloatAsState(level.coerceIn(0f, 1f), tween(1400), label = "stressLevel")
-    val time = rememberShaderClock()
-    Canvas(modifier) {
+    val seen = rememberOnScreen()
+    val time = rememberShaderClock(running = seen.visible)
+    Canvas(modifier.then(seen.modifier)) {
         if (shader != null) {
             shader.setUniform("size", size.width, size.height)
             shader.setUniform("time", time.value)
@@ -170,8 +163,9 @@ internal fun BudgetTank(level: Float, heat: Float, modifier: Modifier = Modifier
     val colors = FinanceTheme.colors
     val animatedLevel by rememberRisingLevel(level.coerceIn(0f, 1.5f), 1400)
     val animatedHeat by rememberRisingLevel(heat.coerceIn(0f, 1f), 1400)
-    val time = rememberShaderClock(running = !LocalInspectionMode.current)
-    Canvas(modifier) {
+    val seen = rememberOnScreen()
+    val time = rememberShaderClock(running = !LocalInspectionMode.current && seen.visible)
+    Canvas(modifier.then(seen.modifier)) {
         if (shader != null) {
             shader.setUniform("size", size.width, size.height)
             shader.setUniform("time", time.value)
@@ -211,8 +205,9 @@ internal fun HeatMeter(level: Float, heat: Float, modifier: Modifier = Modifier,
     val shader = remember { financeShaderOrNull(BUDGET_HEAT_METER_SHADER) }
     val colors = FinanceTheme.colors
     val animatedLevel by rememberRisingLevel(level.coerceIn(0f, 1.5f), 1000)
-    val time = rememberShaderClock(running = !LocalInspectionMode.current)
-    Canvas(modifier.fillMaxWidth().height(height)) {
+    val seen = rememberOnScreen()
+    val time = rememberShaderClock(running = !LocalInspectionMode.current && seen.visible)
+    Canvas(modifier.then(seen.modifier).fillMaxWidth().height(height)) {
         if (shader != null) {
             shader.setUniform("size", size.width, size.height)
             shader.setUniform("time", time.value)

@@ -451,6 +451,12 @@ public fun com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase()
   params:
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.components.rememberOnScreen(): com.meticulouscreations.homesafe.ui.components.OnScreen
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.components.rememberPictureInPicture(enabled: kotlin.Boolean, aspectRatio: kotlin.Float): com.meticulouscreations.homesafe.ui.components.PictureInPicture
   skippable: false
   restartable: false
