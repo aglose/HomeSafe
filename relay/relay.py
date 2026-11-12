@@ -652,7 +652,9 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     return {
         "message": {
             "token": token,
-            "data": {**data, "title": title, "body": body},
+            # `sent_at`: quiet pushes travel at normal priority and may sit out a phone's Doze, so one can land after a
+            # newer, louder push for the same notification. The app keeps the newest by this and drops what is older.
+            "data": {**data, "title": title, "body": body, "sent_at": str(int(time.time() * 1000))},
             "android": android,
             "apns": {"headers": headers, "payload": {"aps": aps}},
         }

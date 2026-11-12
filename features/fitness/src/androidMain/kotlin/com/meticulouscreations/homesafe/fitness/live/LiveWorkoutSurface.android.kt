@@ -136,7 +136,10 @@ class AndroidLiveWorkoutSurface(context: Context) : LiveWorkoutSurface {
     private fun heartWaitMillis(current: Shown, elapsedNow: Long): Long {
         val before = posted?.workout ?: return 0
         val workout = current.workout
-        if (workout.phase(System.currentTimeMillis()) == LivePhase.RESTING) return 0
+        val phase = workout.phase(System.currentTimeMillis())
+        if (phase == LivePhase.RESTING) return 0
+        // The rest has just run out and nobody has been told: a reading that arrives on that second must not put the buzz off.
+        if (phase == LivePhase.REST_OVER && announced != workout.rest?.endsAtEpochMillis) return 0
         // A heart that appears or goes (the sensor linked, or lost) is news; one that only reads differently is not.
         val onlyTheHeart = before.heart != null && workout.heart != null && before.copy(heart = workout.heart) == workout
         return if (onlyTheHeart) (heartPostedAt + HEART_EVERY_MILLIS - elapsedNow).coerceAtLeast(0) else 0

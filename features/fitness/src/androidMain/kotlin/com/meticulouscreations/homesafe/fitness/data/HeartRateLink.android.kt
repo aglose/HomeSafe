@@ -162,9 +162,9 @@ private class AndroidHeartRateLink(private val context: Context, activity: Fragm
                 Log.w(TAG, "Scan not allowed", e)
                 close(e)
             }
-            launch {
-                for (device in linkedDevices()) probe(device)?.let { trySend(it) }
-            }
+            // All at once, each within its own [PROBE_MILLIS]: one after another, a few that don't answer would use up
+            // the whole of a look (the monitor ends one after fifteen seconds) before the band's turn came.
+            for (device in linkedDevices()) launch { probe(device)?.let { trySend(it) } }
         }
         awaitClose {
             // Throws if Bluetooth was switched off meanwhile, or the permission taken away; the scan is gone either way.
