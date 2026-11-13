@@ -5885,7 +5885,7 @@ SKI_MAX_RESORTS = 40
 SKI_SHOWN_RESORTS = 3
 SKI_CM_PER_INCH = 2.54
 # The same words the app asks with (WEATHER_USER_AGENT). A library's default is refused by some.
-SKI_USER_AGENT = "(HomeSafe, https://github.com/aglose/HomeSafe)"
+SKI_USER_AGENT = "(HomeSafe, https://github.com/codeAbode87/HomeSafe)"
 SKI_PACIFIC = "America/Los_Angeles"
 SKI_MOUNTAIN = "America/Denver"
 SKI_EASTERN = "America/New_York"

@@ -288,8 +288,9 @@ links their own.
 
 Done once already (2026-10-29), in Google Cloud project `homesafe-percysafe`: the **Gmail API** is
 enabled; the Google Auth Platform app "HomeSafe" is External and **In production**, with the home
-page and privacy policy published from the `gh-pages` branch (`https://aglose.github.io/HomeSafe/`,
-authorized domain `aglose.github.io`); and the Desktop OAuth client "HomeSafe relay Amazon orders"
+page and privacy policy published from the `gh-pages` branch (`https://codeabode87.github.io/HomeSafe/`,
+authorized domain `codeabode87.github.io`; it was `aglose.github.io` until the repository moved to
+`codeAbode87/HomeSafe` on 2026-11-13, and GitHub doesn't redirect Pages); and the Desktop OAuth client "HomeSafe relay Amazon orders"
 was made. The app is unverified, so sign-in shows Google's "hasn't verified this app" screen
 (**Advanced → Go to HomeSafe**), and at most 100 accounts can ever link it. An app left in
 *Testing* would have its refresh tokens die after seven days.

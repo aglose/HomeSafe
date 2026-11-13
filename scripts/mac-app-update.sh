@@ -11,12 +11,12 @@
 #   scripts/mac-app-update.sh --force          # reinstall main's newest build even if it's in place
 #
 # No clone is needed: --install copies this script out of the repository first, so
-#   gh api repos/aglose/HomeSafe/contents/scripts/mac-app-update.sh -H 'Accept: application/vnd.github.raw' | bash -s -- --install
+#   gh api repos/codeAbode87/HomeSafe/contents/scripts/mac-app-update.sh -H 'Accept: application/vnd.github.raw' | bash -s -- --install
 # sets it all up. A HomeSafe that is running is quit, replaced and opened again behind the other
 # windows; one in front, being used, is left for the next check. See docs/desktop.md.
 set -euo pipefail
 
-repo=aglose/HomeSafe
+repo=codeAbode87/HomeSafe
 artifact=HomeSafe-macOS
 app=/Applications/HomeSafe.app
 bundle_id=com.meticulouscreations.homesafe.desktop

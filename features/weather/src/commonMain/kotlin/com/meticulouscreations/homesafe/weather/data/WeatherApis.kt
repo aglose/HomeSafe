@@ -74,7 +74,7 @@ interface WeatherDataProviders {
 }
 
 const val WEATHER_CLIENT = "weather"
-internal const val WEATHER_USER_AGENT = "(HomeSafe, https://github.com/aglose/HomeSafe)"
+internal const val WEATHER_USER_AGENT = "(HomeSafe, https://github.com/codeAbode87/HomeSafe)"
 
 internal val weatherJson = Json {
     ignoreUnknownKeys = true
