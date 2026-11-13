@@ -35,7 +35,7 @@ brew install gh && gh auth login
 ```
 
 ```bash
-gh api repos/aglose/HomeSafe/contents/scripts/mac-app-update.sh -H 'Accept: application/vnd.github.raw' | bash -s -- --install
+gh api repos/codeAbode87/HomeSafe/contents/scripts/mac-app-update.sh -H 'Accept: application/vnd.github.raw' | bash -s -- --install
 ```
 
 From a clone, `scripts/mac-app-update.sh` updates once, `--install 2` checks every two hours,
